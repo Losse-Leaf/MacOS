@@ -9,6 +9,8 @@ jobs:
   build-release:
     name: Build Release App Bundle (unsigned)
     runs-on: macos-26
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5

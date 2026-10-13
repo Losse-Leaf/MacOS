@@ -8,14 +8,16 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (macOS 14+)
-    runs-on: macos-14
+    name: Build & Test (macOS 26)
+    runs-on: macos-26
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Check Swift Version
-        run: swift --version
+      - name: Check Swift & Xcode Version
+        run: |
+          swift --version
+          xcodebuild -version
 
       - name: Verify Zero Hardcoded Hex Colors in Swift Code
         run: |

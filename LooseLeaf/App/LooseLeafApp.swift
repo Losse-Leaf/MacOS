@@ -10,17 +10,24 @@ public struct LooseLeafApp: App {
     public init() {}
 
     public var body: some Scene {
-        // 1. 桌面主工作台窗口 (散页时间流、拖拽暗房、柴米油盐账本、心愿行迹、主理人档案)
+        // 1. 桌面主工作台窗口 (未配对展示主理人门禁，配对后直接进入全权管理工作台)
         WindowGroup("Loose-Leaf · 活页集", id: "main") {
-            StreamView(appState: appState)
-                .frame(minWidth: 980, minHeight: 640)
-                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
-                .task {
-                    await appState.refreshAll()
+            Group {
+                if !appState.isPaired {
+                    PairingGateView(appState: appState)
+                        .frame(minWidth: 720, minHeight: 560)
+                } else {
+                    StreamView(appState: appState)
+                        .frame(minWidth: 980, minHeight: 640)
+                        .task {
+                            await appState.refreshAll()
+                        }
+                        .onOpenURL { url in
+                            appState.handleIncomingURL(url)
+                        }
                 }
-                .onOpenURL { url in
-                    appState.handleIncomingURL(url)
-                }
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -55,8 +62,15 @@ public struct LooseLeafApp: App {
 
         // 2. 常驻菜单栏动态活页夹 (MenuBarExtra)
         MenuBarExtra {
-            QuickCaptureView(appState: appState)
-                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+            Group {
+                if !appState.isPaired {
+                    PairingGateView(appState: appState)
+                        .frame(width: 380, height: 460)
+                } else {
+                    QuickCaptureView(appState: appState)
+                }
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: appState.isLoading ? "arrow.triangle.2.circlepath" : "book.pages")

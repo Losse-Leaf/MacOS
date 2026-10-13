@@ -772,3 +772,136 @@ public struct HealthCheckResponse: Codable, Sendable {
         case message
     }
 }
+
+/// 首次装帧初始化请求 (POST /api/v1/system/bootstrap)
+public struct BootstrapRequest: Codable, Sendable {
+    public var curatorName: String
+    public var location: String
+    public var masterPasscode: String
+    public var confirmPasscode: String
+    public var hubUrl: String
+
+    enum CodingKeys: String, CodingKey {
+        case curatorName = "curator_name"
+        case location
+        case masterPasscode = "master_passcode"
+        case confirmPasscode = "confirm_passcode"
+        case hubUrl = "hub_url"
+    }
+
+    public init(
+        curatorName: String,
+        location: String,
+        masterPasscode: String,
+        confirmPasscode: String,
+        hubUrl: String
+    ) {
+        self.curatorName = curatorName
+        self.location = location
+        self.masterPasscode = masterPasscode
+        self.confirmPasscode = confirmPasscode
+        self.hubUrl = hubUrl
+    }
+}
+
+/// 圆满心愿请求载荷 (POST /api/v1/wishes/:id/resolve)
+public struct ResolveWishRequest: Codable, Sendable {
+    public var fulfilledAt: String
+    public var actualCost: Int64
+    public var resolutionType: String // exact | altered | relinquished
+    public var actualTitle: String?
+    public var createTransaction: Bool
+    public var createGearAsset: Bool
+    public var createLifeEntry: Bool
+    public var entryContent: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fulfilledAt = "fulfilled_at"
+        case actualCost = "actual_cost"
+        case resolutionType = "resolution_type"
+        case actualTitle = "actual_title"
+        case createTransaction = "create_transaction"
+        case createGearAsset = "create_gear_asset"
+        case createLifeEntry = "create_life_entry"
+        case entryContent = "entry_content"
+    }
+
+    public init(
+        fulfilledAt: String = FormatUtils.beijingISOString(),
+        actualCost: Int64,
+        resolutionType: String = "exact",
+        actualTitle: String? = nil,
+        createTransaction: Bool = true,
+        createGearAsset: Bool = false,
+        createLifeEntry: Bool = true,
+        entryContent: String? = nil
+    ) {
+        self.fulfilledAt = fulfilledAt
+        self.actualCost = actualCost
+        self.resolutionType = resolutionType
+        self.actualTitle = actualTitle
+        self.createTransaction = createTransaction
+        self.createGearAsset = createGearAsset
+        self.createLifeEntry = createLifeEntry
+        self.entryContent = entryContent
+    }
+}
+
+/// 新建或修改造物项目请求 (POST / PUT /api/v1/projects)
+public struct CreateProjectRequest: Codable, Sendable {
+    public var title: String
+    public var subtitle: String?
+    public var description: String
+    public var category: String?
+    public var status: String?
+    public var githubUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case subtitle
+        case description
+        case category
+        case status
+        case githubUrl = "github_url"
+    }
+
+    public init(
+        title: String,
+        subtitle: String? = nil,
+        description: String,
+        category: String? = "开源造物",
+        status: String? = "持续维护",
+        githubUrl: String? = nil
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.description = description
+        self.category = category
+        self.status = status
+        self.githubUrl = githubUrl
+    }
+}
+
+/// 随身器材转售回血请求 (POST /api/v1/assets/gear/:id/sell)
+public struct SellGearRequest: Codable, Sendable {
+    public var soldPriceCents: Int64
+    public var soldDate: String
+    public var note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case soldPriceCents = "sold_price_cents"
+        case soldDate = "sold_date"
+        case note
+    }
+
+    public init(
+        soldPriceCents: Int64,
+        soldDate: String = FormatUtils.beijingDateString(),
+        note: String? = nil
+    ) {
+        self.soldPriceCents = soldPriceCents
+        self.soldDate = soldDate
+        self.note = note
+    }
+}
+

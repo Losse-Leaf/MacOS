@@ -136,7 +136,7 @@ public struct SettingsView: View {
                     Circle()
                         .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .frame(width: 7, height: 7)
-                    Text(appState.isPaired ? "钥匙串已托管有效子钥匙" : "尚未配对（当前为公开只读视角）")
+                    Text(appState.isPaired ? "钥匙串已托管有效子钥匙 (主理人全权管理)" : "尚未配对")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                 }

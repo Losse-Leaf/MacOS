@@ -162,4 +162,64 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(processed.mimeType, "image/jpeg")
         XCTAssertFalse(processed.compressedData.isEmpty)
     }
+
+    // MARK: - 7. City Code Auto Resolver Tests (CityCodeResolver)
+
+    func testCityCodeResolver() {
+        XCTAssertEqual(FormatUtils.resolveCityCode(from: "杭州 · 西湖"), "330100")
+        XCTAssertEqual(FormatUtils.resolveCityCode(from: "云南省大理市"), "532900")
+        XCTAssertEqual(FormatUtils.resolveCityCode(from: "苏州市"), "320500")
+        XCTAssertEqual(FormatUtils.resolveCityCode(from: "532900"), "532900")
+        XCTAssertNil(FormatUtils.resolveCityCode(from: "未知神秘小岛"))
+    }
+
+    // MARK: - 8. Resolve Wish & Sell Gear Request Codable Tests
+
+    func testResolveWishAndSellGearCodableContracts() throws {
+        let resolveReq = ResolveWishRequest(
+            fulfilledAt: "2026-10-13T16:00:00+08:00",
+            actualCost: 199900,
+            resolutionType: "exact",
+            actualTitle: "Leica M6",
+            createTransaction: true,
+            createGearAsset: true,
+            createLifeEntry: true,
+            entryContent: "圆梦 Leica M6"
+        )
+        let resolveData = try JSONEncoder().encode(resolveReq)
+        let resolveJson = try JSONSerialization.jsonObject(with: resolveData) as? [String: Any]
+        XCTAssertEqual(resolveJson?["actual_cost"] as? Int64, 199900)
+        XCTAssertEqual(resolveJson?["resolution_type"] as? String, "exact")
+        XCTAssertEqual(resolveJson?["create_transaction"] as? Bool, true)
+        XCTAssertEqual(resolveJson?["create_gear_asset"] as? Bool, true)
+
+        let sellReq = SellGearRequest(
+            soldPriceCents: 120000,
+            soldDate: "2026-10-13",
+            note: "闲鱼同城自提"
+        )
+        let sellData = try JSONEncoder().encode(sellReq)
+        let sellJson = try JSONSerialization.jsonObject(with: sellData) as? [String: Any]
+        XCTAssertEqual(sellJson?["sold_price_cents"] as? Int64, 120000)
+        XCTAssertEqual(sellJson?["sold_date"] as? String, "2026-10-13")
+        XCTAssertEqual(sellJson?["note"] as? String, "闲鱼同城自提")
+    }
+
+    // MARK: - 9. System Bootstrap Codable Contract Tests
+
+    func testBootstrapRequestCodableContract() throws {
+        let bootstrapReq = BootstrapRequest(
+            curatorName: "Starry",
+            location: "杭州",
+            masterPasscode: "pass1234",
+            confirmPasscode: "pass1234",
+            hubUrl: "http://127.0.0.1:8088"
+        )
+        let data = try JSONEncoder().encode(bootstrapReq)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(json?["curator_name"] as? String, "Starry")
+        XCTAssertEqual(json?["location"] as? String, "杭州")
+        XCTAssertEqual(json?["master_passcode"] as? String, "pass1234")
+        XCTAssertEqual(json?["hub_url"] as? String, "http://127.0.0.1:8088")
+    }
 }

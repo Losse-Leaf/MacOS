@@ -14,8 +14,19 @@ public struct StreamView: View {
     @State private var composeTitle: String = ""
     @State private var composeContent: String = ""
     @State private var composeLocation: String = ""
-    @State private var composeCityCode: String = ""
     @State private var composeFeatured: Bool = false
+
+    // 行内速写卡片状态 (Inline Quick Composer)
+    @State private var quickType: EntryType = .life
+    @State private var quickTitle: String = ""
+    @State private var quickContent: String = ""
+    @State private var quickLocation: String = ""
+    @State private var quickFeatured: Bool = false
+
+    // 管理模式：编辑与删除状态
+    @State private var editingEntry: LifeEntry?
+    @State private var entryToDelete: LifeEntry?
+    @State private var showDeleteConfirm: Bool = false
 
     public init(appState: AppState) {
         self.appState = appState
@@ -71,8 +82,25 @@ public struct StreamView: View {
         .sheet(isPresented: $showComposeSheet) {
             composeNewEntrySheet
         }
+        .sheet(item: $editingEntry) { entry in
+            editEntrySheet(entry: entry)
+        }
         .sheet(item: $appState.highlightedEntry) { entry in
             entryDetailSheet(entry: entry)
+        }
+        .confirmationDialog(
+            "确认删除该条生活手稿？",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除手稿", role: .destructive) {
+                if let target = entryToDelete {
+                    deleteEntryAction(target)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。")
         }
         .task {
             await appState.refreshAll()
@@ -161,9 +189,9 @@ public struct StreamView: View {
 
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .fill(ArchivePalette.accentMoss)
                         .frame(width: 6, height: 6)
-                    Text(appState.isPaired ? "钥匙串已授信" : "公开只读视角")
+                    Text("主理人管理级别")
                         .font(ArchiveTypography.monoScale(size: 10.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     Spacer()
@@ -268,10 +296,13 @@ public struct StreamView: View {
                     .keyboardShortcut("n", modifiers: [.command])
                 }
 
-                // 2. GitHub 风格 52 周生活刻度热力图
+                // 2. 顶部行内即时手稿速写卡片 (Inline Quick Composer)
+                inlineQuickComposerCard
+
+                // 3. GitHub 风格 52 周生活刻度热力图
                 LifeActivityHeatmapView(entries: appState.entries, weeksCount: 38)
 
-                // 3. 四维母体分类切换栏与 #标签 筛选
+                // 4. 四维母体分类切换栏与 #标签 筛选
                 HStack(spacing: 6) {
                     ForEach(ArchiveCategory.allCases) { cat in
                         if cat != .transaction || appState.isPaired {
@@ -316,7 +347,7 @@ public struct StreamView: View {
                     }
                 }
 
-                // 4. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
+                // 5. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
                 let list = appState.filteredStreamEntries
                 if list.isEmpty {
                     emptyStreamPlaceholder
@@ -344,7 +375,7 @@ public struct StreamView: View {
     private func entryCardView(_ entry: LifeEntry) -> some View {
         let parsed = entry.parsedDate
         return VStack(alignment: .leading, spacing: 10) {
-            // 顶栏：形态印章 + 北京时间戳 + 地点 + 操作
+            // 顶栏：形态印章 + 北京时间戳 + 地点 + 管理操作
             HStack(spacing: 8) {
                 Text(entryTypeBadge(entry.type))
                     .font(ArchiveTypography.monoScale(size: 10.5, weight: .medium))
@@ -388,13 +419,37 @@ public struct StreamView: View {
 
                 Spacer()
 
+                // 管理级别专属操作按钮
                 Button {
-                    appState.highlightedEntry = entry
+                    toggleFeatured(entry)
                 } label: {
-                    Text("详情")
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Image(systemName: entry.featured == true ? "star.fill" : "star")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                 }
+                .buttonStyle(.plain)
+                .help(entry.featured == true ? "取消精选" : "设为精选")
+
+                Button("编辑") {
+                    editingEntry = entry
+                }
+                .font(ArchiveTypography.bodySans(size: 11))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .buttonStyle(.plain)
+
+                Button("删除") {
+                    entryToDelete = entry
+                    showDeleteConfirm = true
+                }
+                .font(ArchiveTypography.bodySans(size: 11))
+                .foregroundStyle(ArchivePalette.accentWarm)
+                .buttonStyle(.plain)
+
+                Button("详情") {
+                    appState.highlightedEntry = entry
+                }
+                .font(ArchiveTypography.bodySans(size: 11))
+                .foregroundStyle(ArchivePalette.inkMuted)
                 .buttonStyle(.plain)
             }
 
@@ -534,7 +589,7 @@ public struct StreamView: View {
 
             HStack(spacing: 8) {
                 TextField(
-                    appState.profile.displayCity.isEmpty ? "所处地点（如：杭州 · 深夜书房）" : appState.profile.displayCity,
+                    appState.profile.displayCity.isEmpty ? "所处地点（如：杭州，自动点亮行迹）" : appState.profile.displayCity,
                     text: $composeLocation
                 )
                 .textFieldStyle(.plain)
@@ -542,13 +597,6 @@ public struct StreamView: View {
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                TextField("6位城市代码（可选，如 330100 自动下渗足迹）", text: $composeCityCode)
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.monoScale(size: 11.5))
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
             TextEditor(text: $composeContent)
@@ -570,23 +618,25 @@ public struct StreamView: View {
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                 Button("落墨归档 ⌘↩") {
+                    let loc = composeLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let resolvedCode = FormatUtils.resolveCityCode(from: loc)
+                    let finalLoc = loc.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : loc
                     Task {
                         let req = CreateEntryRequest(
                             type: composeType.rawValue,
                             title: composeTitle,
                             content: composeContent,
                             occurredAt: FormatUtils.beijingISOString(),
-                            location: composeLocation.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : composeLocation,
+                            location: finalLoc,
                             featured: composeFeatured,
-                            cityCode: composeCityCode.isEmpty ? nil : composeCityCode,
-                            cityName: composeLocation.isEmpty ? nil : composeLocation
+                            cityCode: resolvedCode,
+                            cityName: finalLoc
                         )
                         _ = try? await SyncManager.shared.submitEntry(req)
                         AudioFeedback.shared.playShutter()
                         composeTitle = ""
                         composeContent = ""
                         composeLocation = ""
-                        composeCityCode = ""
                         composeFeatured = false
                         showComposeSheet = false
                         await appState.loadConfigAndProfile()
@@ -600,6 +650,163 @@ public struct StreamView: View {
         .padding(22)
         .frame(width: 500)
         .background(ArchivePalette.archivePaper)
+    }
+
+    // MARK: - 行内速写卡片与管理动作 (Inline Quick Composer & Management)
+
+    private var inlineQuickComposerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                HStack(spacing: 6) {
+                    ForEach(EntryType.allCases) { kind in
+                        PaperPillButton(
+                            title: kind.label,
+                            icon: kind.symbolName,
+                            isSelected: quickType == kind
+                        ) {
+                            quickType = kind
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Toggle("精选", isOn: $quickFeatured)
+                    .toggleStyle(.checkbox)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+            }
+
+            TextField("标题（选填，留空则为随笔短笺）", text: $quickTitle)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                .padding(8)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextEditor(text: $quickContent)
+                .font(ArchiveTypography.bodySans(size: 13))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .frame(minHeight: 68, maxHeight: 110)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    Group {
+                        if quickContent.isEmpty {
+                            Text("随时在此写下一笔散页手稿或灵感碎念（支持 #标签），按 ⌘↩ 直接归档…")
+                                .font(ArchiveTypography.bodySans(size: 12.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 10)
+                                .allowsHitTesting(false)
+                        }
+                    },
+                    alignment: .topLeading
+                )
+
+            HStack {
+                TextField(
+                    appState.profile.displayCity.isEmpty ? "地点（如：杭州，自动点亮行迹）" : appState.profile.displayCity,
+                    text: $quickLocation
+                )
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.bodySans(size: 11.5))
+                .padding(6)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .frame(maxWidth: 240)
+
+                Spacer()
+
+                Button("落墨归档 (⌘↩)") {
+                    submitInlineQuickEntry()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(quickContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(14)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
+    }
+
+    private func submitInlineQuickEntry() {
+        let content = quickContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return }
+        let location = quickLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedCode = FormatUtils.resolveCityCode(from: location)
+        let finalLoc = location.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : location
+        Task {
+            let req = CreateEntryRequest(
+                type: quickType.rawValue,
+                title: quickTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                content: content,
+                occurredAt: FormatUtils.beijingISOString(),
+                location: finalLoc,
+                featured: quickFeatured,
+                cityCode: resolvedCode,
+                cityName: finalLoc
+            )
+            _ = try? await SyncManager.shared.submitEntry(req)
+            AudioFeedback.shared.playShutter()
+            quickTitle = ""
+            quickContent = ""
+            quickLocation = ""
+            quickFeatured = false
+            await appState.loadConfigAndProfile()
+        }
+    }
+
+    private func toggleFeatured(_ entry: LifeEntry) {
+        guard entry.id > 0 else { return }
+        let newFeatured = !(entry.featured ?? false)
+        Task {
+            let req = UpdateEntryRequest(
+                type: entry.type,
+                title: entry.title,
+                content: entry.content,
+                occurredAt: entry.occurredAt,
+                location: entry.location,
+                featured: newFeatured,
+                cityCode: entry.cityCode,
+                cityName: entry.cityName
+            )
+            _ = try? await APIClient.shared.updateEntry(id: entry.id, req)
+            AudioFeedback.shared.playTink()
+            await appState.loadEntries(forceFull: true)
+        }
+    }
+
+    private func deleteEntryAction(_ entry: LifeEntry) {
+        guard entry.id > 0 else { return }
+        Task {
+            _ = try? await APIClient.shared.deleteEntry(id: entry.id)
+            AudioFeedback.shared.playPaperFlip()
+            await appState.loadEntries(forceFull: true)
+            await appState.loadConfigAndProfile()
+            if appState.highlightedEntry?.id == entry.id {
+                appState.highlightedEntry = nil
+            }
+        }
+    }
+
+    private func editEntrySheet(entry: LifeEntry) -> some View {
+        EditEntrySheetView(entry: entry) { updated in
+            Task {
+                _ = try? await APIClient.shared.updateEntry(id: entry.id, updated)
+                AudioFeedback.shared.playShutter()
+                await appState.loadEntries(forceFull: true)
+                await appState.loadConfigAndProfile()
+                editingEntry = nil
+            }
+        } onCancel: {
+            editingEntry = nil
+        }
     }
 
     private func entryDetailSheet(entry: LifeEntry) -> some View {
@@ -694,3 +901,95 @@ public struct StreamView: View {
         }
     }
 }
+
+/// 修改散页手稿弹窗表单 (EditEntrySheetView)
+public struct EditEntrySheetView: View {
+    public let entry: LifeEntry
+    public var onSave: (UpdateEntryRequest) -> Void
+    public var onCancel: () -> Void
+
+    @State private var editTitle: String
+    @State private var editContent: String
+    @State private var editLocation: String
+    @State private var editFeatured: Bool
+
+    public init(
+        entry: LifeEntry,
+        onSave: @escaping (UpdateEntryRequest) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.entry = entry
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _editTitle = State(initialValue: entry.title)
+        _editContent = State(initialValue: entry.content)
+        _editLocation = State(initialValue: entry.location ?? entry.cityName ?? "")
+        _editFeatured = State(initialValue: entry.featured ?? false)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑生活手稿")
+                .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            TextField("标题", text: $editTitle)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextEditor(text: $editContent)
+                .font(ArchiveTypography.bodySans(size: 13))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .frame(minHeight: 140)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("地点（如：杭州，自动更新行迹关联）", text: $editLocation)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.bodySans(size: 12))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            HStack {
+                Toggle("标记为精选印记", isOn: $editFeatured)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .tint(ArchivePalette.accentWarm)
+
+                Spacer()
+
+                Button("取消") {
+                    onCancel()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                Button("保存修改 ⌘↩") {
+                    let loc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let resolvedCode = FormatUtils.resolveCityCode(from: loc)
+                    let req = UpdateEntryRequest(
+                        type: entry.type,
+                        title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                        content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
+                        occurredAt: entry.occurredAt,
+                        location: loc.isEmpty ? nil : loc,
+                        featured: editFeatured,
+                        cityCode: resolvedCode,
+                        cityName: loc.isEmpty ? nil : loc
+                    )
+                    onSave(req)
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+        .background(ArchivePalette.archivePaper)
+    }
+}
+

@@ -345,7 +345,7 @@ public struct QuickCaptureView: View {
                 Circle()
                     .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                     .frame(width: 6, height: 6)
-                Text(appState.isPaired ? "已配对授信" : "只读模式 · 待配对")
+                Text(appState.isPaired ? "已配对授信 · 主理人全权管理" : "待配对激活")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }

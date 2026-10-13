@@ -390,6 +390,10 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/transactions", method: "POST", body: req)
     }
 
+    public func updateTransaction(id: Int, _ req: CreateTransactionRequest) async throws -> Transaction {
+        try await performEnvelopeRequest(path: "/api/v1/transactions/\(id)", method: "PUT", body: req)
+    }
+
     public func deleteTransaction(id: Int, purge: Bool = false) async throws {
         var query: [URLQueryItem] = []
         if purge {
@@ -421,14 +425,45 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/assets/gear", method: "POST", body: req)
     }
 
+    public func sellGearAsset(id: String, _ req: SellGearRequest) async throws -> GearItem {
+        try await performEnvelopeRequest(path: "/api/v1/assets/gear/\(id)/sell", method: "POST", body: req)
+    }
+
+    public func deleteGearAsset(id: String) async throws {
+        let _: DeleteResponse? = try? await performEnvelopeRequest(
+            path: "/api/v1/assets/gear/\(id)",
+            method: "DELETE"
+        )
+    }
+
     public func fetchCreditChannels() async throws -> [CreditChannel] {
         try await performEnvelopeRequest(path: "/api/v1/credit-channels")
+    }
+
+    /// 首次装帧初始化 (POST /api/v1/system/bootstrap)
+    public func bootstrapSystem(_ req: BootstrapRequest) async throws -> PairTicketResponse {
+        try await performEnvelopeRequest(path: "/api/v1/system/bootstrap", method: "POST", body: req)
     }
 
     // MARK: - 5. 造物、心愿单与旅游足迹 (Projects, Wishes & Footprints)
 
     public func fetchProjects() async throws -> [Project] {
         try await performEnvelopeRequest(path: "/api/v1/projects")
+    }
+
+    public func createProject(_ req: CreateProjectRequest) async throws -> Project {
+        try await performEnvelopeRequest(path: "/api/v1/projects", method: "POST", body: req)
+    }
+
+    public func updateProject(id: Int, _ req: CreateProjectRequest) async throws -> Project {
+        try await performEnvelopeRequest(path: "/api/v1/projects/\(id)", method: "PUT", body: req)
+    }
+
+    public func deleteProject(id: Int) async throws {
+        let _: DeleteResponse? = try? await performEnvelopeRequest(
+            path: "/api/v1/projects/\(id)",
+            method: "DELETE"
+        )
     }
 
     public func fetchWishes(kind: String? = nil, status: String? = nil) async throws -> WishesListResponse {
@@ -446,6 +481,21 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/wishes", method: "POST", body: req)
     }
 
+    public func updateWish(id: Int, _ req: CreateWishRequest) async throws -> Wish {
+        try await performEnvelopeRequest(path: "/api/v1/wishes/\(id)", method: "PUT", body: req)
+    }
+
+    public func resolveWish(id: Int, _ req: ResolveWishRequest) async throws -> Wish {
+        try await performEnvelopeRequest(path: "/api/v1/wishes/\(id)/resolve", method: "POST", body: req)
+    }
+
+    public func deleteWish(id: Int) async throws {
+        let _: DeleteResponse? = try? await performEnvelopeRequest(
+            path: "/api/v1/wishes/\(id)",
+            method: "DELETE"
+        )
+    }
+
     public func fetchFootprints(year: Int? = nil) async throws -> [Footprint] {
         var query: [URLQueryItem] = []
         if let year {
@@ -456,6 +506,17 @@ public actor APIClient {
 
     public func createFootprint(_ req: CreateFootprintRequest) async throws -> Footprint {
         try await performEnvelopeRequest(path: "/api/v1/footprints", method: "POST", body: req)
+    }
+
+    public func updateFootprint(id: Int, _ req: CreateFootprintRequest) async throws -> Footprint {
+        try await performEnvelopeRequest(path: "/api/v1/footprints/\(id)", method: "PUT", body: req)
+    }
+
+    public func deleteFootprint(id: Int) async throws {
+        let _: DeleteResponse? = try? await performEnvelopeRequest(
+            path: "/api/v1/footprints/\(id)",
+            method: "DELETE"
+        )
     }
 
     // MARK: - 6. 媒体预签名与统一上传 (R2 Presign & Multipart Fallback)

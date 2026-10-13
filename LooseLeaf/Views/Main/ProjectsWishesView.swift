@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 造物、心愿单与山川行迹视图 (ProjectsWishesView)
 /// 遵循「记录为一切的母体 (Record-First Architecture)」与「典藏票根 (RC-98)」规范
+/// 主理人全权管理：心愿圆满归册与编辑、山川足迹自动解析城市代码与编辑、造物项目全权 CRUD
 public struct ProjectsWishesView: View {
     @Bindable var appState: AppState
 
@@ -12,21 +13,21 @@ public struct ProjectsWishesView: View {
     }
 
     @State private var selectedTab: SubTab = .wishes
+
+    // 心愿单状态
     @State private var showNewWishSheet: Bool = false
+    @State private var resolvingWish: Wish?
+    @State private var editingWish: Wish?
+
+    // 足迹票根状态
     @State private var showNewFootprintSheet: Bool = false
+    @State private var editingFootprint: Footprint?
 
-    // 新建心愿表单状态
-    @State private var wishTitle: String = ""
-    @State private var wishKind: String = "item"
-    @State private var wishBudgetYuan: String = ""
-    @State private var wishSpec: String = ""
-    @State private var wishNote: String = ""
+    // 造物项目状态
+    @State private var showNewProjectSheet: Bool = false
+    @State private var editingProject: Project?
 
-    // 新建足迹表单状态
-    @State private var fpCityName: String = ""
-    @State private var fpCityCode: String = "330100"
-    @State private var fpTitle: String = ""
-    @State private var fpNote: String = ""
+    @State private var errorNotice: String?
 
     public init(appState: AppState) {
         self.appState = appState
@@ -40,7 +41,7 @@ public struct ProjectsWishesView: View {
                         Text("造物、心愿与山川行迹")
                             .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("二级投影均与主时间流伴生联动 · 无孤立数据孤岛")
+                        Text("二级投影均与主时间流伴生联动 · 主理人全权管理")
                             .font(ArchiveTypography.bodySans(size: 12.5))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }
@@ -60,6 +61,12 @@ public struct ProjectsWishesView: View {
                     }
                 }
 
+                if let errorNotice {
+                    Text(errorNotice)
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
+
                 switch selectedTab {
                 case .wishes:
                     wishesSection
@@ -72,10 +79,39 @@ public struct ProjectsWishesView: View {
             .padding(24)
         }
         .sheet(isPresented: $showNewWishSheet) {
-            newWishSheetView
+            NewWishSheet(appState: appState) {
+                showNewWishSheet = false
+            }
+        }
+        .sheet(item: $resolvingWish) { wish in
+            ResolveWishSheet(appState: appState, wish: wish) {
+                resolvingWish = nil
+            }
+        }
+        .sheet(item: $editingWish) { wish in
+            EditWishSheet(appState: appState, wish: wish) {
+                editingWish = nil
+            }
         }
         .sheet(isPresented: $showNewFootprintSheet) {
-            newFootprintSheetView
+            NewFootprintSheet(appState: appState) {
+                showNewFootprintSheet = false
+            }
+        }
+        .sheet(item: $editingFootprint) { fp in
+            EditFootprintSheet(appState: appState, footprint: fp) {
+                editingFootprint = nil
+            }
+        }
+        .sheet(isPresented: $showNewProjectSheet) {
+            NewProjectSheet(appState: appState) {
+                showNewProjectSheet = false
+            }
+        }
+        .sheet(item: $editingProject) { proj in
+            EditProjectSheet(appState: appState, project: proj) {
+                editingProject = nil
+            }
         }
     }
 
@@ -88,17 +124,15 @@ public struct ProjectsWishesView: View {
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
-                if appState.isPaired {
-                    Button {
-                        showNewWishSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus")
-                            Text("许下新心愿")
-                        }
+                Button {
+                    showNewWishSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("许下新心愿")
                     }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             }
 
             if appState.wishes.isEmpty {
@@ -153,6 +187,41 @@ public struct ProjectsWishesView: View {
                                         .foregroundStyle(ArchivePalette.accentMoss)
                                 }
                             }
+
+                            // 主理人操作栏
+                            HStack(spacing: 8) {
+                                if wish.status != "fulfilled" {
+                                    Button("圆满心愿") {
+                                        resolvingWish = wish
+                                    }
+                                    .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(ArchivePalette.accentMoss)
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    editingWish = wish
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .help("修订心愿")
+
+                                Button {
+                                    deleteWish(wish)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .help("删除心愿")
+                            }
+                            .padding(.top, 4)
                         }
                         .padding(14)
                         .background(ArchivePalette.archiveSubtle)
@@ -176,17 +245,15 @@ public struct ProjectsWishesView: View {
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
-                if appState.isPaired {
-                    Button {
-                        showNewFootprintSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "location.fill.viewfinder")
-                            Text("点亮城市足迹")
-                        }
+                Button {
+                    showNewFootprintSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill.viewfinder")
+                        Text("点亮城市足迹")
                     }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             }
 
             if appState.footprints.isEmpty {
@@ -219,10 +286,30 @@ public struct ProjectsWishesView: View {
 
                             // 右联：旅程手记正券
                             VStack(alignment: .leading, spacing: 6) {
-                                Text((fp.title?.isEmpty == false) ? fp.title! : "\(fp.cityName) · 行旅手记")
-                                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                                    .lineLimit(1)
+                                HStack {
+                                    Text((fp.title?.isEmpty == false) ? fp.title! : "\(fp.cityName) · 行旅手记")
+                                        .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Button {
+                                        editingFootprint = fp
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        deleteFootprint(fp)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
 
                                 Text((fp.note?.isEmpty == false) ? fp.note! : "行至此处，留下一纸驻足印记。")
                                     .font(ArchiveTypography.bodySans(size: 12))
@@ -256,9 +343,21 @@ public struct ProjectsWishesView: View {
 
     private var projectsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("手艺与造物 · 共 \(appState.projects.count) 项")
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+            HStack {
+                Text("手艺与造物 · 共 \(appState.projects.count) 项")
+                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Spacer()
+                Button {
+                    showNewProjectSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "hammer")
+                        Text("新建造物项目")
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            }
 
             if appState.projects.isEmpty {
                 emptyPlaceholder(title: "尚无造物归档", subtitle: "软件架构实验、开源工具与生活手艺方案将在此静默陈列")
@@ -295,15 +394,39 @@ public struct ProjectsWishesView: View {
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                                 .lineLimit(3)
 
-                            if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
-                                Link(destination: url) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "arrow.up.right.square")
-                                        Text("访问源码仓库")
+                            HStack {
+                                if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
+                                    Link(destination: url) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.up.right.square")
+                                            Text("源码仓库")
+                                        }
+                                        .font(ArchiveTypography.monoScale(size: 11))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
                                     }
-                                    .font(ArchiveTypography.monoScale(size: 11))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
                                 }
+
+                                Spacer()
+
+                                Button {
+                                    editingProject = proj
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .help("修订项目")
+
+                                Button {
+                                    deleteProject(proj)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .help("删除项目")
                             }
                         }
                         .padding(14)
@@ -319,139 +442,40 @@ public struct ProjectsWishesView: View {
         }
     }
 
-    // MARK: - 弹窗表单
-
-    private var newWishSheetView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("许下新心愿")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            HStack(spacing: 6) {
-                PaperPillButton(title: "心仪好物", isSelected: wishKind == "item") { wishKind = "item" }
-                PaperPillButton(title: "远方旅程", isSelected: wishKind == "travel") { wishKind = "travel" }
-                PaperPillButton(title: "阶段里程碑", isSelected: wishKind == "milestone") { wishKind = "milestone" }
-            }
-
-            TextField("心愿名称", text: $wishTitle)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("规格或补充（可选）", text: $wishSpec)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("预期预算金额（元，如 2399.00）", text: $wishBudgetYuan)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 13))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("心愿初衷手记", text: $wishNote)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            HStack {
-                Button("取消") { showNewWishSheet = false }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                Spacer()
-                Button("存入心愿单") {
-                    let cents = FormatUtils.parseYuanToCents(wishBudgetYuan) ?? 0
-                    Task {
-                        let req = CreateWishRequest(
-                            title: wishTitle,
-                            kind: wishKind,
-                            note: wishNote,
-                            spec: wishSpec,
-                            budget: cents
-                        )
-                        _ = try? await APIClient.shared.createWish(req)
-                        AudioFeedback.shared.playShutter()
-                        await appState.loadProjectsWishesFootprints()
-                        await appState.loadEntries(forceFull: true)
-                        wishTitle = ""
-                        wishSpec = ""
-                        wishBudgetYuan = ""
-                        wishNote = ""
-                        showNewWishSheet = false
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .disabled(wishTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    private func deleteWish(_ wish: Wish) {
+        Task {
+            do {
+                try await APIClient.shared.deleteWish(id: wish.id)
+                AudioFeedback.shared.playTink()
+                await appState.loadProjectsWishesFootprints()
+            } catch {
+                errorNotice = error.localizedDescription
             }
         }
-        .padding(20)
-        .frame(width: 380)
-        .background(ArchivePalette.archivePaper)
     }
 
-    private var newFootprintSheetView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("点亮城市行迹票根")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            TextField("城市中文名称（如：大理市、苏州市）", text: $fpCityName)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("6 位行政区划代码（如：532900）", text: $fpCityCode)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 12.5))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("旅程标题（如：春日苍山洱海漫游）", text: $fpTitle)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextField("行迹随笔手记", text: $fpNote)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            HStack {
-                Button("取消") { showNewFootprintSheet = false }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                Spacer()
-                Button("镌刻票根并伴生入流") {
-                    Task {
-                        let req = CreateFootprintRequest(
-                            cityCode: fpCityCode.trimmingCharacters(in: .whitespacesAndNewlines),
-                            cityName: fpCityName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            title: fpTitle,
-                            note: fpNote
-                        )
-                        _ = try? await APIClient.shared.createFootprint(req)
-                        AudioFeedback.shared.playShutter()
-                        await appState.loadProjectsWishesFootprints()
-                        await appState.loadEntries(forceFull: true)
-                        fpCityName = ""
-                        fpTitle = ""
-                        fpNote = ""
-                        showNewFootprintSheet = false
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .disabled(fpCityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    private func deleteFootprint(_ fp: Footprint) {
+        Task {
+            do {
+                try await APIClient.shared.deleteFootprint(id: fp.id)
+                AudioFeedback.shared.playTink()
+                await appState.loadProjectsWishesFootprints()
+            } catch {
+                errorNotice = error.localizedDescription
             }
         }
-        .padding(20)
-        .frame(width: 380)
-        .background(ArchivePalette.archivePaper)
+    }
+
+    private func deleteProject(_ proj: Project) {
+        Task {
+            do {
+                try await APIClient.shared.deleteProject(id: proj.id)
+                AudioFeedback.shared.playTink()
+                await appState.loadProjectsWishesFootprints()
+            } catch {
+                errorNotice = error.localizedDescription
+            }
+        }
     }
 
     private func emptyPlaceholder(title: String, subtitle: String) -> some View {
@@ -487,12 +511,790 @@ public struct ProjectsWishesView: View {
     }
 }
 
+// MARK: - 新建心愿单弹窗 (NewWishSheet)
+
+public struct NewWishSheet: View {
+    @Bindable var appState: AppState
+    var onDismiss: () -> Void
+
+    @State private var title: String = ""
+    @State private var kind: String = "item"
+    @State private var budgetYuan: String = ""
+    @State private var spec: String = ""
+    @State private var note: String = ""
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("许下新心愿")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            HStack(spacing: 6) {
+                PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
+                PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
+                PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
+            }
+
+            TextField("心愿名称（如：M3 MacBook Pro、苍山洱海自驾）", text: $title)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("规格参数或目的地补充（可选）", text: $spec)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("预期预算金额（元，如 18999.00）", text: $budgetYuan)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.monoScale(size: 13))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("心愿初衷手记", text: $note)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("存入心愿单") {
+                    submitWish()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func submitWish() {
+        let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = CreateWishRequest(
+                    title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                    kind: kind,
+                    note: note.isEmpty ? nil : note,
+                    spec: spec.isEmpty ? nil : spec,
+                    budget: cents
+                )
+                _ = try await APIClient.shared.createWish(req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+// MARK: - 修订心愿弹窗 (EditWishSheet)
+
+public struct EditWishSheet: View {
+    @Bindable var appState: AppState
+    let wish: Wish
+    var onDismiss: () -> Void
+
+    @State private var title: String
+    @State private var kind: String
+    @State private var budgetYuan: String
+    @State private var spec: String
+    @State private var note: String
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    public init(appState: AppState, wish: Wish, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.wish = wish
+        self.onDismiss = onDismiss
+        _title = State(initialValue: wish.title)
+        _kind = State(initialValue: wish.kind)
+        _budgetYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
+        _spec = State(initialValue: wish.spec ?? "")
+        _note = State(initialValue: wish.note ?? "")
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("修订心愿")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            HStack(spacing: 6) {
+                PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
+                PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
+                PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
+            }
+
+            TextField("心愿名称", text: $title)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("规格参数或目的地补充", text: $spec)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("意向预算金额（元）", text: $budgetYuan)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.monoScale(size: 13))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("初衷手记", text: $note)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("保存修改") {
+                    updateWish()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func updateWish() {
+        let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = CreateWishRequest(
+                    title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                    kind: kind,
+                    note: note.isEmpty ? nil : note,
+                    spec: spec.isEmpty ? nil : spec,
+                    budget: cents
+                )
+                _ = try await APIClient.shared.updateWish(id: wish.id, req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+// MARK: - 圆满心愿弹窗 (ResolveWishSheet)
+
+public struct ResolveWishSheet: View {
+    @Bindable var appState: AppState
+    let wish: Wish
+    var onDismiss: () -> Void
+
+    @State private var actualCostYuan: String
+    @State private var resolutionType: String = "exact" // exact | altered | relinquished
+    @State private var createTransaction: Bool = true
+    @State private var createGearAsset: Bool
+    @State private var createLifeEntry: Bool = true
+    @State private var entryContent: String = ""
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    public init(appState: AppState, wish: Wish, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.wish = wish
+        self.onDismiss = onDismiss
+        _actualCostYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
+        _createGearAsset = State(initialValue: wish.kind == "item")
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("圆满心愿 · 载入典藏")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            Text("达成目标：\(wish.title)")
+                .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+
+            // 达成方式单选
+            HStack(spacing: 6) {
+                PaperPillButton(title: "如愿拿下", isSelected: resolutionType == "exact") { resolutionType = "exact" }
+                PaperPillButton(title: "替代拿下", isSelected: resolutionType == "altered") { resolutionType = "altered" }
+                PaperPillButton(title: "理性拔草", isSelected: resolutionType == "relinquished") { resolutionType = "relinquished" }
+            }
+
+            // 实付金额
+            HStack(spacing: 4) {
+                Text("实付金额 ¥")
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("0.00", text: $actualCostYuan)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                    .padding(6)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            // 联动联动伴生复选
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
+                    .toggleStyle(.checkbox)
+                    .font(ArchiveTypography.bodySans(size: 12))
+
+                if wish.kind == "item" {
+                    Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
+                        .toggleStyle(.checkbox)
+                        .font(ArchiveTypography.bodySans(size: 12))
+                }
+
+                Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
+                    .toggleStyle(.checkbox)
+                    .font(ArchiveTypography.bodySans(size: 12))
+            }
+
+            if createLifeEntry {
+                TextField("圆梦感言手记（如：寻觅良久，终得所愿…）", text: $entryContent)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("确认圆满归册") {
+                    submitResolve()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func submitResolve() {
+        let cents = FormatUtils.parseYuanToCents(actualCostYuan) ?? 0
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = ResolveWishRequest(
+                    fulfilledAt: FormatUtils.beijingISOString(),
+                    actualCost: cents,
+                    resolutionType: resolutionType,
+                    actualTitle: wish.title,
+                    createTransaction: createTransaction,
+                    createGearAsset: createGearAsset,
+                    createLifeEntry: createLifeEntry,
+                    entryContent: entryContent.isEmpty ? nil : entryContent
+                )
+                _ = try await APIClient.shared.resolveWish(id: wish.id, req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                await appState.loadEntries(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadConfigAndProfile()
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+// MARK: - 点亮城市足迹弹窗 (NewFootprintSheet)
+
+public struct NewFootprintSheet: View {
+    @Bindable var appState: AppState
+    var onDismiss: () -> Void
+
+    @State private var cityName: String = ""
+    @State private var title: String = ""
+    @State private var note: String = ""
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    private var resolvedCode: String {
+        FormatUtils.resolveCityCode(from: cityName) ?? "330100"
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("点亮城市行迹票根")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            HStack {
+                TextField("城市中文名称（如：大理市、苏州市、杭州）", text: $cityName)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                if !cityName.isEmpty {
+                    Text("代码: \(resolvedCode)")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+
+            TextField("旅程标题（如：春日苍山洱海漫游，可选）", text: $title)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("行迹随笔手记（可选）", text: $note)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("镌刻票根并伴生入流") {
+                    submitFootprint()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func submitFootprint() {
+        let cleanCity = cityName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanCity.isEmpty else { return }
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = CreateFootprintRequest(
+                    cityCode: resolvedCode,
+                    cityName: cleanCity,
+                    title: title.isEmpty ? nil : title,
+                    note: note.isEmpty ? nil : note
+                )
+                _ = try await APIClient.shared.createFootprint(req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                await appState.loadEntries(forceFull: true)
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+// MARK: - 修订足迹票根弹窗 (EditFootprintSheet)
+
+public struct EditFootprintSheet: View {
+    @Bindable var appState: AppState
+    let footprint: Footprint
+    var onDismiss: () -> Void
+
+    @State private var cityName: String
+    @State private var title: String
+    @State private var note: String
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    public init(appState: AppState, footprint: Footprint, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.footprint = footprint
+        self.onDismiss = onDismiss
+        _cityName = State(initialValue: footprint.cityName)
+        _title = State(initialValue: footprint.title ?? "")
+        _note = State(initialValue: footprint.note ?? "")
+    }
+
+    private var resolvedCode: String {
+        FormatUtils.resolveCityCode(from: cityName) ?? footprint.cityCode
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("修订行迹票根")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            HStack {
+                TextField("城市名称", text: $cityName)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                Text("代码: \(resolvedCode)")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            TextField("旅程标题", text: $title)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("随笔手记", text: $note)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("保存票根修改") {
+                    updateFootprint()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func updateFootprint() {
+        let cleanCity = cityName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanCity.isEmpty else { return }
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = CreateFootprintRequest(
+                    cityCode: resolvedCode,
+                    cityName: cleanCity,
+                    title: title.isEmpty ? nil : title,
+                    visitedAt: footprint.visitedAt,
+                    note: note.isEmpty ? nil : note
+                )
+                _ = try await APIClient.shared.updateFootprint(id: footprint.id, req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+// MARK: - 新建造物项目弹窗 (NewProjectSheet)
+
+public struct NewProjectSheet: View {
+    @Bindable var appState: AppState
+    var onDismiss: () -> Void
+
+    @State private var title: String = ""
+    @State private var subtitle: String = ""
+    @State private var description: String = ""
+    @State private var category: String = "开源造物"
+    @State private var status: String = "持续维护"
+    @State private var githubUrl: String = ""
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("新建造物与项目")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            TextField("项目名称（如：Loose-Leaf macOS 原生客户端）", text: $title)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("副标题或一句话定义（可选）", text: $subtitle)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            HStack(spacing: 8) {
+                TextField("分类（如：开源造物、架构实验）", text: $category)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                TextField("状态（如：持续维护、稳定归档）", text: $status)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
+            TextField("项目详细背景与设计手记", text: $description)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("GitHub 源码仓库链接（可选）", text: $githubUrl)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.monoScale(size: 12))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("创建造物项目") {
+                    submitProject()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func submitProject() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return }
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = CreateProjectRequest(
+                    title: cleanTitle,
+                    subtitle: subtitle.isEmpty ? nil : subtitle,
+                    description: description,
+                    category: category.isEmpty ? nil : category,
+                    status: status.isEmpty ? nil : status,
+                    githubUrl: githubUrl.isEmpty ? nil : githubUrl
+                )
+                _ = try await APIClient.shared.createProject(req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+// MARK: - 修订造物项目弹窗 (EditProjectSheet)
+
+public struct EditProjectSheet: View {
+    @Bindable var appState: AppState
+    let project: Project
+    var onDismiss: () -> Void
+
+    @State private var title: String
+    @State private var subtitle: String
+    @State private var description: String
+    @State private var category: String
+    @State private var status: String
+    @State private var githubUrl: String
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    public init(appState: AppState, project: Project, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.project = project
+        self.onDismiss = onDismiss
+        _title = State(initialValue: project.title)
+        _subtitle = State(initialValue: project.subtitle ?? "")
+        _description = State(initialValue: project.description)
+        _category = State(initialValue: project.category ?? "开源造物")
+        _status = State(initialValue: project.status ?? "持续维护")
+        _githubUrl = State(initialValue: project.githubUrl ?? "")
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("修订造物与项目")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            TextField("项目名称", text: $title)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("副标题或一句话定义", text: $subtitle)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            HStack(spacing: 8) {
+                TextField("分类", text: $category)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                TextField("状态", text: $status)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
+            TextField("项目详细背景手记", text: $description)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("GitHub 源码仓库链接", text: $githubUrl)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.monoScale(size: 12))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            HStack {
+                Button("取消") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("保存项目修改") {
+                    updateProject()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func updateProject() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return }
+        isSubmitting = true
+        errorText = nil
+        Task {
+            do {
+                let req = CreateProjectRequest(
+                    title: cleanTitle,
+                    subtitle: subtitle.isEmpty ? nil : subtitle,
+                    description: description,
+                    category: category.isEmpty ? nil : category,
+                    status: status.isEmpty ? nil : status,
+                    githubUrl: githubUrl.isEmpty ? nil : githubUrl
+                )
+                _ = try await APIClient.shared.updateProject(id: project.id, req)
+                AudioFeedback.shared.playShutter()
+                await appState.loadProjectsWishesFootprints()
+                onDismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+
 /// 主理人生活手记与器物图鉴视图 (CuratorDossierView)
 /// 严格遵守：100% 由 GET /api/v1/profile 动态驱动，严禁硬编码姓名或城市
 public struct CuratorDossierView: View {
     @Bindable var appState: AppState
 
     @State private var showEditProfileSheet: Bool = false
+    @State private var sellingGear: GearItem?
     @State private var editName: String = ""
     @State private var editTitle: String = ""
     @State private var editCity: String = ""
@@ -539,19 +1341,17 @@ public struct CuratorDossierView: View {
 
                             Spacer()
 
-                            if appState.isPaired {
-                                Button("修订档案") {
-                                    editName = prof.name
-                                    editTitle = prof.title
-                                    editCity = prof.currentCity
-                                    editLocation = prof.location
-                                    editMotto = prof.motto
-                                    editBio = prof.bio
-                                    editManifesto = prof.manifesto
-                                    showEditProfileSheet = true
-                                }
-                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            Button("修订档案") {
+                                editName = prof.name
+                                editTitle = prof.title
+                                editCity = prof.currentCity
+                                editLocation = prof.location
+                                editMotto = prof.motto
+                                editBio = prof.bio
+                                editManifesto = prof.manifesto
+                                showEditProfileSheet = true
                             }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         }
 
                         if !prof.displayCity.isEmpty {
@@ -600,7 +1400,7 @@ public struct CuratorDossierView: View {
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
                     if prof.edcGear.isEmpty {
-                        Text("尚无随身器物记录。在资产中枢或 Web 管理台中添置设备后将自动同步展示。")
+                        Text("尚无随身器物记录。在资产中枢中添置设备后将自动同步展示。")
                             .font(ArchiveTypography.bodySans(size: 12.5))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(24)
@@ -631,10 +1431,39 @@ public struct CuratorDossierView: View {
                                             .foregroundStyle(ArchivePalette.inkSecondary)
                                     }
 
-                                    if let price = gear.priceCents, price > 0 {
-                                        Text("购入记录 \(FormatUtils.formattedYuan(cents: price, includeSymbol: true))")
-                                            .font(ArchiveTypography.monoScale(size: 11))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    HStack {
+                                        if let price = gear.priceCents, price > 0 {
+                                            Text("购入 \(FormatUtils.formattedYuan(cents: price, includeSymbol: true))")
+                                                .font(ArchiveTypography.monoScale(size: 11))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                        }
+
+                                        if let sold = gear.soldPriceCents, sold > 0 {
+                                            Text("回血 \(FormatUtils.formattedYuan(cents: sold, includeSymbol: true))")
+                                                .font(ArchiveTypography.monoScale(size: 11))
+                                                .foregroundStyle(ArchivePalette.accentMoss)
+                                        }
+
+                                        Spacer()
+
+                                        if gear.status != "sold" {
+                                            Button("转让回血") {
+                                                sellingGear = gear
+                                            }
+                                            .font(ArchiveTypography.bodySans(size: 10.5))
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                        }
+
+                                        Button {
+                                            deleteGear(gear)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("删除设备")
                                     }
                                 }
                                 .padding(14)
@@ -653,6 +1482,25 @@ public struct CuratorDossierView: View {
         }
         .sheet(isPresented: $showEditProfileSheet) {
             editProfileSheetView
+        }
+        .sheet(item: $sellingGear) { gear in
+            SellGearSheet(gear: gear) {
+                sellingGear = nil
+            } onSold: {
+                Task {
+                    await appState.loadConfigAndProfile()
+                    await appState.loadTransactionsAndAssets(forceFull: true)
+                }
+            }
+        }
+    }
+
+    private func deleteGear(_ gear: GearItem) {
+        Task {
+            try? await APIClient.shared.deleteGearAsset(id: gear.id)
+            AudioFeedback.shared.playTink()
+            await appState.loadConfigAndProfile()
+            await appState.loadTransactionsAndAssets(forceFull: true)
         }
     }
 

@@ -150,33 +150,13 @@ public struct StreamView: View {
             // 导航菜单项
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(WorkbenchSection.allCases) { section in
-                    let selected = appState.activeSection == section
-                    Button {
+                    WorkbenchNavRow(
+                        section: section,
+                        selected: appState.activeSection == section
+                    ) {
                         appState.activeSection = section
                         AudioFeedback.shared.playPaperFlip()
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: section.icon)
-                                .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                                .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                                .frame(width: 18)
-                            Text(section.title)
-                                .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
-                                .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(selected ? ArchivePalette.archiveSubtle : Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(selected ? ArchivePalette.borderDivider : Color.clear, lineWidth: 0.5)
-                        )
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 10)
@@ -228,6 +208,51 @@ public struct StreamView: View {
             Text(label)
                 .font(ArchiveTypography.bodySans(size: 10.5))
                 .foregroundStyle(ArchivePalette.inkMuted)
+        }
+    }
+
+    /// 侧边导航行：整行可点（contentShape 修透明背景不参与命中测试的问题），
+    /// 悬停显背景、选中态 0.14s 局部过渡——反馈即时且动画不外溢全树。
+    private struct WorkbenchNavRow: View {
+        let section: WorkbenchSection
+        let selected: Bool
+        let action: () -> Void
+
+        @State private var isHovering: Bool = false
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    Image(systemName: section.icon)
+                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        .frame(width: 18)
+                    Text(section.title)
+                        .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(rowFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(selected ? ArchivePalette.borderDivider : Color.clear, lineWidth: 0.5)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .animation(.easeOut(duration: 0.14), value: selected)
+            .animation(.easeOut(duration: 0.1), value: isHovering)
+            .onHover { isHovering = $0 }
+        }
+
+        private var rowFill: Color {
+            if selected { return ArchivePalette.archiveSubtle }
+            return isHovering ? ArchivePalette.archiveSubtle.opacity(0.45) : .clear
         }
     }
 

@@ -1,0 +1,53 @@
+name: macOS Release
+
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    name: Build Release App Bundle (unsigned)
+    runs-on: macos-26
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Check Swift & Xcode Version
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build App Bundle (unsigned)
+        run: |
+          xcodebuild -project LooseLeaf.xcodeproj -scheme LooseLeaf -configuration Release \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package Artifact
+        run: |
+          cd build/DerivedData/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent LooseLeaf.app LooseLeaf-unsigned.zip
+          ls -la
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LooseLeaf-unsigned-app
+          path: build/DerivedData/Build/Products/Release/LooseLeaf-unsigned.zip
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/DerivedData/Build/Products/Release/LooseLeaf-unsigned.zip
+          body: |
+            未签名构建产物（LooseLeaf-unsigned.zip）。
+
+            正式分发前请在本机完成签名与公证（需要 Developer ID 证书）：
+            ```
+            codesign --deep --force --options runtime --sign "Developer ID Application: <你的证书>" LooseLeaf.app
+            xcrun notarytool submit LooseLeaf.app.zip --keychain-profile <profile> --wait
+            xcrun stapler staple LooseLeaf.app
+            ```

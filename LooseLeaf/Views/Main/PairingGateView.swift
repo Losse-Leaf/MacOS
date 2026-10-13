@@ -4,6 +4,7 @@ import AppKit
 /// 主理人工作台激活与配对门禁 (PairingGateView)
 /// 严格遵循：macOS 桌面端彻底废除访客只读模式；
 /// 未配对时全屏拦截，支持「首次装帧设密」或「管理员密钥一键直登」/「6位配对码」，配对后即为全权管理级别。
+@MainActor
 public struct PairingGateView: View {
     @Bindable var appState: AppState
 
@@ -22,7 +23,7 @@ public struct PairingGateView: View {
 
     // 首次装帧表单
     @State private var bootstrapName: String = "主理人"
-    @State private var bootstrapLocation: String = "杭州"
+    @State private var bootstrapLocation: String = ""
     @State private var bootstrapPasscode: String = ""
     @State private var bootstrapConfirm: String = ""
 
@@ -157,7 +158,7 @@ public struct PairingGateView: View {
 
                     Button("重新连接") {
                         APIClient.shared.setBaseURL(appState.hubURLString)
-                        Task {
+                        Task { @MainActor in
                             await probeHub()
                         }
                     }
@@ -204,7 +205,7 @@ public struct PairingGateView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             Button("再次尝试连接") {
-                Task {
+                Task { @MainActor in
                     await probeHub()
                 }
             }
@@ -409,7 +410,7 @@ public struct PairingGateView: View {
         guard !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = BootstrapRequest(
                     curatorName: bootstrapName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -434,7 +435,7 @@ public struct PairingGateView: View {
         guard !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
-        Task {
+        Task { @MainActor in
             do {
                 try await appState.verifyWithMasterPasscode(passcodeInput, hubURL: appState.hubURLString)
                 AudioFeedback.shared.playShutter()
@@ -450,7 +451,7 @@ public struct PairingGateView: View {
         guard !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
-        Task {
+        Task { @MainActor in
             do {
                 try await appState.pairWithPinCode(pinCodeString, hubURL: appState.hubURLString)
                 AudioFeedback.shared.playShutter()

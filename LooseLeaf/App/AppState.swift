@@ -442,7 +442,7 @@ public final class AppState {
             let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
             let hub = comps?.queryItems?.first(where: { $0.name == "hub" })?.value ?? hubURLString
             if let ticket = comps?.queryItems?.first(where: { $0.name == "ticket" })?.value, !ticket.isEmpty {
-                Task {
+                Task { @MainActor in
                     do {
                         try await pairWithTicket(ticket, hubURL: hub)
                     } catch {
@@ -461,7 +461,7 @@ public final class AppState {
 
     public func showTemporaryBanner(_ text: String) {
         self.statusBanner = text
-        Task {
+        Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_200_000_000)
             if self.statusBanner == text {
                 self.statusBanner = nil

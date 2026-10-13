@@ -3,6 +3,7 @@ import SwiftUI
 /// 桌面端独立记账与资产管理中枢视图 (LedgerAssetsView)
 /// 严格遵循 docs/backend.md §5.3 & §5.3.1 (RC-53 隐私隔离与 Cents 整型精度)
 /// 主理人全权管理级别：支持自然语言+可视化双模记账、账目编辑/删除、固资设备增删改与转让回血
+@MainActor
 public struct LedgerAssetsView: View {
     @Bindable var appState: AppState
 
@@ -702,7 +703,7 @@ public struct LedgerAssetsView: View {
 
                 Button("保存基准") {
                     let cents = FormatUtils.parseYuanToCents(initialBalanceYuanInput) ?? 0
-                    Task {
+                    Task { @MainActor in
                         try? await APIClient.shared.updateInitialLiquidBalance(cents: cents)
                         await appState.loadTransactionsAndAssets(forceFull: true)
                         showCalibrateBalanceSheet = false
@@ -732,7 +733,7 @@ public struct LedgerAssetsView: View {
         SellGearSheet(gear: gear) {
             sellingGear = nil
         } onSold: {
-            Task {
+            Task { @MainActor in
                 await appState.loadTransactionsAndAssets(forceFull: true)
                 await appState.loadConfigAndProfile()
             }
@@ -744,7 +745,7 @@ public struct LedgerAssetsView: View {
     private func submitQuickLine() {
         guard let parsed = FormatUtils.parseQuickLedgerInput(quickLine) else { return }
         errorNotice = nil
-        Task {
+        Task { @MainActor in
             do {
                 _ = try await appState.submitQuickLedger(
                     amountCents: parsed.amountCents,
@@ -765,7 +766,7 @@ public struct LedgerAssetsView: View {
         let cleanTitle = formTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalTitle = cleanTitle.isEmpty ? formCategory : cleanTitle
 
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateTransactionRequest(
                     amount: cents,
@@ -797,7 +798,7 @@ public struct LedgerAssetsView: View {
     }
 
     private func deleteTransaction(_ tx: Transaction) {
-        Task {
+        Task { @MainActor in
             do {
                 try await APIClient.shared.deleteTransaction(id: tx.id)
                 AudioFeedback.shared.playTink()
@@ -809,7 +810,7 @@ public struct LedgerAssetsView: View {
     }
 
     private func deleteGear(_ gear: GearItem) {
-        Task {
+        Task { @MainActor in
             do {
                 try await APIClient.shared.deleteGearAsset(id: gear.id)
                 AudioFeedback.shared.playTink()
@@ -824,6 +825,7 @@ public struct LedgerAssetsView: View {
 
 // MARK: - 独立弹窗组件：修订流水 (EditTransactionSheet)
 
+@MainActor
 public struct EditTransactionSheet: View {
     @Bindable var appState: AppState
     let transaction: Transaction
@@ -937,7 +939,7 @@ public struct EditTransactionSheet: View {
         guard let cents = FormatUtils.parseYuanToCents(amountYuan), cents > 0 else { return }
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateTransactionRequest(
                     amount: cents,
@@ -962,6 +964,7 @@ public struct EditTransactionSheet: View {
 
 // MARK: - 独立弹窗组件：添置随身设备 (AddGearSheet)
 
+@MainActor
 public struct AddGearSheet: View {
     @Bindable var appState: AppState
     var onDismiss: () -> Void
@@ -1045,7 +1048,7 @@ public struct AddGearSheet: View {
         let cents = FormatUtils.parseYuanToCents(priceYuan) ?? 0
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = AddGearAssetRequest(
                     name: name,
@@ -1072,6 +1075,7 @@ public struct AddGearSheet: View {
 
 // MARK: - 独立弹窗组件：转让回血 (SellGearSheet)
 
+@MainActor
 public struct SellGearSheet: View {
     let gear: GearItem
     var onDismiss: () -> Void
@@ -1137,7 +1141,7 @@ public struct SellGearSheet: View {
         guard let cents = FormatUtils.parseYuanToCents(soldPriceYuan), cents > 0 else { return }
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = SellGearRequest(
                     soldPriceCents: cents,

@@ -107,19 +107,25 @@ public final class SyncManager {
 
     // MARK: - 本地磁盘缓存路径 (支持主应用与 WidgetKit 小组件共享读取)
 
+    /// App Group 标识符（必须与 `LooseLeaf/LooseLeaf.entitlements` 及 `LooseLeafWidget/LooseLeafWidgetBundle.swift` 保持一致）
+    public nonisolated static let appGroupIdentifier = "group.com.looseleaf.archive"
+
+    /// 快照相对路径（与 WidgetArchiveReader 读取路径保持一致：LooseLeafArchive/archive_snapshot_v1.json）
     public nonisolated static var sharedStorageDirectory: URL {
-        if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.looseleaf.archive.shared") {
-            return groupURL
+        let dir: URL
+        if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
+            dir = groupURL.appendingPathComponent("LooseLeafArchive", isDirectory: true)
+        } else {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            dir = appSupport.appendingPathComponent("LooseLeafArchive", isDirectory: true)
         }
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = appSupport.appendingPathComponent("LooseLeaf", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 
     public nonisolated static var snapshotFileURL: URL {
-        sharedStorageDirectory.appendingPathComponent("archive_snapshot.json")
+        sharedStorageDirectory.appendingPathComponent("archive_snapshot_v1.json")
     }
 
     public nonisolated static func loadFromDisk() -> LocalArchiveSnapshot? {
@@ -184,7 +190,7 @@ public final class SyncManager {
             }
         }
 
-        let tempId = -Int(Date().timeIntervalSince1970 * 1000) % 900_000 - 1
+        let tempId = -(Int(Date().timeIntervalSince1970 * 1000) + Int.random(in: 0...999))
         let optimistic = LifeEntry(
             id: tempId,
             type: req.type,
@@ -231,7 +237,7 @@ public final class SyncManager {
             }
         }
 
-        let tempId = -Int(Date().timeIntervalSince1970 * 1000) % 900_000 - 1
+        let tempId = -(Int(Date().timeIntervalSince1970 * 1000) + Int.random(in: 0...999))
         let optimistic = Transaction(
             id: tempId,
             amount: req.amount,
@@ -313,6 +319,12 @@ public final class SyncManager {
 
     // MARK: - 增量拉取与软删除对账合并 (Delta Sync & LWW Reconciliation)
 
+    /// 计算增量响应中的最新服务端游标 (取 `updated_at` / `deleted_at` 最大值)。
+    /// 使用服务端时间戳而非本地时钟，避免时钟漂移导致增量漏拉；无有效时间戳时返回 nil（保持旧游标不推进）。
+    private static func latestServerCursor(_ timestamps: [String?]) -> String? {
+        timestamps.compactMap { $0 }.filter { !$0.isEmpty }.max()
+    }
+
     public func mergeEntries(_ incoming: [LifeEntry], isDelta: Bool) {
         var current = snapshot
         if !isDelta {
@@ -337,7 +349,9 @@ public final class SyncManager {
                 return $0.id > $1.id
             }
         }
-        current.lastEntriesSyncCursor = FormatUtils.beijingISOString()
+        if let latest = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] }) {
+            current.lastEntriesSyncCursor = latest
+        }
         saveSnapshot(current)
     }
 
@@ -365,7 +379,9 @@ public final class SyncManager {
                 return $0.id > $1.id
             }
         }
-        current.lastTransactionsSyncCursor = FormatUtils.beijingISOString()
+        if let latest = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] }) {
+            current.lastTransactionsSyncCursor = latest
+        }
         saveSnapshot(current)
     }
 }

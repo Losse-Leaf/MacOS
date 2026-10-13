@@ -22,6 +22,12 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- 允许连接本地网络中的 http:// 数据中枢（局域网 IP）；远程部署建议改用 HTTPS -->
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -32,24 +38,6 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>looseleaf</string>
-            </array>
-        </dict>
-    </array>
-    <key>NSServices</key>
-    <array>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>摘录到活页集 (Loose-Leaf)</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>captureTextFromService</string>
-            <key>NSPortName</key>
-            <string>LooseLeaf</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
             </array>
         </dict>
     </array>

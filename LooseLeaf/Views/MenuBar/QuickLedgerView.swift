@@ -3,6 +3,7 @@ import SwiftUI
 /// 菜单栏极速记账界面 (QuickLedgerView)
 /// 遵循 docs/macos.md §1 & §3.1 规范：
 /// 支持“42.5 午餐咖啡”一句话语义快记（自动转为 4250 分整型）与大数字金额 + 大地色类目胶囊勾选
+@MainActor
 public struct QuickLedgerView: View {
     @Bindable var appState: AppState
     var onSubmitted: (() -> Void)?
@@ -213,7 +214,7 @@ public struct QuickLedgerView: View {
         isSubmitting = true
         localError = nil
 
-        Task {
+        Task { @MainActor in
             do {
                 _ = try await appState.submitQuickLedger(
                     amountCents: parsed.amountCents,

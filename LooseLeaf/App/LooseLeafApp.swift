@@ -10,8 +10,8 @@ public struct LooseLeafApp: App {
     public init() {}
 
     public var body: some Scene {
-        // 1. 桌面主工作台窗口 (未配对展示主理人门禁，配对后直接进入全权管理工作台)
-        WindowGroup("Loose-Leaf · 活页集", id: "main") {
+        // 1. 桌面主工作台窗口 (单例窗口；未配对展示主理人门禁，配对后直接进入全权管理工作台)
+        Window("Loose-Leaf · 活页集", id: "main") {
             Group {
                 if !appState.isPaired {
                     PairingGateView(appState: appState)
@@ -52,7 +52,7 @@ public struct LooseLeafApp: App {
                 Divider()
 
                 Button("立即同步全量档案") {
-                    Task {
+                    Task { @MainActor in
                         await appState.refreshAll(forceFull: true)
                     }
                 }

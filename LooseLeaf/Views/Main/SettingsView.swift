@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 设备免密配对、钥匙串托管与偏好设置视图 (SettingsView)
 /// 严格遵循 docs/macos.md §5 与 docs/backend.md §3 & §5.6 规范
+@MainActor
 public struct SettingsView: View {
     @Bindable var appState: AppState
 
@@ -93,7 +94,7 @@ public struct SettingsView: View {
 
                 Button("保存并探测中枢") {
                     APIClient.shared.setBaseURL(appState.hubURLString)
-                    Task {
+                    Task { @MainActor in
                         healthResult = try? await APIClient.shared.checkHealth()
                         await appState.refreshAll(forceFull: true)
                     }
@@ -268,7 +269,7 @@ public struct SettingsView: View {
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
                 Button("签发新设备 6 位配对码") {
-                    Task {
+                    Task { @MainActor in
                         issuedPairTicket = try? await APIClient.shared.initPairing()
                         AudioFeedback.shared.playPaperFlip()
                     }
@@ -319,7 +320,7 @@ public struct SettingsView: View {
                     Spacer()
                     if dev.deviceId != KeychainManager.getDeviceId() {
                         Button("吊销") {
-                            Task {
+                            Task { @MainActor in
                                 try? await APIClient.shared.revokeDevice(id: dev.deviceId)
                                 await refreshDevicesList()
                             }
@@ -449,7 +450,7 @@ public struct SettingsView: View {
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
                 Button("立即全量同步") {
-                    Task {
+                    Task { @MainActor in
                         await appState.refreshAll(forceFull: true)
                     }
                 }
@@ -483,7 +484,7 @@ public struct SettingsView: View {
         isSubmittingAuth = true
         authError = nil
         authFeedback = nil
-        Task {
+        Task { @MainActor in
             do {
                 try await appState.pairWithPinCode(pinCodeInput, hubURL: appState.hubURLString)
                 pinCodeInput = ""
@@ -500,7 +501,7 @@ public struct SettingsView: View {
         isSubmittingAuth = true
         authError = nil
         authFeedback = nil
-        Task {
+        Task { @MainActor in
             do {
                 try await appState.verifyWithMasterPasscode(passcodeInput, hubURL: appState.hubURLString)
                 passcodeInput = ""
@@ -523,7 +524,7 @@ public struct SettingsView: View {
         }
         isSubmittingAuth = true
         authError = nil
-        Task {
+        Task { @MainActor in
             do {
                 try await appState.pairWithTicket(raw, hubURL: appState.hubURLString)
                 ticketURIInput = ""

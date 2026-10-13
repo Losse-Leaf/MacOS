@@ -8,6 +8,7 @@ import AppKit
 /// 2. 端侧 ImageIO 提取 EXIF 相机型号、镜头焦段、光圈、快门与 ISO 参数
 /// 3. 自动执行最长边 3840px (4K) 缩放与 85% 质量压制
 /// 4. 预签名直传 R2 存储桶（展示拟物进度环）并伴生写入散页时间流
+@MainActor
 public struct DarkroomDropZone: View {
     @Bindable var appState: AppState
 
@@ -306,7 +307,7 @@ public struct DarkroomDropZone: View {
     private func loadPhoto(from url: URL) {
         isProcessing = true
         errorMessage = nil
-        Task {
+        Task { @MainActor in
             do {
                 let result = try ImageProcessor.processImageFile(at: url)
                 self.processedPhoto = result
@@ -330,7 +331,7 @@ public struct DarkroomDropZone: View {
         uploadProgress = 0.05
         errorMessage = nil
 
-        Task {
+        Task { @MainActor in
             do {
                 let att = try await R2DirectUploader.shared.uploadProcessedPhoto(photo) { prog in
                     Task { @MainActor in

@@ -55,10 +55,6 @@ public final class KeychainManager: Sendable {
     // MARK: - Keychain 底层读写
 
     private static func saveString(_ value: String, account: String) -> Bool {
-        lock.lock()
-        memoryFallback[account] = value
-        lock.unlock()
-
         let data = Data(value.utf8)
         let deleteQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -75,7 +71,18 @@ public final class KeychainManager: Sendable {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
         let status = SecItemAdd(addQuery as CFDictionary, nil)
-        return status == errSecSuccess || status == errSecMissingEntitlement
+        if status == errSecSuccess {
+            return true
+        }
+        if status == errSecMissingEntitlement {
+            // 无签名 CI / 单元测试环境无钥匙串权限：降级为进程内内存兜底（重启即失效，仅测试场景）
+            lock.lock()
+            memoryFallback[account] = value
+            lock.unlock()
+            return true
+        }
+        // 其他钥匙串错误不写内存兜底，避免「看似保存成功、重启即丢失」的假象
+        return false
     }
 
     private static func getString(account: String) -> String? {

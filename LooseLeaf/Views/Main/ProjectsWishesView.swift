@@ -3,6 +3,7 @@ import SwiftUI
 /// 造物、心愿单与山川行迹视图 (ProjectsWishesView)
 /// 遵循「记录为一切的母体 (Record-First Architecture)」与「典藏票根 (RC-98)」规范
 /// 主理人全权管理：心愿圆满归册与编辑、山川足迹自动解析城市代码与编辑、造物项目全权 CRUD
+@MainActor
 public struct ProjectsWishesView: View {
     @Bindable var appState: AppState
 
@@ -443,7 +444,7 @@ public struct ProjectsWishesView: View {
     }
 
     private func deleteWish(_ wish: Wish) {
-        Task {
+        Task { @MainActor in
             do {
                 try await APIClient.shared.deleteWish(id: wish.id)
                 AudioFeedback.shared.playTink()
@@ -455,7 +456,7 @@ public struct ProjectsWishesView: View {
     }
 
     private func deleteFootprint(_ fp: Footprint) {
-        Task {
+        Task { @MainActor in
             do {
                 try await APIClient.shared.deleteFootprint(id: fp.id)
                 AudioFeedback.shared.playTink()
@@ -467,7 +468,7 @@ public struct ProjectsWishesView: View {
     }
 
     private func deleteProject(_ proj: Project) {
-        Task {
+        Task { @MainActor in
             do {
                 try await APIClient.shared.deleteProject(id: proj.id)
                 AudioFeedback.shared.playTink()
@@ -513,6 +514,7 @@ public struct ProjectsWishesView: View {
 
 // MARK: - 新建心愿单弹窗 (NewWishSheet)
 
+@MainActor
 public struct NewWishSheet: View {
     @Bindable var appState: AppState
     var onDismiss: () -> Void
@@ -588,7 +590,7 @@ public struct NewWishSheet: View {
         let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateWishRequest(
                     title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -611,6 +613,7 @@ public struct NewWishSheet: View {
 
 // MARK: - 修订心愿弹窗 (EditWishSheet)
 
+@MainActor
 public struct EditWishSheet: View {
     @Bindable var appState: AppState
     let wish: Wish
@@ -698,7 +701,7 @@ public struct EditWishSheet: View {
         let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateWishRequest(
                     title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -721,6 +724,7 @@ public struct EditWishSheet: View {
 
 // MARK: - 圆满心愿弹窗 (ResolveWishSheet)
 
+@MainActor
 public struct ResolveWishSheet: View {
     @Bindable var appState: AppState
     let wish: Wish
@@ -826,7 +830,7 @@ public struct ResolveWishSheet: View {
         let cents = FormatUtils.parseYuanToCents(actualCostYuan) ?? 0
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = ResolveWishRequest(
                     fulfilledAt: FormatUtils.beijingISOString(),
@@ -855,6 +859,7 @@ public struct ResolveWishSheet: View {
 
 // MARK: - 点亮城市足迹弹窗 (NewFootprintSheet)
 
+@MainActor
 public struct NewFootprintSheet: View {
     @Bindable var appState: AppState
     var onDismiss: () -> Void
@@ -932,7 +937,7 @@ public struct NewFootprintSheet: View {
         guard !cleanCity.isEmpty else { return }
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateFootprintRequest(
                     cityCode: resolvedCode,
@@ -955,6 +960,7 @@ public struct NewFootprintSheet: View {
 
 // MARK: - 修订足迹票根弹窗 (EditFootprintSheet)
 
+@MainActor
 public struct EditFootprintSheet: View {
     @Bindable var appState: AppState
     let footprint: Footprint
@@ -1036,7 +1042,7 @@ public struct EditFootprintSheet: View {
         guard !cleanCity.isEmpty else { return }
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateFootprintRequest(
                     cityCode: resolvedCode,
@@ -1059,6 +1065,7 @@ public struct EditFootprintSheet: View {
 
 // MARK: - 新建造物项目弹窗 (NewProjectSheet)
 
+@MainActor
 public struct NewProjectSheet: View {
     @Bindable var appState: AppState
     var onDismiss: () -> Void
@@ -1144,7 +1151,7 @@ public struct NewProjectSheet: View {
         guard !cleanTitle.isEmpty else { return }
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateProjectRequest(
                     title: cleanTitle,
@@ -1168,6 +1175,7 @@ public struct NewProjectSheet: View {
 
 // MARK: - 修订造物项目弹窗 (EditProjectSheet)
 
+@MainActor
 public struct EditProjectSheet: View {
     @Bindable var appState: AppState
     let project: Project
@@ -1266,7 +1274,7 @@ public struct EditProjectSheet: View {
         guard !cleanTitle.isEmpty else { return }
         isSubmitting = true
         errorText = nil
-        Task {
+        Task { @MainActor in
             do {
                 let req = CreateProjectRequest(
                     title: cleanTitle,
@@ -1290,6 +1298,7 @@ public struct EditProjectSheet: View {
 
 /// 主理人生活手记与器物图鉴视图 (CuratorDossierView)
 /// 严格遵守：100% 由 GET /api/v1/profile 动态驱动，严禁硬编码姓名或城市
+@MainActor
 public struct CuratorDossierView: View {
     @Bindable var appState: AppState
 
@@ -1487,7 +1496,7 @@ public struct CuratorDossierView: View {
             SellGearSheet(gear: gear) {
                 sellingGear = nil
             } onSold: {
-                Task {
+                Task { @MainActor in
                     await appState.loadConfigAndProfile()
                     await appState.loadTransactionsAndAssets(forceFull: true)
                 }
@@ -1496,7 +1505,7 @@ public struct CuratorDossierView: View {
     }
 
     private func deleteGear(_ gear: GearItem) {
-        Task {
+        Task { @MainActor in
             try? await APIClient.shared.deleteGearAsset(id: gear.id)
             AudioFeedback.shared.playTink()
             await appState.loadConfigAndProfile()
@@ -1553,7 +1562,7 @@ public struct CuratorDossierView: View {
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 Spacer()
                 Button("保存档案") {
-                    Task {
+                    Task { @MainActor in
                         let req = UpdateProfileRequest(
                             name: editName,
                             title: editTitle,

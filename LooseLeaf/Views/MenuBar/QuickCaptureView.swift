@@ -8,6 +8,7 @@ import AppKit
 /// 2. 顶部切换「极速记录」与「快速记账」
 /// 3. 自动识别 #标签、支持拖拽相片自动提取 EXIF 直传 R2
 /// 4. Cmd + Enter 即刻落库并播放快门声与触控板微震动
+@MainActor
 public struct QuickCaptureView: View {
     @Bindable var appState: AppState
     @Environment(\.openWindow) private var openWindow
@@ -354,7 +355,7 @@ public struct QuickCaptureView: View {
 
             Button {
                 appState.activeSection = .stream
-                openWindow(id: "main-workbench")
+                openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
                 onClosePopover?()
             } label: {
@@ -370,7 +371,7 @@ public struct QuickCaptureView: View {
 
             Button {
                 appState.activeSection = .settings
-                openWindow(id: "main-workbench")
+                openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
                 onClosePopover?()
             } label: {
@@ -396,14 +397,15 @@ public struct QuickCaptureView: View {
             finalContent += "\n\n> \(extractedCameraLine)"
         }
 
+        let contentToSubmit = finalContent
         isSubmitting = true
         errorText = nil
 
-        Task {
+        Task { @MainActor in
             do {
                 _ = try await appState.submitQuickCapture(
                     title: titleText,
-                    content: finalContent,
+                    content: contentToSubmit,
                     type: entryType,
                     location: customLocation.isEmpty ? nil : customLocation,
                     attachmentIds: uploadedAttachments.map(\.id),

@@ -6,6 +6,7 @@ import SwiftUI
 /// 2. 集成 52 周生活刻度热力图、四维分类过滤、#标签下钻与即时模糊搜索
 /// 3. 相邻记录跨度 >= 14 天自动渲染「岁月留白刻度切线」
 /// 4. 胶片相纸以 .film-frame 装裱呈现，点击进入暗房大图灯箱
+@MainActor
 public struct StreamView: View {
     @Bindable var appState: AppState
 
@@ -273,7 +274,7 @@ public struct StreamView: View {
                     )
 
                     Button {
-                        Task {
+                        Task { @MainActor in
                             await appState.refreshAll(forceFull: true)
                         }
                     } label: {
@@ -621,7 +622,7 @@ public struct StreamView: View {
                     let loc = composeLocation.trimmingCharacters(in: .whitespacesAndNewlines)
                     let resolvedCode = FormatUtils.resolveCityCode(from: loc)
                     let finalLoc = loc.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : loc
-                    Task {
+                    Task { @MainActor in
                         let req = CreateEntryRequest(
                             type: composeType.rawValue,
                             title: composeTitle,
@@ -741,7 +742,7 @@ public struct StreamView: View {
         let location = quickLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedCode = FormatUtils.resolveCityCode(from: location)
         let finalLoc = location.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : location
-        Task {
+        Task { @MainActor in
             let req = CreateEntryRequest(
                 type: quickType.rawValue,
                 title: quickTitle.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -765,7 +766,7 @@ public struct StreamView: View {
     private func toggleFeatured(_ entry: LifeEntry) {
         guard entry.id > 0 else { return }
         let newFeatured = !(entry.featured ?? false)
-        Task {
+        Task { @MainActor in
             let req = UpdateEntryRequest(
                 type: entry.type,
                 title: entry.title,
@@ -784,7 +785,7 @@ public struct StreamView: View {
 
     private func deleteEntryAction(_ entry: LifeEntry) {
         guard entry.id > 0 else { return }
-        Task {
+        Task { @MainActor in
             _ = try? await APIClient.shared.deleteEntry(id: entry.id)
             AudioFeedback.shared.playPaperFlip()
             await appState.loadEntries(forceFull: true)
@@ -797,7 +798,7 @@ public struct StreamView: View {
 
     private func editEntrySheet(entry: LifeEntry) -> some View {
         EditEntrySheetView(entry: entry) { updated in
-            Task {
+            Task { @MainActor in
                 _ = try? await APIClient.shared.updateEntry(id: entry.id, updated)
                 AudioFeedback.shared.playShutter()
                 await appState.loadEntries(forceFull: true)
@@ -821,7 +822,7 @@ public struct StreamView: View {
                 Spacer()
                 if appState.isPaired && entry.id > 0 {
                     Button("删除记录") {
-                        Task {
+                        Task { @MainActor in
                             try? await APIClient.shared.deleteEntry(id: entry.id)
                             await appState.loadEntries(forceFull: true)
                             appState.highlightedEntry = nil
@@ -903,6 +904,7 @@ public struct StreamView: View {
 }
 
 /// 修改散页手稿弹窗表单 (EditEntrySheetView)
+@MainActor
 public struct EditEntrySheetView: View {
     public let entry: LifeEntry
     public var onSave: (UpdateEntryRequest) -> Void

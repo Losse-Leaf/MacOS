@@ -1,7 +1,7 @@
 import SwiftUI
 import Carbon
 
-/// 设备免密配对、钥匙串托管与偏好设置视图 (SettingsView)
+/// 设备免密配对、本机凭据托管与偏好设置视图 (SettingsView)
 /// 严格遵循 docs/macos.md §5 与 docs/backend.md §3 & §5.6 规范
 @MainActor
 public struct SettingsView: View {
@@ -40,7 +40,7 @@ public struct SettingsView: View {
                 // 1. 后端中枢地址与连通探针
                 hubConnectionCard
 
-                // 2. 设备免密配对与 macOS Keychain 凭据管理
+                // 2. 设备免密配对与本机凭据管理
                 devicePairingCard
 
                 // 3. 已授信设备列表与发起移动端配对 (仅已配对时展示)
@@ -65,10 +65,10 @@ public struct SettingsView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("设备免密配对、钥匙串托管与偏好设置")
+            Text("设备免密配对、本机凭据托管与偏好设置")
                 .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
-            Text("专属设备子钥匙安全存储于 macOS 系统钥匙串 (Keychain)，绝不明文落盘")
+            Text("设备凭证存储于本机受保护档案（仅当前 macOS 用户可读写）")
                 .font(ArchiveTypography.bodySans(size: 12.5))
                 .foregroundStyle(ArchivePalette.inkSecondary)
         }
@@ -125,12 +125,12 @@ public struct SettingsView: View {
         )
     }
 
-    // MARK: - 2. 设备免密配对与 Keychain 托管
+    // MARK: - 2. 设备免密配对与本机凭据托管
 
     private var devicePairingCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("02 · 设备免密配对与钥匙串凭据")
+                Text("02 · 设备免密配对与本机凭据")
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
@@ -140,7 +140,7 @@ public struct SettingsView: View {
                     Circle()
                         .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .frame(width: 7, height: 7)
-                    Text(appState.isPaired ? "钥匙串已托管有效子钥匙 (主理人全权管理)" : "尚未配对")
+                    Text(appState.isPaired ? "本机已托管有效设备凭证 (主理人全权管理)" : "尚未配对")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                 }
@@ -149,10 +149,10 @@ public struct SettingsView: View {
             if appState.isPaired {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("本机设备标识：\(KeychainManager.getDeviceId() ?? "dev_macos")")
+                        Text("本机设备标识：\(CredentialStore.getDeviceId() ?? "dev_macos")")
                             .font(ArchiveTypography.monoScale(size: 12))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("登记名称：\(KeychainManager.getDeviceName() ?? "Mac 工作台") · Keychain Service: \(KeychainManager.serviceName)")
+                        Text("登记名称：\(CredentialStore.getDeviceName() ?? "Mac 工作台") · 凭证档案: credentials.json")
                             .font(ArchiveTypography.monoScale(size: 11))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
@@ -301,7 +301,7 @@ public struct SettingsView: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                     Spacer()
-                    if dev.deviceId != KeychainManager.getDeviceId() {
+                    if dev.deviceId != CredentialStore.getDeviceId() {
                         Button("吊销") {
                             Task { @MainActor in
                                 do {
@@ -521,7 +521,7 @@ public struct SettingsView: View {
             do {
                 try await appState.verifyWithMasterPasscode(passcodeInput, hubURL: appState.hubURLString)
                 passcodeInput = ""
-                authFeedback = "验证通过！已签发独立设备子钥匙并存入钥匙串。"
+                authFeedback = "验证通过！本机设备凭证已更新。"
                 await refreshDevicesList()
             } catch {
                 authError = error.localizedDescription
@@ -551,7 +551,7 @@ public struct SettingsView: View {
                     try await appState.pairWithTicket(raw, hubURL: appState.hubURLString)
                 }
                 ticketURIInput = ""
-                authFeedback = "配对成功！设备令牌已存入 macOS 钥匙串。"
+                authFeedback = "配对成功！设备令牌已写入本机受保护档案。"
                 await refreshDevicesList()
             } catch {
                 authError = error.localizedDescription

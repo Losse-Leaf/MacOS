@@ -28,7 +28,7 @@ public final class SyncManager {
     // MARK: - 本地临时 ID 生成
 
     private nonisolated(unsafe) static var tempIdSequence: Int = 0
-    private static let tempIdLock = NSLock()
+    private nonisolated static let tempIdLock = NSLock()
 
     /// 生成离线乐观记录的本地临时 ID（负值，与服务器正 ID 区分）。
     /// 毫秒时间戳 × 1000 + 进程内自增序号：跨毫秒近似有序，同毫秒内连续调用也不会碰撞。

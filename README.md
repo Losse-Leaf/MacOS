@@ -52,7 +52,7 @@ mac/
 │   │   └── ProfileModel.swift         # CuratorProfile / Wish / Footprint / 配对鉴权模型
 │   ├── Services/
 │   │   ├── APIClient.swift            # Async/Await 网络客户端（Bearer / X-Device-Token / ETag）
-│   │   ├── KeychainManager.swift      # macOS Keychain 安全存储
+│   │   ├── CredentialStore.swift      # 本机受保护凭据档案 (0600，免签场景替代 Keychain)
 │   │   ├── SyncManager.swift          # 增量同步、本地快照与 Offline Outbox 队列
 │   │   ├── ImageProcessor.swift       # ImageIO EXIF 解析与 4K JPEG 压缩
 │   │   ├── R2DirectUploader.swift     # R2 预签名 PUT 直传与本地回退上传器

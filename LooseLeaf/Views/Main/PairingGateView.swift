@@ -302,7 +302,7 @@ public struct PairingGateView: View {
                         Text("主理人管理员密钥")
                             .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("输入您在装帧时设定的密钥，验证通过后自动为本机签发受信任设备子钥匙并写入钥匙串。")
+                        Text("输入您在装帧时设定的密钥，验证通过后自动完成本机设备授权。")
                             .font(ArchiveTypography.bodySans(size: 11.5))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }

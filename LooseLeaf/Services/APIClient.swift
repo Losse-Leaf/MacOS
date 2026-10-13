@@ -110,7 +110,7 @@ public actor APIClient {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
 
-        if let token = KeychainManager.getToken(), !token.isEmpty {
+        if let token = CredentialStore.getToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue(token, forHTTPHeaderField: "X-Device-Token")
         }
@@ -226,8 +226,8 @@ public actor APIClient {
             method: "POST",
             body: payload
         )
-        KeychainManager.saveToken(resp.deviceToken)
-        KeychainManager.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName)
+        CredentialStore.saveToken(resp.deviceToken)
+        CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName)
         if let hub = resp.hubUrl, !hub.isEmpty {
             setBaseURL(hub)
         }
@@ -242,8 +242,8 @@ public actor APIClient {
             method: "POST",
             body: payload
         )
-        KeychainManager.saveToken(resp.token)
-        KeychainManager.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName)
+        CredentialStore.saveToken(resp.token)
+        CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName)
         return resp
     }
 

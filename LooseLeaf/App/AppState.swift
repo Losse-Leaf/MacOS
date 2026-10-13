@@ -140,7 +140,7 @@ public final class AppState {
         self.appearanceMode = AppearanceMode(rawValue: savedAppearance) ?? .system
         self.soundEnabled = AudioFeedback.shared.isSoundEnabled
         self.hapticsEnabled = AudioFeedback.shared.isHapticsEnabled
-        self.isPaired = (KeychainManager.getToken()?.isEmpty == false)
+        self.isPaired = (CredentialStore.getToken()?.isEmpty == false)
 
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
         applySnapshot(SyncManager.shared.currentSnapshot())
@@ -158,7 +158,7 @@ public final class AppState {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                KeychainManager.deleteToken()
+                CredentialStore.deleteToken()
                 self.isPaired = false
                 self.errorBanner = "设备授权已过期或被吊销，请重新完成设备配对或验证主理人密钥"
             }
@@ -449,7 +449,7 @@ public final class AppState {
         return queuedOffline
     }
 
-    // MARK: - 设备配对与密钥授权 (Device Pairing & Keychain)
+    // MARK: - 设备配对与密钥授权 (Device Pairing & Credential Vault)
 
     /// 解析配对深链文本：`looseleaf://pair?hub=<中枢地址>&ticket=<配对工单>`
     /// hub 缺失时返回空串（调用方回退到当前 `hubURLString`）；ticket 缺失或非配对链接返回 nil。
@@ -476,7 +476,7 @@ public final class AppState {
         )
         self.isPaired = true
         AudioFeedback.shared.playShutter()
-        showTemporaryBanner("配对工单握手成功，凭证已安全存入 macOS 钥匙串")
+        showTemporaryBanner("配对工单握手成功，凭证已写入本机受保护档案")
         await refreshAll(forceFull: true)
     }
 
@@ -490,14 +490,14 @@ public final class AppState {
         )
         self.isPaired = true
         AudioFeedback.shared.playShutter()
-        showTemporaryBanner("主理人密钥验证通过，专属设备子钥匙已存入钥匙串")
+        showTemporaryBanner("主理人密钥验证通过，本机设备凭证已更新")
         await refreshAll(forceFull: true)
     }
 
     public func disconnectDevice() {
-        KeychainManager.clearAllCredentials()
+        CredentialStore.clearAllCredentials()
         self.isPaired = false
-        showTemporaryBanner("已清除本机钥匙串中的设备配对凭证")
+        showTemporaryBanner("已清除本机设备配对凭证")
     }
 
     /// 处理自定义 URL Scheme:

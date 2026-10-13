@@ -305,4 +305,39 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertNil(AppState.parsePairLink("随便一段文字"))
         XCTAssertNil(AppState.parsePairLink(""))
     }
+
+    // MARK: - 14. Credential Vault Tests
+
+    func testCredentialStoreRoundtripAndPermissions() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("looseleaf-test-\(UUID().uuidString)", isDirectory: true)
+        CredentialStore.overrideDirectory = tempDir
+        defer {
+            CredentialStore.clearAllCredentials()
+            CredentialStore.overrideDirectory = nil
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        // 空态
+        XCTAssertNil(CredentialStore.getToken())
+
+        // 写入与回读
+        XCTAssertTrue(CredentialStore.saveToken("tok_test_123"))
+        XCTAssertTrue(CredentialStore.saveDeviceIdentity(deviceId: "dev_1", deviceName: "Test Mac"))
+        XCTAssertEqual(CredentialStore.getToken(), "tok_test_123")
+        XCTAssertEqual(CredentialStore.getDeviceId(), "dev_1")
+        XCTAssertEqual(CredentialStore.getDeviceName(), "Test Mac")
+
+        // 落盘文件存在且权限为 0600（仅当前用户可读写）
+        let fileURL = tempDir.appendingPathComponent("credentials.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let permissions = attrs[.posixPermissions] as? Int
+        XCTAssertEqual(permissions, 0o600, "凭据档案必须仅当前用户可读写")
+
+        // 清空后回读为空
+        CredentialStore.clearAllCredentials()
+        XCTAssertNil(CredentialStore.getToken())
+        XCTAssertNil(CredentialStore.getDeviceId())
+    }
 }

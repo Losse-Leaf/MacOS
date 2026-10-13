@@ -2,7 +2,7 @@ import AppIntents
 import Foundation
 
 /// 快捷指令 / Siri 集成：「记一条闪念」「极速记一笔」。
-/// Intent 在主应用进程内执行，复用钥匙串设备凭据与离线发件箱逻辑，无需额外扩展目标。
+/// Intent 在主应用进程内执行，复用本机设备凭据与离线发件箱逻辑，无需额外扩展目标。
 struct AddQuickNoteIntent: AppIntent {
     static var title: LocalizedStringResource = "记一条闪念"
     static var description = IntentDescription("把一句话极速归档到《散页》时间流。")

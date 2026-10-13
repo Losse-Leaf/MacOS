@@ -20,10 +20,10 @@ jobs:
 
       - name: Build App Bundle (unsigned)
         run: |
-          xcodebuild -project LooseLeaf.xcodeproj -scheme LooseLeaf -configuration Release \
-            -derivedDataPath build/DerivedData \
+          xcodebuild -project LooseLeaf.xcodeproj -target LooseLeaf -configuration Release \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build
+            SYMROOT=build/Sym build
 
       - name: Package Artifact
         run: |

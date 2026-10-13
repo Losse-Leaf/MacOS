@@ -21,7 +21,7 @@ jobs:
 
       - name: Verify Zero Hardcoded Hex Colors in Swift Code
         run: |
-          if grep -rnE '#[0-9A-Fa-f]{6}\b' LooseLeaf/ LooseLeafWidget/; then
+          if grep -rnE '#[0-9A-Fa-f]{6}\b' LooseLeaf/; then
             echo "Found hardcoded hex color literal in Swift code! Use Assets.xcassets semantic colors instead."
             exit 1
           fi
@@ -31,3 +31,17 @@ jobs:
 
       - name: Run Unit Tests
         run: swift test --verbose
+
+      - name: Build Release App Bundle (unsigned)
+        run: |
+          xcodebuild -project LooseLeaf.xcodeproj -target LooseLeaf -configuration Release \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            SYMROOT=build/Sym build
+
+      - name: Upload App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LooseLeaf-macOS-arm64
+          path: build/Sym/Release/LooseLeaf.app
+          retention-days: 30

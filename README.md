@@ -1,7 +1,7 @@
 # Loose-Leaf (活页集) · macOS Native Workstation
 
 > **暗房工作台与灵感捕捉器 (The Darkroom & Quick Capture Station)**  
-> 活页集 (`Loose-Leaf`) 的原生 macOS 桌面客户端，基于 `SwiftUI + AppKit + WidgetKit` 构建。
+> 活页集 (`Loose-Leaf`) 的原生 macOS 桌面客户端，基于 `SwiftUI + AppKit` 构建。
 
 ---
 
@@ -28,13 +28,10 @@
 
 5. **离线发件箱与增量同步 (`SyncManager`)**
    - 本地快照 (`archive_snapshot_v1.json`，App Group 共享目录) 毫秒级冷启动渲染。
-   - 断网状态下新建的手稿与账单自动进入持久化 `Outbox` 发件箱，`NWPathMonitor` 探测网络恢复后自动重放上云并刷新桌面 Widget。
+   - 断网状态下新建的手稿与账单自动进入持久化 `Outbox` 发件箱，`NWPathMonitor` 探测网络恢复后自动重放上云。
 
 6. **原生拟真声学与触觉反馈 (`AudioFeedback`)**
    - 内置快门声 (`shutter.wav`)、纸张翻页声 (`paper_flip.wav`) 与铅字敲击声 (`tink.wav`)，配合 Force Touch 触控板震动反馈，可在偏好设置中一键静音。
-
-7. **桌面小组件 (`WidgetKit`)**
-   - 三态小组件：散页今日脉搏 / 柴米油盐光谱 / 暗房记忆画框；经 App Group 共享快照只读渲染，主应用数据变动自动刷新时间线。
 
 ---
 
@@ -68,7 +65,6 @@ mac/
 │   └── Resources/
 │       ├── Assets.xcassets/           # 跨端统一语义色板与图标资产
 │       └── Audio/                     # shutter.wav / paper_flip.wav / tink.wav
-├── LooseLeafWidget/                   # macOS 桌面小组件扩展 (Archive / Expense / Memory)
 └── LooseLeafTests/                    # XCTest 单元测试套件
 ```
 

@@ -7,7 +7,7 @@ import os
 /// 严格遵循 docs/macos.md §3.1 规范：
 /// 1. 注册系统级全局快捷键 Cmd + Shift + L (Carbon RegisterEventHotKey，无需额外辅助功能权限即可跨应用静默呼出)
 /// 2. 托管轻量级悬浮捕捉面板 (NSPanel)，支持 ESC 或失去焦点自动收起
-/// 3. 响应 looseleaf:// 自定义协议配对与小组件深链跳转
+/// 3. 响应 looseleaf:// 自定义协议配对
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     public static let hotKeyCodeKey = "looseleaf_hotkey_keycode"

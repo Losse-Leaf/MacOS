@@ -44,7 +44,7 @@ public struct OutboxItem: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// 本地持久化与小组件共享快照结构
+/// 本地持久化快照结构
 public struct LocalArchiveSnapshot: Codable, Sendable {
     public var entries: [LifeEntry]
     public var transactions: [Transaction]

@@ -1,13 +1,10 @@
 import Foundation
 import Network
 import os
-#if canImport(WidgetKit)
-import WidgetKit
-#endif
 
 /// 本地优先存储与离线发件箱同步调度引擎 (Local-First & Sync Outbox Engine)
 /// 严格遵循 docs/macos.md §4 与 docs/ecosystem.md §7 规范
-/// 注：OutboxItem / LocalArchiveSnapshot 已移至 Models/SnapshotModel.swift（与 Widget 共享编译）
+/// 注：OutboxItem / LocalArchiveSnapshot 已移至 Models/SnapshotModel.swift
 @MainActor
 public final class SyncManager {
     public static let shared = SyncManager()
@@ -43,12 +40,12 @@ public final class SyncManager {
         return -(Int(Date().timeIntervalSince1970 * 1000) * 1000 + seq)
     }
 
-    // MARK: - 本地磁盘缓存路径 (支持主应用与 WidgetKit 小组件共享读取)
+    // MARK: - 本地磁盘缓存路径
 
-    /// App Group 标识符（必须与 `LooseLeaf/LooseLeaf.entitlements` 及 `LooseLeafWidget/LooseLeafWidgetBundle.swift` 保持一致）
+    /// App Group 标识符（容器不可用时自动回退到 Application Support）
     public nonisolated static let appGroupIdentifier = "group.com.looseleaf.archive"
 
-    /// 快照相对路径（与 WidgetArchiveReader 读取路径保持一致：LooseLeafArchive/archive_snapshot_v1.json）
+    /// 快照文件名（archive_snapshot_v1.json）
     public nonisolated static var sharedStorageDirectory: URL {
         let dir: URL
         if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
@@ -83,9 +80,6 @@ public final class SyncManager {
         if let data = try? JSONEncoder().encode(copy) {
             try? data.write(to: Self.snapshotFileURL, options: .atomic)
         }
-        #if canImport(WidgetKit)
-        WidgetCenter.shared.reloadAllTimelines()
-        #endif
         onSnapshotUpdated?(copy)
     }
 

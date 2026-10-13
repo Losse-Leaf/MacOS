@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AA0000690000000000000001 /* LooseLeafWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AA0000640000000000000001 /* LooseLeafWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		AA0000010000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -14,23 +18,77 @@
 			remoteGlobalIDString = AA0000100000000000000001;
 			remoteInfo = LooseLeaf;
 		};
+		AA00006B0000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000600000000000000001;
+			remoteInfo = LooseLeafWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		AA0000110000000000000001 /* LooseLeaf.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LooseLeaf.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000210000000000000001 /* LooseLeafTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LooseLeafTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000640000000000000001 /* LooseLeafWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LooseLeafWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0000300000000000000001 /* LooseLeaf */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000A0000000000000001 /* Exceptions for "LooseLeaf" folder in "LooseLeafWidget" target */,
+			);
 			path = LooseLeaf;
 			sourceTree = "<group>";
 		};
+		AA0000A0000000000000001 /* Exceptions for "LooseLeaf" folder in "LooseLeafWidget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+					membershipExceptions = (
+						"App/AppDelegate.swift",
+						"App/AppIntents.swift",
+						"App/AppState.swift",
+						"App/LooseLeafApp.swift",
+						"Views/Main/DarkroomDropZone.swift",
+						"Views/Main/LedgerAssetsView.swift",
+						"Views/Main/PairingGateView.swift",
+						"Views/Main/ProjectsWishesView.swift",
+						"Views/Main/SettingsView.swift",
+						"Views/Main/StreamView.swift",
+						"Views/MenuBar/QuickCaptureView.swift",
+						"Views/MenuBar/QuickLedgerView.swift",
+						"Views/Components/FilmFrameView.swift",
+						"Views/Components/PaperComponents.swift",
+						"Resources/Audio/paper_flip.wav",
+						"Resources/Audio/shutter.wav",
+						"Resources/Audio/tink.wav",
+						"Info.plist",
+						"LooseLeaf.entitlements",
+						"Services/APIClient.swift",
+						"Services/AudioFeedback.swift",
+						"Services/DropLoader.swift",
+						"Services/ImageProcessor.swift",
+						"Services/KeychainManager.swift",
+						"Services/R2DirectUploader.swift",
+						"Services/SyncManager.swift",
+					);
+			target = AA0000600000000000000001 /* LooseLeafWidget */;
+		};
 		AA0000310000000000000001 /* LooseLeafWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000B0000000000000001 /* Exceptions for "LooseLeafWidget" folder in "LooseLeafWidget" target */,
+			);
 			path = LooseLeafWidget;
 			sourceTree = "<group>";
+		};
+		AA0000B0000000000000001 /* Exceptions for "LooseLeafWidget" folder in "LooseLeafWidget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Info.plist",
+				"LooseLeafWidget.entitlements",
+			);
+			target = AA0000600000000000000001 /* LooseLeafWidget */;
 		};
 		AA0000320000000000000001 /* LooseLeafTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -38,6 +96,20 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0000680000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0000690000000000000001 /* LooseLeafWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA0000120000000000000001 /* Frameworks */ = {
@@ -72,6 +144,7 @@
 			children = (
 				AA0000110000000000000001 /* LooseLeaf.app */,
 				AA0000210000000000000001 /* LooseLeafTests.xctest */,
+				AA0000640000000000000001 /* LooseLeafWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -86,10 +159,12 @@
 				AA0000130000000000000001 /* Sources */,
 				AA0000120000000000000001 /* Frameworks */,
 				AA0000140000000000000001 /* Resources */,
+				AA0000680000000000000001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA00006A0000000000000001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0000300000000000000001 /* LooseLeaf */,
@@ -123,6 +198,29 @@
 			productName = LooseLeafTests;
 			productReference = AA0000210000000000000001 /* LooseLeafTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AA0000600000000000000001 /* LooseLeafWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000610000000000000001 /* Build configuration list for PBXNativeTarget "LooseLeafWidget" */;
+			buildPhases = (
+				AA0000650000000000000001 /* Sources */,
+				AA0000660000000000000001 /* Frameworks */,
+				AA0000670000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000310000000000000001 /* LooseLeafWidget */,
+				AA0000300000000000000001 /* LooseLeaf */,
+			);
+			name = LooseLeafWidget;
+			packageProductDependencies = (
+			);
+			productName = LooseLeafWidget;
+			productReference = AA0000640000000000000001 /* LooseLeafWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -159,6 +257,7 @@
 			targets = (
 				AA0000100000000000000001 /* LooseLeaf */,
 				AA0000200000000000000001 /* LooseLeafTests */,
+				AA0000600000000000000001 /* LooseLeafWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -172,6 +271,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		AA0000240000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000670000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -195,6 +301,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000650000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -202,6 +315,11 @@
 			isa = PBXTargetDependency;
 			target = AA0000100000000000000001 /* LooseLeaf */;
 			targetProxy = AA0000010000000000000001 /* PBXContainerItemProxy */;
+		};
+		AA00006A0000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000600000000000000001 /* LooseLeafWidget */;
+			targetProxy = AA00006B0000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -298,6 +416,50 @@
 			};
 			name = Release;
 		};
+		AA0000620000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LooseLeafWidget/LooseLeafWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LooseLeafWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.looseleaf.mac.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA0000630000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LooseLeafWidget/LooseLeafWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LooseLeafWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.looseleaf.mac.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -324,6 +486,15 @@
 			buildConfigurations = (
 				AA0000500000000000000001 /* Debug */,
 				AA0000510000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000610000000000000001 /* Build configuration list for PBXNativeTarget "LooseLeafWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000620000000000000001 /* Debug */,
+				AA0000630000000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

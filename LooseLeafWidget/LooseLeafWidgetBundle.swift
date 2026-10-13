@@ -28,6 +28,7 @@ public enum WidgetArchiveReader {
 }
 
 /// 活页集桌面小组件套件 (`docs/macos.md` §3.2).
+@main
 public struct LooseLeafWidgetBundle: WidgetBundle {
     public init() {}
 

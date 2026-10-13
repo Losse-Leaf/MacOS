@@ -26,83 +26,22 @@ public struct TemporalGapDivider: View {
     }
 }
 
-/// 支出类目光谱条 (Expense Spectrum Bar)
-/// 遵循 docs/macos.md §3.2.2 与 docs/web.md §2.3 大地色盘类目映射
-public struct ExpenseSpectrumBar: View {
-    public let summary: TransactionSummary
-    public var showLegend: Bool
-
-    public init(summary: TransactionSummary, showLegend: Bool = true) {
-        self.summary = summary
-        self.showLegend = showLegend
-    }
-
-    public var body: some View {
-        let items = summary.sortedSpectrum
-        VStack(alignment: .leading, spacing: 8) {
-            GeometryReader { geo in
-                if items.isEmpty {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(ArchivePalette.borderSubtle)
-                        .frame(height: 6)
-                } else {
-                    HStack(spacing: 1.5) {
-                        ForEach(items, id: \.category) { item in
-                            Rectangle()
-                                .fill(ArchivePalette.categoryColor(for: item.category))
-                                .frame(width: max(4, geo.size.width * item.ratio), height: 6)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                }
-            }
-            .frame(height: 6)
-
-            if showLegend && !items.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), spacing: 8)], alignment: .leading, spacing: 6) {
-                    ForEach(items.prefix(6), id: \.category) { item in
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(ArchivePalette.categoryColor(for: item.category))
-                                .frame(width: 6, height: 6)
-                            Text(item.category)
-                                .font(ArchiveTypography.bodySans(size: 11))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                .lineLimit(1)
-                            Spacer(minLength: 2)
-                            Text(FormatUtils.formattedYuan(cents: item.cents))
-                                .font(ArchiveTypography.monoScale(size: 10.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// GitHub 风格 52 周生活刻度热力图 (LifeActivityMap)
 /// 严格锚定北京时间今天 (Today)，回溯 26~52 周，展现散页书写密度
+/// 数据源由 AppState.entryCountsByDate 预聚合（记忆缓存），渲染路径零重复遍历
 public struct LifeActivityHeatmapView: View {
-    public let entries: [LifeEntry]
+    public let entryCounts: [String: Int]
+    public let totalCount: Int
     public var weeksCount: Int
 
-    public init(entries: [LifeEntry], weeksCount: Int = 32) {
-        self.entries = entries
+    public init(entryCounts: [String: Int], totalCount: Int, weeksCount: Int = 32) {
+        self.entryCounts = entryCounts
+        self.totalCount = totalCount
         self.weeksCount = weeksCount
     }
 
-    private var dailyCounts: [String: Int] {
-        var counts: [String: Int] = [:]
-        for entry in entries {
-            let key = entry.parsedDate.dateKey
-            counts[key, default: 0] += 1
-        }
-        return counts
-    }
-
     public var body: some View {
-        let counts = dailyCounts
+        let counts = entryCounts
         let cal = FormatUtils.beijingCalendar
         let today = cal.startOfDay(for: Date())
         let todayKey = FormatUtils.beijingDateString(from: today)
@@ -113,7 +52,7 @@ public struct LifeActivityHeatmapView: View {
                     .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                 Spacer()
-                Text("共 \(entries.count) 篇散页")
+                Text("共 \(totalCount) 篇散页")
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
@@ -208,6 +147,33 @@ public struct PaperPillButton: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// 纸面悬停高亮修饰符：轻微提亮 + 描边加深（为 macOS 指针交互提供物理反馈）
+public struct PaperHoverModifier: ViewModifier {
+    @State private var isHovering = false
+
+    public func body(content: Content) -> some View {
+        content
+            .brightness(isHovering ? 0.018 : 0)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isHovering ? ArchivePalette.borderDivider : Color.clear, lineWidth: 0.5)
+                    .allowsHitTesting(false)
+            )
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    isHovering = hovering
+                }
+            }
+    }
+}
+
+public extension View {
+    /// 纸面悬停反馈（卡片 / 缩略图等可交互面板）
+    func paperHover() -> some View {
+        modifier(PaperHoverModifier())
     }
 }
 

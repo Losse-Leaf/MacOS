@@ -8,12 +8,56 @@ public enum FormatUtils {
     /// 中国北京时间固定偏移 (UTC+8)，不依赖系统本地时区设置
     public static let beijingTimeZone = TimeZone(secondsFromGMT: 8 * 3600)!
 
-    public static var beijingCalendar: Calendar {
+    /// 北京时间日历（值类型缓存，线程安全）
+    public static let beijingCalendar: Calendar = {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = beijingTimeZone
         cal.locale = Locale(identifier: "zh_CN")
         return cal
-    }
+    }()
+
+    // MARK: - 解析器缓存（高频调用，复用实例 + 加锁保证线程安全）
+
+    private static let formatLock = NSLock()
+
+    private static let isoFractionFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let isoStandardFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let flexDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = beijingTimeZone
+        return df
+    }()
+
+    private static let beijingISOFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = beijingTimeZone
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'+08:00'"
+        return df
+    }()
+
+    private static let flexLayouts = [
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd",
+        "yyyy.MM.dd HH:mm:ss",
+        "yyyy.MM.dd HH:mm",
+        "yyyy.MM.dd",
+        "yyyy:MM:dd HH:mm:ss" // EXIF DateTimeOriginal
+    ]
 
     // MARK: - 货币分币转换与格式化 (Cents Standard)
 
@@ -30,6 +74,8 @@ public enum FormatUtils {
 
     /// 将以“分”为单位的 Int64 金额格式化为标准元字符串 (如 4250 -> "42.50" 或 "¥ 42.50")
     public static func formattedYuan(cents: Int64, includeSymbol: Bool = false) -> String {
+        formatLock.lock()
+        defer { formatLock.unlock() }
         let isNegative = cents < 0
         let absCents = abs(cents)
         let decimalYuan = Decimal(absCents) / Decimal(100)
@@ -81,7 +127,12 @@ public enum FormatUtils {
     }
 
     /// 解析如 "42.5 午餐咖啡"、"129 数码器材 无线鼠标"、"+5000 薪资" 等快捷记账指令
-    public static func parseQuickLedgerInput(_ input: String, defaultCategory: String = "餐饮") -> QuickLedgerParsed? {
+    /// - Parameter knownCategories: 后端动态下发的支出分类字典（为空时回退到内置基准分类集）
+    public static func parseQuickLedgerInput(
+        _ input: String,
+        defaultCategory: String = "餐饮",
+        knownCategories: [String] = []
+    ) -> QuickLedgerParsed? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -114,12 +165,12 @@ public enum FormatUtils {
             return nil
         }
 
-        let knownCategories = ["餐饮", "交通", "购物", "数码器材", "娱乐", "住房", "学习", "医疗", "二手回血", "其他"]
+        let effectiveCategories = knownCategories.isEmpty ? builtinCategories : knownCategories
         var category: String?
         var titleParts: [String] = []
 
         for part in remainingTokens {
-            if category == nil && knownCategories.contains(part) {
+            if category == nil && effectiveCategories.contains(part) {
                 category = part
             } else {
                 titleParts.append(part)
@@ -137,6 +188,9 @@ public enum FormatUtils {
             title: displayTitle
         )
     }
+
+    /// 内置基准分类集（后端未下发或离线时的最小语义集）
+    private static let builtinCategories = ["餐饮", "交通", "购物", "数码器材", "娱乐", "住房", "学习", "医疗", "二手回血", "其他"]
 
     private static func inferCategory(from text: String, isIncome: Bool, fallback: String) -> String {
         if isIncome {
@@ -182,38 +236,21 @@ public enum FormatUtils {
             return nil
         }
 
+        formatLock.lock()
+        defer { formatLock.unlock() }
+
         // 1. 带时区偏移的标准 ISO8601 / RFC3339
-        let isoFraction = ISO8601DateFormatter()
-        isoFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = isoFraction.date(from: raw) {
+        if let d = isoFractionFormatter.date(from: raw) {
             return d
         }
-
-        let isoStandard = ISO8601DateFormatter()
-        isoStandard.formatOptions = [.withInternetDateTime]
-        if let d = isoStandard.date(from: raw) {
+        if let d = isoStandardFormatter.date(from: raw) {
             return d
         }
 
         // 2. 不带时区后缀的弹性格式，统一按北京时间 UTC+8 解释
-        let layouts = [
-            "yyyy-MM-dd'T'HH:mm:ss",
-            "yyyy-MM-dd'T'HH:mm",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd HH:mm",
-            "yyyy-MM-dd",
-            "yyyy.MM.dd HH:mm:ss",
-            "yyyy.MM.dd HH:mm",
-            "yyyy.MM.dd",
-            "yyyy:MM:dd HH:mm:ss" // EXIF DateTimeOriginal
-        ]
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = beijingTimeZone
-
-        for layout in layouts {
-            df.dateFormat = layout
-            if let d = df.date(from: raw) {
+        for layout in flexLayouts {
+            flexDateFormatter.dateFormat = layout
+            if let d = flexDateFormatter.date(from: raw) {
                 return d
             }
         }
@@ -253,11 +290,9 @@ public enum FormatUtils {
 
     /// 生成带 +08:00 偏移的标准北京时间 ISO8601 字符串
     public static func beijingISOString(from date: Date = Date()) -> String {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = beijingTimeZone
-        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'+08:00'"
-        return df.string(from: date)
+        formatLock.lock()
+        defer { formatLock.unlock() }
+        return beijingISOFormatter.string(from: date)
     }
 
     /// 生成北京时间 YYYY-MM-DD 字符串
@@ -307,20 +342,8 @@ public enum FormatUtils {
 
     // MARK: - 城市名称与行政区划代码智能解析 (CityCodeResolver)
 
-    private static let cityCodeMap: [String: String] = [
-        "北京": "110100", "上海": "310100", "天津": "120100", "重庆": "500100",
-        "杭州": "330100", "宁波": "330200", "温州": "330300", "嘉兴": "330400", "湖州": "330500", "绍兴": "330600",
-        "南京": "320100", "无锡": "320200", "徐州": "320300", "常州": "320400", "苏州": "320500", "南通": "320600",
-        "广州": "440100", "深圳": "440300", "珠海": "440400", "佛山": "440600", "东莞": "441900",
-        "成都": "510100", "绵阳": "510700", "乐山": "511100",
-        "武汉": "420100", "长沙": "430100", "西安": "610100", "郑州": "410100", "济南": "370100", "青岛": "370200",
-        "厦门": "350200", "福州": "350100", "泉州": "350500", "合肥": "340100", "南昌": "360100",
-        "大理": "532900", "丽江": "530700", "昆明": "530100", "西双版纳": "532800", "香格里拉": "533400",
-        "拉萨": "540100", "林芝": "540400", "贵阳": "520100", "桂林": "450300", "南宁": "450100",
-        "海口": "460100", "三亚": "460200", "哈尔滨": "230100", "长春": "220100", "沈阳": "210100", "大连": "210200"
-    ]
-
     /// 自动从地点字符串中识别对应的 6 位城市代码（如 "杭州 · 西湖" -> "330100"）
+    /// 词典为全国地级行政区全量标准表（`CityDictionary`，与 web `web/src/utils/cities.ts` 对表一致）
     public static func resolveCityCode(from locationText: String) -> String? {
         let cleaned = locationText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
@@ -330,12 +353,6 @@ public enum FormatUtils {
             return cleaned
         }
 
-        // 优先精确匹配
-        for (cityName, code) in cityCodeMap {
-            if cleaned.contains(cityName) {
-                return code
-            }
-        }
-        return nil
+        return CityDictionary.code(forLocation: cleaned)
     }
 }

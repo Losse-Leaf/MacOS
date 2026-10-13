@@ -222,4 +222,61 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(json?["master_passcode"] as? String, "pass1234")
         XCTAssertEqual(json?["hub_url"] as? String, "http://127.0.0.1:8088")
     }
+
+    // MARK: - 10. Sync Merge, Cursor & Local Temp ID Logic Tests
+
+    func testMergedEntriesDeltaReconciliation() {
+        let base = LifeEntry(id: 1, title: "A", content: "", occurredAt: "2026-10-01 10:00:00")
+        let stale = LifeEntry(id: 2, title: "B", content: "", occurredAt: "2026-10-02 10:00:00")
+        let fresh = LifeEntry(id: 3, title: "C", content: "", occurredAt: "2026-10-03 10:00:00")
+        let deleted = LifeEntry(
+            id: 2,
+            title: "B",
+            content: "",
+            occurredAt: "2026-10-02 10:00:00",
+            deletedAt: "2026-10-04 10:00:00"
+        )
+
+        // 增量：新条目并入 + 软删除条目移除，结果按时间倒序
+        let merged = SyncManager.mergedEntries(current: [base, stale], incoming: [fresh, deleted], isDelta: true)
+        XCTAssertEqual(merged.map(\.id), [3, 1])
+
+        // 全量：本地未同步项保留 + 远端软删除项过滤
+        var pending = LifeEntry(id: 9, title: "P", content: "", occurredAt: "2026-10-05 10:00:00")
+        pending.syncStatus = "pending_create"
+        let full = SyncManager.mergedEntries(current: [pending], incoming: [base, fresh, deleted], isDelta: false)
+        XCTAssertEqual(full.map(\.id).sorted(), [1, 3, 9])
+    }
+
+    func testMergedTransactionsDeltaReconciliation() {
+        let base = Transaction(id: 1, amount: 1000, category: "餐饮", title: "A", occurredAt: "2026-10-01 10:00:00")
+        let deleted = Transaction(
+            id: 1,
+            amount: 1000,
+            category: "餐饮",
+            title: "A",
+            occurredAt: "2026-10-01 10:00:00",
+            deletedAt: "2026-10-04 10:00:00"
+        )
+        let merged = SyncManager.mergedTransactions(current: [base], incoming: [deleted], isDelta: true)
+        XCTAssertTrue(merged.isEmpty)
+    }
+
+    func testLatestServerCursor() {
+        XCTAssertNil(SyncManager.latestServerCursor([]))
+        XCTAssertNil(SyncManager.latestServerCursor([nil, ""]))
+        XCTAssertEqual(
+            SyncManager.latestServerCursor(["2026-10-01T10:00:00+08:00", nil, "2026-10-03T10:00:00+08:00", ""]),
+            "2026-10-03T10:00:00+08:00"
+        )
+    }
+
+    func testLocalTempIdGeneration() {
+        var seen = Set<Int>()
+        for _ in 0..<1000 {
+            let id = SyncManager.makeLocalTempId()
+            XCTAssertLessThan(id, 0, "本地临时 ID 必须为负值以与服务器 ID 区分")
+            XCTAssertTrue(seen.insert(id).inserted, "同批生成的临时 ID 不应碰撞")
+        }
+    }
 }

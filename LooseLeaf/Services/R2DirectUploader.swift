@@ -1,9 +1,12 @@
 import Foundation
+import os
 
-/// 预签名 Cloudflare R2 直传执行引擎（支持进度回调与本地未配 R2 自动平滑回退）
+/// 预签名 Cloudflare R2 直传执行引擎（支持进度回调、网络退避重试与本地未配 R2 自动平滑回退）
 /// 严格遵循 docs/macos.md §3.3 与 docs/backend.md §4.4 规范
 public final class R2DirectUploader: NSObject, Sendable {
     public static let shared = R2DirectUploader()
+
+    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "upload")
 
     private override init() {
         super.init()
@@ -13,7 +16,7 @@ public final class R2DirectUploader: NSObject, Sendable {
     /// 1. 请求 POST /api/v1/uploads/presign
     /// 2. 执行 HTTP PUT 直传 R2 存储桶（实时回调进度）
     /// 3. 请求 POST /api/v1/uploads/complete 确认落库
-    /// 若后端未配置 R2 (HTTP 503)，自动回退至 POST /api/v1/files/upload 本地存储通道
+    /// 网络类失败自动退避重试（最多 3 次尝试）；若后端未配置 R2 (HTTP 503)，自动回退至 POST /api/v1/files/upload 本地存储通道
     public func uploadProcessedPhoto(
         _ photo: ImageProcessor.ProcessedPhoto,
         onProgress: (@Sendable (Double) -> Void)? = nil
@@ -21,55 +24,13 @@ public final class R2DirectUploader: NSObject, Sendable {
         onProgress?(0.08)
 
         do {
-            let presignReq = PresignUploadRequest(
-                filename: photo.filename,
-                contentType: photo.mimeType,
-                size: photo.compressedSize
-            )
-            let presigned = try await APIClient.shared.presignUpload(presignReq)
-            onProgress?(0.20)
-
-            guard let putURL = URL(string: presigned.uploadUrl) else {
-                throw APIError.invalidURL(presigned.uploadUrl)
+            return try await withRetry {
+                try await performDirectUpload(photo, onProgress: onProgress)
             }
-
-            var putRequest = URLRequest(url: putURL)
-            putRequest.httpMethod = "PUT"
-            putRequest.setValue(photo.mimeType, forHTTPHeaderField: "Content-Type")
-            putRequest.setValue(String(photo.compressedSize), forHTTPHeaderField: "Content-Length")
-
-            let delegate = UploadProgressDelegate { fraction in
-                let mapped = 0.20 + (fraction * 0.68)
-                onProgress?(mapped)
-            }
-
-            let (_, response) = try await URLSession.shared.upload(
-                for: putRequest,
-                from: photo.compressedData,
-                delegate: delegate
-            )
-
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw APIError.networkFailure("R2 存储桶直传响应状态异常")
-            }
-
-            onProgress?(0.92)
-
-            let completeReq = CompleteUploadRequest(
-                uploadId: presigned.uploadId,
-                objectKey: presigned.objectKey,
-                originalFilename: photo.filename,
-                mimeType: photo.mimeType,
-                size: photo.compressedSize,
-                width: photo.width,
-                height: photo.height
-            )
-            let attachment = try await APIClient.shared.completeUpload(completeReq)
-            onProgress?(1.0)
-            return attachment
         } catch let apiError as APIError {
             // 当本地后端未配置 R2 环境变量返回 503 时，自动通过统一上传接口写入 data/uploads/
             if case .serverError(let code, _) = apiError, code == 503 {
+                Self.logger.warning("R2 presign returned 503, falling back to unified multipart upload")
                 onProgress?(0.45)
                 let attachment = try await APIClient.shared.uploadUnifiedMultipart(
                     fileData: photo.compressedData,
@@ -78,10 +39,96 @@ public final class R2DirectUploader: NSObject, Sendable {
                     folder: "entries"
                 )
                 onProgress?(1.0)
+                Self.logger.info("Unified multipart upload finished: \(photo.filename, privacy: .public)")
                 return attachment
             }
             throw apiError
         }
+    }
+
+    /// 预签名 → PUT 直传 → complete 的完整直传链路（不含 503 回退）
+    private func performDirectUpload(
+        _ photo: ImageProcessor.ProcessedPhoto,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> Attachment {
+        let presignReq = PresignUploadRequest(
+            filename: photo.filename,
+            contentType: photo.mimeType,
+            size: photo.compressedSize
+        )
+        let presigned = try await APIClient.shared.presignUpload(presignReq)
+        onProgress?(0.20)
+
+        guard let putURL = URL(string: presigned.uploadUrl) else {
+            throw APIError.invalidURL(presigned.uploadUrl)
+        }
+
+        var putRequest = URLRequest(url: putURL)
+        putRequest.httpMethod = "PUT"
+        putRequest.setValue(photo.mimeType, forHTTPHeaderField: "Content-Type")
+        putRequest.setValue(String(photo.compressedSize), forHTTPHeaderField: "Content-Length")
+
+        let delegate = UploadProgressDelegate { fraction in
+            let mapped = 0.20 + (fraction * 0.68)
+            onProgress?(mapped)
+        }
+
+        let (_, response) = try await URLSession.shared.upload(
+            for: putRequest,
+            from: photo.compressedData,
+            delegate: delegate
+        )
+
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.networkFailure("R2 存储桶直传响应状态异常")
+        }
+
+        onProgress?(0.92)
+
+        let completeReq = CompleteUploadRequest(
+            uploadId: presigned.uploadId,
+            objectKey: presigned.objectKey,
+            originalFilename: photo.filename,
+            mimeType: photo.mimeType,
+            size: photo.compressedSize,
+            width: photo.width,
+            height: photo.height
+        )
+        let attachment = try await APIClient.shared.completeUpload(completeReq)
+        onProgress?(1.0)
+        Self.logger.info("R2 direct upload finished: \(photo.filename, privacy: .public)")
+        return attachment
+    }
+
+    /// 网络类失败自动退避重试（最多 3 次尝试；4xx 业务错误不重试）
+    private func withRetry<T>(_ operation: () async throws -> T) async throws -> T {
+        let maxAttempts = 3
+        var lastError: Error = APIError.networkFailure("未知上传错误")
+        for attempt in 0..<maxAttempts {
+            do {
+                return try await operation()
+            } catch {
+                lastError = error
+                let retryable: Bool
+                if let apiError = error as? APIError {
+                    switch apiError {
+                    case .networkFailure:
+                        retryable = true
+                    case .serverError(let code, _):
+                        retryable = code >= 500
+                    default:
+                        retryable = false
+                    }
+                } else {
+                    retryable = true
+                }
+                guard retryable, attempt < maxAttempts - 1 else { break }
+                let delaySeconds = Double(attempt + 1) * 0.8
+                Self.logger.warning("Upload attempt \(attempt + 1) failed, retrying in \(delaySeconds) s")
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
+        }
+        throw lastError
     }
 }
 

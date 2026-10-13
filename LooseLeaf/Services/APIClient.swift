@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public extension Notification.Name {
     static let looseLeafUnauthorized = Notification.Name("com.looseleaf.archive.unauthorized")
@@ -36,6 +37,8 @@ public enum APIError: LocalizedError, Equatable, Sendable {
 public actor APIClient {
     public static let shared = APIClient()
     public static let hubURLDefaultsKey = "looseleaf_hub_base_url"
+
+    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "api")
 
     private let session: URLSession
     private var etagCache: [String: String] = [:]
@@ -159,6 +162,7 @@ public actor APIClient {
 
         if http.statusCode == 401 {
             let errEnvelope = try? JSONDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
+            Self.logger.warning("Received 401 unauthorized from \(path, privacy: .public)")
             NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
             throw APIError.unauthorized(errEnvelope?.message ?? "")
         }
@@ -262,7 +266,7 @@ public actor APIClient {
 
     /// 吊销受信任设备 (DELETE /api/v1/auth/devices/:id)
     public func revokeDevice(id: String) async throws {
-        let _: EmptyPayload? = try? await performEnvelopeRequest(
+        let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/auth/devices/\(id)",
             method: "DELETE"
         )
@@ -414,7 +418,7 @@ public actor APIClient {
         struct Payload: Codable {
             let initial_liquid_balance: Int64
         }
-        let _: EmptyPayload? = try? await performEnvelopeRequest(
+        let _: EmptyPayload = try await performEnvelopeRequest(
             path: "/api/v1/assets/liquid-balance",
             method: "PUT",
             body: Payload(initial_liquid_balance: cents)
@@ -430,7 +434,7 @@ public actor APIClient {
     }
 
     public func deleteGearAsset(id: String) async throws {
-        let _: DeleteResponse? = try? await performEnvelopeRequest(
+        let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/assets/gear/\(id)",
             method: "DELETE"
         )
@@ -460,7 +464,7 @@ public actor APIClient {
     }
 
     public func deleteProject(id: Int) async throws {
-        let _: DeleteResponse? = try? await performEnvelopeRequest(
+        let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/projects/\(id)",
             method: "DELETE"
         )
@@ -490,7 +494,7 @@ public actor APIClient {
     }
 
     public func deleteWish(id: Int) async throws {
-        let _: DeleteResponse? = try? await performEnvelopeRequest(
+        let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/wishes/\(id)",
             method: "DELETE"
         )
@@ -513,7 +517,7 @@ public actor APIClient {
     }
 
     public func deleteFootprint(id: Int) async throws {
-        let _: DeleteResponse? = try? await performEnvelopeRequest(
+        let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/footprints/\(id)",
             method: "DELETE"
         )

@@ -1,95 +1,18 @@
 import Foundation
 import Network
+import os
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
 
-/// 离线发件箱动作类型 (Outbox Pattern)
-public enum OutboxActionKind: String, Codable, Sendable {
-    case createEntry = "create_entry"
-    case deleteEntry = "delete_entry"
-    case createTransaction = "create_transaction"
-    case deleteTransaction = "delete_transaction"
-}
-
-/// 离线待同步队列项
-public struct OutboxItem: Codable, Identifiable, Equatable, Sendable {
-    public var id: UUID
-    public var kind: OutboxActionKind
-    public var localTempId: Int
-    public var targetServerId: Int?
-    public var entryRequest: CreateEntryRequest?
-    public var transactionRequest: CreateTransactionRequest?
-    public var retryCount: Int
-    public var lastError: String?
-    public var createdAt: String
-
-    public init(
-        id: UUID = UUID(),
-        kind: OutboxActionKind,
-        localTempId: Int,
-        targetServerId: Int? = nil,
-        entryRequest: CreateEntryRequest? = nil,
-        transactionRequest: CreateTransactionRequest? = nil,
-        retryCount: Int = 0,
-        lastError: String? = nil,
-        createdAt: String = FormatUtils.beijingISOString()
-    ) {
-        self.id = id
-        self.kind = kind
-        self.localTempId = localTempId
-        self.targetServerId = targetServerId
-        self.entryRequest = entryRequest
-        self.transactionRequest = transactionRequest
-        self.retryCount = retryCount
-        self.lastError = lastError
-        self.createdAt = createdAt
-    }
-}
-
-/// 本地持久化与小组件共享快照结构
-public struct LocalArchiveSnapshot: Codable, Sendable {
-    public var entries: [LifeEntry]
-    public var transactions: [Transaction]
-    public var transactionSummary: TransactionSummary
-    public var profile: CuratorProfile
-    public var siteConfig: SiteConfig
-    public var stats: GlobalStats
-    public var outbox: [OutboxItem]
-    public var lastEntriesSyncCursor: String?
-    public var lastTransactionsSyncCursor: String?
-    public var updatedAt: String
-
-    public init(
-        entries: [LifeEntry] = [],
-        transactions: [Transaction] = [],
-        transactionSummary: TransactionSummary = TransactionSummary(),
-        profile: CuratorProfile = CuratorProfile(),
-        siteConfig: SiteConfig = SiteConfig(),
-        stats: GlobalStats = GlobalStats(),
-        outbox: [OutboxItem] = [],
-        lastEntriesSyncCursor: String? = nil,
-        lastTransactionsSyncCursor: String? = nil,
-        updatedAt: String = FormatUtils.beijingISOString()
-    ) {
-        self.entries = entries
-        self.transactions = transactions
-        self.transactionSummary = transactionSummary
-        self.profile = profile
-        self.siteConfig = siteConfig
-        self.stats = stats
-        self.outbox = outbox
-        self.lastEntriesSyncCursor = lastEntriesSyncCursor
-        self.lastTransactionsSyncCursor = lastTransactionsSyncCursor
-        self.updatedAt = updatedAt
-    }
-}
-
 /// 本地优先存储与离线发件箱同步调度引擎 (Local-First & Sync Outbox Engine)
 /// 严格遵循 docs/macos.md §4 与 docs/ecosystem.md §7 规范
+/// 注：OutboxItem / LocalArchiveSnapshot 已移至 Models/SnapshotModel.swift（与 Widget 共享编译）
 @MainActor
 public final class SyncManager {
     public static let shared = SyncManager()
+
+    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "sync")
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.looseleaf.archive.network.monitor")
@@ -103,6 +26,21 @@ public final class SyncManager {
     private init() {
         self.snapshot = Self.loadFromDisk() ?? LocalArchiveSnapshot()
         startNetworkMonitor()
+    }
+
+    // MARK: - 本地临时 ID 生成
+
+    private nonisolated(unsafe) static var tempIdSequence: Int = 0
+    private static let tempIdLock = NSLock()
+
+    /// 生成离线乐观记录的本地临时 ID（负值，与服务器正 ID 区分）。
+    /// 毫秒时间戳 × 1000 + 进程内自增序号：跨毫秒近似有序，同毫秒内连续调用也不会碰撞。
+    nonisolated static func makeLocalTempId() -> Int {
+        tempIdLock.lock()
+        let seq = tempIdSequence % 1000
+        tempIdSequence += 1
+        tempIdLock.unlock()
+        return -(Int(Date().timeIntervalSince1970 * 1000) * 1000 + seq)
     }
 
     // MARK: - 本地磁盘缓存路径 (支持主应用与 WidgetKit 小组件共享读取)
@@ -160,6 +98,7 @@ public final class SyncManager {
                 guard let self else { return }
                 let wasOffline = !self.isOnline
                 self.isOnline = online
+                Self.logger.info("Network status: \(online ? "online" : "offline", privacy: .public)")
                 if online && (wasOffline || !self.snapshot.outbox.isEmpty) {
                     await self.flushOutbox()
                 }
@@ -190,7 +129,7 @@ public final class SyncManager {
             }
         }
 
-        let tempId = -(Int(Date().timeIntervalSince1970 * 1000) + Int.random(in: 0...999))
+        let tempId = Self.makeLocalTempId()
         let optimistic = LifeEntry(
             id: tempId,
             type: req.type,
@@ -237,7 +176,7 @@ public final class SyncManager {
             }
         }
 
-        let tempId = -(Int(Date().timeIntervalSince1970 * 1000) + Int.random(in: 0...999))
+        let tempId = Self.makeLocalTempId()
         let optimistic = Transaction(
             id: tempId,
             amount: req.amount,
@@ -277,6 +216,8 @@ public final class SyncManager {
         isFlushingOutbox = true
         defer { isFlushingOutbox = false }
 
+        Self.logger.info("Flushing outbox: \(self.snapshot.outbox.count) item(s) queued")
+
         var remaining: [OutboxItem] = []
         var current = snapshot
 
@@ -315,73 +256,83 @@ public final class SyncManager {
 
         current.outbox = remaining
         saveSnapshot(current)
+        Self.logger.info("Outbox flush finished, \(remaining.count) item(s) still pending")
     }
 
     // MARK: - 增量拉取与软删除对账合并 (Delta Sync & LWW Reconciliation)
 
     /// 计算增量响应中的最新服务端游标 (取 `updated_at` / `deleted_at` 最大值)。
     /// 使用服务端时间戳而非本地时钟，避免时钟漂移导致增量漏拉；无有效时间戳时返回 nil（保持旧游标不推进）。
-    private static func latestServerCursor(_ timestamps: [String?]) -> String? {
+    nonisolated static func latestServerCursor(_ timestamps: [String?]) -> String? {
         timestamps.compactMap { $0 }.filter { !$0.isEmpty }.max()
     }
 
     public func mergeEntries(_ incoming: [LifeEntry], isDelta: Bool) {
         var current = snapshot
-        if !isDelta {
-            let pendingLocal = current.entries.filter { ($0.syncStatus ?? "synced") != "synced" }
-            let validRemote = incoming.filter { ($0.deletedAt ?? "").isEmpty }
-            current.entries = pendingLocal + validRemote
-        } else {
-            var map = Dictionary(uniqueKeysWithValues: current.entries.map { ($0.id, $0) })
-            for entry in incoming {
-                if let deleted = entry.deletedAt, !deleted.isEmpty {
-                    map.removeValue(forKey: entry.id)
-                } else {
-                    var syncedEntry = entry
-                    syncedEntry.syncStatus = "synced"
-                    map[entry.id] = syncedEntry
-                }
-            }
-            current.entries = map.values.sorted {
-                let d1 = FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast
-                let d2 = FormatUtils.parseFlexDate($1.occurredAt) ?? .distantPast
-                if d1 != d2 { return d1 > d2 }
-                return $0.id > $1.id
-            }
-        }
+        current.entries = Self.mergedEntries(current: current.entries, incoming: incoming, isDelta: isDelta)
         if let latest = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] }) {
             current.lastEntriesSyncCursor = latest
         }
         saveSnapshot(current)
     }
 
-    public func mergeTransactions(_ incoming: [Transaction], isDelta: Bool) {
-        var current = snapshot
+    /// 时间流合并（纯函数，可单测）：
+    /// 全量覆盖时保留本地未同步项；增量时执行软删除对账并按北京时间倒序排列。
+    nonisolated static func mergedEntries(current: [LifeEntry], incoming: [LifeEntry], isDelta: Bool) -> [LifeEntry] {
         if !isDelta {
-            let pendingLocal = current.transactions.filter { ($0.syncStatus ?? "synced") != "synced" }
+            let pendingLocal = current.filter { ($0.syncStatus ?? "synced") != "synced" }
             let validRemote = incoming.filter { ($0.deletedAt ?? "").isEmpty }
-            current.transactions = pendingLocal + validRemote
-        } else {
-            var map = Dictionary(uniqueKeysWithValues: current.transactions.map { ($0.id, $0) })
-            for tx in incoming {
-                if let deleted = tx.deletedAt, !deleted.isEmpty {
-                    map.removeValue(forKey: tx.id)
-                } else {
-                    var syncedTx = tx
-                    syncedTx.syncStatus = "synced"
-                    map[tx.id] = syncedTx
-                }
-            }
-            current.transactions = map.values.sorted {
-                let d1 = FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast
-                let d2 = FormatUtils.parseFlexDate($1.occurredAt) ?? .distantPast
-                if d1 != d2 { return d1 > d2 }
-                return $0.id > $1.id
+            return pendingLocal + validRemote
+        }
+        var map = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        for entry in incoming {
+            if let deleted = entry.deletedAt, !deleted.isEmpty {
+                map.removeValue(forKey: entry.id)
+            } else {
+                var syncedEntry = entry
+                syncedEntry.syncStatus = "synced"
+                map[entry.id] = syncedEntry
             }
         }
+        return map.values.sorted {
+            let d1 = FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast
+            let d2 = FormatUtils.parseFlexDate($1.occurredAt) ?? .distantPast
+            if d1 != d2 { return d1 > d2 }
+            return $0.id > $1.id
+        }
+    }
+
+    public func mergeTransactions(_ incoming: [Transaction], isDelta: Bool) {
+        var current = snapshot
+        current.transactions = Self.mergedTransactions(current: current.transactions, incoming: incoming, isDelta: isDelta)
         if let latest = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] }) {
             current.lastTransactionsSyncCursor = latest
         }
         saveSnapshot(current)
+    }
+
+    /// 账目合并（纯函数，可单测）：语义与 `mergedEntries` 一致。
+    nonisolated static func mergedTransactions(current: [Transaction], incoming: [Transaction], isDelta: Bool) -> [Transaction] {
+        if !isDelta {
+            let pendingLocal = current.filter { ($0.syncStatus ?? "synced") != "synced" }
+            let validRemote = incoming.filter { ($0.deletedAt ?? "").isEmpty }
+            return pendingLocal + validRemote
+        }
+        var map = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        for tx in incoming {
+            if let deleted = tx.deletedAt, !deleted.isEmpty {
+                map.removeValue(forKey: tx.id)
+            } else {
+                var syncedTx = tx
+                syncedTx.syncStatus = "synced"
+                map[tx.id] = syncedTx
+            }
+        }
+        return map.values.sorted {
+            let d1 = FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast
+            let d2 = FormatUtils.parseFlexDate($1.occurredAt) ?? .distantPast
+            if d1 != d2 { return d1 > d2 }
+            return $0.id > $1.id
+        }
     }
 }

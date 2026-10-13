@@ -226,4 +226,29 @@ public enum ImageProcessor {
             exifMetadata: exifSummary
         )
     }
+
+    // MARK: - 后台线程压制包装（避免阻塞主线程 UI）
+
+    /// 在后台线程执行端侧 4K 压制（拖拽大图时保持 UI 顺滑）
+    public static func processImageFileInBackground(
+        at fileURL: URL,
+        maxPixelSize: Int = 3840,
+        quality: Double = 0.85
+    ) async throws -> ProcessedPhoto {
+        try await Task.detached(priority: .userInitiated) {
+            try processImageFile(at: fileURL, maxPixelSize: maxPixelSize, quality: quality)
+        }.value
+    }
+
+    /// 在后台线程处理内存中的图像数据（剪贴板粘贴等场景）
+    public static func processImageDataInBackground(
+        _ rawData: Data,
+        originalFilename: String,
+        maxPixelSize: Int = 3840,
+        quality: Double = 0.85
+    ) async throws -> ProcessedPhoto {
+        try await Task.detached(priority: .userInitiated) {
+            try processImageData(rawData, originalFilename: originalFilename, maxPixelSize: maxPixelSize, quality: quality)
+        }.value
+    }
 }

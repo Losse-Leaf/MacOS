@@ -209,16 +209,14 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/system/status")
     }
 
-    /// 6 位匹配码或二维码 Ticket 握手确认配对 (POST /api/v1/auth/pair/confirm)
+    /// 配对工单（链接/二维码）握手确认配对 (POST /api/v1/auth/pair/confirm)
     public func confirmPairing(
-        pinCode: String? = nil,
-        ticket: String? = nil,
+        ticket: String,
         deviceName: String,
         deviceModel: String = "Mac"
     ) async throws -> ConfirmPairingResponse {
         let payload = ConfirmPairingRequest(
             ticket: ticket,
-            pinCode: pinCode,
             deviceName: deviceName,
             platform: "macos",
             deviceModel: deviceModel

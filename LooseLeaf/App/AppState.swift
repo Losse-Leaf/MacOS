@@ -451,19 +451,18 @@ public final class AppState {
 
     // MARK: - 设备配对与密钥授权 (Device Pairing & Keychain)
 
-    public func pairWithPinCode(_ pinCode: String, hubURL: String) async throws {
-        APIClient.shared.setBaseURL(hubURL)
-        self.hubURLString = APIClient.shared.baseURLString
-        let hostName = Host.current().localizedName ?? "MacBook"
-        let _ = try await APIClient.shared.confirmPairing(
-            pinCode: pinCode.trimmingCharacters(in: .whitespacesAndNewlines),
-            deviceName: "\(hostName) · macOS",
-            deviceModel: "Mac"
-        )
-        self.isPaired = true
-        AudioFeedback.shared.playShutter()
-        showTemporaryBanner("设备免密配对成功，凭证已安全存入 macOS 钥匙串")
-        await refreshAll(forceFull: true)
+    /// 解析配对深链文本：`looseleaf://pair?hub=<中枢地址>&ticket=<配对工单>`
+    /// hub 缺失时返回空串（调用方回退到当前 `hubURLString`）；ticket 缺失或非配对链接返回 nil。
+    public nonisolated static func parsePairLink(_ raw: String) -> (hub: String, ticket: String)? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let comps = URLComponents(string: trimmed),
+              comps.scheme == "looseleaf",
+              comps.host == "pair" else { return nil }
+        let items = comps.queryItems ?? []
+        let ticket = items.first(where: { $0.name == "ticket" })?.value ?? ""
+        guard !ticket.isEmpty else { return nil }
+        let hub = items.first(where: { $0.name == "hub" })?.value ?? ""
+        return (hub, ticket)
     }
 
     public func pairWithTicket(_ ticket: String, hubURL: String) async throws {
@@ -507,15 +506,13 @@ public final class AppState {
     public func handleIncomingURL(_ url: URL) {
         guard url.scheme == "looseleaf" else { return }
         if url.host == "pair" {
-            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            let hub = comps?.queryItems?.first(where: { $0.name == "hub" })?.value ?? hubURLString
-            if let ticket = comps?.queryItems?.first(where: { $0.name == "ticket" })?.value, !ticket.isEmpty {
-                Task { @MainActor in
-                    do {
-                        try await pairWithTicket(ticket, hubURL: hub)
-                    } catch {
-                        self.errorBanner = error.localizedDescription
-                    }
+            guard let parsed = Self.parsePairLink(url.absoluteString) else { return }
+            let hub = parsed.hub.isEmpty ? hubURLString : parsed.hub
+            Task { @MainActor in
+                do {
+                    try await pairWithTicket(parsed.ticket, hubURL: hub)
+                } catch {
+                    self.errorBanner = error.localizedDescription
                 }
             }
         } else if url.host == "entry" {

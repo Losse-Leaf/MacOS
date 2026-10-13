@@ -215,14 +215,12 @@ public struct SystemStatus: Codable, Equatable, Sendable {
 
 public struct ConfirmPairingRequest: Codable, Sendable {
     public var ticket: String?
-    public var pinCode: String?
     public var deviceName: String
     public var platform: String
     public var deviceModel: String
 
     enum CodingKeys: String, CodingKey {
         case ticket
-        case pinCode = "pin_code"
         case deviceName = "device_name"
         case platform
         case deviceModel = "device_model"
@@ -230,13 +228,11 @@ public struct ConfirmPairingRequest: Codable, Sendable {
 
     public init(
         ticket: String? = nil,
-        pinCode: String? = nil,
         deviceName: String,
         platform: String = "macos",
         deviceModel: String = "Mac"
     ) {
         self.ticket = ticket
-        self.pinCode = pinCode
         self.deviceName = deviceName
         self.platform = platform
         self.deviceModel = deviceModel

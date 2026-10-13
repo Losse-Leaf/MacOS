@@ -8,13 +8,11 @@ public struct SettingsView: View {
     @Bindable var appState: AppState
 
     public enum PairingMethod: String, CaseIterable {
-        case pinCode = "6 位匹配码配对"
         case passcode = "主理人密钥授权"
-        case ticketURI = "配对工单 / 链接"
+        case ticketURI = "配对链接"
     }
 
-    @State private var selectedMethod: PairingMethod = .pinCode
-    @State private var pinCodeInput: String = ""
+    @State private var selectedMethod: PairingMethod = .ticketURI
     @State private var passcodeInput: String = ""
     @State private var ticketURIInput: String = ""
     @State private var isSubmittingAuth: Bool = false
@@ -182,26 +180,6 @@ public struct SettingsView: View {
                 }
 
                 switch selectedMethod {
-                case .pinCode:
-                    HStack(spacing: 10) {
-                        TextField("输入 Web 管理台显示的 6 位数字配对码（如 749210）", text: $pinCodeInput)
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
-                            .padding(9)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                            )
-
-                        Button(isSubmittingAuth ? "握手中…" : "确认配对握手") {
-                            performPinPairing()
-                        }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                        .disabled(pinCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).count < 6 || isSubmittingAuth)
-                    }
-
                 case .passcode:
                     HStack(spacing: 10) {
                         SecureField("输入主理人管理员密钥（直接签发本机专属子钥匙）", text: $passcodeInput)
@@ -535,23 +513,6 @@ public struct SettingsView: View {
 
     // MARK: - 配对动作执行
 
-    private func performPinPairing() {
-        isSubmittingAuth = true
-        authError = nil
-        authFeedback = nil
-        Task { @MainActor in
-            do {
-                try await appState.pairWithPinCode(pinCodeInput, hubURL: appState.hubURLString)
-                pinCodeInput = ""
-                authFeedback = "配对成功！设备令牌已存入 macOS 钥匙串。"
-                await refreshDevicesList()
-            } catch {
-                authError = error.localizedDescription
-            }
-            isSubmittingAuth = false
-        }
-    }
-
     private func performPasscodeVerify() {
         isSubmittingAuth = true
         authError = nil
@@ -572,18 +533,25 @@ public struct SettingsView: View {
     private func performTicketPairing() {
         let raw = ticketURIInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return }
-        if raw.hasPrefix("looseleaf://"), let url = URL(string: raw) {
-            appState.handleIncomingURL(url)
-            ticketURIInput = ""
-            return
-        }
         isSubmittingAuth = true
         authError = nil
         Task { @MainActor in
             do {
-                try await appState.pairWithTicket(raw, hubURL: appState.hubURLString)
+                if raw.hasPrefix("looseleaf://") {
+                    // 完整深链：统一解析器取 hub + ticket（未注册 scheme 的环境下粘贴同样生效）
+                    guard let parsed = AppState.parsePairLink(raw) else {
+                        authError = "无法识别配对链接，请在网页后台点击「复制配对链接」后重试"
+                        isSubmittingAuth = false
+                        return
+                    }
+                    let hub = parsed.hub.isEmpty ? appState.hubURLString : parsed.hub
+                    try await appState.pairWithTicket(parsed.ticket, hubURL: hub)
+                } else {
+                    // 纯工单号：地址沿用当前中枢
+                    try await appState.pairWithTicket(raw, hubURL: appState.hubURLString)
+                }
                 ticketURIInput = ""
-                authFeedback = "工单核销成功！设备已绑定。"
+                authFeedback = "配对成功！设备令牌已存入 macOS 钥匙串。"
                 await refreshDevicesList()
             } catch {
                 authError = error.localizedDescription

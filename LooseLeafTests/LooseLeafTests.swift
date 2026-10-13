@@ -279,4 +279,30 @@ final class LooseLeafTests: XCTestCase {
             XCTAssertTrue(seen.insert(id).inserted, "同批生成的临时 ID 不应碰撞")
         }
     }
+
+    // MARK: - 13. Pairing Link Parser Tests
+
+    func testParsePairLink() {
+        // 完整深链：hub + ticket 双取
+        let full = AppState.parsePairLink("looseleaf://pair?hub=http://127.0.0.1:8088&ticket=pair_tk_abc123")
+        XCTAssertNotNil(full)
+        XCTAssertEqual(full?.hub, "http://127.0.0.1:8088")
+        XCTAssertEqual(full?.ticket, "pair_tk_abc123")
+
+        // 首尾空白容忍
+        let padded = AppState.parsePairLink("  looseleaf://pair?hub=http://10.0.0.2:8088&ticket=tk9  \n")
+        XCTAssertEqual(padded?.ticket, "tk9")
+
+        // hub 缺失：仍可解析（调用方回退到当前 hubURLString）
+        let noHub = AppState.parsePairLink("looseleaf://pair?ticket=onlyticket")
+        XCTAssertEqual(noHub?.ticket, "onlyticket")
+        XCTAssertEqual(noHub?.hub, "")
+
+        // 非 looseleaf scheme / 非 pair host / 缺 ticket：一律拒绝
+        XCTAssertNil(AppState.parsePairLink("https://pair?hub=http://x&ticket=t"))
+        XCTAssertNil(AppState.parsePairLink("looseleaf://entry/42"))
+        XCTAssertNil(AppState.parsePairLink("looseleaf://pair?hub=http://x"))
+        XCTAssertNil(AppState.parsePairLink("随便一段文字"))
+        XCTAssertNil(AppState.parsePairLink(""))
+    }
 }

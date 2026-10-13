@@ -3,14 +3,14 @@ import AppKit
 
 /// 主理人工作台激活与配对门禁 (PairingGateView)
 /// 严格遵循：macOS 桌面端彻底废除访客只读模式；
-/// 未配对时全屏拦截，支持「首次装帧设密」或「管理员密钥一键直登」/「6位配对码」，配对后即为全权管理级别。
+/// 未配对时全屏拦截，支持「首次装帧设密」或「管理员密钥一键直登」/「配对链接粘贴」，配对后即为全权管理级别。
 @MainActor
 public struct PairingGateView: View {
     @Bindable var appState: AppState
 
     public enum Mode: String, CaseIterable {
         case masterPasscode = "管理员密钥登录"
-        case pinCode = "6 位数字配对码"
+        case pairLink = "配对链接"
     }
 
     @State private var mode: Mode = .masterPasscode
@@ -30,19 +30,14 @@ public struct PairingGateView: View {
     // 密钥登录表单
     @State private var passcodeInput: String = ""
 
-    // 6 位配对码表单
-    @State private var pinDigits: [String] = Array(repeating: "", count: 6)
-    @FocusState private var focusedPinIndex: Int?
+    // 配对链接表单
+    @State private var pairLinkInput: String = ""
 
     @State private var isSubmitting: Bool = false
     @State private var errorMessage: String?
 
     public init(appState: AppState) {
         self.appState = appState
-    }
-
-    private var pinCodeString: String {
-        pinDigits.joined()
     }
 
     public var body: some View {
@@ -344,47 +339,55 @@ public struct PairingGateView: View {
             } else {
                 VStack(spacing: 14) {
                     VStack(spacing: 4) {
-                        Text("输入 6 位配对码")
+                        Text("粘贴配对链接")
                             .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("在已登录的网页后台或手机端生成 6 位配对码，输入即可完成免密授信绑定。")
+                        Text("在网页后台「设备管理」或首次装帧向导中点击「复制配对链接」，粘贴至此即可；链接已包含中枢地址与配对凭证，全程免手输。")
                             .font(ArchiveTypography.bodySans(size: 11.5))
                             .foregroundStyle(ArchivePalette.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    TextField("looseleaf://pair?hub=…&ticket=…", text: $pairLinkInput)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .padding(10)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                        )
+                        .onSubmit {
+                            performPairLinkPairing()
+                        }
 
                     HStack(spacing: 8) {
-                        ForEach(0..<6, id: \.self) { idx in
-                            TextField("", text: $pinDigits[idx])
-                                .multilineTextAlignment(.center)
-                                .font(ArchiveTypography.monoScale(size: 20, weight: .bold))
-                                .frame(width: 44, height: 48)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(focusedPinIndex == idx ? ArchivePalette.accentWarm : ArchivePalette.borderDivider, lineWidth: 1)
-                                )
-                                .focused($focusedPinIndex, equals: idx)
-                                .onChange(of: pinDigits[idx]) { _, newValue in
-                                    handlePinDigitChange(at: idx, newValue: newValue)
-                                }
-                        }
-                    }
-                    .padding(.vertical, 6)
-
-                    Button {
-                        performPinPairing()
-                    } label: {
-                        HStack {
-                            if isSubmitting {
-                                ProgressView().controlSize(.small)
+                        Button {
+                            if let text = NSPasteboard.general.string(forType: .string) {
+                                pairLinkInput = text.trimmingCharacters(in: .whitespacesAndNewlines)
                             }
-                            Text("确认配对 ↩")
+                        } label: {
+                            Text("读取剪贴板")
+                                .frame(maxWidth: .infinity)
                         }
-                        .frame(maxWidth: .infinity)
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                        Button {
+                            performPairLinkPairing()
+                        } label: {
+                            HStack {
+                                if isSubmitting {
+                                    ProgressView().controlSize(.small)
+                                }
+                                Text("确认配对 ↩")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(pairLinkInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
                     }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                    .disabled(pinCodeString.count < 6 || isSubmitting)
                 }
             }
         }
@@ -447,47 +450,23 @@ public struct PairingGateView: View {
         }
     }
 
-    private func performPinPairing() {
+    private func performPairLinkPairing() {
         guard !isSubmitting else { return }
+        guard let parsed = AppState.parsePairLink(pairLinkInput) else {
+            errorMessage = "无法识别配对链接，请在网页后台点击「复制配对链接」后重新粘贴"
+            return
+        }
         isSubmitting = true
         errorMessage = nil
         Task { @MainActor in
             do {
-                try await appState.pairWithPinCode(pinCodeString, hubURL: appState.hubURLString)
+                let hub = parsed.hub.isEmpty ? appState.hubURLString : parsed.hub
+                try await appState.pairWithTicket(parsed.ticket, hubURL: hub)
                 AudioFeedback.shared.playShutter()
                 isSubmitting = false
             } catch {
                 errorMessage = error.localizedDescription
                 isSubmitting = false
-            }
-        }
-    }
-
-    private func handlePinDigitChange(at index: Int, newValue: String) {
-        if newValue.count > 1 {
-            // 支持一次性粘贴 6 位数字
-            let filtered = newValue.filter { $0.isNumber }
-            if filtered.count == 6 {
-                let chars = Array(filtered)
-                for i in 0..<6 {
-                    pinDigits[i] = String(chars[i])
-                }
-                focusedPinIndex = nil
-                performPinPairing()
-                return
-            } else {
-                pinDigits[index] = String(newValue.prefix(1))
-            }
-        }
-
-        if !newValue.isEmpty {
-            if index < 5 {
-                focusedPinIndex = index + 1
-            } else {
-                focusedPinIndex = nil
-                if pinCodeString.count == 6 {
-                    performPinPairing()
-                }
             }
         }
     }

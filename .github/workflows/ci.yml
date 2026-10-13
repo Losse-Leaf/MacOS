@@ -1,0 +1,31 @@
+name: macOS Client CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    name: Build & Test (macOS 14+)
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Swift Version
+        run: swift --version
+
+      - name: Verify Zero Hardcoded Hex Colors in Swift Code
+        run: |
+          if grep -rnE '#[0-9A-Fa-f]{6}\b' LooseLeaf/ LooseLeafWidget/; then
+            echo "Found hardcoded hex color literal in Swift code! Use Assets.xcassets semantic colors instead."
+            exit 1
+          fi
+
+      - name: Build Debug Target
+        run: swift build
+
+      - name: Run Unit Tests
+        run: swift test --verbose

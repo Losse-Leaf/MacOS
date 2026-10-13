@@ -1,0 +1,471 @@
+import Foundation
+import SwiftUI
+import Observation
+import AppKit
+
+/// 桌面端主题外观模式 (支持跟随系统、暖色棉纸、胶片暗房)
+public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
+    case system = "system"
+    case paper = "paper"
+    case darkroom = "darkroom"
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .paper: return "暖色棉纸"
+        case .darkroom: return "暗房安全灯"
+        }
+    }
+
+    public var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .paper: return .light
+        case .darkroom: return .dark
+        }
+    }
+}
+
+/// 桌面端主窗口侧栏导航模块
+public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
+    case stream = "stream"
+    case darkroom = "darkroom"
+    case ledger = "ledger"
+    case creations = "creations"
+    case dossier = "dossier"
+    case settings = "settings"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .stream: return "时间流与刻度"
+        case .darkroom: return "拖拽暗房冲印"
+        case .ledger: return "柴米油盐与资产"
+        case .creations: return "造物、心愿与行迹"
+        case .dossier: return "主理人手记与器物"
+        case .settings: return "设备配对与偏好"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .stream: return "book.pages"
+        case .darkroom: return "camera.aperture"
+        case .ledger: return "chart.bar.doc.horizontal"
+        case .creations: return "sparkles.rectangle.stack"
+        case .dossier: return "person.text.rectangle"
+        case .settings: return "key.radiowaves.forward"
+        }
+    }
+}
+
+/// 全局响应式状态中心 (@Observable)
+/// 遵循本地优先 (Local-First) 毫秒级上屏 + 后台异步增量同步架构
+@Observable
+@MainActor
+public final class AppState {
+    public static let shared = AppState()
+
+    // MARK: - 核心业务数据 (100% 动态驱动，严禁假数据兜底)
+    public var entries: [LifeEntry] = []
+    public var transactions: [Transaction] = []
+    public var transactionSummary: TransactionSummary = TransactionSummary()
+    public var assetsOverview: AssetsOverview?
+    public var profile: CuratorProfile = CuratorProfile()
+    public var siteConfig: SiteConfig = SiteConfig()
+    public var stats: GlobalStats = GlobalStats()
+    public var projects: [Project] = []
+    public var wishes: [Wish] = []
+    public var footprints: [Footprint] = []
+    public var trustedDevices: [TrustedDevice] = []
+    public var creditChannels: [CreditChannel] = []
+    public var outboxItems: [OutboxItem] = []
+
+    // MARK: - 动态分类字典 (由 /api/v1/categories 下发驱动)
+    public var expenseCategories: [String] = ["餐饮", "交通", "购物", "数码器材", "娱乐", "住房", "学习", "医疗", "其他"]
+    public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金"]
+
+    // MARK: - 导航与交互状态
+    public var activeSection: WorkbenchSection = .stream
+    public var selectedCategory: ArchiveCategory = .all
+    public var searchQuery: String = ""
+    public var selectedHashtag: String?
+    public var highlightedEntry: LifeEntry?
+    public var lightboxAttachment: Attachment?
+
+    // MARK: - 鉴权、网络与偏好设置状态
+    public var isPaired: Bool = false
+    public var hubURLString: String = APIClient.shared.baseURLString
+    public var isLoading: Bool = false
+    public var statusBanner: String?
+    public var errorBanner: String?
+
+    public var appearanceMode: AppearanceMode {
+        didSet {
+            UserDefaults.standard.set(appearanceMode.rawValue, forKey: "looseleaf_appearance_mode")
+        }
+    }
+
+    public var soundEnabled: Bool {
+        didSet {
+            AudioFeedback.shared.isSoundEnabled = soundEnabled
+        }
+    }
+
+    public var hapticsEnabled: Bool {
+        didSet {
+            AudioFeedback.shared.isHapticsEnabled = hapticsEnabled
+        }
+    }
+
+    public var globalHotkeyLabel: String = "⌘ + ⇧ + L"
+
+    private init() {
+        let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
+        self.appearanceMode = AppearanceMode(rawValue: savedAppearance) ?? .system
+        self.soundEnabled = AudioFeedback.shared.isSoundEnabled
+        self.hapticsEnabled = AudioFeedback.shared.isHapticsEnabled
+        self.isPaired = (KeychainManager.getToken()?.isEmpty == false)
+
+        // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
+        applySnapshot(SyncManager.shared.currentSnapshot())
+
+        SyncManager.shared.onSnapshotUpdated = { [weak self] snap in
+            Task { @MainActor [weak self] in
+                self?.applySnapshot(snap)
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .looseLeafUnauthorized,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                KeychainManager.deleteToken()
+                self.isPaired = false
+                self.errorBanner = "设备授权已过期或被吊销，请重新完成设备配对或验证主理人密钥"
+            }
+        }
+    }
+
+    private func applySnapshot(_ snap: LocalArchiveSnapshot) {
+        self.entries = snap.entries
+        self.transactions = snap.transactions
+        self.transactionSummary = snap.transactionSummary
+        self.profile = snap.profile
+        self.siteConfig = snap.siteConfig
+        self.stats = snap.stats
+        self.outboxItems = snap.outbox
+    }
+
+    // MARK: - 过滤与检索计算属性
+
+    /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤、#标签下钻与模糊搜索）
+    public var filteredStreamEntries: [LifeEntry] {
+        var source: [LifeEntry]
+        if selectedCategory == .transaction {
+            source = transactions.map { $0.toLifeEntry() }
+        } else {
+            source = entries.filter { $0.matches(category: selectedCategory) }
+        }
+
+        if let tag = selectedHashtag, !tag.isEmpty {
+            source = source.filter { $0.hashtags.contains(tag) }
+        }
+
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !q.isEmpty {
+            source = source.filter { entry in
+                entry.title.lowercased().contains(q)
+                || entry.content.lowercased().contains(q)
+                || (entry.location?.lowercased().contains(q) ?? false)
+                || (entry.cityName?.lowercased().contains(q) ?? false)
+            }
+        }
+        return source
+    }
+
+    /// 聚合高频 #标签
+    public var allHashtags: [(tag: String, count: Int)] {
+        var map: [String: Int] = [:]
+        for entry in entries {
+            for tag in entry.hashtags {
+                map[tag, default: 0] += 1
+            }
+        }
+        return map
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map { (tag: $0.key, count: $0.value) }
+    }
+
+    // MARK: - 远端全量与增量拉取
+
+    public func refreshAll(forceFull: Bool = false) async {
+        isLoading = true
+        errorBanner = nil
+        defer { isLoading = false }
+
+        // 先尝试排空离线发件箱
+        await SyncManager.shared.flushOutbox()
+
+        // 并发拉取公开基础配置与档案
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.loadConfigAndProfile() }
+            group.addTask { await self.loadEntries(forceFull: forceFull) }
+            group.addTask { await self.loadCategories() }
+            group.addTask { await self.loadProjectsWishesFootprints() }
+            if self.isPaired {
+                group.addTask { await self.loadTransactionsAndAssets(forceFull: forceFull) }
+            }
+        }
+    }
+
+    public func loadConfigAndProfile() async {
+        var snap = SyncManager.shared.currentSnapshot()
+        if let cfg = try? await APIClient.shared.fetchSiteConfig() {
+            snap.siteConfig = cfg
+        }
+        if let prof = try? await APIClient.shared.fetchCuratorProfile() {
+            snap.profile = prof
+        }
+        if let st = try? await APIClient.shared.fetchGlobalStats() {
+            snap.stats = st
+        }
+        SyncManager.shared.saveSnapshot(snap)
+    }
+
+    public func loadCategories() async {
+        guard let list = try? await APIClient.shared.fetchCategories() else { return }
+        let exp = list.filter { $0.scope == "expense" }.map(\.name)
+        if !exp.isEmpty {
+            self.expenseCategories = exp
+        }
+        let pay = list.filter { $0.scope == "payment" }.map(\.name)
+        if !pay.isEmpty {
+            self.paymentMethods = pay
+        }
+    }
+
+    public func loadEntries(forceFull: Bool = false) async {
+        let snap = SyncManager.shared.currentSnapshot()
+        let cursor = forceFull ? nil : snap.lastEntriesSyncCursor
+        do {
+            let resp = try await APIClient.shared.fetchEntries(
+                page: 1,
+                pageSize: 100,
+                since: cursor,
+                useETag: !forceFull && cursor == nil
+            )
+            SyncManager.shared.mergeEntries(resp.entries, isDelta: cursor != nil)
+        } catch APIError.notModified {
+            // 304 Not Modified: 本地缓存已是最新
+        } catch {
+            if entries.isEmpty {
+                self.errorBanner = error.localizedDescription
+            }
+        }
+    }
+
+    public func loadTransactionsAndAssets(forceFull: Bool = false) async {
+        guard isPaired else { return }
+        let snap = SyncManager.shared.currentSnapshot()
+        let cursor = forceFull ? nil : snap.lastTransactionsSyncCursor
+
+        do {
+            let txs = try await APIClient.shared.fetchTransactions(
+                since: cursor,
+                limit: 300,
+                useETag: !forceFull && cursor == nil
+            )
+            SyncManager.shared.mergeTransactions(txs, isDelta: cursor != nil)
+        } catch APIError.notModified {
+            // 304 Not Modified
+        } catch {
+            // 保持本地缓存
+        }
+
+        let ym = FormatUtils.beijingCurrentYearMonth()
+        if let summary = try? await APIClient.shared.fetchTransactionSummary(year: ym.year, month: ym.month) {
+            var updated = SyncManager.shared.currentSnapshot()
+            updated.transactionSummary = summary
+            SyncManager.shared.saveSnapshot(updated)
+        }
+
+        if let overview = try? await APIClient.shared.fetchAssetsOverview() {
+            self.assetsOverview = overview
+        }
+        if let channels = try? await APIClient.shared.fetchCreditChannels() {
+            self.creditChannels = channels
+        }
+    }
+
+    public func loadProjectsWishesFootprints() async {
+        if let projs = try? await APIClient.shared.fetchProjects() {
+            self.projects = projs
+        }
+        if let wishResp = try? await APIClient.shared.fetchWishes() {
+            self.wishes = wishResp.wishes
+        }
+        if let fps = try? await APIClient.shared.fetchFootprints() {
+            self.footprints = fps
+        }
+    }
+
+    // MARK: - 极速闪念与快速记账提交 (Quick Capture & Quick Ledger)
+
+    public func submitQuickCapture(
+        title: String,
+        content: String,
+        type: EntryType = .life,
+        location: String? = nil,
+        attachmentIds: [Int] = [],
+        featured: Bool = false
+    ) async throws -> Bool {
+        let finalLocation = (location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? location!.trimmingCharacters(in: .whitespacesAndNewlines)
+            : (profile.displayCity.isEmpty ? nil : profile.displayCity)
+
+        let req = CreateEntryRequest(
+            type: type.rawValue,
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            content: content.trimmingCharacters(in: .whitespacesAndNewlines),
+            occurredAt: FormatUtils.beijingISOString(),
+            location: finalLocation,
+            featured: featured,
+            attachmentIds: attachmentIds
+        )
+
+        let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req)
+        AudioFeedback.shared.playShutter()
+        if queuedOffline {
+            showTemporaryBanner("已暂存至本地发件箱，网络恢复后自动同步")
+        } else {
+            showTemporaryBanner("已归入散页时间流")
+            await loadConfigAndProfile()
+        }
+        return queuedOffline
+    }
+
+    public func submitQuickLedger(
+        amountCents: Int64,
+        type: String = "expense",
+        category: String,
+        title: String,
+        note: String? = nil,
+        paymentMethod: String? = nil
+    ) async throws -> Bool {
+        let req = CreateTransactionRequest(
+            amount: amountCents,
+            type: type,
+            category: category,
+            title: title,
+            note: note,
+            paymentMethod: paymentMethod ?? paymentMethods.first ?? "微信支付",
+            occurredAt: FormatUtils.beijingISOString()
+        )
+
+        let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
+        AudioFeedback.shared.playShutter()
+        if queuedOffline {
+            showTemporaryBanner("账单已暂存至本地发件箱，网络恢复后自动同步")
+        } else {
+            showTemporaryBanner("已记入账本：\(FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true))")
+            await loadTransactionsAndAssets(forceFull: true)
+            await loadConfigAndProfile()
+        }
+        return queuedOffline
+    }
+
+    // MARK: - 设备配对与密钥授权 (Device Pairing & Keychain)
+
+    public func pairWithPinCode(_ pinCode: String, hubURL: String) async throws {
+        APIClient.shared.setBaseURL(hubURL)
+        self.hubURLString = APIClient.shared.baseURLString
+        let hostName = Host.current().localizedName ?? "MacBook"
+        let _ = try await APIClient.shared.confirmPairing(
+            pinCode: pinCode.trimmingCharacters(in: .whitespacesAndNewlines),
+            deviceName: "\(hostName) · macOS",
+            deviceModel: "Mac"
+        )
+        self.isPaired = true
+        AudioFeedback.shared.playShutter()
+        showTemporaryBanner("设备免密配对成功，凭证已安全存入 macOS 钥匙串")
+        await refreshAll(forceFull: true)
+    }
+
+    public func pairWithTicket(_ ticket: String, hubURL: String) async throws {
+        APIClient.shared.setBaseURL(hubURL)
+        self.hubURLString = APIClient.shared.baseURLString
+        let hostName = Host.current().localizedName ?? "MacBook"
+        let _ = try await APIClient.shared.confirmPairing(
+            ticket: ticket.trimmingCharacters(in: .whitespacesAndNewlines),
+            deviceName: "\(hostName) · macOS",
+            deviceModel: "Mac"
+        )
+        self.isPaired = true
+        AudioFeedback.shared.playShutter()
+        showTemporaryBanner("配对工单握手成功，凭证已安全存入 macOS 钥匙串")
+        await refreshAll(forceFull: true)
+    }
+
+    public func verifyWithMasterPasscode(_ passcode: String, hubURL: String) async throws {
+        APIClient.shared.setBaseURL(hubURL)
+        self.hubURLString = APIClient.shared.baseURLString
+        let hostName = Host.current().localizedName ?? "MacBook"
+        let _ = try await APIClient.shared.verifyMasterPasscode(
+            passcode: passcode,
+            deviceName: "\(hostName) · macOS"
+        )
+        self.isPaired = true
+        AudioFeedback.shared.playShutter()
+        showTemporaryBanner("主理人密钥验证通过，专属设备子钥匙已存入钥匙串")
+        await refreshAll(forceFull: true)
+    }
+
+    public func disconnectDevice() {
+        KeychainManager.clearAllCredentials()
+        self.isPaired = false
+        showTemporaryBanner("已清除本机钥匙串中的设备配对凭证")
+    }
+
+    /// 处理自定义 URL Scheme:
+    /// - looseleaf://pair?hub=http://...&ticket=pair_tk_...
+    /// - looseleaf://entry/123
+    public func handleIncomingURL(_ url: URL) {
+        guard url.scheme == "looseleaf" else { return }
+        if url.host == "pair" {
+            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let hub = comps?.queryItems?.first(where: { $0.name == "hub" })?.value ?? hubURLString
+            if let ticket = comps?.queryItems?.first(where: { $0.name == "ticket" })?.value, !ticket.isEmpty {
+                Task {
+                    do {
+                        try await pairWithTicket(ticket, hubURL: hub)
+                    } catch {
+                        self.errorBanner = error.localizedDescription
+                    }
+                }
+            }
+        } else if url.host == "entry" {
+            if let idStr = url.pathComponents.last, let entryId = Int(idStr),
+               let found = entries.first(where: { $0.id == entryId }) {
+                self.activeSection = .stream
+                self.highlightedEntry = found
+            }
+        }
+    }
+
+    public func showTemporaryBanner(_ text: String) {
+        self.statusBanner = text
+        Task {
+            try? await Task.sleep(nanoseconds: 3_200_000_000)
+            if self.statusBanner == text {
+                self.statusBanner = nil
+            }
+        }
+    }
+}

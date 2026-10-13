@@ -1,0 +1,427 @@
+import Foundation
+
+/// 标准 RESTful API v1 统一响应信封
+public struct APIEnvelope<T: Decodable>: Decodable {
+    public let code: Int
+    public let message: String
+    public let data: T?
+}
+
+/// 生活档案底层四维母体类型 (RC-128)
+public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
+    case life = "life"
+    case travel = "travel"
+    case project = "project"
+    case wish = "wish"
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .life: return "日常随笔"
+        case .travel: return "山川游历"
+        case .project: return "造物日志"
+        case .wish: return "心愿印记"
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .life: return "leaf"
+        case .travel: return "safari"
+        case .project: return "hammer"
+        case .wish: return "sparkles"
+        }
+    }
+}
+
+/// 顶层展厅过滤分类视角
+public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
+    case all = "all"
+    case daily = "daily"
+    case travel = "travel"
+    case project = "project"
+    case wish = "wish"
+    case transaction = "transaction"
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .all: return "全部印记"
+        case .daily: return "日常"
+        case .travel: return "游历"
+        case .project: return "造物"
+        case .wish: return "心愿"
+        case .transaction: return "账目"
+        }
+    }
+}
+
+/// 附件与多媒体对象实体
+public struct Attachment: Codable, Identifiable, Equatable, Sendable {
+    public let id: Int
+    public var entryId: Int?
+    public var wishId: Int?
+    public var footprintId: Int?
+    public var objectKey: String
+    public var originalFilename: String
+    public var mimeType: String
+    public var size: Int64
+    public var width: Int?
+    public var height: Int?
+    public var url: String
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case entryId = "entry_id"
+        case wishId = "wish_id"
+        case footprintId = "footprint_id"
+        case objectKey = "object_key"
+        case originalFilename = "original_filename"
+        case mimeType = "mime_type"
+        case size
+        case width
+        case height
+        case url
+        case createdAt = "created_at"
+    }
+
+    public init(
+        id: Int,
+        entryId: Int? = nil,
+        wishId: Int? = nil,
+        footprintId: Int? = nil,
+        objectKey: String,
+        originalFilename: String,
+        mimeType: String,
+        size: Int64,
+        width: Int? = nil,
+        height: Int? = nil,
+        url: String,
+        createdAt: String? = nil
+    ) {
+        self.id = id
+        self.entryId = entryId
+        self.wishId = wishId
+        self.footprintId = footprintId
+        self.objectKey = objectKey
+        self.originalFilename = originalFilename
+        self.mimeType = mimeType
+        self.size = size
+        self.width = width
+        self.height = height
+        self.url = url
+        self.createdAt = createdAt
+    }
+}
+
+/// 统一生活时间线档案条目 (LifeEntry)
+/// 作为一级母体记录，承载文字、现场相片、所处地点与关联造物/心愿/足迹
+public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
+    public var id: Int
+    public var type: String
+    public var title: String
+    public var content: String
+    public var occurredAt: String
+    public var location: String?
+    public var cityCode: String?
+    public var cityName: String?
+    public var projectId: Int?
+    public var project: Project?
+    public var wishId: Int?
+    public var wish: Wish?
+    public var footprintId: Int?
+    public var attachments: [Attachment]
+    public var featured: Bool?
+    public var deletedAt: String?
+    public var createdAt: String?
+    public var updatedAt: String?
+
+    /// 客户端离线同步状态标记 ("synced", "pending_create", "pending_update", "pending_delete")
+    public var syncStatus: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case title
+        case content
+        case occurredAt = "occurred_at"
+        case location
+        case cityCode = "city_code"
+        case cityName = "city_name"
+        case projectId = "project_id"
+        case project
+        case wishId = "wish_id"
+        case wish
+        case footprintId = "footprint_id"
+        case attachments
+        case featured
+        case deletedAt = "deleted_at"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case syncStatus = "sync_status"
+    }
+
+    public init(
+        id: Int,
+        type: String = EntryType.life.rawValue,
+        title: String,
+        content: String,
+        occurredAt: String,
+        location: String? = nil,
+        cityCode: String? = nil,
+        cityName: String? = nil,
+        projectId: Int? = nil,
+        project: Project? = nil,
+        wishId: Int? = nil,
+        wish: Wish? = nil,
+        footprintId: Int? = nil,
+        attachments: [Attachment] = [],
+        featured: Bool? = false,
+        deletedAt: String? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil,
+        syncStatus: String? = "synced"
+    ) {
+        self.id = id
+        self.type = type
+        self.title = title
+        self.content = content
+        self.occurredAt = occurredAt
+        self.location = location
+        self.cityCode = cityCode
+        self.cityName = cityName
+        self.projectId = projectId
+        self.project = project
+        self.wishId = wishId
+        self.wish = wish
+        self.footprintId = footprintId
+        self.attachments = attachments
+        self.featured = featured
+        self.deletedAt = deletedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.syncStatus = syncStatus
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        type = (try? container.decode(String.self, forKey: .type)) ?? EntryType.life.rawValue
+        title = (try? container.decode(String.self, forKey: .title)) ?? ""
+        content = (try? container.decode(String.self, forKey: .content)) ?? ""
+        occurredAt = (try? container.decode(String.self, forKey: .occurredAt)) ?? FormatUtils.beijingISOString()
+        location = try? container.decodeIfPresent(String.self, forKey: .location)
+        cityCode = try? container.decodeIfPresent(String.self, forKey: .cityCode)
+        cityName = try? container.decodeIfPresent(String.self, forKey: .cityName)
+        projectId = try? container.decodeIfPresent(Int.self, forKey: .projectId)
+        project = try? container.decodeIfPresent(Project.self, forKey: .project)
+        wishId = try? container.decodeIfPresent(Int.self, forKey: .wishId)
+        wish = try? container.decodeIfPresent(Wish.self, forKey: .wish)
+        footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
+        attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
+        featured = try? container.decodeIfPresent(Bool.self, forKey: .featured)
+        deletedAt = try? container.decodeIfPresent(String.self, forKey: .deletedAt)
+        createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try? container.decodeIfPresent(String.self, forKey: .updatedAt)
+        syncStatus = (try? container.decodeIfPresent(String.self, forKey: .syncStatus)) ?? "synced"
+    }
+
+    /// 匹配顶层分类视角 (与 Web 端 getEntryCategory 逻辑严格对齐)
+    public func matches(category: ArchiveCategory) -> Bool {
+        switch category {
+        case .all:
+            return true
+        case .daily:
+            return type == EntryType.life.rawValue
+        case .travel:
+            return type == EntryType.travel.rawValue || !(cityCode ?? "").isEmpty
+        case .project:
+            return type == EntryType.project.rawValue || (projectId ?? 0) > 0
+        case .wish:
+            return type == EntryType.wish.rawValue || (wishId ?? 0) > 0
+        case .transaction:
+            return type == "transaction"
+        }
+    }
+
+    /// 提取北京时间戳派生结构（不落库，展示时实时计算）
+    public var parsedDate: FormatUtils.ParsedBeijingDate {
+        FormatUtils.parseOccurredDate(occurredAt)
+    }
+
+    /// 提取正文中的 #标签
+    public var hashtags: [String] {
+        FormatUtils.extractHashtags(from: content)
+    }
+}
+
+/// 分页查询生活档案列表响应结构
+public struct EntriesListResponse: Codable, Sendable {
+    public let total: Int
+    public let page: Int
+    public let pageSize: Int
+    public let entries: [LifeEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case total
+        case page
+        case pageSize = "page_size"
+        case entries
+    }
+}
+
+/// 新建生活记录请求载荷
+public struct CreateEntryRequest: Codable, Equatable, Sendable {
+    public var type: String
+    public var title: String
+    public var content: String
+    public var occurredAt: String
+    public var location: String?
+    public var featured: Bool
+    public var cityCode: String?
+    public var cityName: String?
+    public var projectId: Int?
+    public var wishId: Int?
+    public var footprintId: Int?
+    public var attachmentIds: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case title
+        case content
+        case occurredAt = "occurred_at"
+        case location
+        case featured
+        case cityCode = "city_code"
+        case cityName = "city_name"
+        case projectId = "project_id"
+        case wishId = "wish_id"
+        case footprintId = "footprint_id"
+        case attachmentIds = "attachment_ids"
+    }
+
+    public init(
+        type: String = EntryType.life.rawValue,
+        title: String = "",
+        content: String,
+        occurredAt: String = FormatUtils.beijingISOString(),
+        location: String? = nil,
+        featured: Bool = false,
+        cityCode: String? = nil,
+        cityName: String? = nil,
+        projectId: Int? = nil,
+        wishId: Int? = nil,
+        footprintId: Int? = nil,
+        attachmentIds: [Int] = []
+    ) {
+        self.type = type
+        self.title = title
+        self.content = content
+        self.occurredAt = occurredAt
+        self.location = location
+        self.featured = featured
+        self.cityCode = cityCode
+        self.cityName = cityName
+        self.projectId = projectId
+        self.wishId = wishId
+        self.footprintId = footprintId
+        self.attachmentIds = attachmentIds
+    }
+}
+
+/// 编辑生活记录请求载荷
+public struct UpdateEntryRequest: Codable, Equatable, Sendable {
+    public var type: String?
+    public var title: String?
+    public var content: String?
+    public var occurredAt: String?
+    public var location: String?
+    public var featured: Bool?
+    public var cityCode: String?
+    public var cityName: String?
+    public var projectId: Int?
+    public var wishId: Int?
+    public var footprintId: Int?
+    public var attachmentIds: [Int]?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case title
+        case content
+        case occurredAt = "occurred_at"
+        case location
+        case featured
+        case cityCode = "city_code"
+        case cityName = "city_name"
+        case projectId = "project_id"
+        case wishId = "wish_id"
+        case footprintId = "footprint_id"
+        case attachmentIds = "attachment_ids"
+    }
+
+    public init(
+        type: String? = nil,
+        title: String? = nil,
+        content: String? = nil,
+        occurredAt: String? = nil,
+        location: String? = nil,
+        featured: Bool? = nil,
+        cityCode: String? = nil,
+        cityName: String? = nil,
+        projectId: Int? = nil,
+        wishId: Int? = nil,
+        footprintId: Int? = nil,
+        attachmentIds: [Int]? = nil
+    ) {
+        self.type = type
+        self.title = title
+        self.content = content
+        self.occurredAt = occurredAt
+        self.location = location
+        self.featured = featured
+        self.cityCode = cityCode
+        self.cityName = cityName
+        self.projectId = projectId
+        self.wishId = wishId
+        self.footprintId = footprintId
+        self.attachmentIds = attachmentIds
+    }
+}
+
+/// 全局档案指标统计 (GET /api/v1/stats)
+public struct GlobalStats: Codable, Equatable, Sendable {
+    public var totalEntries: Int
+    public var totalPhotos: Int
+    public var totalProjects: Int
+    public var monthExpense: Int64
+    public var currentYear: Int
+    public var currentMonth: Int
+
+    enum CodingKeys: String, CodingKey {
+        case totalEntries = "total_entries"
+        case totalPhotos = "total_photos"
+        case totalProjects = "total_projects"
+        case monthExpense = "month_expense"
+        case currentYear = "current_year"
+        case currentMonth = "current_month"
+    }
+
+    public init(
+        totalEntries: Int = 0,
+        totalPhotos: Int = 0,
+        totalProjects: Int = 0,
+        monthExpense: Int64 = 0,
+        currentYear: Int = FormatUtils.beijingCurrentYearMonth().year,
+        currentMonth: Int = FormatUtils.beijingCurrentYearMonth().month
+    ) {
+        self.totalEntries = totalEntries
+        self.totalPhotos = totalPhotos
+        self.totalProjects = totalProjects
+        self.monthExpense = monthExpense
+        self.currentYear = currentYear
+        self.currentMonth = currentMonth
+    }
+}

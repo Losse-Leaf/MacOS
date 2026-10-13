@@ -1,0 +1,165 @@
+import XCTest
+import AppKit
+@testable import LooseLeaf
+
+final class LooseLeafTests: XCTestCase {
+
+    // MARK: - 1. Cents Int64 Precision Tests (Zero Float Drift)
+
+    func testParseYuanToCentsPrecision() {
+        XCTAssertEqual(FormatUtils.parseYuanToCents("42.5"), 4250)
+        XCTAssertEqual(FormatUtils.parseYuanToCents("42.50"), 4250)
+        XCTAssertEqual(FormatUtils.parseYuanToCents("0.01"), 1)
+        XCTAssertEqual(FormatUtils.parseYuanToCents("100"), 10000)
+        XCTAssertEqual(FormatUtils.parseYuanToCents("¥1,299.99"), 129999)
+        XCTAssertEqual(FormatUtils.parseYuanToCents("19.99"), 1999)
+        XCTAssertNil(FormatUtils.parseYuanToCents("abc"))
+        XCTAssertNil(FormatUtils.parseYuanToCents(""))
+    }
+
+    func testFormattedYuanDisplay() {
+        XCTAssertEqual(FormatUtils.formattedYuan(cents: 4250, includeSymbol: true), "¥ 42.50")
+        XCTAssertEqual(FormatUtils.formattedYuan(cents: 10000, includeSymbol: false), "100.00")
+        XCTAssertEqual(FormatUtils.formattedYuan(cents: 1, includeSymbol: true), "¥ 0.01")
+    }
+
+    // MARK: - 2. Quick Ledger Natural Language Parser Tests
+
+    func testQuickLedgerNaturalLanguageParser() {
+        let parsed1 = FormatUtils.parseQuickLedgerInput("42.5 午餐手冲咖啡")
+        XCTAssertNotNil(parsed1)
+        XCTAssertEqual(parsed1?.amountCents, 4250)
+        XCTAssertEqual(parsed1?.category, "餐饮")
+        XCTAssertEqual(parsed1?.title, "午餐手冲咖啡")
+        XCTAssertEqual(parsed1?.type, "expense")
+
+        let parsed2 = FormatUtils.parseQuickLedgerInput("地铁通勤 6")
+        XCTAssertNotNil(parsed2)
+        XCTAssertEqual(parsed2?.amountCents, 600)
+        XCTAssertEqual(parsed2?.category, "交通")
+        XCTAssertEqual(parsed2?.title, "地铁通勤")
+
+        let parsed3 = FormatUtils.parseQuickLedgerInput("128.80 买书 #阅读")
+        XCTAssertNotNil(parsed3)
+        XCTAssertEqual(parsed3?.amountCents, 12880)
+        XCTAssertEqual(parsed3?.category, "学习")
+    }
+
+    // MARK: - 3. Beijing Time (UTC+8, RC-134) FlexTime Tests
+
+    func testBeijingTimeFlexParsingAndFormatting() {
+        let parsedDate = FormatUtils.parseFlexDate("2026-10-13 09:30:00")
+        XCTAssertNotNil(parsedDate)
+        if let date = parsedDate {
+            let formatted = FormatUtils.formatBeijingDate(date)
+            XCTAssertEqual(formatted.dateKey, "2026-10-13")
+            XCTAssertEqual(formatted.dotDateTime, "2026.10.13 09:30")
+        }
+
+        let isoDate = FormatUtils.parseFlexDate("2026-10-13T21:15:00+08:00")
+        XCTAssertNotNil(isoDate)
+        if let date = isoDate {
+            XCTAssertEqual(FormatUtils.formatBeijingDate(date).dateKey, "2026-10-13")
+        }
+
+        let gapDays = FormatUtils.daysBetween("2026-10-01 08:00:00", "2026-10-20 19:00:00")
+        XCTAssertEqual(gapDays, 19)
+    }
+
+    // MARK: - 4. Hashtag Extraction Tests
+
+    func testHashtagExtractor() {
+        let text = "午后在 #西湖 散步，用胶片记录秋色 #摄影 #杭州 #西湖"
+        let tags = FormatUtils.extractHashtags(from: text)
+        XCTAssertEqual(tags, ["西湖", "摄影", "杭州"])
+    }
+
+    // MARK: - 5. Domain Model Codable Contract Tests (RC-132 create_transaction)
+
+    func testTransactionAndGearAssetCodableContract() throws {
+        let req = AddGearAssetRequest(
+            name: "Leica M6 TTL",
+            spec: "0.72x 取景器",
+            category: "数码器材",
+            priceCents: 1850000,
+            purchaseDate: "2026-10-13",
+            note: "成色极佳",
+            createTransaction: true,
+            paymentMethod: "银行卡"
+        )
+        let encoded = try JSONEncoder().encode(req)
+        let jsonObject = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        XCTAssertEqual(jsonObject?["price_cents"] as? Int64, 1850000)
+        XCTAssertEqual(jsonObject?["create_transaction"] as? Bool, true)
+        XCTAssertEqual(jsonObject?["payment_method"] as? String, "银行卡")
+    }
+
+    func testLifeEntryDecodingResilience() throws {
+        let rawJSON = """
+        {
+            "code": 0,
+            "message": "ok",
+            "data": {
+                "id": 101,
+                "type": "life",
+                "title": "秋日暗房",
+                "content": "第一卷 Kodak Portra 400 #胶片 #暗房",
+                "occurred_at": "2026-10-13T14:00:00+08:00",
+                "location": "杭州",
+                "attachments": [
+                    {
+                        "id": 1,
+                        "object_key": "uploads/2026/sample.jpg",
+                        "original_filename": "sample.jpg",
+                        "mime_type": "image/jpeg",
+                        "size": 204800,
+                        "width": 3840,
+                        "height": 2560,
+                        "url": "/media/uploads/2026/sample.jpg"
+                    }
+                ]
+            }
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder().decode(APIEnvelope<LifeEntry>.self, from: rawJSON)
+        XCTAssertEqual(envelope.code, 0)
+        XCTAssertEqual(envelope.data?.id, 101)
+        XCTAssertEqual(envelope.data?.hashtags, ["胶片", "暗房"])
+        XCTAssertEqual(envelope.data?.attachments.first?.width, 3840)
+    }
+
+    // MARK: - 6. ImageProcessor EXIF & Compression Test
+
+    func testImageProcessorCompressionAndEXIFLine() throws {
+        let exif = ImageProcessor.EXIFSummary(
+            cameraMake: "FUJIFILM",
+            cameraModel: "X100V",
+            lensModel: "23mm F2",
+            focalLength: 23,
+            fNumber: 2.0,
+            exposureTime: 0.002,
+            iso: 400
+        )
+        XCTAssertEqual(exif.formattedCameraLine, "FUJIFILM X100V · 23mm F2.0 · 1/500s · ISO 400")
+
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 400,
+            pixelsHigh: 300,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )!
+        let pngData = rep.representation(using: .png, properties: [:])!
+        let processed = try ImageProcessor.processImageData(pngData, originalFilename: "test_frame.png")
+        XCTAssertEqual(processed.width, 400)
+        XCTAssertEqual(processed.height, 300)
+        XCTAssertEqual(processed.mimeType, "image/jpeg")
+        XCTAssertFalse(processed.compressedData.isEmpty)
+    }
+}

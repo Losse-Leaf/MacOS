@@ -14,6 +14,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventHandlerRef: EventHandlerRef?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
         registerGlobalHotKey()
     }
 

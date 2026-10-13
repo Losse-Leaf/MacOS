@@ -16,6 +16,7 @@ public struct DarkroomDropZone: View {
     @State private var previewImage: NSImage?
     @State private var processedPhoto: ImageProcessor.ProcessedPhoto?
     @State private var uploadedAttachment: Attachment?
+    @State private var pendingPhotoURLs: [URL] = []
 
     @State private var entryTitle: String = ""
     @State private var entryContent: String = ""
@@ -46,6 +47,13 @@ public struct DarkroomDropZone: View {
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }
                     Spacer()
+
+                    if !pendingPhotoURLs.isEmpty {
+                        Text("队列待冲印 \(pendingPhotoURLs.count) 张")
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+
                     Button {
                         selectPhotoFromFinder()
                     } label: {
@@ -120,7 +128,7 @@ public struct DarkroomDropZone: View {
                         .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
-                    Text("支持 JPEG · PNG · HEIC · WebP · CR2 · NEF · ARW · DNG（单张上限 50MB）")
+                    Text("支持 JPEG · PNG · HEIC · WebP · CR2 · NEF · ARW · DNG（可多张拖入，单张上限 50MB）")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -285,22 +293,12 @@ public struct DarkroomDropZone: View {
     }
 
     private func handleImageDrop(providers: [NSItemProvider]) {
-        guard let provider = providers.first else { return }
-        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                let fileURL: URL?
-                if let url = item as? URL {
-                    fileURL = url
-                } else if let data = item as? Data {
-                    fileURL = URL(dataRepresentation: data, relativeTo: nil)
-                } else {
-                    fileURL = nil
-                }
-                guard let validURL = fileURL else { return }
-                Task { @MainActor in
-                    loadPhoto(from: validURL)
-                }
-            }
+        guard !providers.isEmpty else { return }
+        Task { @MainActor in
+            let urls = await DropLoader.loadFileURLs(from: providers)
+            guard let first = urls.first else { return }
+            pendingPhotoURLs.append(contentsOf: urls.dropFirst())
+            loadPhoto(from: first)
         }
     }
 
@@ -309,7 +307,7 @@ public struct DarkroomDropZone: View {
         errorMessage = nil
         Task { @MainActor in
             do {
-                let result = try ImageProcessor.processImageFile(at: url)
+                let result = try await ImageProcessor.processImageFileInBackground(at: url)
                 self.processedPhoto = result
                 self.previewImage = NSImage(data: result.compressedData)
                 if entryTitle.isEmpty {
@@ -370,6 +368,11 @@ public struct DarkroomDropZone: View {
         entryContent = ""
         uploadProgress = 0.0
         errorMessage = nil
+        // 队列流转：若还有待冲印底片，自动载入下一张
+        if !pendingPhotoURLs.isEmpty {
+            let next = pendingPhotoURLs.removeFirst()
+            loadPhoto(from: next)
+        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

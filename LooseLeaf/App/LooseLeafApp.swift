@@ -57,6 +57,23 @@ public struct LooseLeafApp: App {
                     }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+
+                Divider()
+
+                Button("上一条散页") {
+                    appState.moveSelection(by: -1)
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.command])
+
+                Button("下一条散页") {
+                    appState.moveSelection(by: 1)
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.command])
+
+                Button("打开选中的散页") {
+                    appState.openKeyboardFocusedEntry()
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
             }
         }
 
@@ -73,7 +90,8 @@ public struct LooseLeafApp: App {
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: appState.isLoading ? "arrow.triangle.2.circlepath" : "book.pages")
+                // 菜单栏模板图标：SF Symbol 随系统深浅色自适应；如后续有品牌专属叶片图可替换为模板资产
+                Image(systemName: appState.isLoading ? "arrow.triangle.2.circlepath" : "leaf.fill")
                 if !appState.outboxItems.isEmpty {
                     Text("\(appState.outboxItems.count)")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))

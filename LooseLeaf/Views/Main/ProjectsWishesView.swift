@@ -1304,6 +1304,7 @@ public struct CuratorDossierView: View {
 
     @State private var showEditProfileSheet: Bool = false
     @State private var sellingGear: GearItem?
+    @State private var dossierError: String?
     @State private var editName: String = ""
     @State private var editTitle: String = ""
     @State private var editCity: String = ""
@@ -1320,6 +1321,18 @@ public struct CuratorDossierView: View {
         let prof = appState.profile
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if let dossierError {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text(dossierError)
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Spacer()
+                    }
+                }
+
                 // 1. 主理人名片与暗房肖像
                 HStack(alignment: .top, spacing: 20) {
                     if !prof.avatarUrl.isEmpty, let url = APIClient.shared.resolveMediaURL(prof.avatarUrl) {
@@ -1506,10 +1519,14 @@ public struct CuratorDossierView: View {
 
     private func deleteGear(_ gear: GearItem) {
         Task { @MainActor in
-            try? await APIClient.shared.deleteGearAsset(id: gear.id)
-            AudioFeedback.shared.playTink()
-            await appState.loadConfigAndProfile()
-            await appState.loadTransactionsAndAssets(forceFull: true)
+            do {
+                try await APIClient.shared.deleteGearAsset(id: gear.id)
+                AudioFeedback.shared.playTink()
+                await appState.loadConfigAndProfile()
+                await appState.loadTransactionsAndAssets(forceFull: true)
+            } catch {
+                dossierError = "删除器物失败：\(error.localizedDescription)"
+            }
         }
     }
 
@@ -1557,6 +1574,12 @@ public struct CuratorDossierView: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
+            if let dossierError {
+                Text(dossierError)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
             HStack {
                 Button("取消") { showEditProfileSheet = false }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
@@ -1572,10 +1595,15 @@ public struct CuratorDossierView: View {
                             motto: editMotto,
                             manifesto: editManifesto
                         )
-                        _ = try? await APIClient.shared.updateCuratorProfile(req)
-                        AudioFeedback.shared.playShutter()
-                        await appState.loadConfigAndProfile()
-                        showEditProfileSheet = false
+                        do {
+                            _ = try await APIClient.shared.updateCuratorProfile(req)
+                            AudioFeedback.shared.playShutter()
+                            await appState.loadConfigAndProfile()
+                            dossierError = nil
+                            showEditProfileSheet = false
+                        } catch {
+                            dossierError = "档案保存失败：\(error.localizedDescription)"
+                        }
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))

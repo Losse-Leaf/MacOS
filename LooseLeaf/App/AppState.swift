@@ -96,6 +96,12 @@ public final class AppState {
     public var highlightedEntry: LifeEntry?
     public var lightboxAttachment: Attachment?
 
+    /// 键盘流（⌘↑ / ⌘↓）当前聚焦的时间流条目 ID
+    public var keyboardFocusedEntryId: Int?
+
+    /// 系统「服务」菜单摘录的待归档文本（QuickCaptureView 消费后清空）
+    public var pendingCaptureText: String?
+
     // MARK: - 鉴权、网络与偏好设置状态
     public var isPaired: Bool = false
     public var hubURLString: String = APIClient.shared.baseURLString
@@ -121,7 +127,13 @@ public final class AppState {
         }
     }
 
-    public var globalHotkeyLabel: String = "⌘ + ⇧ + L"
+    public var globalHotkeyLabel: String { AppDelegate.hotKeyDisplayName }
+
+    // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
+    @ObservationIgnored private var dataRevision: Int = 0
+    @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
+    @ObservationIgnored private var hashtagMemo: (key: String, value: [(tag: String, count: Int)])?
+    @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
 
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
@@ -161,12 +173,26 @@ public final class AppState {
         self.siteConfig = snap.siteConfig
         self.stats = snap.stats
         self.outboxItems = snap.outbox
+        dataRevision += 1
+        // 系统搜索索引（Spotlight，异步派发不阻塞渲染）
+        SpotlightIndexer.reindex(entries: snap.entries)
     }
 
     // MARK: - 过滤与检索计算属性
 
     /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤、#标签下钻与模糊搜索）
+    /// 带记忆缓存：仅在数据版本或筛选条件变化时重算，渲染路径零重复过滤
     public var filteredStreamEntries: [LifeEntry] {
+        let key = "\(dataRevision)|\(selectedCategory.rawValue)|\(searchQuery)|\(selectedHashtag ?? "")"
+        if let memo = filteredMemo, memo.key == key {
+            return memo.value
+        }
+        let computed = computeFilteredStreamEntries()
+        filteredMemo = (key, computed)
+        return computed
+    }
+
+    private func computeFilteredStreamEntries() -> [LifeEntry] {
         var source: [LifeEntry]
         if selectedCategory == .transaction {
             source = transactions.map { $0.toLifeEntry() }
@@ -190,17 +216,37 @@ public final class AppState {
         return source
     }
 
-    /// 聚合高频 #标签
+    /// 聚合高频 #标签（带记忆缓存）
     public var allHashtags: [(tag: String, count: Int)] {
+        let key = "\(dataRevision)"
+        if let memo = hashtagMemo, memo.key == key {
+            return memo.value
+        }
         var map: [String: Int] = [:]
         for entry in entries {
             for tag in entry.hashtags {
                 map[tag, default: 0] += 1
             }
         }
-        return map
+        let value = map
             .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
             .map { (tag: $0.key, count: $0.value) }
+        hashtagMemo = (key, value)
+        return value
+    }
+
+    /// 按北京时间自然日聚合的记录密度（52 周热力图数据源，带记忆缓存）
+    public var entryCountsByDate: [String: Int] {
+        let key = "\(dataRevision)"
+        if let memo = entryCountsMemo, memo.key == key {
+            return memo.value
+        }
+        var counts: [String: Int] = [:]
+        for entry in entries {
+            counts[entry.parsedDate.dateKey, default: 0] += 1
+        }
+        entryCountsMemo = (key, counts)
+        return counts
     }
 
     // MARK: - 远端全量与增量拉取
@@ -316,6 +362,27 @@ public final class AppState {
         }
     }
 
+    // MARK: - 键盘流导航（⌘↑ / ⌘↓ / ⌘↩）
+
+    /// 在筛选后的时间流中上下移动键盘焦点（首次按下选中第一条）
+    public func moveSelection(by delta: Int) {
+        let list = filteredStreamEntries
+        guard !list.isEmpty else { return }
+        var index = keyboardFocusedEntryId.flatMap { id in
+            list.firstIndex(where: { $0.id == id })
+        } ?? 0
+        index = min(max(index + delta, 0), list.count - 1)
+        keyboardFocusedEntryId = list[index].id
+        AudioFeedback.shared.playTink()
+    }
+
+    /// 打开当前键盘聚焦的散页详情
+    public func openKeyboardFocusedEntry() {
+        guard let id = keyboardFocusedEntryId,
+              let entry = filteredStreamEntries.first(where: { $0.id == id }) else { return }
+        highlightedEntry = entry
+    }
+
     // MARK: - 极速闪念与快速记账提交 (Quick Capture & Quick Ledger)
 
     public func submitQuickCapture(
@@ -324,7 +391,8 @@ public final class AppState {
         type: EntryType = .life,
         location: String? = nil,
         attachmentIds: [Int] = [],
-        featured: Bool = false
+        featured: Bool = false,
+        occurredAt: String? = nil
     ) async throws -> Bool {
         let finalLocation = (location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
             ? location!.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -334,7 +402,7 @@ public final class AppState {
             type: type.rawValue,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             content: content.trimmingCharacters(in: .whitespacesAndNewlines),
-            occurredAt: FormatUtils.beijingISOString(),
+            occurredAt: occurredAt ?? FormatUtils.beijingISOString(),
             location: finalLocation,
             featured: featured,
             attachmentIds: attachmentIds

@@ -704,9 +704,13 @@ public struct LedgerAssetsView: View {
                 Button("保存基准") {
                     let cents = FormatUtils.parseYuanToCents(initialBalanceYuanInput) ?? 0
                     Task { @MainActor in
-                        try? await APIClient.shared.updateInitialLiquidBalance(cents: cents)
-                        await appState.loadTransactionsAndAssets(forceFull: true)
-                        showCalibrateBalanceSheet = false
+                        do {
+                            try await APIClient.shared.updateInitialLiquidBalance(cents: cents)
+                            await appState.loadTransactionsAndAssets(forceFull: true)
+                            showCalibrateBalanceSheet = false
+                        } catch {
+                            errorNotice = error.localizedDescription
+                        }
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
@@ -743,7 +747,7 @@ public struct LedgerAssetsView: View {
     // MARK: - 数据提交处理
 
     private func submitQuickLine() {
-        guard let parsed = FormatUtils.parseQuickLedgerInput(quickLine) else { return }
+        guard let parsed = FormatUtils.parseQuickLedgerInput(quickLine, knownCategories: appState.expenseCategories) else { return }
         errorNotice = nil
         Task { @MainActor in
             do {

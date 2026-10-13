@@ -1,4 +1,5 @@
 import SwiftUI
+import Carbon
 
 /// 设备免密配对、钥匙串托管与偏好设置视图 (SettingsView)
 /// 严格遵循 docs/macos.md §5 与 docs/backend.md §3 & §5.6 规范
@@ -24,6 +25,10 @@ public struct SettingsView: View {
     @State private var healthResult: HealthCheckResponse?
     @State private var issuedPairTicket: PairTicketResponse?
     @State private var isLoadingDevices: Bool = false
+
+    // 全局热键录制状态
+    @State private var hotKeyLabel: String = AppDelegate.hotKeyDisplayName
+    @State private var isRecordingHotKey: Bool = false
 
     public init(appState: AppState) {
         self.appState = appState
@@ -321,7 +326,12 @@ public struct SettingsView: View {
                     if dev.deviceId != KeychainManager.getDeviceId() {
                         Button("吊销") {
                             Task { @MainActor in
-                                try? await APIClient.shared.revokeDevice(id: dev.deviceId)
+                                do {
+                                    try await APIClient.shared.revokeDevice(id: dev.deviceId)
+                                    authFeedback = "设备「\(dev.name)」已吊销"
+                                } catch {
+                                    authError = error.localizedDescription
+                                }
                                 await refreshDevicesList()
                             }
                         }
@@ -414,21 +424,66 @@ public struct SettingsView: View {
             Divider().overlay(ArchivePalette.borderSubtle)
 
             HStack {
-                Text("全局呼出极速闪念悬浮窗热键")
-                    .font(ArchiveTypography.bodySans(size: 12.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("全局呼出极速闪念悬浮窗热键")
+                        .font(ArchiveTypography.bodySans(size: 12.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Text("点击「修改」后按下新的组合键（须包含 ⌘ / ⌥ / ⌃ 之一）")
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
                 Spacer()
-                Text(appState.globalHotkeyLabel)
-                    .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(ArchivePalette.archivePaper)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                    )
+
+                if isRecordingHotKey {
+                    Text("请按下组合键…")
+                        .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
+                        )
+
+                    HotKeyRecorderView(isRecording: $isRecordingHotKey) { keyCode, modifiers in
+                        (NSApp.delegate as? AppDelegate)?.applyHotKey(keyCode: keyCode, carbonModifiers: modifiers)
+                        hotKeyLabel = AppDelegate.hotKeyDisplayName
+                        isRecordingHotKey = false
+                        AudioFeedback.shared.playTink()
+                    }
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
+                } else {
+                    Text(hotKeyLabel)
+                        .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                        )
+
+                    Button("修改") {
+                        isRecordingHotKey = true
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                    if hotKeyLabel != AppDelegate.displayString(keyCode: Int(kVK_ANSI_L), carbonModifiers: Int(cmdKey | shiftKey)) {
+                        Button("重置") {
+                            (NSApp.delegate as? AppDelegate)?.applyHotKey(
+                                keyCode: Int(kVK_ANSI_L),
+                                carbonModifiers: Int(cmdKey | shiftKey)
+                            )
+                            hotKeyLabel = AppDelegate.hotKeyDisplayName
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    }
+                }
             }
         }
         .padding(16)
@@ -543,5 +598,48 @@ public struct SettingsView: View {
             appState.trustedDevices = list
         }
         isLoadingDevices = false
+    }
+}
+
+// MARK: - 全局热键录制控件 (HotKeyRecorder)
+
+/// 捕获一次组合键（须包含修饰键；Esc 取消）并回传 Carbon 键位与修饰键值
+struct HotKeyRecorderView: NSViewRepresentable {
+    @Binding var isRecording: Bool
+    var onCaptured: (Int, Int) -> Void
+
+    func makeNSView(context: Context) -> RecorderNSView {
+        let view = RecorderNSView()
+        view.onCaptured = onCaptured
+        return view
+    }
+
+    func updateNSView(_ nsView: RecorderNSView, context: Context) {
+        nsView.onCaptured = onCaptured
+        if isRecording {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+}
+
+final class RecorderNSView: NSView {
+    var onCaptured: ((Int, Int) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == UInt16(kVK_Escape) {
+            return // Esc 取消录制
+        }
+        var carbonModifiers: Int = 0
+        let flags = event.modifierFlags
+        if flags.contains(.command) { carbonModifiers |= Int(cmdKey) }
+        if flags.contains(.option) { carbonModifiers |= Int(optionKey) }
+        if flags.contains(.shift) { carbonModifiers |= Int(shiftKey) }
+        if flags.contains(.control) { carbonModifiers |= Int(controlKey) }
+        guard carbonModifiers != 0 else { return } // 必须包含修饰键，避免误吞裸键
+        onCaptured?(Int(event.keyCode), carbonModifiers)
     }
 }

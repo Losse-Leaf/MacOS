@@ -26,7 +26,11 @@ public struct QuickLedgerView: View {
 
     private var resolvedQuickParsed: FormatUtils.QuickLedgerParsed? {
         if !smartInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return FormatUtils.parseQuickLedgerInput(smartInput, defaultCategory: selectedCategory)
+            return FormatUtils.parseQuickLedgerInput(
+                smartInput,
+                defaultCategory: selectedCategory,
+                knownCategories: appState.expenseCategories
+            )
         }
         guard let cents = FormatUtils.parseYuanToCents(amountString), cents > 0 else {
             return nil

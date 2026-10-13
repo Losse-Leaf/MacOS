@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// 桌面主窗口工作台与时间流视图 (StreamView)
 /// 严格遵循 docs/macos.md §6 & §7 与 docs/web.md §2.5 规范：
@@ -16,6 +18,7 @@ public struct StreamView: View {
     @State private var composeContent: String = ""
     @State private var composeLocation: String = ""
     @State private var composeFeatured: Bool = false
+    @State private var composeOccurredAt: Date = Date()
 
     // 行内速写卡片状态 (Inline Quick Composer)
     @State private var quickType: EntryType = .life
@@ -23,6 +26,10 @@ public struct StreamView: View {
     @State private var quickContent: String = ""
     @State private var quickLocation: String = ""
     @State private var quickFeatured: Bool = false
+    @State private var quickOccurredAt: Date = Date()
+
+    // 键盘流（⌘↑ / ⌘↓）滚动跟随
+    @State private var keyboardScrollPosition: Int?
 
     // 管理模式：编辑与删除状态
     @State private var editingEntry: LifeEntry?
@@ -262,6 +269,7 @@ public struct StreamView: View {
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("清除搜索")
                         }
                     }
                     .padding(.horizontal, 10)
@@ -274,6 +282,16 @@ public struct StreamView: View {
                     )
 
                     Button {
+                        exportMarkdown()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .accessibilityLabel("导出当前视图为 Markdown")
+                    .help("导出当前视图为 Markdown")
+
+                    Button {
                         Task { @MainActor in
                             await appState.refreshAll(forceFull: true)
                         }
@@ -282,7 +300,7 @@ public struct StreamView: View {
                             .font(.system(size: 12))
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .keyboardShortcut("r", modifiers: [.command])
+                    .accessibilityLabel("同步最新档案")
                     .help("同步最新档案 (⌘R)")
 
                     Button {
@@ -301,7 +319,11 @@ public struct StreamView: View {
                 inlineQuickComposerCard
 
                 // 3. GitHub 风格 52 周生活刻度热力图
-                LifeActivityHeatmapView(entries: appState.entries, weeksCount: 38)
+                LifeActivityHeatmapView(
+                    entryCounts: appState.entryCountsByDate,
+                    totalCount: appState.entries.count,
+                    weeksCount: 38
+                )
 
                 // 4. 四维母体分类切换栏与 #标签 筛选
                 HStack(spacing: 6) {
@@ -369,6 +391,13 @@ public struct StreamView: View {
             }
             .padding(24)
         }
+        .scrollPosition(id: $keyboardScrollPosition)
+        .onChange(of: appState.keyboardFocusedEntryId) { _, newValue in
+            guard let id = newValue else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                keyboardScrollPosition = id
+            }
+        }
     }
 
     // MARK: - 单条散页卡片渲染
@@ -429,6 +458,7 @@ public struct StreamView: View {
                         .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
                 .help(entry.featured == true ? "取消精选" : "设为精选")
 
                 Button("编辑") {
@@ -512,8 +542,12 @@ public struct StreamView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                .stroke(
+                    appState.keyboardFocusedEntryId == entry.id ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle,
+                    lineWidth: appState.keyboardFocusedEntryId == entry.id ? 1.0 : 0.5
+                )
         )
+        .paperHover()
     }
 
     // MARK: - 空态与顶部横幅
@@ -600,6 +634,17 @@ public struct StreamView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
+            HStack(spacing: 6) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                DatePicker("发生时间", selection: $composeOccurredAt, displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .environment(\.timeZone, FormatUtils.beijingTimeZone)
+                Spacer()
+            }
+
             TextEditor(text: $composeContent)
                 .font(ArchiveTypography.bodySans(size: 13))
                 .scrollContentBackground(.hidden)
@@ -627,7 +672,7 @@ public struct StreamView: View {
                             type: composeType.rawValue,
                             title: composeTitle,
                             content: composeContent,
-                            occurredAt: FormatUtils.beijingISOString(),
+                            occurredAt: FormatUtils.beijingISOString(from: composeOccurredAt),
                             location: finalLoc,
                             featured: composeFeatured,
                             cityCode: resolvedCode,
@@ -639,6 +684,7 @@ public struct StreamView: View {
                         composeContent = ""
                         composeLocation = ""
                         composeFeatured = false
+                        composeOccurredAt = Date()
                         showComposeSheet = false
                         await appState.loadConfigAndProfile()
                     }
@@ -717,6 +763,12 @@ public struct StreamView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .frame(maxWidth: 240)
 
+                DatePicker("", selection: $quickOccurredAt, displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .environment(\.timeZone, FormatUtils.beijingTimeZone)
+                    .help("补记发生时间（默认此刻）")
+
                 Spacer()
 
                 Button("落墨归档 (⌘↩)") {
@@ -747,7 +799,7 @@ public struct StreamView: View {
                 type: quickType.rawValue,
                 title: quickTitle.trimmingCharacters(in: .whitespacesAndNewlines),
                 content: content,
-                occurredAt: FormatUtils.beijingISOString(),
+                occurredAt: FormatUtils.beijingISOString(from: quickOccurredAt),
                 location: finalLoc,
                 featured: quickFeatured,
                 cityCode: resolvedCode,
@@ -759,7 +811,26 @@ public struct StreamView: View {
             quickContent = ""
             quickLocation = ""
             quickFeatured = false
+            quickOccurredAt = Date()
             await appState.loadConfigAndProfile()
+        }
+    }
+
+    /// 导出当前筛选视图为 Markdown 档案（NSSavePanel 落盘）
+    private func exportMarkdown() {
+        let entries = appState.filteredStreamEntries
+        guard !entries.isEmpty else { return }
+        let markdown = ArchiveExporter.makeMarkdown(entries: entries)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = "looseleaf-export-\(FormatUtils.beijingDateString()).md"
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+                AudioFeedback.shared.playShutter()
+            } catch {
+                appState.errorBanner = "导出失败：\(error.localizedDescription)"
+            }
         }
     }
 

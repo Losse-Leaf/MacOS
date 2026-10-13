@@ -35,6 +35,10 @@ public struct QuickCaptureView: View {
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
+    // 补记（回溯录入）状态
+    @State private var occurredAt: Date = Date()
+    @State private var showBackdatePicker: Bool = false
+
     @FocusState private var isContentFocused: Bool
 
     public init(appState: AppState, onClosePopover: (() -> Void)? = nil) {
@@ -92,6 +96,10 @@ public struct QuickCaptureView: View {
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         .onAppear {
             isContentFocused = true
+            consumePendingCaptureText()
+        }
+        .onChange(of: appState.pendingCaptureText) { _, _ in
+            consumePendingCaptureText()
         }
         .onExitCommand {
             onClosePopover?()
@@ -197,6 +205,9 @@ public struct QuickCaptureView: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
             )
+            .onPasteCommand(of: [.png, .tiff, .jpeg]) { providers in
+                handlePastedImages(providers)
+            }
 
             // 自动识别出的 #标签 与 EXIF 相机印记展示
             if !detectedTags.isEmpty || !extractedCameraLine.isEmpty {
@@ -252,6 +263,21 @@ public struct QuickCaptureView: View {
                 )
 
                 Button {
+                    showBackdatePicker.toggle()
+                    AudioFeedback.shared.playTink()
+                } label: {
+                    Image(systemName: "clock")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(showBackdatePicker ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        .padding(6)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("补记历史时刻")
+                .help("补记过去的时刻")
+
+                Button {
                     isFeatured.toggle()
                     AudioFeedback.shared.playTink()
                 } label: {
@@ -281,12 +307,38 @@ public struct QuickCaptureView: View {
                 .disabled(contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && uploadedAttachments.isEmpty || isSubmitting || isUploadingPhoto)
             }
 
+            if showBackdatePicker {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    DatePicker("", selection: $occurredAt, displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                        .environment(\.timeZone, FormatUtils.beijingTimeZone)
+                    Spacer()
+                    if Calendar.current.isDateInToday(occurredAt) == false || !isSameMinute(occurredAt, Date()) {
+                        Text("回溯补记")
+                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
             if let errorText {
                 Text(errorText)
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.accentWarm)
             }
         }
+    }
+
+    private func isSameMinute(_ a: Date, _ b: Date) -> Bool {
+        abs(a.timeIntervalSince(b)) < 60
     }
 
     // MARK: - 迷你拖拽暗房槽位
@@ -314,7 +366,7 @@ public struct QuickCaptureView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.inkMuted)
             } else {
-                Text("从 Finder 拖拽照片至此，自动提取 EXIF 并压制直传")
+                Text("从 Finder 拖拽照片（可多张）至此，或 ⌘V 粘贴截图，自动提取 EXIF 并压制直传")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
@@ -386,6 +438,14 @@ public struct QuickCaptureView: View {
 
     // MARK: - 提交与照片拖拽处理
 
+    /// 消费系统「服务」菜单摘录的待归档文本（预填正文并聚焦）
+    private func consumePendingCaptureText() {
+        guard let pending = appState.pendingCaptureText, !pending.isEmpty else { return }
+        contentText = pending
+        appState.pendingCaptureText = nil
+        isContentFocused = true
+    }
+
     private func submitThought() {
         var finalContent = contentText.trimmingCharacters(in: .whitespacesAndNewlines)
         if finalContent.isEmpty && !uploadedAttachments.isEmpty {
@@ -409,7 +469,8 @@ public struct QuickCaptureView: View {
                     type: entryType,
                     location: customLocation.isEmpty ? nil : customLocation,
                     attachmentIds: uploadedAttachments.map(\.id),
-                    featured: isFeatured
+                    featured: isFeatured,
+                    occurredAt: FormatUtils.beijingISOString(from: occurredAt)
                 )
                 titleText = ""
                 contentText = ""
@@ -417,6 +478,8 @@ public struct QuickCaptureView: View {
                 extractedCameraLine = ""
                 isFeatured = false
                 isSubmitting = false
+                occurredAt = Date()
+                showBackdatePicker = false
                 onClosePopover?()
             } catch {
                 errorText = error.localizedDescription
@@ -426,44 +489,72 @@ public struct QuickCaptureView: View {
     }
 
     private func handlePhotoDrop(providers: [NSItemProvider]) {
-        guard let provider = providers.first else { return }
-        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                let fileURL: URL?
-                if let url = item as? URL {
-                    fileURL = url
-                } else if let data = item as? Data {
-                    fileURL = URL(dataRepresentation: data, relativeTo: nil)
-                } else {
-                    fileURL = nil
-                }
-                guard let validURL = fileURL else { return }
-                Task { @MainActor in
-                    await processAndUploadFile(at: validURL)
-                }
-            }
+        guard !providers.isEmpty else { return }
+        Task { @MainActor in
+            let urls = await DropLoader.loadFileURLs(from: providers)
+            await processAndUploadFiles(urls)
         }
     }
 
-    private func processAndUploadFile(at url: URL) async {
+    /// 串行压制并上传多张底片（批量拖拽），全部归入附件列表
+    private func processAndUploadFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
         isUploadingPhoto = true
         uploadProgress = 0.05
         errorText = nil
-        do {
-            let processed = try ImageProcessor.processImageFile(at: url)
-            if !processed.exifMetadata.formattedCameraLine.isEmpty {
-                extractedCameraLine = processed.exifMetadata.formattedCameraLine
-            }
-            let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
-                Task { @MainActor in
-                    self.uploadProgress = prog
+        let total = Double(urls.count)
+        var finished = 0.0
+        for url in urls {
+            do {
+                let processed = try await ImageProcessor.processImageFileInBackground(at: url)
+                if extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
+                    extractedCameraLine = processed.exifMetadata.formattedCameraLine
                 }
+                let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
+                    Task { @MainActor in
+                        self.uploadProgress = (finished + prog) / total
+                    }
+                }
+                uploadedAttachments.append(attachment)
+                AudioFeedback.shared.playShutter()
+            } catch {
+                errorText = "「\(url.lastPathComponent)」压制/上传失败：\(error.localizedDescription)"
             }
-            uploadedAttachments.append(attachment)
-            AudioFeedback.shared.playShutter()
-        } catch {
-            errorText = error.localizedDescription
+            finished += 1
+            uploadProgress = max(uploadProgress, finished / total)
         }
         isUploadingPhoto = false
+    }
+
+    /// 处理剪贴板粘贴的图像（⌘V 截图直贴管线）
+    private func handlePastedImages(_ providers: [NSItemProvider]) {
+        guard !providers.isEmpty else { return }
+        Task { @MainActor in
+            isUploadingPhoto = true
+            uploadProgress = 0.05
+            errorText = nil
+            for (index, provider) in providers.enumerated() {
+                guard let data = await DropLoader.loadImageData(from: provider) else { continue }
+                do {
+                    let processed = try await ImageProcessor.processImageDataInBackground(
+                        data,
+                        originalFilename: "clipboard-\(Int(Date().timeIntervalSince1970))-\(index)"
+                    )
+                    if extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
+                        extractedCameraLine = processed.exifMetadata.formattedCameraLine
+                    }
+                    let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
+                        Task { @MainActor in
+                            self.uploadProgress = prog
+                        }
+                    }
+                    uploadedAttachments.append(attachment)
+                    AudioFeedback.shared.playShutter()
+                } catch {
+                    errorText = error.localizedDescription
+                }
+            }
+            isUploadingPhoto = false
+        }
     }
 }

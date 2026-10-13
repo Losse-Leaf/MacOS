@@ -41,5 +41,23 @@
             </array>
         </dict>
     </array>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>摘录到活页集 (Loose-Leaf)</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>captureTextFromService</string>
+            <key>NSPortName</key>
+            <string>LooseLeaf</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

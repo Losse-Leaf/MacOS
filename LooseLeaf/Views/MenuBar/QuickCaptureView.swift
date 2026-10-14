@@ -396,9 +396,9 @@ public struct QuickCaptureView: View {
         HStack(spacing: 10) {
             HStack(spacing: 5) {
                 Circle()
-                    .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                    .fill(!appState.isOnline ? ArchivePalette.accentWarm : (appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm))
                     .frame(width: 6, height: 6)
-                Text(appState.isPaired ? "已配对授信 · 主理人全权管理" : "待配对激活")
+                Text(!appState.isOnline ? "离线暂存态 (待发 \(appState.outboxItems.count))" : (appState.isPaired ? "已配对授信 · 主理人全权管理" : "待配对激活"))
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
@@ -491,7 +491,7 @@ public struct QuickCaptureView: View {
     private func handlePhotoDrop(providers: [NSItemProvider]) {
         guard !providers.isEmpty else { return }
         Task { @MainActor in
-            let urls = await DropLoader.loadFileURLs(from: providers)
+            let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
             await processAndUploadFiles(urls)
         }
     }

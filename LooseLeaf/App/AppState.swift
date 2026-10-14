@@ -106,6 +106,8 @@ public final class AppState {
     public var isPaired: Bool = false
     public var hubURLString: String = APIClient.shared.baseURLString
     public var isLoading: Bool = false
+    public var isOnline: Bool = true
+    public var isFlushingOutbox: Bool = false
     public var statusBanner: String?
     public var errorBanner: String?
 
@@ -143,11 +145,20 @@ public final class AppState {
         self.isPaired = (CredentialStore.getToken()?.isEmpty == false)
 
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
+        self.isOnline = SyncManager.shared.isOnline
+        self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
         applySnapshot(SyncManager.shared.currentSnapshot())
+
+        SyncManager.shared.onNetworkStatusChanged = { [weak self] online in
+            self?.isOnline = online
+        }
 
         SyncManager.shared.onSnapshotUpdated = { [weak self] snap in
             Task { @MainActor [weak self] in
-                self?.applySnapshot(snap)
+                guard let self else { return }
+                self.isOnline = SyncManager.shared.isOnline
+                self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
+                self.applySnapshot(snap)
             }
         }
 

@@ -17,6 +17,7 @@ public final class SyncManager {
     public private(set) var isOnline: Bool = true
     public private(set) var isFlushingOutbox: Bool = false
     public var onSnapshotUpdated: ((LocalArchiveSnapshot) -> Void)?
+    public var onNetworkStatusChanged: ((Bool) -> Void)?
 
     private var snapshot: LocalArchiveSnapshot
 
@@ -99,6 +100,7 @@ public final class SyncManager {
                 let wasOffline = !self.isOnline
                 self.isOnline = online
                 Self.logger.info("Network status: \(online ? "online" : "offline", privacy: .public)")
+                self.onNetworkStatusChanged?(online)
                 if online && (wasOffline || !self.snapshot.outbox.isEmpty) {
                     await self.flushOutbox()
                 }

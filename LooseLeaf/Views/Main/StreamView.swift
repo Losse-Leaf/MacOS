@@ -178,15 +178,21 @@ public struct StreamView: View {
 
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(ArchivePalette.accentMoss)
+                        .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .frame(width: 6, height: 6)
-                    Text("主理人管理级别")
+                    Text(appState.isOnline ? (appState.isFlushingOutbox ? "正在同步上云…" : "主理人全权管理") : "离线工作态 · 发件箱守护")
                         .font(ArchiveTypography.monoScale(size: 10.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .foregroundStyle(appState.isOnline ? ArchivePalette.inkMuted : ArchivePalette.accentWarm)
                     Spacer()
-                    Text(appState.globalHotkeyLabel)
-                        .font(ArchiveTypography.monoScale(size: 10))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                    if !appState.outboxItems.isEmpty {
+                        Text("\(appState.outboxItems.count) 待发")
+                            .font(ArchiveTypography.monoScale(size: 10, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    } else {
+                        Text(appState.globalHotkeyLabel)
+                            .font(ArchiveTypography.monoScale(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
                 }
             }
             .padding(12)
@@ -532,7 +538,7 @@ public struct StreamView: View {
                     .foregroundStyle(ArchivePalette.inkPrimary)
             }
 
-            Text(entry.content)
+            Text(LocalizedStringKey(entry.content))
                 .font(ArchiveTypography.bodySans(size: 13.5))
                 .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.92))
                 .lineSpacing(4)
@@ -958,7 +964,7 @@ public struct StreamView: View {
             }
 
             ScrollView {
-                Text(entry.content)
+                Text(LocalizedStringKey(entry.content))
                     .font(ArchiveTypography.bodySans(size: 14))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                     .lineSpacing(5)
@@ -990,18 +996,104 @@ public struct StreamView: View {
                         metaText: (attachment.width != nil && attachment.height != nil)
                             ? "\(attachment.width!) × \(attachment.height!) px"
                             : nil,
-                        maxHeight: 540
+                        maxHeight: 520
                     )
                     .frame(maxWidth: 780)
-                }
 
-                Button("关闭灯箱 ESC") {
-                    appState.lightboxAttachment = nil
+                    // 桌面原生动作栏：系统预览查看、拷贝相纸、导出保存
+                    HStack(spacing: 10) {
+                        Button {
+                            openInSystemPreview(url: url)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "macwindow.on.rectangle")
+                                Text("「预览」查看")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .help("使用 macOS 系统原生 Preview 打开查看")
+
+                        Button {
+                            copyImageToClipboard(url: url)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                Text("拷贝相纸")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .help("将此相纸拷贝至系统剪贴板 (可直接 ⌘V 粘贴)")
+
+                        Button {
+                            saveImageToDisk(url: url, filename: attachment.originalFilename)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.down")
+                                Text("导出存储…")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                        Button("关闭灯箱 ESC") {
+                            appState.lightboxAttachment = nil
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .keyboardShortcut(.cancelAction)
+                    }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .keyboardShortcut(.cancelAction)
             }
             .padding(32)
+        }
+    }
+
+    private func openInSystemPreview(url: URL) {
+        Task { @MainActor in
+            if let cached = PaperImageCache.image(for: url),
+               let tiffData = cached.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? pngData.write(to: tempPath, options: .atomic)
+                NSWorkspace.shared.open(tempPath)
+                return
+            }
+            if let (data, _) = try? await URLSession.shared.data(from: url) {
+                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? data.write(to: tempPath, options: .atomic)
+                NSWorkspace.shared.open(tempPath)
+            }
+        }
+    }
+
+    private func copyImageToClipboard(url: URL) {
+        Task { @MainActor in
+            if let cached = PaperImageCache.image(for: url) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([cached])
+                AudioFeedback.shared.playTink()
+                appState.showTemporaryBanner("已拷贝相纸至剪贴板")
+                return
+            }
+            if let (data, _) = try? await URLSession.shared.data(from: url), let img = NSImage(data: data) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([img])
+                AudioFeedback.shared.playTink()
+                appState.showTemporaryBanner("已拷贝相纸至剪贴板")
+            }
+        }
+    }
+
+    private func saveImageToDisk(url: URL, filename: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename.isEmpty ? "looseleaf-photo.jpg" : filename
+        if panel.runModal() == .OK, let targetURL = panel.url {
+            Task { @MainActor in
+                if let (data, _) = try? await URLSession.shared.data(from: url) {
+                    try? data.write(to: targetURL, options: .atomic)
+                    AudioFeedback.shared.playShutter()
+                    appState.showTemporaryBanner("相纸已导出落盘")
+                }
+            }
         }
     }
 

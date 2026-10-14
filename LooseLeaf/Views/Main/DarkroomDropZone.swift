@@ -295,7 +295,7 @@ public struct DarkroomDropZone: View {
     private func handleImageDrop(providers: [NSItemProvider]) {
         guard !providers.isEmpty else { return }
         Task { @MainActor in
-            let urls = await DropLoader.loadFileURLs(from: providers)
+            let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
             guard let first = urls.first else { return }
             pendingPhotoURLs.append(contentsOf: urls.dropFirst())
             loadPhoto(from: first)

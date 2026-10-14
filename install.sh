@@ -16,7 +16,7 @@ RELEASE_JSON=$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 
 
 if [ -z "${RELEASE_JSON}" ] || echo "${RELEASE_JSON}" | grep -q '"message":'; then
     # 回退到已知稳定 tag
-    TAG="v1.2.0"
+    TAG="v1.2.1"
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/LooseLeaf-${TAG}-arm64.zip"
 else
     TAG=$(echo "${RELEASE_JSON}" | grep '"tag_name":' | head -n 1 | cut -d '"' -f 4)

@@ -393,4 +393,16 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(tiffOrientation, 1, "TIFF Orientation 必须重置规范化为 1，杜绝看图器二次翻转")
         XCTAssertEqual(rootOrientation, 1, "顶层 Orientation 必须规范化为 1")
     }
+
+    // MARK: - 16. Update Checker Semantic Version Comparison Tests
+
+    func testUpdateCheckerSemverComparison() {
+        XCTAssertTrue(UpdateChecker.isVersion("1.2.1", greaterThan: "1.2.0"))
+        XCTAssertTrue(UpdateChecker.isVersion("2.0.0", greaterThan: "1.9.9"))
+        XCTAssertTrue(UpdateChecker.isVersion("1.10.0", greaterThan: "1.9.0"))
+        XCTAssertTrue(UpdateChecker.isVersion("1.2.1", greaterThan: "1.2"))
+        XCTAssertFalse(UpdateChecker.isVersion("1.2.0", greaterThan: "1.2.0"))
+        XCTAssertFalse(UpdateChecker.isVersion("1.2.0", greaterThan: "1.2.1"))
+        XCTAssertFalse(UpdateChecker.isVersion("1.1.9", greaterThan: "1.2.0"))
+    }
 }

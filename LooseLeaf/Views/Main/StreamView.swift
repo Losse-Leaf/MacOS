@@ -56,6 +56,9 @@ public struct StreamView: View {
 
                 // 右侧主画布区
                 VStack(spacing: 0) {
+                    if let update = UpdateChecker.shared.availableUpdate {
+                        updateAvailableStrip(update: update)
+                    }
                     if let banner = appState.statusBanner {
                         topNoticeStrip(text: banner, isError: false)
                     } else if let err = appState.errorBanner {
@@ -619,6 +622,51 @@ public struct StreamView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
+    }
+
+    private func updateAvailableStrip(update: UpdateChecker.ReleaseInfo) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(ArchivePalette.accentWarm)
+            Text("发现新版本 \(update.tagName)（当前版本 v\(UpdateChecker.shared.currentVersion)）")
+                .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            Spacer()
+
+            if UpdateChecker.shared.isUpdating {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在下载并重启更新 (\(Int(UpdateChecker.shared.updateProgress * 100))%)…")
+                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+            } else {
+                Button("立即更新并重启") {
+                    Task { @MainActor in
+                        await UpdateChecker.shared.performInAppUpdate()
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+
+                Button("稍后提醒") {
+                    UpdateChecker.shared.availableUpdate = nil
+                }
+                .font(ArchiveTypography.bodySans(size: 11.5))
+                .buttonStyle(.plain)
+                .foregroundStyle(ArchivePalette.inkMuted)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(ArchivePalette.accentWarm.opacity(0.12))
+        .overlay(
+            Rectangle()
+                .fill(ArchivePalette.accentWarm.opacity(0.3))
+                .frame(height: 0.5),
+            alignment: .bottom
         )
     }
 

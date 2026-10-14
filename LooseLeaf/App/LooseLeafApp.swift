@@ -21,6 +21,7 @@ public struct LooseLeafApp: App {
                         .frame(minWidth: 980, minHeight: 640)
                         .task {
                             await appState.refreshAll()
+                            await UpdateChecker.shared.checkForUpdates(isUserInitiated: false)
                         }
                         .onOpenURL { url in
                             appState.handleIncomingURL(url)
@@ -33,6 +34,14 @@ public struct LooseLeafApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1180, height: 780)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查新版本…") {
+                    Task { @MainActor in
+                        await UpdateChecker.shared.checkForUpdates(isUserInitiated: true)
+                    }
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("呼出极速闪念与记账悬浮窗") {
                     appDelegate.toggleQuickCapturePanel()

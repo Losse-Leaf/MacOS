@@ -37,6 +37,9 @@ public struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 headerSection
 
+                // 0. 软件版本与在线更新
+                appUpdateCard
+
                 // 1. 后端中枢地址与连通探针
                 hubConnectionCard
 
@@ -72,6 +75,89 @@ public struct SettingsView: View {
                 .font(ArchiveTypography.bodySans(size: 12.5))
                 .foregroundStyle(ArchivePalette.inkSecondary)
         }
+    }
+
+    // MARK: - 0. 软件版本与在线更新
+
+    private var appUpdateCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("活页集 Loose-Leaf for Mac")
+                        .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text("当前版本 v\(UpdateChecker.shared.currentVersion) · 原生 Apple Silicon (arm64)")
+                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                Spacer()
+
+                if UpdateChecker.shared.isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button("检查新版本") {
+                        Task { @MainActor in
+                            await UpdateChecker.shared.checkForUpdates(isUserInitiated: true)
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                }
+            }
+
+            if let update = UpdateChecker.shared.availableUpdate {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("🎉 发现新版本 \(update.tagName)")
+                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text(update.body.isEmpty ? "包含功能更新与稳定性增强。" : update.body)
+                            .font(ArchiveTypography.bodySans(size: 11))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+
+                    if UpdateChecker.shared.isUpdating {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("\(Int(UpdateChecker.shared.updateProgress * 100))%")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                        }
+                    } else {
+                        Button("立即更新并重启") {
+                            Task { @MainActor in
+                                await UpdateChecker.shared.performInAppUpdate()
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    }
+                }
+                .padding(10)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(ArchivePalette.accentWarm.opacity(0.3), lineWidth: 0.8)
+                )
+            }
+
+            if let err = UpdateChecker.shared.updateError {
+                Text(err)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+        }
+        .padding(16)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
     }
 
     // MARK: - 1. 后端中枢地址与连通性探针

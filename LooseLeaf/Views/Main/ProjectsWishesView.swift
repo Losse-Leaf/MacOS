@@ -19,14 +19,20 @@ public struct ProjectsWishesView: View {
     @State private var showNewWishSheet: Bool = false
     @State private var resolvingWish: Wish?
     @State private var editingWish: Wish?
+    @State private var wishToDelete: Wish?
+    @State private var showDeleteWishConfirm: Bool = false
 
     // 足迹票根状态
     @State private var showNewFootprintSheet: Bool = false
     @State private var editingFootprint: Footprint?
+    @State private var footprintToDelete: Footprint?
+    @State private var showDeleteFootprintConfirm: Bool = false
 
     // 造物项目状态
     @State private var showNewProjectSheet: Bool = false
     @State private var editingProject: Project?
+    @State private var projectToDelete: Project?
+    @State private var showDeleteProjectConfirm: Bool = false
 
     @State private var errorNotice: String?
 
@@ -114,6 +120,48 @@ public struct ProjectsWishesView: View {
                 editingProject = nil
             }
         }
+        .confirmationDialog(
+            "确认删除该项心愿印记？",
+            isPresented: $showDeleteWishConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除心愿", role: .destructive) {
+                if let target = wishToDelete {
+                    deleteWish(target)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后将从向往风物清单中移除。")
+        }
+        .confirmationDialog(
+            "确认删除该座城市足迹票根？",
+            isPresented: $showDeleteFootprintConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除票根", role: .destructive) {
+                if let target = footprintToDelete {
+                    deleteFootprint(target)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后将从行迹印信盒中移除。")
+        }
+        .confirmationDialog(
+            "确认删除该项手艺造物项目？",
+            isPresented: $showDeleteProjectConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除项目", role: .destructive) {
+                if let target = projectToDelete {
+                    deleteProject(target)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后将从造物货架中移除。")
+        }
     }
 
     // MARK: - 1. 三维心愿单展厅
@@ -139,97 +187,20 @@ public struct ProjectsWishesView: View {
             if appState.wishes.isEmpty {
                 emptyPlaceholder(title: "心愿草单尚且留白", subtitle: "记下一件心仪器物、一处远方山川或一项阶段目标")
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     ForEach(appState.wishes) { wish in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(wishKindLabel(wish.kind))
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                                Spacer()
-
-                                Text(wishStatusLabel(wish.status))
-                                    .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
-                                    .foregroundStyle(wish.status == "fulfilled" ? ArchivePalette.accentMoss : ArchivePalette.inkMuted)
+                        WishCardView(
+                            wish: wish,
+                            onResolve: {
+                                resolvingWish = wish
+                            },
+                            onEdit: {
+                                editingWish = wish
+                            },
+                            onDelete: {
+                                wishToDelete = wish
+                                showDeleteWishConfirm = true
                             }
-
-                            Text(wish.title)
-                                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-
-                            if let spec = wish.spec, !spec.isEmpty {
-                                Text(spec)
-                                    .font(ArchiveTypography.monoScale(size: 11))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                            }
-
-                            if let note = wish.note, !note.isEmpty {
-                                Text(note)
-                                    .font(ArchiveTypography.bodySans(size: 12))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                                    .lineLimit(2)
-                            }
-
-                            Divider().overlay(ArchivePalette.borderSubtle)
-
-                            HStack {
-                                Text("意向预算 \(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))")
-                                    .font(ArchiveTypography.monoScale(size: 11))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                Spacer()
-                                if wish.actualCost > 0 {
-                                    Text("实付 \(FormatUtils.formattedYuan(cents: wish.actualCost, includeSymbol: true))")
-                                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
-                                        .foregroundStyle(ArchivePalette.accentMoss)
-                                }
-                            }
-
-                            // 主理人操作栏
-                            HStack(spacing: 8) {
-                                if wish.status != "fulfilled" {
-                                    Button("圆满心愿") {
-                                        resolvingWish = wish
-                                    }
-                                    .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(ArchivePalette.accentMoss)
-                                }
-
-                                Spacer()
-
-                                Button {
-                                    editingWish = wish
-                                } label: {
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .help("修订心愿")
-
-                                Button {
-                                    deleteWish(wish)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .help("删除心愿")
-                            }
-                            .padding(.top, 4)
-                        }
-                        .padding(14)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                         )
                     }
                 }
@@ -260,7 +231,7 @@ public struct ProjectsWishesView: View {
             if appState.footprints.isEmpty {
                 emptyPlaceholder(title: "行迹票根盒尚待启程", subtitle: "在时间流记录带城市的游记或在此直接点亮足迹，均会自动沉淀特种纸票根")
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     ForEach(appState.footprints) { fp in
                         HStack(spacing: 0) {
                             // 左联：目的地印章存根
@@ -303,7 +274,8 @@ public struct ProjectsWishesView: View {
                                     .buttonStyle(.plain)
 
                                     Button {
-                                        deleteFootprint(fp)
+                                        footprintToDelete = fp
+                                        showDeleteFootprintConfirm = true
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.system(size: 10.5))
@@ -328,12 +300,14 @@ public struct ProjectsWishesView: View {
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .frame(minHeight: 115)
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
                         )
+                        .paperHover()
                     }
                 }
             }
@@ -363,79 +337,17 @@ public struct ProjectsWishesView: View {
             if appState.projects.isEmpty {
                 emptyPlaceholder(title: "尚无造物归档", subtitle: "软件架构实验、开源工具与生活手艺方案将在此静默陈列")
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     ForEach(appState.projects) { proj in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                if let cat = proj.category, !cat.isEmpty {
-                                    Text(cat)
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
-                                }
-                                Spacer()
-                                if let status = proj.status, !status.isEmpty {
-                                    Text(status)
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
-                                        .foregroundStyle(ArchivePalette.accentMoss)
-                                }
+                        ProjectCardView(
+                            proj: proj,
+                            onEdit: {
+                                editingProject = proj
+                            },
+                            onDelete: {
+                                projectToDelete = proj
+                                showDeleteProjectConfirm = true
                             }
-
-                            Text(proj.title)
-                                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-
-                            if let sub = proj.subtitle, !sub.isEmpty {
-                                Text(sub)
-                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                            }
-
-                            Text(proj.description)
-                                .font(ArchiveTypography.bodySans(size: 12))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                .lineLimit(3)
-
-                            HStack {
-                                if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
-                                    Link(destination: url) {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "arrow.up.right.square")
-                                            Text("源码仓库")
-                                        }
-                                        .font(ArchiveTypography.monoScale(size: 11))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
-                                    }
-                                }
-
-                                Spacer()
-
-                                Button {
-                                    editingProject = proj
-                                } label: {
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .help("修订项目")
-
-                                Button {
-                                    deleteProject(proj)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .help("删除项目")
-                            }
-                        }
-                        .padding(14)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                         )
                     }
                 }
@@ -509,6 +421,369 @@ public struct ProjectsWishesView: View {
         case "shelved": return "暂且搁置"
         default: return "静候圆梦"
         }
+    }
+}
+
+/// 统一样式与等高对齐的心愿典藏卡片 (WishCardView)
+struct WishCardView: View {
+    let wish: Wish
+    let onResolve: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 1. 顶栏：分类标签徽章 + 状态微胶囊
+            HStack(alignment: .center) {
+                HStack(spacing: 4) {
+                    Image(systemName: kindIcon)
+                        .font(.system(size: 9.5))
+                    Text(kindTitle)
+                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                }
+                .foregroundStyle(kindColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(kindColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(statusDotColor)
+                        .frame(width: 5.5, height: 5.5)
+                    Text(statusTitle)
+                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                        .foregroundStyle(statusTextColor)
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(statusBgColor)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            .padding(.bottom, 10)
+
+            // 2. 标题
+            Text(wish.title)
+                .font(ArchiveTypography.editorialSerif(size: 16.5, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(1)
+
+            // 3. 规格
+            if let spec = wish.spec, !spec.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.2")
+                        .font(.system(size: 9))
+                    Text(spec)
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+                }
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .padding(.top, 3)
+                .lineLimit(1)
+            }
+
+            // 4. 手记备注
+            if let note = wish.note, !note.isEmpty {
+                Text(LocalizedStringKey(note))
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.88))
+                    .lineLimit(2)
+                    .lineSpacing(2)
+                    .padding(.top, 4)
+            }
+
+            // 弹性占位：将底部预算与操作栏统一牢牢推向卡片底端，确保各卡片严格等高对齐
+            Spacer(minLength: 12)
+
+            // 5. 分割线
+            Rectangle()
+                .fill(ArchivePalette.borderDivider)
+                .frame(height: 0.5)
+                .padding(.vertical, 9)
+
+            // 6. 底部：预算 / 实付金额 + 操作按钮栏
+            HStack(alignment: .center) {
+                if wish.status == "fulfilled" && wish.actualCost > 0 {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("圆满实付")
+                            .font(ArchiveTypography.bodySans(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        Text(FormatUtils.formattedYuan(cents: wish.actualCost, includeSymbol: true))
+                            .font(ArchiveTypography.monoScale(size: 13, weight: .bold))
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("意向预算")
+                            .font(ArchiveTypography.bodySans(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        Text(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))
+                            .font(ArchiveTypography.monoScale(size: 12.5, weight: .semibold))
+                            .foregroundStyle(wish.budget > 0 ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
+                    }
+                }
+
+                Spacer()
+
+                // 主理人操作区
+                HStack(spacing: 6) {
+                    if wish.status != "fulfilled" {
+                        Button(action: onResolve) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 10))
+                                Text("圆满心愿")
+                                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                            }
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4.5)
+                            .background(ArchivePalette.accentMoss.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.accentMoss.opacity(0.3), lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 10))
+                            Text("已归册")
+                                .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(ArchivePalette.accentMoss)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(ArchivePalette.accentMoss.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("修订心愿")
+
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除心愿")
+                }
+            }
+        }
+        .padding(14)
+        .frame(minHeight: 195)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.6)
+        )
+        .shadow(color: ArchivePalette.inkPrimary.opacity(0.04), radius: 6, x: 0, y: 2)
+        .paperHover()
+    }
+
+    private var kindIcon: String {
+        switch wish.kind {
+        case "travel": return "airplane"
+        case "milestone": return "flag.fill"
+        default: return "bag.fill"
+        }
+    }
+
+    private var kindTitle: String {
+        switch wish.kind {
+        case "travel": return "远方旅程"
+        case "milestone": return "阶段里程碑"
+        default: return "心仪好物"
+        }
+    }
+
+    private var kindColor: Color {
+        switch wish.kind {
+        case "travel": return ArchivePalette.categoryColor(for: "交通")
+        case "milestone": return ArchivePalette.accentMoss
+        default: return ArchivePalette.accentWarm
+        }
+    }
+
+    private var statusTitle: String {
+        switch wish.status {
+        case "fulfilled": return "已圆满归册"
+        case "relinquished": return "已理性拔草"
+        case "shelved": return "暂且搁置"
+        default: return "静候圆梦"
+        }
+    }
+
+    private var statusDotColor: Color {
+        switch wish.status {
+        case "fulfilled": return ArchivePalette.accentMoss
+        case "relinquished": return ArchivePalette.inkMuted
+        case "shelved": return Color.orange.opacity(0.8)
+        default: return ArchivePalette.accentWarm
+        }
+    }
+
+    private var statusTextColor: Color {
+        switch wish.status {
+        case "fulfilled": return ArchivePalette.accentMoss
+        case "relinquished": return ArchivePalette.inkMuted
+        default: return ArchivePalette.inkSecondary
+        }
+    }
+
+    private var statusBgColor: Color {
+        switch wish.status {
+        case "fulfilled": return ArchivePalette.accentMoss.opacity(0.10)
+        case "relinquished": return ArchivePalette.borderSubtle
+        default: return ArchivePalette.archivePaper
+        }
+    }
+}
+
+/// 统一样式与等高对齐的造物项目卡片 (ProjectCardView)
+struct ProjectCardView: View {
+    let proj: Project
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 顶栏：分类标签 + 状态标签
+            HStack {
+                if let cat = proj.category, !cat.isEmpty {
+                    Text(cat)
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(ArchivePalette.accentWarm.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                Spacer()
+                if let status = proj.status, !status.isEmpty {
+                    Text(status)
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(ArchivePalette.accentMoss)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(ArchivePalette.accentMoss.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+            }
+            .padding(.bottom, 8)
+
+            Text(proj.title)
+                .font(ArchiveTypography.editorialSerif(size: 16.5, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(1)
+
+            if let sub = proj.subtitle, !sub.isEmpty {
+                Text(sub)
+                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.top, 3)
+                    .lineLimit(1)
+            }
+
+            if !proj.description.isEmpty {
+                Text(LocalizedStringKey(proj.description))
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .lineLimit(3)
+                    .lineSpacing(2)
+                    .padding(.top, 4)
+            }
+
+            Spacer(minLength: 12)
+
+            Rectangle()
+                .fill(ArchivePalette.borderDivider)
+                .frame(height: 0.5)
+                .padding(.vertical, 9)
+
+            HStack {
+                if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
+                    Link(destination: url) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.right.square")
+                            Text("源码仓库")
+                        }
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+                } else {
+                    Spacer(minLength: 0)
+                }
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("修订项目")
+
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除项目")
+                }
+            }
+        }
+        .padding(14)
+        .frame(minHeight: 195)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.6)
+        )
+        .shadow(color: ArchivePalette.inkPrimary.opacity(0.04), radius: 6, x: 0, y: 2)
+        .paperHover()
     }
 }
 

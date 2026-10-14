@@ -5,6 +5,40 @@
 
 ---
 
+## 安装与更新 (Installation & Updates)
+
+> 本客户端为开源纯原生 macOS 应用程序（arm64 Apple Silicon）。由于未签发收费的 Apple Developer ID 证书，macOS Gatekeeper 安全机制会对从网络下载的应用触发隔离拦截。推荐以下两种最便捷的安装与使用方式：
+
+### 方式一：终端一行命令极速安装与更新（推荐，3 秒全自动）
+
+打开 Mac「终端」（Terminal），粘贴运行以下命令并回车：
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh)"
+```
+
+- **全自动流程**：自动从 GitHub Releases 拉取最新版本 → 下载解压至 `/Applications` → 自动放行 Gatekeeper 隔离属性 (`xattr -cr`) → 自动启动应用。
+- **更新应用**：日后需要更新时也只需再次运行此命令，3 秒自动无缝升级至最新版本，**彻底告别手动输入命令或“已损坏”提示**。
+
+---
+
+### 方式二：手动下载安装（纯图形界面，免终端）
+
+如果习惯通过浏览器直接下载使用：
+
+1. 前往 [GitHub Releases](https://github.com/Losse-Leaf/MacOS/releases) 下载最新的 `LooseLeaf-*.zip` 压缩包并解压；
+2. 将解压出的 `LooseLeaf.app` 拖入 **「访达」→「应用程序」**（`/Applications`）文件夹；
+3. **首次打开系统安全放行流程**（仅需在首次打开时操作一次）：
+   - 双击打开若提示：“*无法打开 LooseLeaf.app，因为无法验证开发者*” 或 “*已损坏*”；
+   - 打开 Mac **「系统设置」**；
+   - 点击左侧 **「隐私与安全性」**；
+   - 滚动到页面下方 **「安全性」** 区域，会看到提示：“*已阻止使用 LooseLeaf.app，因为来自身份不明的开发者*”；
+   - 点击旁边的 **「仍要打开」** 按钮，验证指纹或输入开机密码即可永久正常打开使用。
+
+> 💡 **提示**：该放行操作仅需首次配置一次，后续双击打开、开机常驻均可直接使用。
+
+---
+
 ## 核心特性
 
 1. **纸张数字主义与暗房双模态 (`Paper & Darkroom`)**

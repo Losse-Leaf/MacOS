@@ -353,11 +353,15 @@ public actor APIClient {
         month: Int? = nil,
         since: String? = nil,
         limit: Int = 200,
+        offset: Int? = nil,
         useETag: Bool = false
     ) async throws -> [Transaction] {
         var query: [URLQueryItem] = [
             URLQueryItem(name: "limit", value: String(limit))
         ]
+        if let offset, offset > 0 {
+            query.append(URLQueryItem(name: "offset", value: String(offset)))
+        }
         if let year {
             query.append(URLQueryItem(name: "year", value: String(year)))
         }
@@ -468,8 +472,16 @@ public actor APIClient {
         )
     }
 
-    public func fetchWishes(kind: String? = nil, status: String? = nil) async throws -> WishesListResponse {
-        var query: [URLQueryItem] = [URLQueryItem(name: "page_size", value: "100")]
+    public func fetchWishes(
+        page: Int = 1,
+        pageSize: Int = 100,
+        kind: String? = nil,
+        status: String? = nil
+    ) async throws -> WishesListResponse {
+        var query: [URLQueryItem] = [
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "page_size", value: String(pageSize))
+        ]
         if let kind, !kind.isEmpty, kind != "all" {
             query.append(URLQueryItem(name: "kind", value: kind))
         }

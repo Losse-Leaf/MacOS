@@ -52,12 +52,16 @@ public enum ArchivePalette {
 
 /// 跨平台排版字体栈映射 (Typography Mapping, docs/ecosystem.md §4.3 & docs/macos.md §6.3)
 public enum ArchiveTypography {
+    private static let hasNewsreader: Bool = NSFont(name: "Newsreader", size: 12) != nil
+    private static let hasSongti: Bool = NSFont(name: "Songti SC", size: 12) != nil
+    private static let hasJetBrainsMono: Bool = NSFont(name: "JetBrains Mono", size: 12) != nil
+
     /// 古典衬线体 (Newsreader -> Songti SC -> Baskerville -> System Serif)
     public static func editorialSerif(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        if NSFont(name: "Newsreader", size: size) != nil {
+        if hasNewsreader {
             return .custom("Newsreader", size: size).weight(weight)
         }
-        if NSFont(name: "Songti SC", size: size) != nil {
+        if hasSongti {
             return .custom("Songti SC", size: size).weight(weight)
         }
         return .system(size: size, weight: weight, design: .serif)
@@ -70,7 +74,7 @@ public enum ArchiveTypography {
 
     /// 等宽数字刻度 (JetBrains Mono -> SF Mono, 强制等宽数字对齐如机械刻度)
     public static func monoScale(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        if NSFont(name: "JetBrains Mono", size: size) != nil {
+        if hasJetBrainsMono {
             return .custom("JetBrains Mono", size: size).weight(weight).monospacedDigit()
         }
         return .system(size: size, weight: weight, design: .monospaced).monospacedDigit()

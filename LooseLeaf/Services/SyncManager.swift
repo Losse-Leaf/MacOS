@@ -77,10 +77,16 @@ public final class SyncManager {
         var copy = updated
         copy.updatedAt = FormatUtils.beijingISOString()
         self.snapshot = copy
-        if let data = try? JSONEncoder().encode(copy) {
-            try? data.write(to: Self.snapshotFileURL, options: .atomic)
-        }
+        // 立即通知 UI 响应刷新，保证 0ms 上屏
         onSnapshotUpdated?(copy)
+
+        // 后台异步序列化与原子落盘，彻底消除主线程磁盘 I/O 阻塞
+        let fileURL = Self.snapshotFileURL
+        Task.detached(priority: .utility) {
+            if let data = try? JSONEncoder().encode(copy) {
+                try? data.write(to: fileURL, options: .atomic)
+            }
+        }
     }
 
     // MARK: - 网络监听与自动补发 (NWPathMonitor)
@@ -212,45 +218,58 @@ public final class SyncManager {
 
         Self.logger.info("Flushing outbox: \(self.snapshot.outbox.count) item(s) queued")
 
-        var remaining: [OutboxItem] = []
-        var current = snapshot
+        let itemsToFlush = snapshot.outbox
 
-        for var item in current.outbox {
+        for item in itemsToFlush {
+            // 确保该项目尚未被外部清除
+            guard self.snapshot.outbox.contains(where: { $0.id == item.id }) else { continue }
             do {
                 switch item.kind {
                 case .createEntry:
                     if let req = item.entryRequest {
                         let created = try await APIClient.shared.createEntry(req)
-                        current.entries.removeAll { $0.id == item.localTempId }
-                        current.entries.insert(created, at: 0)
+                        var latest = self.snapshot
+                        latest.entries.removeAll { $0.id == item.localTempId }
+                        latest.entries.insert(created, at: 0)
+                        latest.outbox.removeAll { $0.id == item.id }
+                        self.saveSnapshot(latest)
                     }
                 case .deleteEntry:
                     if let targetId = item.targetServerId {
                         try await APIClient.shared.deleteEntry(id: targetId)
-                        current.entries.removeAll { $0.id == targetId }
+                        var latest = self.snapshot
+                        latest.entries.removeAll { $0.id == targetId }
+                        latest.outbox.removeAll { $0.id == item.id }
+                        self.saveSnapshot(latest)
                     }
                 case .createTransaction:
                     if let req = item.transactionRequest {
                         let created = try await APIClient.shared.createTransaction(req)
-                        current.transactions.removeAll { $0.id == item.localTempId }
-                        current.transactions.insert(created, at: 0)
+                        var latest = self.snapshot
+                        latest.transactions.removeAll { $0.id == item.localTempId }
+                        latest.transactions.insert(created, at: 0)
+                        latest.outbox.removeAll { $0.id == item.id }
+                        self.saveSnapshot(latest)
                     }
                 case .deleteTransaction:
                     if let targetId = item.targetServerId {
                         try await APIClient.shared.deleteTransaction(id: targetId)
-                        current.transactions.removeAll { $0.id == targetId }
+                        var latest = self.snapshot
+                        latest.transactions.removeAll { $0.id == targetId }
+                        latest.outbox.removeAll { $0.id == item.id }
+                        self.saveSnapshot(latest)
                     }
                 }
             } catch {
-                item.retryCount += 1
-                item.lastError = error.localizedDescription
-                remaining.append(item)
+                var latest = self.snapshot
+                if let idx = latest.outbox.firstIndex(where: { $0.id == item.id }) {
+                    latest.outbox[idx].retryCount += 1
+                    latest.outbox[idx].lastError = error.localizedDescription
+                    self.saveSnapshot(latest)
+                }
             }
         }
-
-        current.outbox = remaining
-        saveSnapshot(current)
-        Self.logger.info("Outbox flush finished, \(remaining.count) item(s) still pending")
+        Self.logger.info("Outbox flush finished, \(self.snapshot.outbox.count) item(s) still pending")
     }
 
     // MARK: - 增量拉取与软删除对账合并 (Delta Sync & LWW Reconciliation)
@@ -288,12 +307,14 @@ public final class SyncManager {
                 map[entry.id] = syncedEntry
             }
         }
-        return map.values.sorted {
-            let d1 = FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast
-            let d2 = FormatUtils.parseFlexDate($1.occurredAt) ?? .distantPast
-            if d1 != d2 { return d1 > d2 }
-            return $0.id > $1.id
+        // Schwartzian 变换：排序前一次性提取时间戳 (O(N))，彻底消除比较器内部 20000+ 次重复 DateFormatter 解析风暴
+        let itemsWithDate: [(entry: LifeEntry, date: Date)] = map.values.map {
+            ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
         }
+        return itemsWithDate.sorted {
+            if $0.date != $1.date { return $0.date > $1.date }
+            return $0.entry.id > $1.entry.id
+        }.map(\.entry)
     }
 
     public func mergeTransactions(_ incoming: [Transaction], isDelta: Bool) {
@@ -322,11 +343,12 @@ public final class SyncManager {
                 map[tx.id] = syncedTx
             }
         }
-        return map.values.sorted {
-            let d1 = FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast
-            let d2 = FormatUtils.parseFlexDate($1.occurredAt) ?? .distantPast
-            if d1 != d2 { return d1 > d2 }
-            return $0.id > $1.id
+        let itemsWithDate: [(tx: Transaction, date: Date)] = map.values.map {
+            ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
         }
+        return itemsWithDate.sorted {
+            if $0.date != $1.date { return $0.date > $1.date }
+            return $0.tx.id > $1.tx.id
+        }.map(\.tx)
     }
 }

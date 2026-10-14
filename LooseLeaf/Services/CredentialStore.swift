@@ -121,11 +121,12 @@ public enum CredentialStore {
         guard let data = try? JSONEncoder().encode(payload) else { return false }
 
         let url = fileURL
-        if !FileManager.default.createFile(atPath: url.path, contents: data, attributes: [.posixPermissions: 0o600]) {
+        do {
+            try data.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
             return false
         }
-        // createFile 的 attributes 在部分文件系统上可能被忽略，双重收紧
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        return true
     }
 }

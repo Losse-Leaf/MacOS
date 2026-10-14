@@ -340,4 +340,57 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertNil(CredentialStore.getToken())
         XCTAssertNil(CredentialStore.getDeviceId())
     }
+
+    // MARK: - 15. Image Orientation Normalization Test (Zero Double-Rotation)
+
+    func testImageProcessorOrientationNormalizedToOne() throws {
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 200,
+            pixelsHigh: 100,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )!
+        let pngData = rep.representation(using: .png, properties: [:])!
+
+        // Attach orientation 6 (Rotate 90 CW) to simulate an iPhone / Camera vertical photo
+        let mutableData = CFDataCreateMutable(nil, 0)!
+        guard let dest = CGImageDestinationCreateWithData(mutableData, "public.jpeg" as CFString, 1, nil),
+              let source = CGImageSourceCreateWithData(pngData as CFData, nil),
+              let cgImg = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            XCTFail("Failed to create test image source")
+            return
+        }
+        let inputProps: [CFString: Any] = [
+            kCGImagePropertyOrientation: 6,
+            kCGImagePropertyTIFFDictionary: [
+                kCGImagePropertyTIFFOrientation: 6,
+                kCGImagePropertyTIFFMake: "Leica"
+            ]
+        ]
+        CGImageDestinationAddImage(dest, cgImg, inputProps as CFDictionary)
+        CGImageDestinationFinalize(dest)
+
+        let initialRotatedData = mutableData as Data
+        let processed = try ImageProcessor.processImageData(initialRotatedData, originalFilename: "vertical.jpg")
+
+        // Inspect output JPEG metadata
+        guard let outputSource = CGImageSourceCreateWithData(processed.compressedData as CFData, nil),
+              let outputProps = CGImageSourceCopyPropertiesAtIndex(outputSource, 0, nil) as? [CFString: Any] else {
+            XCTFail("Failed to read processed photo properties")
+            return
+        }
+
+        let outputTiff = outputProps[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
+        let tiffOrientation = outputTiff?[kCGImagePropertyTIFFOrientation] as? Int
+        let rootOrientation = outputProps[kCGImagePropertyOrientation] as? Int
+
+        XCTAssertEqual(tiffOrientation, 1, "TIFF Orientation 必须重置规范化为 1，杜绝看图器二次翻转")
+        XCTAssertEqual(rootOrientation, 1, "顶层 Orientation 必须规范化为 1")
+    }
 }

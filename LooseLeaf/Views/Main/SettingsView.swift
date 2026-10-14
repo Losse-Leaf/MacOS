@@ -579,11 +579,17 @@ struct HotKeyRecorderView: NSViewRepresentable {
     func makeNSView(context: Context) -> RecorderNSView {
         let view = RecorderNSView()
         view.onCaptured = onCaptured
+        view.onCancelled = {
+            isRecording = false
+        }
         return view
     }
 
     func updateNSView(_ nsView: RecorderNSView, context: Context) {
         nsView.onCaptured = onCaptured
+        nsView.onCancelled = {
+            isRecording = false
+        }
         if isRecording {
             DispatchQueue.main.async {
                 nsView.window?.makeFirstResponder(nsView)
@@ -594,11 +600,13 @@ struct HotKeyRecorderView: NSViewRepresentable {
 
 final class RecorderNSView: NSView {
     var onCaptured: ((Int, Int) -> Void)?
+    var onCancelled: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == UInt16(kVK_Escape) {
+            onCancelled?()
             return // Esc 取消录制
         }
         var carbonModifiers: Int = 0

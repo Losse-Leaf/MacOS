@@ -66,47 +66,42 @@ public struct NoiseBackground: View {
 }
 
 /// 零外部依赖的纸本微噪点纹理层
-/// 噪点图案由确定性 hash 生成——同尺寸/透明度下渲染一次并缓存为 CGImage，
-/// 视图刷新时仅贴图（此前用 Canvas 逐点绘制，每次状态变化都会全屏重画数千个点，是掉帧感的主要来源）。
+/// 噪点图案由确定性 hash 在启动时生成一次 256x256 瓦片并缓存，
+/// 渲染时由系统 Metal/CoreAnimation 硬件直接平铺（resizingMode: .tile），
+/// 彻底消除此前每次窗口尺寸改变时全屏重画数千点导致的丢帧与内存激增。
 private struct PaperGrainCanvas: View {
     let opacity: Double
 
     var body: some View {
-        GeometryReader { geo in
-            if let image = PaperGrainCache.image(for: geo.size, opacity: opacity) {
-                Image(decorative: image, scale: 2, orientation: .up)
-                    .frame(width: geo.size.width, height: geo.size.height)
-            }
+        if let tile = PaperGrainTileCache.tileImage(opacity: opacity) {
+            Image(decorative: tile, scale: 2)
+                .resizable(resizingMode: .tile)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
         }
     }
 }
 
-/// 纸纹位图缓存（最近 3 个尺寸条目，窗口/面板尺寸切换不互相踢出）
-private enum PaperGrainCache {
-    struct Entry {
-        let size: CGSize
-        let opacity: Double
-        let image: CGImage
-    }
-
-    static var entries: [Entry] = []
+/// 纸纹 256x256 硬件瓦片缓存（同透明度只生成一次，内存占用 < 0.25MB）
+private enum PaperGrainTileCache {
+    private static var tileCache: [Double: CGImage] = [:]
     private static let lock = NSLock()
 
-    static func image(for size: CGSize, opacity: Double) -> CGImage? {
+    static func tileImage(opacity: Double) -> CGImage? {
         lock.lock()
         defer { lock.unlock() }
-        if let hit = entries.first(where: { $0.size == size && $0.opacity == opacity }) {
-            return hit.image
+        let key = (opacity * 1000).rounded() / 1000
+        if let hit = tileCache[key] {
+            return hit
         }
 
-        // 固定 2x 渲染：retina 清晰，非 retina 由系统自然下采样
+        let tileSize: CGFloat = 256
         let renderScale: CGFloat = 2
-        let pixelW = max(1, Int(size.width * renderScale))
-        let pixelH = max(1, Int(size.height * renderScale))
+        let pixelSize = Int(tileSize * renderScale)
         guard let ctx = CGContext(
             data: nil,
-            width: pixelW,
-            height: pixelH,
+            width: pixelSize,
+            height: pixelSize,
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
@@ -115,13 +110,12 @@ private enum PaperGrainCache {
 
         ctx.scaleBy(x: renderScale, y: renderScale)
         let step: CGFloat = 14
-        let cols = Int(size.width / step) + 1
-        let rows = Int(size.height / step) + 1
+        let count = Int(tileSize / step)
         let ink = CGColor(gray: 0.09, alpha: opacity)
 
         ctx.setFillColor(ink)
-        for row in 0..<rows {
-            for col in 0..<cols {
+        for row in 0..<count {
+            for col in 0..<count {
                 let hash = UInt64((row &* 73856093) ^ (col &* 19349663))
                 if hash % 3 == 0 {
                     let offsetX = CGFloat((hash >> 3) % 11)
@@ -139,8 +133,7 @@ private enum PaperGrainCache {
         }
 
         guard let image = ctx.makeImage() else { return nil }
-        entries.append(Entry(size: size, opacity: opacity, image: image))
-        if entries.count > 3 { entries.removeFirst(entries.count - 3) }
+        tileCache[key] = image
         return image
     }
 }

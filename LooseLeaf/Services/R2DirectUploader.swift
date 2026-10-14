@@ -27,10 +27,24 @@ public final class R2DirectUploader: NSObject, Sendable {
             return try await withRetry {
                 try await performDirectUpload(photo, onProgress: onProgress)
             }
-        } catch let apiError as APIError {
-            // 当本地后端未配置 R2 环境变量返回 503 时，自动通过统一上传接口写入 data/uploads/
-            if case .serverError(let code, _) = apiError, code == 503 {
-                Self.logger.warning("R2 presign returned 503, falling back to unified multipart upload")
+        } catch {
+            // 当后端未配置 R2 (503) 或直传存储桶出现网络阻断时，平滑降级至中枢本地统一上传通道 (/api/v1/files/upload)
+            let shouldFallback: Bool
+            if let apiError = error as? APIError {
+                switch apiError {
+                case .serverError(let code, _):
+                    shouldFallback = (code == 503)
+                case .networkFailure:
+                    shouldFallback = true
+                default:
+                    shouldFallback = false
+                }
+            } else {
+                shouldFallback = true
+            }
+
+            if shouldFallback {
+                Self.logger.warning("R2 direct upload unavailable (\(error.localizedDescription)), falling back to unified multipart upload")
                 onProgress?(0.45)
                 let attachment = try await APIClient.shared.uploadUnifiedMultipart(
                     fileData: photo.compressedData,
@@ -39,10 +53,10 @@ public final class R2DirectUploader: NSObject, Sendable {
                     folder: "entries"
                 )
                 onProgress?(1.0)
-                Self.logger.info("Unified multipart upload finished: \(photo.filename, privacy: .public)")
+                Self.logger.info("Unified multipart fallback upload finished: \(photo.filename, privacy: .public)")
                 return attachment
             }
-            throw apiError
+            throw error
         }
     }
 

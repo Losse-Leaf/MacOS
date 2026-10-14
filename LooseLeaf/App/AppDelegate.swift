@@ -41,6 +41,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            for window in sender.windows where window.identifier?.rawValue == "main" || window.canBecomeMain {
+                window.makeKeyAndOrderFront(nil)
+                sender.activate(ignoringOtherApps: true)
+                return true
+            }
+            sender.activate(ignoringOtherApps: true)
+        }
+        return true
+    }
+
     // MARK: - 系统服务菜单：摘录选中文本到散页
 
     /// 系统右键「服务」菜单入口（Info.plist NSServices 注册，NSPortName = LooseLeaf）
@@ -180,6 +192,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closeQuickCapturePanel()
             }
             panel.contentView = NSHostingView(rootView: rootView)
+            panel.onResignKey = { [weak self] in
+                self?.closeQuickCapturePanel()
+            }
             self.quickCapturePanel = panel
         }
 
@@ -203,8 +218,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// 允许无边框浮动面板接收键盘焦点与输入
+/// 允许无边框浮动面板接收键盘焦点与输入，支持失焦与 ESC 自动收起
 private final class KeyableFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    var onResignKey: (() -> Void)?
+
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(sender)
+        onResignKey?()
+    }
 }

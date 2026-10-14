@@ -318,9 +318,13 @@ public enum FormatUtils {
 
     // MARK: - 标签提取 (#标签)
 
-    /// 从正文或输入中提取 #标签 列表
+    private static let hashtagRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "#([\\p{L}\\p{N}_\\-]+)", options: [])
+    }()
+
+    /// 从正文或输入中提取 #标签 列表（静态正则单例，零重复编译）
     public static func extractHashtags(from text: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: "#([\\p{L}\\p{N}_\\-]+)", options: []) else {
+        guard let regex = hashtagRegex else {
             return []
         }
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)

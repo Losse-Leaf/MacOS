@@ -30,6 +30,7 @@ public struct StreamView: View {
 
     // 键盘流（⌘↑ / ⌘↓）滚动跟随
     @State private var keyboardScrollPosition: Int?
+    @State private var localSearchText: String = ""
 
     // 管理模式：编辑与删除状态
     @State private var editingEntry: LifeEntry?
@@ -276,17 +277,30 @@ public struct StreamView: View {
 
                     Spacer()
 
-                    // 即时模糊搜索框
+                    // 即时模糊搜索框（带 180ms 防抖，避免按键高频触发重算）
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 11.5))
                             .foregroundStyle(ArchivePalette.inkMuted)
-                        TextField("检索散页标题、正文或城市…", text: $appState.searchQuery)
+                        TextField("检索散页标题、正文或城市…", text: $localSearchText)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
                             .frame(width: 175)
-                        if !appState.searchQuery.isEmpty {
+                            .onChange(of: localSearchText) { _, newVal in
+                                if newVal.isEmpty {
+                                    appState.searchQuery = ""
+                                }
+                            }
+                            .task(id: localSearchText) {
+                                guard !localSearchText.isEmpty else { return }
+                                do {
+                                    try await Task.sleep(nanoseconds: 180_000_000)
+                                    appState.searchQuery = localSearchText
+                                } catch {}
+                            }
+                        if !localSearchText.isEmpty {
                             Button {
+                                localSearchText = ""
                                 appState.searchQuery = ""
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
@@ -296,6 +310,9 @@ public struct StreamView: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel("清除搜索")
                         }
+                    }
+                    .onAppear {
+                        localSearchText = appState.searchQuery
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)

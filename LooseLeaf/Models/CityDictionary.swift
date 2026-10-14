@@ -5,15 +5,22 @@ import Foundation
 /// 修改本表时必须同步 `web/src/utils/cities.ts`（参数以该文件为准）。
 enum CityDictionary {
 
-    /// 地点文本 → 6 位城市代码（最长匹配优先；忽略单字键防止误配）
+    /// 预排序条目列表：按名称长度降序排列（长前缀优先），长度相同时按字母序确定性决胜
+    private static let sortedEntries: [(name: String, code: String)] = {
+        nameToCode
+            .filter { $0.key.count >= 2 }
+            .sorted { $0.key.count != $1.key.count ? $0.key.count > $1.key.count : $0.key < $1.key }
+            .map { ($0.key, $0.value) }
+    }()
+
+    /// 地点文本 → 6 位城市代码（最长匹配优先，首个命中立即早退返回，杜绝字典哈希迭代随机性）
     static func code(forLocation text: String) -> String? {
-        var best: (name: String, code: String)?
-        for (name, code) in nameToCode where name.count >= 2 && text.contains(name) {
-            if best == nil || name.count > best!.name.count {
-                best = (name, code)
+        for (name, code) in sortedEntries {
+            if text.contains(name) {
+                return code
             }
         }
-        return best?.code
+        return nil
     }
 
     static let nameToCode: [String: String] = [

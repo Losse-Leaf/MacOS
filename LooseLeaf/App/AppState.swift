@@ -301,13 +301,25 @@ public final class AppState {
         let snap = SyncManager.shared.currentSnapshot()
         let cursor = forceFull ? nil : snap.lastEntriesSyncCursor
         do {
-            let resp = try await APIClient.shared.fetchEntries(
-                page: 1,
-                pageSize: 100,
-                since: cursor,
-                useETag: !forceFull && cursor == nil
-            )
-            SyncManager.shared.mergeEntries(resp.entries, isDelta: cursor != nil)
+            var currentPage = 1
+            let pageSize = 100
+            var allFetched: [LifeEntry] = []
+
+            while true {
+                let resp = try await APIClient.shared.fetchEntries(
+                    page: currentPage,
+                    pageSize: pageSize,
+                    since: cursor,
+                    useETag: !forceFull && cursor == nil && currentPage == 1
+                )
+                allFetched.append(contentsOf: resp.entries)
+                if resp.entries.count < pageSize || allFetched.count >= resp.total {
+                    break
+                }
+                currentPage += 1
+            }
+
+            SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified: 本地缓存已是最新
         } catch {
@@ -323,12 +335,25 @@ public final class AppState {
         let cursor = forceFull ? nil : snap.lastTransactionsSyncCursor
 
         do {
-            let txs = try await APIClient.shared.fetchTransactions(
-                since: cursor,
-                limit: 300,
-                useETag: !forceFull && cursor == nil
-            )
-            SyncManager.shared.mergeTransactions(txs, isDelta: cursor != nil)
+            var allTxs: [Transaction] = []
+            let batchLimit = 500
+            var currentOffset = 0
+
+            while true {
+                let txs = try await APIClient.shared.fetchTransactions(
+                    since: cursor,
+                    limit: batchLimit,
+                    offset: currentOffset,
+                    useETag: !forceFull && cursor == nil && currentOffset == 0
+                )
+                allTxs.append(contentsOf: txs)
+                if txs.count < batchLimit {
+                    break
+                }
+                currentOffset += txs.count
+            }
+
+            SyncManager.shared.mergeTransactions(allTxs, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified
         } catch {
@@ -354,8 +379,18 @@ public final class AppState {
         if let projs = try? await APIClient.shared.fetchProjects() {
             self.projects = projs
         }
-        if let wishResp = try? await APIClient.shared.fetchWishes() {
-            self.wishes = wishResp.wishes
+        var allWishes: [Wish] = []
+        var wishPage = 1
+        while true {
+            guard let wishResp = try? await APIClient.shared.fetchWishes(page: wishPage, pageSize: 100) else { break }
+            allWishes.append(contentsOf: wishResp.wishes)
+            if wishResp.wishes.count < 100 || allWishes.count >= wishResp.total {
+                break
+            }
+            wishPage += 1
+        }
+        if !allWishes.isEmpty {
+            self.wishes = allWishes
         }
         if let fps = try? await APIClient.shared.fetchFootprints() {
             self.footprints = fps

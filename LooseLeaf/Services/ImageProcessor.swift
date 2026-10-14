@@ -151,10 +151,14 @@ public enum ImageProcessor {
 
     /// 执行端侧 4K (最长边 3840px) 缩放与 85% 质量 JPEG 压制
     public static func processImageFile(at fileURL: URL, maxPixelSize: Int = 3840, quality: Double = 0.85) throws -> ProcessedPhoto {
-        let rawData = try Data(contentsOf: fileURL)
-        return try processImageData(
-            rawData,
+        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil) else {
+            throw APIError.decodingFailure("无法读取图像数据源: \(fileURL.lastPathComponent)")
+        }
+        let fileSize: Int64 = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
+        return try processImageSource(
+            source,
             originalFilename: fileURL.lastPathComponent,
+            originalSize: fileSize,
             maxPixelSize: maxPixelSize,
             quality: quality
         )
@@ -169,7 +173,22 @@ public enum ImageProcessor {
         guard let source = CGImageSourceCreateWithData(rawData as CFData, nil) else {
             throw APIError.decodingFailure("无法读取图像数据源: \(originalFilename)")
         }
+        return try processImageSource(
+            source,
+            originalFilename: originalFilename,
+            originalSize: Int64(rawData.count),
+            maxPixelSize: maxPixelSize,
+            quality: quality
+        )
+    }
 
+    private static func processImageSource(
+        _ source: CGImageSource,
+        originalFilename: String,
+        originalSize: Int64,
+        maxPixelSize: Int = 3840,
+        quality: Double = 0.85
+    ) throws -> ProcessedPhoto {
         let exifSummary = extractEXIF(from: source)
 
         let thumbOptions: [CFString: Any] = [
@@ -197,13 +216,21 @@ public enum ImageProcessor {
             kCGImageDestinationLossyCompressionQuality: quality
         ]
         if let origProps = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-            if let exif = origProps[kCGImagePropertyExifDictionary] {
-                destProps[kCGImagePropertyExifDictionary] = exif
+            if let exif = origProps[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+                var cleanExif = exif
+                cleanExif.removeValue(forKey: kCGImagePropertyOrientation)
+                destProps[kCGImagePropertyExifDictionary] = cleanExif
             }
-            if let tiff = origProps[kCGImagePropertyTIFFDictionary] {
+            if var tiff = origProps[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+                // 因像素数据已由 kCGImageSourceCreateThumbnailWithTransform 旋转正立，
+                // TIFF 中的 Orientation 必须规范化为 1 (Normal / Top-Left)，
+                // 否则下游看图器或浏览器会按旧 Orientation 产生二次翻转 (Double Rotation Bug)。
+                tiff[kCGImagePropertyTIFFOrientation] = 1
                 destProps[kCGImagePropertyTIFFDictionary] = tiff
             }
         }
+        // 顶级方向属性显式声明为 1 (已正立)
+        destProps[kCGImagePropertyOrientation] = 1
 
         CGImageDestinationAddImage(destination, cgImage, destProps as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
@@ -219,7 +246,7 @@ public enum ImageProcessor {
             compressedData: compressedData,
             filename: outputFilename,
             mimeType: "image/jpeg",
-            originalSize: Int64(rawData.count),
+            originalSize: originalSize,
             compressedSize: Int64(compressedData.count),
             width: width,
             height: height,

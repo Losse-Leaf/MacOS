@@ -351,8 +351,13 @@ public struct DarkroomDropZone: View {
                     featured: isFeatured
                 )
 
+                let remainingCount = pendingPhotoURLs.count
                 resetDarkroom()
-                appState.activeSection = .stream
+                if remainingCount == 0 {
+                    appState.activeSection = .stream
+                } else {
+                    appState.showTemporaryBanner("已归档当前底片，已载入队列下一张（待冲印 \(remainingCount) 张）")
+                }
             } catch {
                 self.errorMessage = error.localizedDescription
             }

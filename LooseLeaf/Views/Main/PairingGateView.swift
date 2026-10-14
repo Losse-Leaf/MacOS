@@ -284,7 +284,7 @@ public struct PairingGateView: View {
         }
     }
 
-    // MARK: - 已装帧状态：主理人密钥登录 / 6 位配对码
+    // MARK: - 已装帧状态：主理人密钥登录 / 配对链接粘帖入库
 
     private var pairedLoginView: some View {
         VStack(spacing: 16) {

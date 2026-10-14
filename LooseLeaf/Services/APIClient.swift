@@ -247,7 +247,7 @@ public actor APIClient {
         return resp
     }
 
-    /// 签发新设备配对工单 (供手机扫码或输入 6 位码接入)
+    /// 签发新设备配对工单 (生成包含中枢地址与设备工单的配对深链)
     public func initPairing(deviceHint: String = "macOS 工作台发起配对") async throws -> PairTicketResponse {
         let req = PairInitRequest(hubUrl: baseURLString, deviceHint: deviceHint)
         return try await performEnvelopeRequest(

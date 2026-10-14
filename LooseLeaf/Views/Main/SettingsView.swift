@@ -251,34 +251,73 @@ public struct SettingsView: View {
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
-                Button("签发新设备 6 位配对码") {
+                Button {
                     Task { @MainActor in
                         issuedPairTicket = try? await APIClient.shared.initPairing()
                         AudioFeedback.shared.playPaperFlip()
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "link.badge.plus")
+                        Text("生成新设备配对链接")
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
             }
 
             if let ticket = issuedPairTicket {
-                HStack(spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("临时 6 位配对码（5 分钟内有效）")
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                        Text(ticket.pinCode)
-                            .font(ArchiveTypography.monoScale(size: 22, weight: .bold))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(ticket.qrPayload)
-                            .font(ArchiveTypography.monoScale(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("新设备配对深链（5 分钟内有效）")
+                                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                            Text("链接已包含数据中枢地址与配对工单，新设备点击或粘贴即可一键接入，无需手输网址或密钥。")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+                        Spacer()
+                        Button("收起") {
+                            issuedPairTicket = nil
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(ArchivePalette.inkMuted)
                     }
-                    Spacer()
+
+                    HStack(spacing: 8) {
+                        Text(ticket.qrPayload)
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .textSelection(.enabled)
+
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(ticket.qrPayload, forType: .string)
+                            AudioFeedback.shared.playTink()
+                            appState.showTemporaryBanner("已复制配对链接至剪贴板")
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                Text("复制链接")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    }
                 }
                 .padding(12)
                 .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(ArchivePalette.accentWarm.opacity(0.4), lineWidth: 0.8)
+                )
             }
 
             ForEach(appState.trustedDevices) { dev in

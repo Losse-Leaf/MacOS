@@ -226,7 +226,7 @@ public struct SettingsView: View {
                     Circle()
                         .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .frame(width: 7, height: 7)
-                    Text(appState.isPaired ? "本机已托管有效设备凭证 (主理人全权管理)" : "尚未配对")
+                    Text(appState.isPaired ? "本机已安全接入数据中枢" : "尚未接入中枢")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                 }
@@ -238,7 +238,7 @@ public struct SettingsView: View {
                         Text("本机设备标识：\(CredentialStore.getDeviceId() ?? "dev_macos")")
                             .font(ArchiveTypography.monoScale(size: 12))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("登记名称：\(CredentialStore.getDeviceName() ?? "Mac 工作台") · 凭证档案: credentials.json")
+                        Text("设备名称：\(CredentialStore.getDeviceName() ?? "Mac 工作台")")
                             .font(ArchiveTypography.monoScale(size: 11))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }

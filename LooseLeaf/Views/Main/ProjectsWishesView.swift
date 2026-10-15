@@ -48,7 +48,7 @@ public struct ProjectsWishesView: View {
                         Text("造物、心愿与山川行迹")
                             .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("二级投影均与主时间流伴生联动 · 主理人全权管理")
+                        Text("心愿、行迹与造物，皆在时光深处留痕")
                             .font(ArchiveTypography.bodySans(size: 12.5))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }

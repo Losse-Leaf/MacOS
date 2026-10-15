@@ -188,7 +188,7 @@ public struct StreamView: View {
                     Circle()
                         .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .frame(width: 6, height: 6)
-                    Text(appState.isOnline ? (appState.isFlushingOutbox ? "正在同步上云…" : "主理人全权管理") : "离线工作态 · 发件箱守护")
+                    Text(appState.isOnline ? (appState.isFlushingOutbox ? "正在同步…" : "已连接数据中枢") : "离线工作态 · 发件箱守护")
                         .font(ArchiveTypography.monoScale(size: 10.5))
                         .foregroundStyle(appState.isOnline ? ArchivePalette.inkMuted : ArchivePalette.accentWarm)
                     Spacer()

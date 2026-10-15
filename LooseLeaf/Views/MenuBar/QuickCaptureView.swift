@@ -350,11 +350,11 @@ public struct QuickCaptureView: View {
                 .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
 
             if isUploadingPhoto {
-                Text("正在压制 4K 相纸并上传 (\(Int(uploadProgress * 100))%)…")
+                Text("正在上传相片 (\(Int(uploadProgress * 100))%)…")
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkSecondary)
             } else if !uploadedAttachments.isEmpty {
-                Text("已装裱 \(uploadedAttachments.count) 张胶片底片")
+                Text("已添加 \(uploadedAttachments.count) 张相片")
                     .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
                     .foregroundStyle(ArchivePalette.accentMoss)
                 Spacer()
@@ -366,7 +366,7 @@ public struct QuickCaptureView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.inkMuted)
             } else {
-                Text("从 Finder 拖拽照片（可多张）至此，或 ⌘V 粘贴截图，自动提取 EXIF 并压制直传")
+                Text("拖拽照片至此，或 ⌘V 粘贴截图，自动装裱保存")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
@@ -398,7 +398,7 @@ public struct QuickCaptureView: View {
                 Circle()
                     .fill(!appState.isOnline ? ArchivePalette.accentWarm : (appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm))
                     .frame(width: 6, height: 6)
-                Text(!appState.isOnline ? "离线暂存态 (待发 \(appState.outboxItems.count))" : (appState.isPaired ? "已配对授信 · 主理人全权管理" : "待配对激活"))
+                Text(!appState.isOnline ? "离线暂存 (待同步 \(appState.outboxItems.count))" : (appState.isPaired ? "已接入数据中枢" : "待绑定中枢"))
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
@@ -518,7 +518,7 @@ public struct QuickCaptureView: View {
                 uploadedAttachments.append(attachment)
                 AudioFeedback.shared.playShutter()
             } catch {
-                errorText = "「\(url.lastPathComponent)」压制/上传失败：\(error.localizedDescription)"
+                errorText = "「\(url.lastPathComponent)」上传失败：\(error.localizedDescription)"
             }
             finished += 1
             uploadProgress = max(uploadProgress, finished / total)

@@ -39,17 +39,17 @@ public struct DarkroomDropZone: View {
                 // 1. 页眉说明
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("银盐暗房 · 拖拽相纸冲印与 EXIF 装裱")
+                        Text("银盐暗房 · 胶片冲印与相纸装裱")
                             .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("从 Finder 拖入单反原片或日常摄影，端侧自动提取机型镜头参数、压制 4K 画质并直传归档")
+                        Text("拖入摄影原片或日常照片，自动识别器材参数，高清装裱入册")
                             .font(ArchiveTypography.bodySans(size: 12.5))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }
                     Spacer()
 
                     if !pendingPhotoURLs.isEmpty {
-                        Text("队列待冲印 \(pendingPhotoURLs.count) 张")
+                        Text("待冲印 \(pendingPhotoURLs.count) 张")
                             .font(ArchiveTypography.monoScale(size: 11))
                             .foregroundStyle(ArchivePalette.accentWarm)
                     }
@@ -58,8 +58,8 @@ public struct DarkroomDropZone: View {
                         selectPhotoFromFinder()
                     } label: {
                         HStack(spacing: 5) {
-                            Image(systemName: "folder.badge.plus")
-                            Text("从访达选择底片…")
+                            Image(systemName: "photo.badge.plus")
+                            Text("选择相片…")
                         }
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
@@ -111,7 +111,7 @@ public struct DarkroomDropZone: View {
                                 .progressViewStyle(.linear)
                                 .tint(ArchivePalette.accentWarm)
                                 .frame(width: 180)
-                            Text("正在直传云端存储桶 \(Int(uploadProgress * 100))%")
+                            Text("正在冲印上传 \(Int(uploadProgress * 100))%…")
                                 .font(ArchiveTypography.monoScale(size: 11.5))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                         }
@@ -124,11 +124,11 @@ public struct DarkroomDropZone: View {
                         .font(.system(size: 36, weight: .light))
                         .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
 
-                    Text(isProcessing ? "正在解析 EXIF 与压制 4K 相纸…" : "将照片拖拽至此处装裱显影")
+                    Text(isProcessing ? "正在装裱相纸…" : "将照片拖拽至此处装裱显影")
                         .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
-                    Text("支持 JPEG · PNG · HEIC · WebP · CR2 · NEF · ARW · DNG（可多张拖入，单张上限 50MB）")
+                    Text("支持常见图片与单反原片，可多张拖入")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -142,21 +142,21 @@ public struct DarkroomDropZone: View {
         }
     }
 
-    // MARK: - 右侧 EXIF 检视器与归档表单
+    // MARK: - 右侧检视器与归档表单
 
     private func exifAndPublishInspector(photo: ImageProcessor.ProcessedPhoto) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("底片参数与装裱手记")
+            Text("拍摄参数与相纸手记")
                 .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            // EXIF 参数卡片
+            // 参数卡片
             VStack(alignment: .leading, spacing: 7) {
-                exifRow(label: "机型铭牌", value: photo.exifMetadata.formattedCameraLine.isEmpty ? "未检出器材 EXIF" : photo.exifMetadata.formattedCameraLine)
+                exifRow(label: "器材参数", value: photo.exifMetadata.formattedCameraLine.isEmpty ? "无拍摄参数记录" : photo.exifMetadata.formattedCameraLine)
                 exifRow(label: "画幅尺寸", value: "\(photo.width) × \(photo.height) px")
                 exifRow(
-                    label: "端侧压制",
-                    value: "\(formatBytes(photo.originalSize)) → \(formatBytes(photo.compressedSize))"
+                    label: "相纸大小",
+                    value: "\(formatBytes(photo.compressedSize)) (原图 \(formatBytes(photo.originalSize)))"
                 )
                 if let captured = photo.exifMetadata.capturedAt {
                     exifRow(label: "拍摄时刻", value: FormatUtils.parseOccurredDate(captured).dotDateTime)
@@ -237,7 +237,7 @@ public struct DarkroomDropZone: View {
             }
 
             HStack(spacing: 8) {
-                Button("重置底片") {
+                Button("重选相片") {
                     resetDarkroom()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
@@ -249,7 +249,7 @@ public struct DarkroomDropZone: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles")
-                        Text(isUploading ? "显影归档中…" : "显影并归入散页")
+                        Text(isUploading ? "冲印保存中…" : "装裱并保存")
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))

@@ -120,7 +120,7 @@ public struct LedgerAssetsView: View {
                 Text("柴米油盐 · 独立账本与净资产中枢")
                     .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("金额严格以整型分流转 · 主理人全权管理与资产大盘")
+                Text("每一笔收支皆有归处 · 个人净资产与日常流水总览")
                     .font(ArchiveTypography.bodySans(size: 12.5))
                     .foregroundStyle(ArchivePalette.inkSecondary)
             }
@@ -712,7 +712,7 @@ public struct LedgerAssetsView: View {
             Text("校准初始流动资金底数")
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
-            Text("设定开始记账前的储蓄水位基线（元），系统将自动按整型分持久化并实时重算可用余额。")
+            Text("设定记账前的储蓄基准底数（元），系统将以此实时核算当前可用流动资金。")
                 .font(ArchiveTypography.bodySans(size: 12))
                 .foregroundStyle(ArchivePalette.inkSecondary)
 

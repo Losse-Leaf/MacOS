@@ -406,6 +406,14 @@ final class LooseLeafTests: XCTestCase {
         do {
             let env = try JSONDecoder().decode(APIEnvelope<EntriesListResponse>.self, from: data)
             print("DECODED ENTRIES COUNT: \(env.data?.entries.count ?? -1)")
+
+            var snapshot = LocalArchiveSnapshot()
+            snapshot.entries = env.data?.entries ?? []
+            let encoded = try JSONEncoder().encode(snapshot)
+            print("SNAPSHOT ENCODED SUCCESS: \(encoded.count) bytes")
+            let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: encoded)
+            print("SNAPSHOT DECODED SUCCESS: \(decoded.entries.count) entries")
+            XCTAssertEqual(decoded.entries.count, 8)
         } catch {
             XCTFail("Decoding failed: \(error)")
         }

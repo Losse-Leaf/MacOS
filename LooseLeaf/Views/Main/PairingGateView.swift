@@ -192,8 +192,8 @@ public struct PairingGateView: View {
                 .foregroundStyle(ArchivePalette.inkSecondary)
                 .multilineTextAlignment(.center)
 
-            Text("请确认 backend 已启动（默认端口 8088）：\ncd backend && go run main.go")
-                .font(ArchiveTypography.monoScale(size: 11))
+            Text("请确认数据中枢服务已正常启动，或点击上方地址胶囊检查连接配置。")
+                .font(ArchiveTypography.bodySans(size: 11.5))
                 .foregroundStyle(ArchivePalette.inkMuted)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)

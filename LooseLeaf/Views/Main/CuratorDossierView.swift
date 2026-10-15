@@ -18,6 +18,9 @@ public struct CuratorDossierView: View {
     @State private var editMotto: String = ""
     @State private var editBio: String = ""
     @State private var editManifesto: String = ""
+    @State private var newAvatarKey: String?
+    @State private var isUploadingAvatar: Bool = false
+    @State private var avatarPreviewImage: NSImage?
 
     public init(appState: AppState) {
         self.appState = appState
@@ -257,6 +260,34 @@ public struct CuratorDossierView: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
+            HStack(spacing: 12) {
+                if let avatarPreviewImage {
+                    Image(nsImage: avatarPreviewImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(ArchivePalette.borderSubtle, lineWidth: 1))
+                }
+                Button {
+                    selectAndUploadAvatar()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "photo")
+                        Text(isUploadingAvatar ? "正在上传肖像…" : "更换肖像照片…")
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .disabled(isUploadingAvatar)
+
+                if newAvatarKey != nil {
+                    Text("新肖像已就绪")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.accentMoss)
+                }
+            }
+            .padding(.vertical, 2)
+
             TextField("主理人称谓", text: $editName)
                 .textFieldStyle(.plain)
                 .padding(8)
@@ -317,6 +348,7 @@ public struct CuratorDossierView: View {
                             bio: editBio,
                             location: finalLoc,
                             currentCity: finalCity,
+                            avatarKey: newAvatarKey ?? appState.profile.avatarKey,
                             motto: editMotto,
                             manifesto: editManifesto
                         )
@@ -338,5 +370,32 @@ public struct CuratorDossierView: View {
         .padding(20)
         .frame(width: 420)
         .background(ArchivePalette.archivePaper)
+    }
+
+    private func selectAndUploadAvatar() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { @MainActor in
+                isUploadingAvatar = true
+                do {
+                    let data = try Data(contentsOf: url)
+                    avatarPreviewImage = NSImage(data: data)
+                    let att = try await APIClient.shared.uploadUnifiedMultipart(
+                        fileData: data,
+                        filename: url.lastPathComponent,
+                        mimeType: "image/jpeg",
+                        folder: "avatar"
+                    )
+                    newAvatarKey = att.objectKey
+                    AudioFeedback.shared.playShutter()
+                } catch {
+                    dossierError = "肖像上传失败：\(error.localizedDescription)"
+                }
+                isUploadingAvatar = false
+            }
+        }
     }
 }

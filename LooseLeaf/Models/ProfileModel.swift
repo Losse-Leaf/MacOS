@@ -301,6 +301,23 @@ public struct PairInitRequest: Codable, Sendable {
     }
 }
 
+public struct NetworkCandidate: Codable, Equatable, Sendable, Identifiable {
+    public var id: String { url }
+    public var type: String
+    public var label: String
+    public var ip: String
+    public var url: String
+    public var isDefault: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case label
+        case ip
+        case url
+        case isDefault = "is_default"
+    }
+}
+
 public struct PairTicketResponse: Codable, Equatable, Sendable {
     public var ticket: String
     public var hubUrl: String
@@ -308,6 +325,7 @@ public struct PairTicketResponse: Codable, Equatable, Sendable {
     public var qrCodeDataUrl: String?
     public var expiresAt: String
     public var expiresInSeconds: Int
+    public var candidates: [NetworkCandidate]?
 
     enum CodingKeys: String, CodingKey {
         case ticket
@@ -316,6 +334,21 @@ public struct PairTicketResponse: Codable, Equatable, Sendable {
         case qrCodeDataUrl = "qr_code_data_url"
         case expiresAt = "expires_at"
         case expiresInSeconds = "expires_in_seconds"
+        case candidates
+    }
+}
+
+public struct PairQRResponse: Codable, Equatable, Sendable {
+    public var hubUrl: String
+    public var ticket: String
+    public var qrPayload: String
+    public var qrCodeDataUrl: String
+
+    enum CodingKeys: String, CodingKey {
+        case hubUrl = "hub_url"
+        case ticket
+        case qrPayload = "qr_payload"
+        case qrCodeDataUrl = "qr_code_data_url"
     }
 }
 
@@ -1293,4 +1326,55 @@ public struct AnnualAlmanacResponse: Codable, Equatable, Sendable {
         finances = (try? container.decode(AlmanacFinances.self, forKey: .finances)) ?? AlmanacFinances()
     }
 }
+
+public struct OnThisDayResponse: Codable, Equatable, Sendable {
+    public var month: Int
+    public var day: Int
+    public var entries: [LifeEntry]
+
+    public init(month: Int = 1, day: Int = 1, entries: [LifeEntry] = []) {
+        self.month = month
+        self.day = day
+        self.entries = entries
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        month = (try? container.decode(Int.self, forKey: .month)) ?? 1
+        day = (try? container.decode(Int.self, forKey: .day)) ?? 1
+        entries = (try? container.decodeIfPresent([LifeEntry].self, forKey: .entries)) ?? []
+    }
+}
+
+public struct GlobalSearchResponse: Codable, Equatable, Sendable {
+    public var query: String
+    public var entries: [LifeEntry]
+    public var footprints: [Footprint]
+    public var wishes: [Wish]
+    public var projects: [Project]
+
+    public init(
+        query: String = "",
+        entries: [LifeEntry] = [],
+        footprints: [Footprint] = [],
+        wishes: [Wish] = [],
+        projects: [Project] = []
+    ) {
+        self.query = query
+        self.entries = entries
+        self.footprints = footprints
+        self.wishes = wishes
+        self.projects = projects
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        query = (try? container.decode(String.self, forKey: .query)) ?? ""
+        entries = (try? container.decodeIfPresent([LifeEntry].self, forKey: .entries)) ?? []
+        footprints = (try? container.decodeIfPresent([Footprint].self, forKey: .footprints)) ?? []
+        wishes = (try? container.decodeIfPresent([Wish].self, forKey: .wishes)) ?? []
+        projects = (try? container.decodeIfPresent([Project].self, forKey: .projects)) ?? []
+    }
+}
+
 

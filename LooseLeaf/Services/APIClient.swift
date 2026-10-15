@@ -256,6 +256,15 @@ public actor APIClient {
         )
     }
 
+    /// 切换配对节点时动态重新渲染纸墨二维码 (GET /api/v1/auth/pair/qr)
+    public func fetchPairQRCode(hubURL: String, ticket: String) async throws -> PairQRResponse {
+        let query = [
+            URLQueryItem(name: "hub", value: hubURL),
+            URLQueryItem(name: "ticket", value: ticket)
+        ]
+        return try await performEnvelopeRequest(path: "/api/v1/auth/pair/qr", queryItems: query)
+    }
+
     /// 获取已信任设备列表 (GET /api/v1/auth/devices)
     public func fetchTrustedDevices() async throws -> [TrustedDevice] {
         try await performEnvelopeRequest(path: "/api/v1/auth/devices")
@@ -306,6 +315,39 @@ public actor APIClient {
             items.append(URLQueryItem(name: "scope", value: scope))
         }
         return try await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items)
+    }
+
+    public func addCategoryOption(scope: String, name: String) async throws -> CategoryOption {
+        struct Payload: Codable, Sendable {
+            let scope: String
+            let name: String
+        }
+        return try await performEnvelopeRequest(
+            path: "/api/v1/categories",
+            method: "POST",
+            body: Payload(scope: scope, name: name)
+        )
+    }
+
+    public func deleteCategoryOption(id: Int) async throws {
+        let _: DeleteResponse = try await performEnvelopeRequest(
+            path: "/api/v1/categories/\(id)",
+            method: "DELETE"
+        )
+    }
+
+    /// 获取那年今日历史归档 (GET /api/v1/entries/on-this-day)
+    public func fetchOnThisDayEntries() async throws -> OnThisDayResponse {
+        try await performEnvelopeRequest(path: "/api/v1/entries/on-this-day")
+    }
+
+    /// 全库跨模块搜索 (GET /api/v1/search?q=...)
+    public func searchGlobalArchive(query: String, limit: Int = 20) async throws -> GlobalSearchResponse {
+        let items = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        return try await performEnvelopeRequest(path: "/api/v1/search", queryItems: items)
     }
 
     // MARK: - 3. 生活档案 (Life Entries CRUD & Delta Sync)

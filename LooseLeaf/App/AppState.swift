@@ -83,6 +83,7 @@ public final class AppState {
     public var trustedDevices: [TrustedDevice] = []
     public var creditChannels: [CreditChannel] = []
     public var outboxItems: [OutboxItem] = []
+    public var onThisDayEntries: [LifeEntry] = []
 
     // MARK: - 动态分类字典 (由 /api/v1/categories 下发驱动)
     public var expenseCategories: [String] = ["餐饮", "交通", "购物", "数码器材", "娱乐", "住房", "学习", "医疗", "其他"]
@@ -346,6 +347,10 @@ public final class AppState {
             if entries.isEmpty {
                 self.errorBanner = error.localizedDescription
             }
+        }
+
+        if let otd = try? await APIClient.shared.fetchOnThisDayEntries() {
+            self.onThisDayEntries = otd.entries
         }
     }
 

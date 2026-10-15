@@ -1,5 +1,6 @@
 import SwiftUI
 import Carbon
+import UniformTypeIdentifiers
 
 /// 设备免密配对、本机凭据托管与偏好设置视图 (SettingsView)
 /// 严格遵循 docs/macos.md §5 与 docs/backend.md §3 & §5.6 规范
@@ -22,6 +23,16 @@ public struct SettingsView: View {
     // 健康探针与签发新设备配对码状态
     @State private var healthResult: HealthCheckResponse?
     @State private var issuedPairTicket: PairTicketResponse?
+
+    // 设备重命名状态
+    @State private var renamingDevice: TrustedDevice?
+    @State private var newDeviceNameInput: String = ""
+
+    // 分类字典管理状态
+    @State private var selectedCategoryScope: String = "expense"
+    @State private var newCategoryNameInput: String = ""
+    @State private var allCategoriesList: [CategoryOption] = []
+    @State private var isExportingArchive: Bool = false
 
     // 全局热键录制状态
     @State private var hotKeyLabel: String = AppDelegate.hotKeyDisplayName
@@ -48,6 +59,7 @@ public struct SettingsView: View {
                 // 3. 已授信设备列表与发起移动端配对 (仅已配对时展示)
                 if appState.isPaired {
                     trustedDevicesCard
+                    categoryManagerCard
                 }
 
                 // 4. 视觉模式、拟物声学与触控板反馈设置
@@ -58,9 +70,13 @@ public struct SettingsView: View {
             }
             .padding(24)
         }
+        .sheet(item: $renamingDevice) { dev in
+            renameDeviceSheetView(dev: dev)
+        }
         .task {
             if appState.isPaired {
                 await refreshDevicesList()
+                allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
             }
         }
     }
@@ -344,20 +360,20 @@ public struct SettingsView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "link.badge.plus")
-                        Text("生成新设备配对链接")
+                        Text("生成新设备配对凭证")
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
             }
 
             if let ticket = issuedPairTicket {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("新设备配对深链（5 分钟内有效）")
+                            Text("新设备配对凭证（5 分钟内有效）")
                                 .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
-                            Text("链接已包含数据中枢地址与配对工单，新设备点击或粘贴即可一键接入，无需手输网址或密钥。")
+                            Text("使用随行手机扫描纸墨二维码，或复制配对链接在客户端一键接入。")
                                 .font(ArchiveTypography.bodySans(size: 11))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                         }
@@ -370,30 +386,96 @@ public struct SettingsView: View {
                         .foregroundStyle(ArchivePalette.inkMuted)
                     }
 
-                    HStack(spacing: 8) {
-                        Text(ticket.qrPayload)
-                            .font(ArchiveTypography.monoScale(size: 11))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .lineLimit(1)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(ArchivePalette.archiveSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .textSelection(.enabled)
+                    HStack(alignment: .top, spacing: 14) {
+                        // 纸墨风格二维码
+                        if let qrImg = decodeDataURLImage(ticket.qrCodeDataUrl) {
+                            Image(nsImage: qrImg)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 108, height: 108)
+                                .padding(5)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                )
+                        }
 
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(ticket.qrPayload, forType: .string)
-                            AudioFeedback.shared.playTink()
-                            appState.showTemporaryBanner("已复制配对链接至剪贴板")
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.on.doc")
-                                Text("复制链接")
+                        VStack(alignment: .leading, spacing: 8) {
+                            // 节点候选切换器（无 emoji，微圆点）
+                            if let cands = ticket.candidates, cands.count > 1 {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("选择连接节点：")
+                                        .font(ArchiveTypography.monoScale(size: 10.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                                    HStack(spacing: 6) {
+                                        ForEach(cands) { cand in
+                                            Button {
+                                                Task { @MainActor in
+                                                    if let updated = try? await APIClient.shared.fetchPairQRCode(hubURL: cand.url, ticket: ticket.ticket) {
+                                                        var mutable = ticket
+                                                        mutable.hubUrl = updated.hubUrl
+                                                        mutable.qrPayload = updated.qrPayload
+                                                        mutable.qrCodeDataUrl = updated.qrCodeDataUrl
+                                                        issuedPairTicket = mutable
+                                                        AudioFeedback.shared.playTink()
+                                                    }
+                                                }
+                                            } label: {
+                                                HStack(spacing: 5) {
+                                                    Circle()
+                                                        .fill(ticket.hubUrl == cand.url ? ArchivePalette.accentWarm : ArchivePalette.borderDivider)
+                                                        .frame(width: 6, height: 6)
+                                                    Text(cand.label)
+                                                    Text("(\(cand.ip))")
+                                                        .font(ArchiveTypography.monoScale(size: 10))
+                                                        .opacity(0.7)
+                                                }
+                                                .font(ArchiveTypography.bodySans(size: 11, weight: ticket.hubUrl == cand.url ? .medium : .regular))
+                                                .padding(.horizontal, 7)
+                                                .padding(.vertical, 3.5)
+                                                .background(ticket.hubUrl == cand.url ? ArchivePalette.accentWarm.opacity(0.12) : ArchivePalette.archiveSubtle)
+                                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 4)
+                                                        .stroke(ticket.hubUrl == cand.url ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                                )
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                            }
+
+                            HStack(spacing: 8) {
+                                Text(ticket.qrPayload)
+                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(ArchivePalette.archiveSubtle)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    .textSelection(.enabled)
+
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(ticket.qrPayload, forType: .string)
+                                    AudioFeedback.shared.playTink()
+                                    appState.showTemporaryBanner("已复制配对链接至剪贴板")
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "doc.on.doc")
+                                        Text("复制链接")
+                                    }
+                                }
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                             }
                         }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                     }
                 }
                 .padding(12)
@@ -425,6 +507,15 @@ public struct SettingsView: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                     Spacer()
+
+                    Button("重命名") {
+                        renamingDevice = dev
+                        newDeviceNameInput = dev.name
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .buttonStyle(.plain)
+
                     if dev.deviceId != CredentialStore.getDeviceId() {
                         Button("吊销") {
                             Task { @MainActor in
@@ -449,6 +540,114 @@ public struct SettingsView: View {
                 .padding(10)
                 .background(ArchivePalette.archivePaper)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+        }
+        .padding(16)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - 3.5 分类标签字典管理
+    private var categoryManagerCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("04 · 分类标签字典管理")
+                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            HStack(spacing: 6) {
+                ForEach([("expense", "支出类目"), ("income", "收入类目"), ("gear", "随身装备"), ("project", "造物标签")], id: \.0) { scope, label in
+                    PaperPillButton(
+                        title: label,
+                        isSelected: selectedCategoryScope == scope
+                    ) {
+                        selectedCategoryScope = scope
+                        AudioFeedback.shared.playTink()
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("输入新分类标签…", text: $newCategoryNameInput)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .padding(8)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                    )
+
+                Button("+ 添加分类") {
+                    let name = newCategoryNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return }
+                    Task { @MainActor in
+                        do {
+                            _ = try await APIClient.shared.addCategoryOption(scope: selectedCategoryScope, name: name)
+                            newCategoryNameInput = ""
+                            await appState.loadConfigAndProfile()
+                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                            AudioFeedback.shared.playTink()
+                        } catch {
+                            authError = "添加分类失败: \(error.localizedDescription)"
+                        }
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(newCategoryNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            let currentScopeCats = allCategoriesList.filter { $0.scope == selectedCategoryScope }
+            if currentScopeCats.isEmpty {
+                Text("展示当前分类项。")
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                    ForEach(currentScopeCats) { cat in
+                        HStack(spacing: 4) {
+                            Text(cat.name)
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                            if cat.isBuiltin {
+                                Text("预置")
+                                    .font(ArchiveTypography.monoScale(size: 9))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            } else {
+                                Spacer()
+                                Button {
+                                    Task { @MainActor in
+                                        do {
+                                            try await APIClient.shared.deleteCategoryOption(id: cat.id)
+                                            await appState.loadConfigAndProfile()
+                                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                                            AudioFeedback.shared.playTink()
+                                        } catch {
+                                            authError = "删除分类失败: \(error.localizedDescription)"
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        )
+                    }
+                }
             }
         }
         .padding(16)
@@ -625,6 +824,52 @@ public struct SettingsView: View {
                     .font(ArchiveTypography.monoScale(size: 11.5))
                     .foregroundStyle(appState.outboxItems.isEmpty ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
             }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("全量多格式文稿与数据导出")
+                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Text("数据 100% 属于你，永远可导出，格式开放且永久兼容：")
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+
+                HStack(spacing: 8) {
+                    Button {
+                        exportArchive(format: .markdown)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.text")
+                            Text("导出 Markdown 日记")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .disabled(isExportingArchive)
+
+                    Button {
+                        exportArchive(format: .csv)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "tablecells")
+                            Text("导出 CSV 账目")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .disabled(isExportingArchive)
+
+                    Button {
+                        exportArchive(format: .json)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "curlybraces")
+                            Text("导出全量 JSON 备份")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .disabled(isExportingArchive)
+                }
+            }
         }
         .padding(16)
         .background(ArchivePalette.archiveSubtle)
@@ -687,6 +932,89 @@ public struct SettingsView: View {
     private func refreshDevicesList() async {
         if let list = try? await APIClient.shared.fetchTrustedDevices() {
             appState.trustedDevices = list
+        }
+    }
+
+    private func decodeDataURLImage(_ dataURL: String?) -> NSImage? {
+        guard let dataURL, let commaIdx = dataURL.firstIndex(of: ",") else { return nil }
+        let base64 = String(dataURL[dataURL.index(after: commaIdx)...])
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return NSImage(data: data)
+    }
+
+    private func renameDeviceSheetView(dev: TrustedDevice) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("重命名受信任设备")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            TextField("设备名称", text: $newDeviceNameInput)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.bodySans(size: 13))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            HStack {
+                Button("取消") { renamingDevice = nil }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("保存名称") {
+                    let targetId = dev.deviceId
+                    let newName = newDeviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    renamingDevice = nil
+                    Task { @MainActor in
+                        do {
+                            _ = try await APIClient.shared.updateDeviceName(id: targetId, name: newName)
+                            await refreshDevicesList()
+                            AudioFeedback.shared.playTink()
+                        } catch {
+                            authError = "重命名失败: \(error.localizedDescription)"
+                        }
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(newDeviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func exportArchive(format: ArchiveExporter.ExportFormat) {
+        let panel = NSSavePanel()
+        switch format {
+        case .markdown:
+            panel.allowedContentTypes = [.plainText]
+            panel.nameFieldStringValue = "looseleaf-export-\(FormatUtils.beijingDateString()).md"
+        case .csv:
+            panel.allowedContentTypes = [.commaSeparatedText]
+            panel.nameFieldStringValue = "looseleaf-transactions-\(FormatUtils.beijingDateString()).csv"
+        case .json:
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "looseleaf-backup-\(FormatUtils.beijingDateString()).json"
+        }
+
+        if panel.runModal() == .OK, let targetURL = panel.url {
+            isExportingArchive = true
+            Task { @MainActor in
+                let data = await ArchiveExporter.fetchAllRemoteAndExport(
+                    format: format,
+                    fallbackSnapshot: SyncManager.shared.currentSnapshot(),
+                    fallbackProjects: appState.projects,
+                    fallbackWishes: appState.wishes,
+                    fallbackFootprints: appState.footprints
+                )
+                if let data {
+                    try? data.write(to: targetURL, options: .atomic)
+                    AudioFeedback.shared.playShutter()
+                    appState.showTemporaryBanner("档案导出成功")
+                } else {
+                    appState.errorBanner = "导出生成失败"
+                }
+                isExportingArchive = false
+            }
         }
     }
 }

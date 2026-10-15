@@ -31,6 +31,7 @@ public struct StreamView: View {
     // 键盘流（⌘↑ / ⌘↓）滚动跟随
     @State private var keyboardScrollPosition: Int?
     @State private var localSearchText: String = ""
+    @State private var isOnThisDayExpanded: Bool = true
 
     // 管理模式：编辑与删除状态
     @State private var editingEntry: LifeEntry?
@@ -373,6 +374,10 @@ public struct StreamView: View {
 
                 // 2. 顶部行内即时手稿速写卡片 (Inline Quick Composer)
                 inlineQuickComposerCard
+
+                if !appState.onThisDayEntries.isEmpty {
+                    onThisDayBannerCard
+                }
 
                 // 3. GitHub 风格 52 周生活刻度热力图
                 LifeActivityHeatmapView(
@@ -798,6 +803,74 @@ public struct StreamView: View {
         .padding(22)
         .frame(width: 500)
         .background(ArchivePalette.archivePaper)
+    }
+
+    // MARK: - 那年今日 · 岁月回响折叠横幅
+    private var onThisDayBannerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Text("那年今日 · 岁月回响 (\(appState.onThisDayEntries.count))")
+                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isOnThisDayExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: isOnThisDayExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isOnThisDayExpanded {
+                Divider().overlay(ArchivePalette.accentWarm.opacity(0.3))
+
+                VStack(spacing: 8) {
+                    ForEach(appState.onThisDayEntries) { entry in
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.title.isEmpty ? "无题手稿" : entry.title)
+                                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                if !entry.content.isEmpty {
+                                    Text(entry.content)
+                                        .font(ArchiveTypography.bodySans(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                            Text(entry.parsedDate.dotDate)
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+                        .padding(8)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            appState.highlightedEntry = entry
+                            AudioFeedback.shared.playPaperFlip()
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(ArchivePalette.accentWarm.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.8)
+        )
     }
 
     // MARK: - 行内速写卡片与管理动作 (Inline Quick Composer & Management)

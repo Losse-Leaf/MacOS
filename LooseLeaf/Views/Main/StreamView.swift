@@ -82,6 +82,7 @@ public struct StreamView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(nil, value: appState.activeSection)
                 }
             }
 
@@ -158,7 +159,11 @@ public struct StreamView: View {
                         section: section,
                         selected: appState.activeSection == section
                     ) {
-                        appState.activeSection = section
+                        var transaction = SwiftUI.Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            appState.activeSection = section
+                        }
                         AudioFeedback.shared.playPaperFlip()
                     }
                 }

@@ -47,15 +47,11 @@ public final class SyncManager {
     public nonisolated static let appGroupIdentifier = "group.com.looseleaf.archive"
 
     /// 快照文件名（archive_snapshot_v1.json）
+    /// 本地快照目录 (存储于 ~/Library/Application Support/LooseLeaf/ 保证沙箱环境下 100% 可靠读写)
     public nonisolated static var sharedStorageDirectory: URL {
-        let dir: URL
-        if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
-            dir = groupURL.appendingPathComponent("LooseLeafArchive", isDirectory: true)
-        } else {
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSTemporaryDirectory())
-            dir = appSupport.appendingPathComponent("LooseLeafArchive", isDirectory: true)
-        }
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let dir = appSupport.appendingPathComponent("LooseLeaf", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -72,6 +68,22 @@ public final class SyncManager {
 
     public func currentSnapshot() -> LocalArchiveSnapshot {
         snapshot
+    }
+
+    /// 原子更新站点配置、主理人档案与统计（始终基于当前最新 snapshot 原地打补丁，杜绝并发拉取时冲刷条目数据）
+    public func updateConfigAndProfile(siteConfig: SiteConfig?, profile: CuratorProfile?, stats: GlobalStats?) {
+        var latest = snapshot
+        if let siteConfig { latest.siteConfig = siteConfig }
+        if let profile { latest.profile = profile }
+        if let stats { latest.stats = stats }
+        saveSnapshot(latest)
+    }
+
+    /// 原子更新月度记账概览
+    public func updateTransactionSummary(_ summary: TransactionSummary) {
+        var latest = snapshot
+        latest.transactionSummary = summary
+        saveSnapshot(latest)
     }
 
     public func saveSnapshot(_ updated: LocalArchiveSnapshot) {

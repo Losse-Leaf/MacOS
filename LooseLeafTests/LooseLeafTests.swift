@@ -396,6 +396,21 @@ final class LooseLeafTests: XCTestCase {
 
     // MARK: - 16. Update Checker Semantic Version Comparison Tests
 
+    func testRealBackendEntriesDecoding() async throws {
+        guard let url = URL(string: "http://localhost:8088/api/v1/entries?page=1&page_size=100") else { return }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            print("Backend not reachable or returned non-200")
+            return
+        }
+        do {
+            let env = try JSONDecoder().decode(APIEnvelope<EntriesListResponse>.self, from: data)
+            print("DECODED ENTRIES COUNT: \(env.data?.entries.count ?? -1)")
+        } catch {
+            XCTFail("Decoding failed: \(error)")
+        }
+    }
+
     func testUpdateCheckerSemverComparison() {
         XCTAssertTrue(UpdateChecker.isVersion("1.2.1", greaterThan: "1.2.0"))
         XCTAssertTrue(UpdateChecker.isVersion("2.0.0", greaterThan: "1.9.9"))

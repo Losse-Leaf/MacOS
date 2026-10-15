@@ -28,24 +28,44 @@ public struct TemporalGapDivider: View {
 
 /// GitHub 风格 52 周生活刻度热力图 (LifeActivityMap)
 /// 严格锚定北京时间今天 (Today)，回溯 26~52 周，展现散页书写密度
-/// 数据源由 AppState.entryCountsByDate 预聚合（记忆缓存），渲染路径零重复遍历
+/// 网格日期预计算，消除 body 渲染内 266 次 Calendar.date(byAdding:) 冗余计算
 public struct LifeActivityHeatmapView: View {
     public let entryCounts: [String: Int]
     public let totalCount: Int
     public var weeksCount: Int
 
+    private struct DayCell: Identifiable {
+        let id: String
+        let dateKey: String
+        let isToday: Bool
+    }
+
+    private let precomputedWeeks: [[DayCell]]
+
     public init(entryCounts: [String: Int], totalCount: Int, weeksCount: Int = 32) {
         self.entryCounts = entryCounts
         self.totalCount = totalCount
         self.weeksCount = weeksCount
-    }
 
-    public var body: some View {
-        let counts = entryCounts
         let cal = FormatUtils.beijingCalendar
         let today = cal.startOfDay(for: Date())
         let todayKey = FormatUtils.beijingDateString(from: today)
 
+        var weeks: [[DayCell]] = []
+        for weekOffset in (0..<weeksCount).reversed() {
+            var days: [DayCell] = []
+            for dayOffset in 0..<7 {
+                let totalDaysAgo = weekOffset * 7 + (6 - dayOffset)
+                let cellDate = cal.date(byAdding: .day, value: -totalDaysAgo, to: today) ?? today
+                let key = FormatUtils.beijingDateString(from: cellDate)
+                days.append(DayCell(id: "\(weekOffset)-\(dayOffset)-\(key)", dateKey: key, isToday: key == todayKey))
+            }
+            weeks.append(days)
+        }
+        self.precomputedWeeks = weeks
+    }
+
+    public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("生活刻度 · 最近印记密度")
@@ -58,23 +78,18 @@ public struct LifeActivityHeatmapView: View {
             }
 
             HStack(alignment: .top, spacing: 3) {
-                ForEach((0..<weeksCount).reversed(), id: \.self) { weekOffset in
+                ForEach(precomputedWeeks.indices, id: \.self) { weekIdx in
                     VStack(spacing: 3) {
-                        ForEach(0..<7, id: \.self) { dayOffset in
-                            let totalDaysAgo = weekOffset * 7 + (6 - dayOffset)
-                            let cellDate = cal.date(byAdding: .day, value: -totalDaysAgo, to: today) ?? today
-                            let key = FormatUtils.beijingDateString(from: cellDate)
-                            let count = counts[key, default: 0]
-                            let isToday = (key == todayKey)
-
+                        ForEach(precomputedWeeks[weekIdx]) { cell in
+                            let count = entryCounts[cell.dateKey, default: 0]
                             RoundedRectangle(cornerRadius: 1.5)
                                 .fill(cellColor(for: count))
                                 .frame(width: 9, height: 9)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 1.5)
-                                        .stroke(isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
+                                        .stroke(cell.isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
                                 )
-                                .help("\(key.replacingOccurrences(of: "-", with: ".")) · \(count) 篇记录")
+                                .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇记录")
                         }
                     }
                 }

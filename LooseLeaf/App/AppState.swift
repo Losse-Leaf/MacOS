@@ -283,17 +283,10 @@ public final class AppState {
     }
 
     public func loadConfigAndProfile() async {
-        var snap = SyncManager.shared.currentSnapshot()
-        if let cfg = try? await APIClient.shared.fetchSiteConfig() {
-            snap.siteConfig = cfg
-        }
-        if let prof = try? await APIClient.shared.fetchCuratorProfile() {
-            snap.profile = prof
-        }
-        if let st = try? await APIClient.shared.fetchGlobalStats() {
-            snap.stats = st
-        }
-        SyncManager.shared.saveSnapshot(snap)
+        let cfg = try? await APIClient.shared.fetchSiteConfig()
+        let prof = try? await APIClient.shared.fetchCuratorProfile()
+        let st = try? await APIClient.shared.fetchGlobalStats()
+        SyncManager.shared.updateConfigAndProfile(siteConfig: cfg, profile: prof, stats: st)
     }
 
     public func loadCategories() async {
@@ -310,7 +303,8 @@ public final class AppState {
 
     public func loadEntries(forceFull: Bool = false) async {
         let snap = SyncManager.shared.currentSnapshot()
-        let cursor = forceFull ? nil : snap.lastEntriesSyncCursor
+        // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
+        let cursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
         do {
             var currentPage = 1
             let pageSize = 100
@@ -343,7 +337,7 @@ public final class AppState {
     public func loadTransactionsAndAssets(forceFull: Bool = false) async {
         guard isPaired else { return }
         let snap = SyncManager.shared.currentSnapshot()
-        let cursor = forceFull ? nil : snap.lastTransactionsSyncCursor
+        let cursor = (forceFull || snap.transactions.isEmpty) ? nil : snap.lastTransactionsSyncCursor
 
         do {
             var allTxs: [Transaction] = []
@@ -373,9 +367,7 @@ public final class AppState {
 
         let ym = FormatUtils.beijingCurrentYearMonth()
         if let summary = try? await APIClient.shared.fetchTransactionSummary(year: ym.year, month: ym.month) {
-            var updated = SyncManager.shared.currentSnapshot()
-            updated.transactionSummary = summary
-            SyncManager.shared.saveSnapshot(updated)
+            SyncManager.shared.updateTransactionSummary(summary)
         }
 
         if let overview = try? await APIClient.shared.fetchAssetsOverview() {

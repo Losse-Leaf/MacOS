@@ -52,7 +52,11 @@ public struct LooseLeafApp: App {
             CommandMenu("活页工作台") {
                 ForEach(Array(WorkbenchSection.allCases.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
-                        appState.activeSection = section
+                        var transaction = SwiftUI.Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            appState.activeSection = section
+                        }
                         AudioFeedback.shared.playPaperFlip()
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])

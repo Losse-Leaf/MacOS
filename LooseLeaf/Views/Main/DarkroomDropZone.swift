@@ -15,7 +15,6 @@ public struct DarkroomDropZone: View {
     @State private var isDragTargeted: Bool = false
     @State private var previewImage: NSImage?
     @State private var processedPhoto: ImageProcessor.ProcessedPhoto?
-    @State private var uploadedAttachment: Attachment?
     @State private var pendingPhotoURLs: [URL] = []
 
     @State private var entryTitle: String = ""
@@ -389,7 +388,6 @@ public struct DarkroomDropZone: View {
                         self.uploadProgress = prog
                     }
                 }
-                self.uploadedAttachment = att
 
                 let bodyText = entryContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? (photo.exifMetadata.formattedCameraLine.isEmpty ? "暗房相纸显影归档" : photo.exifMetadata.formattedCameraLine)
@@ -421,7 +419,6 @@ public struct DarkroomDropZone: View {
     private func resetDarkroom() {
         previewImage = nil
         processedPhoto = nil
-        uploadedAttachment = nil
         entryTitle = ""
         entryContent = ""
         uploadProgress = 0.0

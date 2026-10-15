@@ -44,9 +44,6 @@ public final class SyncManager {
 
     // MARK: - 本地磁盘缓存路径
 
-    /// App Group 标识符（容器不可用时自动回退到 Application Support）
-    public nonisolated static let appGroupIdentifier = "group.com.looseleaf.archive"
-
     /// 快照文件名（archive_snapshot_v1.json）
     /// 本地快照目录 (存储于 ~/Library/Application Support/LooseLeaf/ 保证沙箱环境下 100% 可靠读写)
     public nonisolated static var sharedStorageDirectory: URL {

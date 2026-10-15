@@ -67,17 +67,6 @@ public enum DropLoader {
         }
     }
 
-    /// 批量提取文件 URL（多张拖拽场景，保持顺序）
-    static func loadFileURLs(from providers: [NSItemProvider]) async -> [URL] {
-        var urls: [URL] = []
-        for provider in providers {
-            if let url = await loadFileURL(from: provider) {
-                urls.append(url)
-            }
-        }
-        return urls
-    }
-
     /// 从单个 provider 提取可处理的图片 URL（优先 Finder 本地文件；若从 Apple Photos / 网页浏览器拖入，自动提取图像流写入临时暗房沙箱）
     static func loadDroppablePhotoURL(from provider: NSItemProvider) async -> URL? {
         if let directURL = await loadFileURL(from: provider) {

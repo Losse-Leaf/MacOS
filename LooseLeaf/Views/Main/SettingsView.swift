@@ -22,7 +22,6 @@ public struct SettingsView: View {
     // 健康探针与签发新设备配对码状态
     @State private var healthResult: HealthCheckResponse?
     @State private var issuedPairTicket: PairTicketResponse?
-    @State private var isLoadingDevices: Bool = false
 
     // 全局热键录制状态
     @State private var hotKeyLabel: String = AppDelegate.hotKeyDisplayName
@@ -686,11 +685,9 @@ public struct SettingsView: View {
     }
 
     private func refreshDevicesList() async {
-        isLoadingDevices = true
         if let list = try? await APIClient.shared.fetchTrustedDevices() {
             appState.trustedDevices = list
         }
-        isLoadingDevices = false
     }
 }
 

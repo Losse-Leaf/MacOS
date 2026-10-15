@@ -267,11 +267,6 @@ public enum ImageProcessor {
         }.value
     }
 
-    /// 从系统通用剪贴板 (NSPasteboard.general) 读取图像数据
-    public static func readImageFromPasteboard() -> Data? {
-        DropLoader.readImageFromPasteboard()
-    }
-
     /// 在后台线程处理内存中的图像数据（剪贴板粘贴等场景）
     public static func processImageDataInBackground(
         _ rawData: Data,

@@ -1730,6 +1730,18 @@ public struct CelestialAtlasCanvasView: View {
                     .position(x: w * normX, y: h * normY)
                 }
 
+                // 右下角古典罗盘玫瑰 (Compass Rose) 与四角星野裁切标
+                VStack(spacing: 1) {
+                    Text("N")
+                        .font(ArchiveTypography.editorialSerif(size: 10, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Image(systemName: "safari")
+                        .font(.system(size: 20, weight: .light))
+                        .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.65))
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("CELESTIAL VOYAGE TOPOLOGY · 85°E — 125°E / 18°N — 50°N")
                         .font(ArchiveTypography.monoScale(size: 9.5))

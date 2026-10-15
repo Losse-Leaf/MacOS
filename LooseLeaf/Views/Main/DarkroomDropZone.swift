@@ -55,6 +55,17 @@ public struct DarkroomDropZone: View {
                     }
 
                     Button {
+                        pastePhotoFromClipboard()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "doc.on.clipboard")
+                            Text("粘贴剪贴板图片 (⌘V)")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .keyboardShortcut("v", modifiers: [.command])
+
+                    Button {
                         selectPhotoFromFinder()
                     } label: {
                         HStack(spacing: 5) {
@@ -128,7 +139,7 @@ public struct DarkroomDropZone: View {
                         .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
-                    Text("支持常见图片与单反原片，可多张拖入")
+                    Text("支持常见图片与单反原片，可多张拖入或按 ⌘V 直接粘贴截图")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -139,6 +150,9 @@ public struct DarkroomDropZone: View {
         .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
             handleImageDrop(providers: providers)
             return true
+        }
+        .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { _ in
+            pastePhotoFromClipboard()
         }
     }
 
@@ -280,6 +294,45 @@ public struct DarkroomDropZone: View {
     }
 
     // MARK: - 拖拽与文件处理逻辑
+
+    private func pastePhotoFromClipboard() {
+        guard let rawData = DropLoader.readImageFromPasteboard() else {
+            errorMessage = "剪贴板中未检测到图片或截图数据"
+            return
+        }
+        // 若当前暗房已有装裱中的底片，写入临时沙箱排入待冲印队列
+        if processedPhoto != nil {
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
+            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            let tempFile = tempDir.appendingPathComponent("paste-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(6)).jpg")
+            if (try? rawData.write(to: tempFile, options: .atomic)) != nil {
+                pendingPhotoURLs.append(tempFile)
+                AudioFeedback.shared.playTink()
+                appState.showTemporaryBanner("已从剪贴板排入待冲印队列（共 \(pendingPhotoURLs.count) 张待冲印）")
+                return
+            }
+        }
+        isProcessing = true
+        errorMessage = nil
+        let name = "pasteboard-\(Int(Date().timeIntervalSince1970)).jpg"
+        Task { @MainActor in
+            do {
+                let result = try await ImageProcessor.processImageDataInBackground(rawData, originalFilename: name)
+                self.processedPhoto = result
+                self.previewImage = NSImage(data: result.compressedData)
+                if entryTitle.isEmpty {
+                    entryTitle = "剪贴板相片 · \(FormatUtils.beijingDateString())"
+                }
+                if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
+                    entryContent = result.exifMetadata.formattedCameraLine
+                }
+                AudioFeedback.shared.playPaperFlip()
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+            self.isProcessing = false
+        }
+    }
 
     private func selectPhotoFromFinder() {
         let panel = NSOpenPanel()

@@ -86,6 +86,9 @@ public final class AppState {
 
     // MARK: - 动态分类字典 (由 /api/v1/categories 下发驱动)
     public var expenseCategories: [String] = ["餐饮", "交通", "购物", "数码器材", "娱乐", "住房", "学习", "医疗", "其他"]
+    public var incomeCategories: [String] = ["薪资", "奖金", "二手回血", "稿费与创作", "投资收益", "其他收入"]
+    public var gearCategories: [String] = ["数码主力", "影像器材", "桌面外设", "声学设备", "随行好物"]
+    public var projectCategories: [String] = ["软件与数字造物", "手工与器物", "文字与出版", "生活实验"]
     public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金"]
 
     // MARK: - 导航与交互状态
@@ -294,6 +297,18 @@ public final class AppState {
         let exp = list.filter { $0.scope == "expense" }.map(\.name)
         if !exp.isEmpty {
             self.expenseCategories = exp
+        }
+        let inc = list.filter { $0.scope == "income" }.map(\.name)
+        if !inc.isEmpty {
+            self.incomeCategories = inc
+        }
+        let gear = list.filter { $0.scope == "gear" }.map(\.name)
+        if !gear.isEmpty {
+            self.gearCategories = gear
+        }
+        let proj = list.filter { $0.scope == "project" }.map(\.name)
+        if !proj.isEmpty {
+            self.projectCategories = proj
         }
         let pay = list.filter { $0.scope == "payment" }.map(\.name)
         if !pay.isEmpty {

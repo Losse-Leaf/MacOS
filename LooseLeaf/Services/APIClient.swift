@@ -189,7 +189,6 @@ public actor APIClient {
 
     private struct EmptyPayload: Codable, Sendable {}
     public struct DeleteResponse: Codable, Sendable {
-        public var id: String?
         public var deleted: Bool?
         public var purged: Bool?
     }
@@ -267,6 +266,19 @@ public actor APIClient {
         let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/auth/devices/\(id)",
             method: "DELETE"
+        )
+    }
+
+    /// 修改已授信设备的备注名称 (PUT /api/v1/auth/devices/:id)
+    @discardableResult
+    public func updateDeviceName(id: String, name: String) async throws -> TrustedDevice {
+        struct Payload: Codable, Sendable {
+            let name: String
+        }
+        return try await performEnvelopeRequest(
+            path: "/api/v1/auth/devices/\(id)",
+            method: "PUT",
+            body: Payload(name: name)
         )
     }
 
@@ -446,6 +458,21 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/credit-channels")
     }
 
+    public func createCreditChannel(_ req: CreateCreditChannelRequest) async throws -> CreditChannel {
+        try await performEnvelopeRequest(path: "/api/v1/credit-channels", method: "POST", body: req)
+    }
+
+    public func updateCreditChannel(id: Int, _ req: CreateCreditChannelRequest) async throws -> CreditChannel {
+        try await performEnvelopeRequest(path: "/api/v1/credit-channels/\(id)", method: "PUT", body: req)
+    }
+
+    public func deleteCreditChannel(id: Int) async throws {
+        let _: DeleteResponse = try await performEnvelopeRequest(
+            path: "/api/v1/credit-channels/\(id)",
+            method: "DELETE"
+        )
+    }
+
     /// 首次装帧初始化 (POST /api/v1/system/bootstrap)
     public func bootstrapSystem(_ req: BootstrapRequest) async throws -> PairTicketResponse {
         try await performEnvelopeRequest(path: "/api/v1/system/bootstrap", method: "POST", body: req)
@@ -531,6 +558,20 @@ public actor APIClient {
             path: "/api/v1/footprints/\(id)",
             method: "DELETE"
         )
+    }
+
+    /// 获取单座城市回忆抽屉四重聚合数据 (GET /api/v1/footprints/cities/:city_code/drawer)
+    public func fetchCityMemoryDrawer(cityCode: String) async throws -> CityMemoryDrawerResponse {
+        try await performEnvelopeRequest(path: "/api/v1/footprints/cities/\(cityCode)/drawer")
+    }
+
+    /// 获取年度生活年鉴五幕聚合数据 (GET /api/v1/almanac/summary?year=...)
+    public func fetchAnnualAlmanac(year: Int? = nil) async throws -> AnnualAlmanacResponse {
+        var query: [URLQueryItem] = []
+        if let year {
+            query.append(URLQueryItem(name: "year", value: String(year)))
+        }
+        return try await performEnvelopeRequest(path: "/api/v1/almanac/summary", queryItems: query)
     }
 
     // MARK: - 6. 媒体预签名与统一上传 (R2 Presign & Multipart Fallback)

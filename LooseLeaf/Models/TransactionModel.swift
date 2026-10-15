@@ -449,6 +449,49 @@ public struct CreditChannel: Codable, Identifiable, Equatable, Sendable {
         case isBuiltin = "is_builtin"
         case color
     }
+
+    public init(
+        id: Int,
+        code: String,
+        name: String,
+        repaymentDay: Int = 10,
+        isBuiltin: Bool = false,
+        color: String? = nil
+    ) {
+        self.id = id
+        self.code = code
+        self.name = name
+        self.repaymentDay = repaymentDay
+        self.isBuiltin = isBuiltin
+        self.color = color
+    }
+}
+
+/// 新建或修改信贷分期渠道请求载荷 (POST / PUT /api/v1/credit-channels)
+public struct CreateCreditChannelRequest: Codable, Equatable, Sendable {
+    public var code: String?
+    public var name: String
+    public var repaymentDay: Int
+    public var color: String?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case name
+        case repaymentDay = "repayment_day"
+        case color
+    }
+
+    public init(
+        code: String? = nil,
+        name: String,
+        repaymentDay: Int = 10,
+        color: String? = nil
+    ) {
+        self.code = code
+        self.name = name
+        self.repaymentDay = repaymentDay
+        self.color = color
+    }
 }
 
 /// 自定义分类字典项 (GET /api/v1/categories)

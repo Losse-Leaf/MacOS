@@ -303,7 +303,6 @@ public struct PairInitRequest: Codable, Sendable {
 
 public struct PairTicketResponse: Codable, Equatable, Sendable {
     public var ticket: String
-    public var pinCode: String
     public var hubUrl: String
     public var qrPayload: String
     public var qrCodeDataUrl: String?
@@ -312,7 +311,6 @@ public struct PairTicketResponse: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case ticket
-        case pinCode = "pin_code"
         case hubUrl = "hub_url"
         case qrPayload = "qr_payload"
         case qrCodeDataUrl = "qr_code_data_url"
@@ -615,6 +613,40 @@ public struct Footprint: Codable, Identifiable, Equatable, Sendable {
         createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try? container.decodeIfPresent(String.self, forKey: .updatedAt)
     }
+
+    public init(
+        id: Int,
+        cityCode: String,
+        cityName: String,
+        title: String? = nil,
+        visitedAt: String = FormatUtils.beijingISOString(),
+        departedAt: String? = nil,
+        note: String? = nil,
+        lifeEntryId: Int? = nil,
+        wishId: Int? = nil,
+        attachments: [Attachment] = [],
+        entriesCount: Int? = nil,
+        totalSpent: Int64? = nil,
+        transactionCount: Int? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
+    ) {
+        self.id = id
+        self.cityCode = cityCode
+        self.cityName = cityName
+        self.title = title
+        self.visitedAt = visitedAt
+        self.departedAt = departedAt
+        self.note = note
+        self.lifeEntryId = lifeEntryId
+        self.wishId = wishId
+        self.attachments = attachments
+        self.entriesCount = entriesCount
+        self.totalSpent = totalSpent
+        self.transactionCount = transactionCount
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
 }
 
 public struct CreateFootprintRequest: Codable, Sendable {
@@ -809,7 +841,9 @@ public struct ResolveWishRequest: Codable, Sendable {
     public var createTransaction: Bool
     public var createGearAsset: Bool
     public var createLifeEntry: Bool
+    public var createFootprint: Bool
     public var entryContent: String?
+    public var attachmentIds: [Int]?
 
     enum CodingKeys: String, CodingKey {
         case fulfilledAt = "fulfilled_at"
@@ -819,7 +853,9 @@ public struct ResolveWishRequest: Codable, Sendable {
         case createTransaction = "create_transaction"
         case createGearAsset = "create_gear_asset"
         case createLifeEntry = "create_life_entry"
+        case createFootprint = "create_footprint"
         case entryContent = "entry_content"
+        case attachmentIds = "attachment_ids"
     }
 
     public init(
@@ -830,7 +866,9 @@ public struct ResolveWishRequest: Codable, Sendable {
         createTransaction: Bool = true,
         createGearAsset: Bool = false,
         createLifeEntry: Bool = true,
-        entryContent: String? = nil
+        createFootprint: Bool = false,
+        entryContent: String? = nil,
+        attachmentIds: [Int]? = nil
     ) {
         self.fulfilledAt = fulfilledAt
         self.actualCost = actualCost
@@ -839,7 +877,9 @@ public struct ResolveWishRequest: Codable, Sendable {
         self.createTransaction = createTransaction
         self.createGearAsset = createGearAsset
         self.createLifeEntry = createLifeEntry
+        self.createFootprint = createFootprint
         self.entryContent = entryContent
+        self.attachmentIds = attachmentIds
     }
 }
 
@@ -898,6 +938,359 @@ public struct SellGearRequest: Codable, Sendable {
         self.soldPriceCents = soldPriceCents
         self.soldDate = soldDate
         self.note = note
+    }
+}
+
+// MARK: - 城市回忆抽屉聚合模型 (GET /api/v1/footprints/cities/:city_code/drawer)
+
+public struct CityVisitStats: Codable, Equatable, Sendable {
+    public var totalVisits: Int
+    public var firstVisitedAt: String
+    public var latestVisitedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case totalVisits = "total_visits"
+        case firstVisitedAt = "first_visited_at"
+        case latestVisitedAt = "latest_visited_at"
+    }
+
+    public init(totalVisits: Int = 0, firstVisitedAt: String = "", latestVisitedAt: String = "") {
+        self.totalVisits = totalVisits
+        self.firstVisitedAt = firstVisitedAt
+        self.latestVisitedAt = latestVisitedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalVisits = (try? container.decode(Int.self, forKey: .totalVisits)) ?? 0
+        firstVisitedAt = (try? container.decode(String.self, forKey: .firstVisitedAt)) ?? ""
+        latestVisitedAt = (try? container.decode(String.self, forKey: .latestVisitedAt)) ?? ""
+    }
+}
+
+public struct DrawerCategoryStat: Codable, Identifiable, Equatable, Sendable {
+    public var id: String { name }
+    public var name: String
+    public var amount: Int64
+
+    public init(name: String, amount: Int64) {
+        self.name = name
+        self.amount = amount
+    }
+}
+
+public struct DrawerLedgerSummary: Codable, Equatable, Sendable {
+    public var totalSpent: Int64
+    public var transactionCount: Int
+    public var categories: [DrawerCategoryStat]
+
+    enum CodingKeys: String, CodingKey {
+        case totalSpent = "total_spent"
+        case transactionCount = "transaction_count"
+        case categories
+    }
+
+    public init(totalSpent: Int64 = 0, transactionCount: Int = 0, categories: [DrawerCategoryStat] = []) {
+        self.totalSpent = totalSpent
+        self.transactionCount = transactionCount
+        self.categories = categories
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalSpent = (try? container.decode(Int64.self, forKey: .totalSpent)) ?? 0
+        transactionCount = (try? container.decode(Int.self, forKey: .transactionCount)) ?? 0
+        categories = (try? container.decodeIfPresent([DrawerCategoryStat].self, forKey: .categories)) ?? []
+    }
+}
+
+public struct CityMemoryDrawerResponse: Codable, Equatable, Sendable {
+    public var cityCode: String
+    public var cityName: String
+    public var visitStats: CityVisitStats
+    public var footprints: [Footprint]
+    public var entries: [LifeEntry]
+    public var ledgerSummary: DrawerLedgerSummary
+
+    enum CodingKeys: String, CodingKey {
+        case cityCode = "city_code"
+        case cityName = "city_name"
+        case visitStats = "visit_stats"
+        case footprints
+        case entries
+        case ledgerSummary = "ledger_summary"
+    }
+
+    public init(
+        cityCode: String,
+        cityName: String,
+        visitStats: CityVisitStats = CityVisitStats(),
+        footprints: [Footprint] = [],
+        entries: [LifeEntry] = [],
+        ledgerSummary: DrawerLedgerSummary = DrawerLedgerSummary()
+    ) {
+        self.cityCode = cityCode
+        self.cityName = cityName
+        self.visitStats = visitStats
+        self.footprints = footprints
+        self.entries = entries
+        self.ledgerSummary = ledgerSummary
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cityCode = (try? container.decode(String.self, forKey: .cityCode)) ?? ""
+        cityName = (try? container.decode(String.self, forKey: .cityName)) ?? ""
+        visitStats = (try? container.decode(CityVisitStats.self, forKey: .visitStats)) ?? CityVisitStats()
+        footprints = (try? container.decodeIfPresent([Footprint].self, forKey: .footprints)) ?? []
+        entries = (try? container.decodeIfPresent([LifeEntry].self, forKey: .entries)) ?? []
+        ledgerSummary = (try? container.decode(DrawerLedgerSummary.self, forKey: .ledgerSummary)) ?? DrawerLedgerSummary()
+    }
+}
+
+// MARK: - 年度生活年鉴五幕画卷模型 (GET /api/v1/almanac/summary?year=...)
+
+public struct AlmanacPrologue: Codable, Equatable, Sendable {
+    public var totalEntries: Int
+    public var totalWords: Int
+    public var activeDays: Int
+    public var firstDate: String
+    public var lastDate: String
+    public var wishesFulfilled: Int
+    public var citiesVisited: Int
+    public var txCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case totalEntries = "total_entries"
+        case totalWords = "total_words"
+        case activeDays = "active_days"
+        case firstDate = "first_date"
+        case lastDate = "last_date"
+        case wishesFulfilled = "wishes_fulfilled"
+        case citiesVisited = "cities_visited"
+        case txCount = "tx_count"
+    }
+
+    public init(
+        totalEntries: Int = 0,
+        totalWords: Int = 0,
+        activeDays: Int = 0,
+        firstDate: String = "",
+        lastDate: String = "",
+        wishesFulfilled: Int = 0,
+        citiesVisited: Int = 0,
+        txCount: Int = 0
+    ) {
+        self.totalEntries = totalEntries
+        self.totalWords = totalWords
+        self.activeDays = activeDays
+        self.firstDate = firstDate
+        self.lastDate = lastDate
+        self.wishesFulfilled = wishesFulfilled
+        self.citiesVisited = citiesVisited
+        self.txCount = txCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalEntries = (try? container.decode(Int.self, forKey: .totalEntries)) ?? 0
+        totalWords = (try? container.decode(Int.self, forKey: .totalWords)) ?? 0
+        activeDays = (try? container.decode(Int.self, forKey: .activeDays)) ?? 0
+        firstDate = (try? container.decode(String.self, forKey: .firstDate)) ?? ""
+        lastDate = (try? container.decode(String.self, forKey: .lastDate)) ?? ""
+        wishesFulfilled = (try? container.decode(Int.self, forKey: .wishesFulfilled)) ?? 0
+        citiesVisited = (try? container.decode(Int.self, forKey: .citiesVisited)) ?? 0
+        txCount = (try? container.decode(Int.self, forKey: .txCount)) ?? 0
+    }
+}
+
+public struct AlmanacCityItem: Codable, Identifiable, Equatable, Sendable {
+    public var id: String { cityCode }
+    public var cityCode: String
+    public var cityName: String
+
+    enum CodingKeys: String, CodingKey {
+        case cityCode = "city_code"
+        case cityName = "city_name"
+    }
+
+    public init(cityCode: String, cityName: String) {
+        self.cityCode = cityCode
+        self.cityName = cityName
+    }
+}
+
+public struct AlmanacAtlas: Codable, Equatable, Sendable {
+    public var totalCities: Int
+    public var cities: [AlmanacCityItem]
+    public var footprints: [Footprint]
+
+    enum CodingKeys: String, CodingKey {
+        case totalCities = "total_cities"
+        case cities
+        case footprints
+    }
+
+    public init(totalCities: Int = 0, cities: [AlmanacCityItem] = [], footprints: [Footprint] = []) {
+        self.totalCities = totalCities
+        self.cities = cities
+        self.footprints = footprints
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalCities = (try? container.decode(Int.self, forKey: .totalCities)) ?? 0
+        cities = (try? container.decodeIfPresent([AlmanacCityItem].self, forKey: .cities)) ?? []
+        footprints = (try? container.decodeIfPresent([Footprint].self, forKey: .footprints)) ?? []
+    }
+}
+
+public struct AlmanacWishes: Codable, Equatable, Sendable {
+    public var wishes: [Wish]
+    public var fulfilledCount: Int
+    public var wantingCount: Int
+    public var totalBudget: Int64
+    public var totalActual: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case wishes
+        case fulfilledCount = "fulfilled_count"
+        case wantingCount = "wanting_count"
+        case totalBudget = "total_budget"
+        case totalActual = "total_actual"
+    }
+
+    public init(
+        wishes: [Wish] = [],
+        fulfilledCount: Int = 0,
+        wantingCount: Int = 0,
+        totalBudget: Int64 = 0,
+        totalActual: Int64 = 0
+    ) {
+        self.wishes = wishes
+        self.fulfilledCount = fulfilledCount
+        self.wantingCount = wantingCount
+        self.totalBudget = totalBudget
+        self.totalActual = totalActual
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        wishes = (try? container.decodeIfPresent([Wish].self, forKey: .wishes)) ?? []
+        fulfilledCount = (try? container.decode(Int.self, forKey: .fulfilledCount)) ?? 0
+        wantingCount = (try? container.decode(Int.self, forKey: .wantingCount)) ?? 0
+        totalBudget = (try? container.decode(Int64.self, forKey: .totalBudget)) ?? 0
+        totalActual = (try? container.decode(Int64.self, forKey: .totalActual)) ?? 0
+    }
+}
+
+public struct AlmanacHighlights: Codable, Equatable, Sendable {
+    public var spring: LifeEntry?
+    public var summer: LifeEntry?
+    public var autumn: LifeEntry?
+    public var winter: LifeEntry?
+    public var photos: [Attachment]
+
+    public init(
+        spring: LifeEntry? = nil,
+        summer: LifeEntry? = nil,
+        autumn: LifeEntry? = nil,
+        winter: LifeEntry? = nil,
+        photos: [Attachment] = []
+    ) {
+        self.spring = spring
+        self.summer = summer
+        self.autumn = autumn
+        self.winter = winter
+        self.photos = photos
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        spring = try? container.decodeIfPresent(LifeEntry.self, forKey: .spring)
+        summer = try? container.decodeIfPresent(LifeEntry.self, forKey: .summer)
+        autumn = try? container.decodeIfPresent(LifeEntry.self, forKey: .autumn)
+        winter = try? container.decodeIfPresent(LifeEntry.self, forKey: .winter)
+        photos = (try? container.decodeIfPresent([Attachment].self, forKey: .photos)) ?? []
+    }
+}
+
+public struct AlmanacFinances: Codable, Equatable, Sendable {
+    public var totalIncome: Int64
+    public var totalExpense: Int64
+    public var balance: Int64
+    public var wishExpenses: Int64
+    public var wishSpendingRatio: Double
+    public var categories: [DrawerCategoryStat]
+
+    enum CodingKeys: String, CodingKey {
+        case totalIncome = "total_income"
+        case totalExpense = "total_expense"
+        case balance
+        case wishExpenses = "wish_expenses"
+        case wishSpendingRatio = "wish_spending_ratio"
+        case categories
+    }
+
+    public init(
+        totalIncome: Int64 = 0,
+        totalExpense: Int64 = 0,
+        balance: Int64 = 0,
+        wishExpenses: Int64 = 0,
+        wishSpendingRatio: Double = 0.0,
+        categories: [DrawerCategoryStat] = []
+    ) {
+        self.totalIncome = totalIncome
+        self.totalExpense = totalExpense
+        self.balance = balance
+        self.wishExpenses = wishExpenses
+        self.wishSpendingRatio = wishSpendingRatio
+        self.categories = categories
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalIncome = (try? container.decode(Int64.self, forKey: .totalIncome)) ?? 0
+        totalExpense = (try? container.decode(Int64.self, forKey: .totalExpense)) ?? 0
+        balance = (try? container.decode(Int64.self, forKey: .balance)) ?? 0
+        wishExpenses = (try? container.decode(Int64.self, forKey: .wishExpenses)) ?? 0
+        wishSpendingRatio = (try? container.decode(Double.self, forKey: .wishSpendingRatio)) ?? 0.0
+        categories = (try? container.decodeIfPresent([DrawerCategoryStat].self, forKey: .categories)) ?? []
+    }
+}
+
+public struct AnnualAlmanacResponse: Codable, Equatable, Sendable {
+    public var year: Int
+    public var prologue: AlmanacPrologue
+    public var atlas: AlmanacAtlas
+    public var wishes: AlmanacWishes
+    public var highlights: AlmanacHighlights
+    public var finances: AlmanacFinances
+
+    public init(
+        year: Int = FormatUtils.beijingCurrentYearMonth().year,
+        prologue: AlmanacPrologue = AlmanacPrologue(),
+        atlas: AlmanacAtlas = AlmanacAtlas(),
+        wishes: AlmanacWishes = AlmanacWishes(),
+        highlights: AlmanacHighlights = AlmanacHighlights(),
+        finances: AlmanacFinances = AlmanacFinances()
+    ) {
+        self.year = year
+        self.prologue = prologue
+        self.atlas = atlas
+        self.wishes = wishes
+        self.highlights = highlights
+        self.finances = finances
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        year = (try? container.decode(Int.self, forKey: .year)) ?? FormatUtils.beijingCurrentYearMonth().year
+        prologue = (try? container.decode(AlmanacPrologue.self, forKey: .prologue)) ?? AlmanacPrologue()
+        atlas = (try? container.decode(AlmanacAtlas.self, forKey: .atlas)) ?? AlmanacAtlas()
+        wishes = (try? container.decode(AlmanacWishes.self, forKey: .wishes)) ?? AlmanacWishes()
+        highlights = (try? container.decode(AlmanacHighlights.self, forKey: .highlights)) ?? AlmanacHighlights()
+        finances = (try? container.decode(AlmanacFinances.self, forKey: .finances)) ?? AlmanacFinances()
     }
 }
 

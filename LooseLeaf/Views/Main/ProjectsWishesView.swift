@@ -22,11 +22,20 @@ public struct ProjectsWishesView: View {
     @State private var wishToDelete: Wish?
     @State private var showDeleteWishConfirm: Bool = false
 
-    // 足迹票根状态
+    // 足迹票根与星野状态
     @State private var showNewFootprintSheet: Bool = false
     @State private var editingFootprint: Footprint?
     @State private var footprintToDelete: Footprint?
     @State private var showDeleteFootprintConfirm: Bool = false
+    @State private var footprintViewMode: Int = 0 // 0: 典藏票根, 1: 经纬星野
+    @State private var selectedDrawerCity: DrawerCitySelection?
+    @State private var showAlmanacSheet: Bool = false
+
+    public struct DrawerCitySelection: Identifiable, Equatable {
+        public var id: String { code }
+        public let code: String
+        public let name: String
+    }
 
     // 造物项目状态
     @State private var showNewProjectSheet: Bool = false
@@ -56,6 +65,28 @@ public struct ProjectsWishesView: View {
                     Spacer()
 
                     HStack(spacing: 6) {
+                        Button {
+                            showAlmanacSheet = true
+                            AudioFeedback.shared.playPaperFlip()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "book.closed")
+                                    .font(.system(size: 11))
+                                Text("年度年鉴")
+                                    .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .background(ArchivePalette.accentWarm.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+
                         ForEach(SubTab.allCases, id: \.rawValue) { tab in
                             PaperPillButton(
                                 title: tab.rawValue,
@@ -118,6 +149,16 @@ public struct ProjectsWishesView: View {
         .sheet(item: $editingProject) { proj in
             EditProjectSheet(appState: appState, project: proj) {
                 editingProject = nil
+            }
+        }
+        .sheet(item: $selectedDrawerCity) { sel in
+            CityMemoryDrawerSheet(cityCode: sel.code, cityName: sel.name) {
+                selectedDrawerCity = nil
+            }
+        }
+        .sheet(isPresented: $showAlmanacSheet) {
+            AnnualAlmanacSheet {
+                showAlmanacSheet = false
             }
         }
         .confirmationDialog(
@@ -208,28 +249,43 @@ public struct ProjectsWishesView: View {
         }
     }
 
-    // MARK: - 2. 山川行迹特种纸票根架 (RC-98)
+    // MARK: - 2. 山川行迹特种纸票根架与经纬星野 (RC-98)
 
     private var footprintsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("山川行迹 · 典藏票根印信架 (\(appState.footprints.count) 程)")
+                Text("山川行迹 · 经纬星野与典藏票根 (\(appState.footprints.count) 程)")
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
-                Button {
-                    showNewFootprintSheet = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "location.fill.viewfinder")
-                        Text("点亮城市足迹")
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "典藏票根", isSelected: footprintViewMode == 0) {
+                        footprintViewMode = 0
+                        AudioFeedback.shared.playPaperFlip()
                     }
+                    PaperPillButton(title: "经纬星野", isSelected: footprintViewMode == 1) {
+                        footprintViewMode = 1
+                        AudioFeedback.shared.playPaperFlip()
+                    }
+                    Button {
+                        showNewFootprintSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "location.fill.viewfinder")
+                            Text("点亮城市足迹")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             }
 
             if appState.footprints.isEmpty {
                 emptyPlaceholder(title: "行迹票根盒尚待启程", subtitle: "在时间流记录带城市的游记或在此直接点亮足迹，均会自动沉淀特种纸票根")
+            } else if footprintViewMode == 1 {
+                CelestialAtlasCanvasView(footprints: appState.footprints) { code, name in
+                    AudioFeedback.shared.playPaperFlip()
+                    selectedDrawerCity = DrawerCitySelection(code: code, name: name)
+                }
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     ForEach(appState.footprints) { fp in
@@ -291,10 +347,16 @@ public struct ProjectsWishesView: View {
 
                                 Spacer(minLength: 4)
 
-                                if let spent = fp.totalSpent, spent > 0 {
-                                    Text("旅途花销 \(FormatUtils.formattedYuan(cents: spent, includeSymbol: true))")
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                HStack {
+                                    if let spent = fp.totalSpent, spent > 0 {
+                                        Text("旅途花销 \(FormatUtils.formattedYuan(cents: spent, includeSymbol: true))")
+                                            .font(ArchiveTypography.monoScale(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                    }
+                                    Spacer()
+                                    Text("点击翻阅城市抽屉 →")
+                                        .font(ArchiveTypography.monoScale(size: 10))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
                                 }
                             }
                             .padding(12)
@@ -307,6 +369,11 @@ public struct ProjectsWishesView: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
                         )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            AudioFeedback.shared.playPaperFlip()
+                            selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
+                        }
                         .paperHover()
                     }
                 }
@@ -1010,6 +1077,7 @@ public struct ResolveWishSheet: View {
     @State private var createTransaction: Bool = true
     @State private var createGearAsset: Bool
     @State private var createLifeEntry: Bool = true
+    @State private var createFootprint: Bool
     @State private var entryContent: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
@@ -1020,6 +1088,7 @@ public struct ResolveWishSheet: View {
         self.onDismiss = onDismiss
         _actualCostYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
         _createGearAsset = State(initialValue: wish.kind == "item")
+        _createFootprint = State(initialValue: wish.kind == "travel")
     }
 
     public var body: some View {
@@ -1066,6 +1135,12 @@ public struct ResolveWishSheet: View {
                         .font(ArchiveTypography.bodySans(size: 12))
                 }
 
+                if wish.kind == "travel" {
+                    Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
+                        .toggleStyle(.checkbox)
+                        .font(ArchiveTypography.bodySans(size: 12))
+                }
+
                 Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
                     .toggleStyle(.checkbox)
                     .font(ArchiveTypography.bodySans(size: 12))
@@ -1102,7 +1177,8 @@ public struct ResolveWishSheet: View {
     }
 
     private func submitResolve() {
-        let cents = FormatUtils.parseYuanToCents(actualCostYuan) ?? 0
+        let isRelinquished = (resolutionType == "relinquished")
+        let cents = isRelinquished ? 0 : (FormatUtils.parseYuanToCents(actualCostYuan) ?? 0)
         isSubmitting = true
         errorText = nil
         Task { @MainActor in
@@ -1112,9 +1188,10 @@ public struct ResolveWishSheet: View {
                     actualCost: cents,
                     resolutionType: resolutionType,
                     actualTitle: wish.title,
-                    createTransaction: createTransaction,
-                    createGearAsset: createGearAsset,
+                    createTransaction: isRelinquished ? false : createTransaction,
+                    createGearAsset: isRelinquished ? false : createGearAsset,
                     createLifeEntry: createLifeEntry,
+                    createFootprint: isRelinquished ? false : createFootprint,
                     entryContent: entryContent.isEmpty ? nil : entryContent
                 )
                 _ = try await APIClient.shared.resolveWish(id: wish.id, req)
@@ -1567,6 +1644,352 @@ public struct EditProjectSheet: View {
                 errorText = error.localizedDescription
                 isSubmitting = false
             }
+        }
+    }
+}
+
+// MARK: - 山川经纬星野图谱 (CelestialAtlasCanvasView - RC-98)
+
+@MainActor
+public struct CelestialAtlasCanvasView: View {
+    let footprints: [Footprint]
+    var onSelectCity: (String, String) -> Void
+
+    private struct CityCluster: Identifiable {
+        var id: String { code }
+        let code: String
+        let name: String
+        let count: Int
+        let x: Double
+        let y: Double
+    }
+
+    private var clusters: [CityCluster] {
+        var map: [String: (name: String, count: Int)] = [:]
+        for fp in footprints {
+            let cur = map[fp.cityCode] ?? (name: fp.cityName, count: 0)
+            map[fp.cityCode] = (name: fp.cityName, count: cur.count + 1)
+        }
+        return map.map { (code, info) in
+            let pt = CityDictionary.coordinate(forCode: code, cityName: info.name)
+            return CityCluster(code: code, name: info.name, count: info.count, x: pt.x, y: pt.y)
+        }
+    }
+
+    public var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            ZStack {
+                Canvas { context, size in
+                    let cols = 8
+                    let rows = 5
+                    for i in 1..<cols {
+                        let x = size.width * CGFloat(i) / CGFloat(cols)
+                        var p = Path()
+                        p.move(to: CGPoint(x: x, y: 0))
+                        p.addLine(to: CGPoint(x: x, y: size.height))
+                        context.stroke(p, with: .color(ArchivePalette.borderDivider.opacity(0.6)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                    }
+                    for j in 1..<rows {
+                        let y = size.height * CGFloat(j) / CGFloat(rows)
+                        var p = Path()
+                        p.move(to: CGPoint(x: 0, y: y))
+                        p.addLine(to: CGPoint(x: size.width, y: y))
+                        context.stroke(p, with: .color(ArchivePalette.borderDivider.opacity(0.6)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                    }
+                }
+
+                ForEach(clusters) { item in
+                    let normX = CGFloat(min(max((item.x - 60.0) / 530.0, 0.05), 0.95))
+                    let normY = CGFloat(min(max((item.y - 45.0) / 485.0, 0.08), 0.92))
+                    let nodeColor = item.count >= 3 ? ArchivePalette.accentWarm : (item.count == 2 ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
+
+                    Button {
+                        onSelectCity(item.code, item.name)
+                    } label: {
+                        VStack(spacing: 2) {
+                            ZStack {
+                                Circle()
+                                    .fill(nodeColor.opacity(0.18))
+                                    .frame(width: 18, height: 18)
+                                Circle()
+                                    .fill(nodeColor)
+                                    .frame(width: 7, height: 7)
+                            }
+                            Text(item.name)
+                                .font(ArchiveTypography.editorialSerif(size: 11, weight: .medium))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(ArchivePalette.archivePaper.opacity(0.88))
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: w * normX, y: h * normY)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CELESTIAL VOYAGE TOPOLOGY · 85°E — 125°E / 18°N — 50°N")
+                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text("已点亮 \(clusters.count) 座城市 · 点击星芒打开城市回忆抽屉")
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+        }
+        .frame(height: 360)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(ArchivePalette.borderDivider, lineWidth: 0.7)
+        )
+    }
+}
+
+// MARK: - 城市回忆抽屉弹窗 (CityMemoryDrawerSheet)
+
+@MainActor
+public struct CityMemoryDrawerSheet: View {
+    let cityCode: String
+    let cityName: String
+    var onDismiss: () -> Void
+
+    @State private var drawer: CityMemoryDrawerResponse?
+    @State private var isLoading: Bool = true
+    @State private var errorText: String?
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(cityName) · 城市回忆抽屉")
+                        .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text("行政代码 \(cityCode)")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                Spacer()
+                Button("关闭") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            if isLoading {
+                ProgressView("正在翻找属地散页与相纸…")
+                    .frame(maxWidth: .infinity, minHeight: 200)
+            } else if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            } else if let d = drawer {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 20) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("到访次数")
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Text("\(d.visitStats.totalVisits) 次")
+                                    .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.accentWarm)
+                            }
+                            if !d.visitStats.firstVisitedAt.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("首访日期")
+                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                    Text(d.visitStats.firstVisitedAt)
+                                        .font(ArchiveTypography.monoScale(size: 13))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                }
+                            }
+                            if d.ledgerSummary.totalSpent > 0 {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("属地开销")
+                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                    Text(FormatUtils.formattedYuan(cents: d.ledgerSummary.totalSpent, includeSymbol: true))
+                                        .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                                        .foregroundStyle(ArchivePalette.accentMoss)
+                                }
+                            }
+                        }
+
+                        if !d.entries.isEmpty {
+                            Text("属地散页随笔 (\(d.entries.count))")
+                                .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                            ForEach(d.entries) { entry in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(entry.title.isEmpty ? "散页手记" : entry.title)
+                                            .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        Spacer()
+                                        Text(entry.parsedDate.dotDate)
+                                            .font(ArchiveTypography.monoScale(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    Text(entry.content)
+                                        .font(ArchiveTypography.bodySans(size: 12))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                        .lineLimit(3)
+                                }
+                                .padding(10)
+                                .background(ArchivePalette.archiveSubtle)
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 360)
+            }
+        }
+        .padding(22)
+        .frame(width: 520)
+        .background(ArchivePalette.archivePaper)
+        .task {
+            do {
+                drawer = try await APIClient.shared.fetchCityMemoryDrawer(cityCode: cityCode)
+                isLoading = false
+            } catch {
+                errorText = error.localizedDescription
+                isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - 年度生活年鉴五幕画卷弹窗 (AnnualAlmanacSheet)
+
+@MainActor
+public struct AnnualAlmanacSheet: View {
+    var onDismiss: () -> Void
+
+    @State private var selectedYear: Int = FormatUtils.beijingCurrentYearMonth().year
+    @State private var almanac: AnnualAlmanacResponse?
+    @State private var isLoading: Bool = true
+    @State private var errorText: String?
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("《散页 · \(selectedYear) 年度生活年鉴》")
+                        .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text("岁月卷首 · 山川行迹 · 心愿圆满 · 浮光掠影 · 柴米油盐")
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                Spacer()
+                HStack(spacing: 6) {
+                    ForEach([selectedYear - 1, selectedYear], id: \.self) { yr in
+                        PaperPillButton(title: "\(yr)", isSelected: selectedYear == yr) {
+                            selectedYear = yr
+                            Task { await loadAlmanac() }
+                        }
+                    }
+                    Button("关闭") { onDismiss() }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                }
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            if isLoading {
+                ProgressView("正在装订年度年鉴画卷…")
+                    .frame(maxWidth: .infinity, minHeight: 240)
+            } else if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            } else if let a = almanac {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // 第一幕：岁月卷首
+                        HStack(spacing: 20) {
+                            almanacStat("散页篇幅", "\(a.prologue.totalEntries) 篇")
+                            almanacStat("点亮城市", "\(a.prologue.citiesVisited) 城")
+                            almanacStat("圆满心愿", "\(a.prologue.wishesFulfilled) 愿")
+                            almanacStat("记账笔数", "\(a.prologue.txCount) 笔")
+                        }
+                        .padding(12)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                        // 第二幕：山川行迹
+                        if !a.atlas.cities.isEmpty {
+                            Text("第二幕 · 山川行迹 (\(a.atlas.totalCities) 城)")
+                                .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                            Text(a.atlas.cities.map(\.cityName).joined(separator: " · "))
+                                .font(ArchiveTypography.bodySans(size: 12.5))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                        }
+
+                        // 第三幕：心愿圆满
+                        Text("第三幕 · 心愿圆满 (已达成 \(a.wishes.fulfilledCount) / 在愿 \(a.wishes.wantingCount))")
+                            .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+
+                        // 第五幕：柴米油盐
+                        if a.finances.totalExpense > 0 || a.finances.totalIncome > 0 {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("第五幕 · 柴米油盐")
+                                    .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                                HStack(spacing: 18) {
+                                    Text("总支出 \(FormatUtils.formattedYuan(cents: a.finances.totalExpense, includeSymbol: true))")
+                                        .font(ArchiveTypography.monoScale(size: 12))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                    Text("总收入 \(FormatUtils.formattedYuan(cents: a.finances.totalIncome, includeSymbol: true))")
+                                        .font(ArchiveTypography.monoScale(size: 12))
+                                        .foregroundStyle(ArchivePalette.accentMoss)
+                                    Text(String(format: "取悦自己占比 %.1f%%", a.finances.wishSpendingRatio))
+                                        .font(ArchiveTypography.monoScale(size: 12))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 380)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
+        .background(ArchivePalette.archivePaper)
+        .task {
+            await loadAlmanac()
+        }
+    }
+
+    private func almanacStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(ArchiveTypography.bodySans(size: 11))
+                .foregroundStyle(ArchivePalette.inkMuted)
+            Text(value)
+                .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+        }
+    }
+
+    private func loadAlmanac() async {
+        isLoading = true
+        errorText = nil
+        do {
+            almanac = try await APIClient.shared.fetchAnnualAlmanac(year: selectedYear)
+            isLoading = false
+        } catch {
+            errorText = error.localizedDescription
+            isLoading = false
         }
     }
 }

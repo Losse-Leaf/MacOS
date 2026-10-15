@@ -307,12 +307,16 @@ public struct CuratorDossierView: View {
                 Spacer()
                 Button("保存档案") {
                     Task { @MainActor in
+                        let trimmedCity = editCity.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmedLoc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let finalCity = trimmedCity.isEmpty ? trimmedLoc : trimmedCity
+                        let finalLoc = trimmedLoc.isEmpty ? trimmedCity : trimmedLoc
                         let req = UpdateProfileRequest(
                             name: editName,
                             title: editTitle,
                             bio: editBio,
-                            location: editLocation,
-                            currentCity: editCity,
+                            location: finalLoc,
+                            currentCity: finalCity,
                             motto: editMotto,
                             manifesto: editManifesto
                         )

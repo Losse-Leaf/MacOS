@@ -205,8 +205,12 @@ public struct QuickCaptureView: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
             )
-            .onPasteCommand(of: [.png, .tiff, .jpeg]) { providers in
-                handlePastedImages(providers)
+            .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { providers in
+                if DropLoader.readImageFromPasteboard() != nil {
+                    pasteImageFromPasteboard()
+                } else {
+                    handlePastedImages(providers)
+                }
             }
 
             // 自动识别出的 #标签 与 EXIF 相机印记展示
@@ -353,11 +357,19 @@ public struct QuickCaptureView: View {
                 Text("正在上传相片 (\(Int(uploadProgress * 100))%)…")
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkSecondary)
+                Spacer(minLength: 0)
             } else if !uploadedAttachments.isEmpty {
                 Text("已添加 \(uploadedAttachments.count) 张相片")
                     .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
                     .foregroundStyle(ArchivePalette.accentMoss)
                 Spacer()
+                Button("粘贴剪贴板图片 (⌘V)") {
+                    pasteImageFromPasteboard()
+                }
+                .font(ArchiveTypography.bodySans(size: 10.5))
+                .buttonStyle(.plain)
+                .foregroundStyle(ArchivePalette.accentWarm)
+
                 Button("清除") {
                     uploadedAttachments.removeAll()
                     extractedCameraLine = ""
@@ -366,12 +378,28 @@ public struct QuickCaptureView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.inkMuted)
             } else {
-                Text("拖拽照片至此，或 ⌘V 粘贴截图，自动装裱保存")
+                Text("拖拽照片至此，自动装裱保存")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
+                Spacer(minLength: 4)
+                if !isContentFocused {
+                    Button("粘贴剪贴板图片 (⌘V)") {
+                        pasteImageFromPasteboard()
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5, weight: .medium))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .keyboardShortcut("v", modifiers: [.command])
+                } else {
+                    Button("粘贴剪贴板图片 (⌘V)") {
+                        pasteImageFromPasteboard()
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5, weight: .medium))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -524,6 +552,38 @@ public struct QuickCaptureView: View {
             uploadProgress = max(uploadProgress, finished / total)
         }
         isUploadingPhoto = false
+    }
+
+    /// 从 NSPasteboard.general 读取剪贴板图像，经 ImageProcessor 压制后上传入列
+    private func pasteImageFromPasteboard() {
+        guard let rawData = DropLoader.readImageFromPasteboard() else {
+            errorText = "剪贴板中未检测到可用的图片或截图"
+            return
+        }
+        Task { @MainActor in
+            isUploadingPhoto = true
+            uploadProgress = 0.08
+            errorText = nil
+            do {
+                let processed = try await ImageProcessor.processImageDataInBackground(
+                    rawData,
+                    originalFilename: "pasteboard-\(Int(Date().timeIntervalSince1970)).jpg"
+                )
+                if extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
+                    extractedCameraLine = processed.exifMetadata.formattedCameraLine
+                }
+                let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
+                    Task { @MainActor in
+                        self.uploadProgress = prog
+                    }
+                }
+                uploadedAttachments.append(attachment)
+                AudioFeedback.shared.playShutter()
+            } catch {
+                errorText = "剪贴板图片处理失败：\(error.localizedDescription)"
+            }
+            isUploadingPhoto = false
+        }
     }
 
     /// 处理剪贴板粘贴的图像（⌘V 截图直贴管线）

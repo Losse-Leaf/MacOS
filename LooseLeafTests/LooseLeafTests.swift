@@ -413,7 +413,7 @@ final class LooseLeafTests: XCTestCase {
             print("SNAPSHOT ENCODED SUCCESS: \(encoded.count) bytes")
             let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: encoded)
             print("SNAPSHOT DECODED SUCCESS: \(decoded.entries.count) entries")
-            XCTAssertEqual(decoded.entries.count, 8)
+            XCTAssertEqual(decoded.entries.count, env.data?.entries.count ?? 0)
         } catch {
             XCTFail("Decoding failed: \(error)")
         }
@@ -427,5 +427,34 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertFalse(UpdateChecker.isVersion("1.2.0", greaterThan: "1.2.0"))
         XCTAssertFalse(UpdateChecker.isVersion("1.2.0", greaterThan: "1.2.1"))
         XCTAssertFalse(UpdateChecker.isVersion("1.1.9", greaterThan: "1.2.0"))
+    }
+
+    // MARK: - 17. Multi-Format Export & Almanac / City Drawer Decoding Tests
+
+    func testMakeTransactionsCSVAndFullJSONExport() throws {
+        let tx = Transaction(
+            id: 1,
+            amount: 4250,
+            type: "expense",
+            category: "餐饮",
+            title: "手冲咖啡,燕麦奶",
+            note: "风味极佳",
+            paymentMethod: "微信支付",
+            cityCode: "330100",
+            occurredAt: "2026-10-14T09:30:00+08:00"
+        )
+        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
+        XCTAssertTrue(csv.hasPrefix("\u{FEFF}日期时间,收支类型,分类,标题,金额(元),金额(分),支付方式,城市代码,分期,备注"))
+        XCTAssertTrue(csv.contains("\"手冲咖啡,燕麦奶\""))
+        XCTAssertTrue(csv.contains("42.50,4250"))
+
+        var snap = LocalArchiveSnapshot()
+        snap.transactions = [tx]
+        let jsonData = ArchiveExporter.makeFullArchiveJSON(snapshot: snap, projects: [], wishes: [], footprints: [])
+        XCTAssertNotNil(jsonData)
+
+        let lonLat = CityDictionary.lonLat(forCode: "330100", cityName: "杭州市")
+        XCTAssertTrue(lonLat.lon > 85.0 && lonLat.lon < 125.0)
+        XCTAssertTrue(lonLat.lat > 18.0 && lonLat.lat < 50.0)
     }
 }

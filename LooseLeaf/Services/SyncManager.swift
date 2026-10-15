@@ -13,6 +13,7 @@ public final class SyncManager {
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.looseleaf.archive.network.monitor")
+    private let diskWriteQueue = DispatchQueue(label: "com.looseleaf.archive.snapshot.io", qos: .utility)
 
     public private(set) var isOnline: Bool = true
     public private(set) var isFlushingOutbox: Bool = false
@@ -93,9 +94,9 @@ public final class SyncManager {
         // 立即通知 UI 响应刷新，保证 0ms 上屏
         onSnapshotUpdated?(copy)
 
-        // 后台异步序列化与原子落盘，彻底消除主线程磁盘 I/O 阻塞
+        // 串行队列异步序列化与原子落盘，既消除主线程磁盘 I/O 阻塞，又杜绝并发落盘乱序覆盖
         let fileURL = Self.snapshotFileURL
-        Task.detached(priority: .utility) {
+        diskWriteQueue.async {
             if let data = try? JSONEncoder().encode(copy) {
                 try? data.write(to: fileURL, options: .atomic)
             }
@@ -124,7 +125,7 @@ public final class SyncManager {
     // MARK: - 写入流：在线直发 + 断网自动转入 Outbox 队列
 
     /// 提交新生活记录（在线直接落库，离线或网络阻断时写入本地 Outbox 乐观更新）
-    public func submitEntry(_ req: CreateEntryRequest) async throws -> (entry: LifeEntry, queuedOffline: Bool) {
+    public func submitEntry(_ req: CreateEntryRequest, attachments: [Attachment] = []) async throws -> (entry: LifeEntry, queuedOffline: Bool) {
         if isOnline {
             do {
                 let created = try await APIClient.shared.createEntry(req)
@@ -156,6 +157,7 @@ public final class SyncManager {
             projectId: req.projectId,
             wishId: req.wishId,
             footprintId: req.footprintId,
+            attachments: attachments,
             featured: req.featured,
             syncStatus: "pending_create"
         )

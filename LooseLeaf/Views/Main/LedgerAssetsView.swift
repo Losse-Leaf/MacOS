@@ -22,12 +22,15 @@ public struct LedgerAssetsView: View {
     @State private var formGearCategory: String = "数码器材"
     @State private var formGearSpec: String = ""
     @State private var formIsInstallment: Bool = false
+    @State private var formInstallmentChannelCode: String = "huabei"
     @State private var formInstallmentMonths: Int = 12
+    @State private var formRepaymentDay: Int = 10
 
     // 筛选与弹窗
     @State private var selectedCategoryFilter: String = "全部"
     @State private var showCalibrateBalanceSheet: Bool = false
     @State private var showAddGearSheet: Bool = false
+    @State private var showCreditChannelsSheet: Bool = false
     @State private var editingTransaction: Transaction?
     @State private var sellingGear: GearItem?
     @State private var txToDelete: Transaction?
@@ -39,6 +42,16 @@ public struct LedgerAssetsView: View {
 
     public init(appState: AppState) {
         self.appState = appState
+    }
+
+    private var availableCreditChannels: [CreditChannel] {
+        if !appState.creditChannels.isEmpty {
+            return appState.creditChannels
+        }
+        return [
+            CreditChannel(id: 1, code: "huabei", name: "花呗", repaymentDay: 10, isBuiltin: true),
+            CreditChannel(id: 2, code: "baitiao", name: "白条", repaymentDay: 15, isBuiltin: true)
+        ]
     }
 
     private var filteredTransactions: [Transaction] {
@@ -75,6 +88,11 @@ public struct LedgerAssetsView: View {
         }
         .sheet(isPresented: $showAddGearSheet) {
             addGearSheetView
+        }
+        .sheet(isPresented: $showCreditChannelsSheet) {
+            CreditChannelsManagerSheet(appState: appState) {
+                showCreditChannelsSheet = false
+            }
         }
         .sheet(item: $editingTransaction) { tx in
             editTransactionSheetView(tx)
@@ -127,6 +145,16 @@ public struct LedgerAssetsView: View {
             Spacer()
 
             HStack(spacing: 8) {
+                Button {
+                    showCreditChannelsSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "creditcard")
+                        Text("信贷分期渠道")
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
                 Button {
                     showAddGearSheet = true
                 } label: {
@@ -377,9 +405,11 @@ public struct LedgerAssetsView: View {
                             .toggleStyle(.checkbox)
                             .font(ArchiveTypography.bodySans(size: 11.5))
 
-                        Toggle("分期付款", isOn: $formIsInstallment)
-                            .toggleStyle(.checkbox)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
+                        if formType == "expense" {
+                            Toggle("分期付款", isOn: $formIsInstallment)
+                                .toggleStyle(.checkbox)
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                        }
                     }
 
                     // 固资扩展信息
@@ -401,19 +431,87 @@ public struct LedgerAssetsView: View {
                         }
                     }
 
-                    // 分期期数
-                    if formIsInstallment {
-                        HStack(spacing: 8) {
-                            Text("分期期数：")
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
+                    // 分期渠道、期数与每月还款日配置
+                    if formIsInstallment && formType == "expense" {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Text("信贷渠道：")
+                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
 
-                            ForEach([3, 6, 12, 24], id: \.self) { months in
-                                PaperPillButton(title: "\(months) 期", isSelected: formInstallmentMonths == months) {
-                                    formInstallmentMonths = months
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(availableCreditChannels) { ch in
+                                            PaperPillButton(
+                                                title: "\(ch.name) (每月\(ch.repaymentDay)日)",
+                                                isSelected: formInstallmentChannelCode == ch.code
+                                            ) {
+                                                formInstallmentChannelCode = ch.code
+                                                formRepaymentDay = ch.repaymentDay
+                                                AudioFeedback.shared.playTink()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer()
+
+                                Button("管理渠道…") {
+                                    showCreditChannelsSheet = true
+                                }
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .buttonStyle(.plain)
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            }
+
+                            HStack(spacing: 12) {
+                                HStack(spacing: 6) {
+                                    Text("分期期数：")
+                                        .font(ArchiveTypography.bodySans(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                                    ForEach([3, 6, 12, 24], id: \.self) { months in
+                                        PaperPillButton(title: "\(months) 期", isSelected: formInstallmentMonths == months) {
+                                            formInstallmentMonths = months
+                                            AudioFeedback.shared.playTink()
+                                        }
+                                    }
+                                }
+
+                                Divider()
+                                    .frame(height: 16)
+                                    .overlay(ArchivePalette.borderSubtle)
+
+                                HStack(spacing: 6) {
+                                    Text("每月还款日：")
+                                        .font(ArchiveTypography.bodySans(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                    Picker("", selection: $formRepaymentDay) {
+                                        ForEach(1...31, id: \.self) { day in
+                                            Text("每月 \(day) 日").tag(day)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(width: 95)
+                                }
+
+                                Spacer()
+
+                                if let totalCents = FormatUtils.parseYuanToCents(formAmountYuan), totalCents > 0 {
+                                    let monthlyCents = totalCents / Int64(max(1, formInstallmentMonths))
+                                    Text("每期约 \(FormatUtils.formattedYuan(cents: monthlyCents, includeSymbol: true))")
+                                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
                                 }
                             }
                         }
+                        .padding(10)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        )
                     }
 
                     // 提交表单按钮行
@@ -803,6 +901,9 @@ public struct LedgerAssetsView: View {
         errorNotice = nil
         let cleanTitle = formTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalTitle = cleanTitle.isEmpty ? formCategory : cleanTitle
+        let isInst = (formType == "expense" && formIsInstallment)
+        let months = max(1, formInstallmentMonths)
+        let monthlyPay = isInst ? (cents / Int64(months)) : nil
 
         Task { @MainActor in
             do {
@@ -814,8 +915,13 @@ public struct LedgerAssetsView: View {
                     note: formNote.isEmpty ? nil : formNote,
                     paymentMethod: formPaymentMethod,
                     occurredAt: FormatUtils.beijingISOString(),
-                    isInstallment: formIsInstallment,
-                    installmentMonths: formIsInstallment ? formInstallmentMonths : nil,
+                    isInstallment: isInst,
+                    installmentChannelCode: isInst ? formInstallmentChannelCode : nil,
+                    installmentTotalAmount: isInst ? cents : nil,
+                    installmentMonths: isInst ? months : nil,
+                    installmentMonthlyPay: monthlyPay,
+                    installmentRemainMonths: isInst ? months : nil,
+                    repaymentDay: isInst ? formRepaymentDay : nil,
                     linkGearAsset: formLinkGear,
                     gearCategory: formLinkGear ? formGearCategory : nil,
                     gearSpec: formLinkGear ? formGearSpec : nil
@@ -1194,6 +1300,266 @@ public struct SellGearSheet: View {
                 errorText = error.localizedDescription
                 isSubmitting = false
             }
+        }
+    }
+}
+
+// MARK: - 独立弹窗组件：信贷与分期渠道管理 (CreditChannelsManagerSheet)
+
+@MainActor
+public struct CreditChannelsManagerSheet: View {
+    @Bindable var appState: AppState
+    var onDismiss: () -> Void
+
+    @State private var newName: String = ""
+    @State private var newCode: String = ""
+    @State private var newRepaymentDay: Int = 10
+    @State private var editingChannelId: Int?
+    @State private var editName: String = ""
+    @State private var editRepaymentDay: Int = 10
+    @State private var isSubmitting: Bool = false
+    @State private var errorText: String?
+
+    private var channels: [CreditChannel] {
+        if !appState.creditChannels.isEmpty {
+            return appState.creditChannels
+        }
+        return [
+            CreditChannel(id: 1, code: "huabei", name: "花呗", repaymentDay: 10, isBuiltin: true),
+            CreditChannel(id: 2, code: "baitiao", name: "白条", repaymentDay: 15, isBuiltin: true)
+        ]
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("信贷与分期渠道管理")
+                    .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Spacer()
+                Button("关闭") {
+                    onDismiss()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            }
+
+            Text("配置常用的信用卡、花呗或白条渠道及每月固定还款日（1~31 日），记账勾选分期时将自动核算剩余期数与待还负债。")
+                .font(ArchiveTypography.bodySans(size: 11.5))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(channels) { ch in
+                        HStack(spacing: 10) {
+                            if editingChannelId == ch.id {
+                                TextField("渠道名称", text: $editName)
+                                    .textFieldStyle(.plain)
+                                    .font(ArchiveTypography.bodySans(size: 12.5))
+                                    .padding(6)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    .frame(width: 120)
+
+                                Picker("还款日", selection: $editRepaymentDay) {
+                                    ForEach(1...31, id: \.self) { day in
+                                        Text("每月 \(day) 日").tag(day)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 95)
+
+                                Spacer()
+
+                                Button("保存") {
+                                    saveChannelEdit(ch)
+                                }
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                                .disabled(isSubmitting || editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                                Button("取消") {
+                                    editingChannelId = nil
+                                }
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            } else {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(ch.name)
+                                            .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        Text(ch.code)
+                                            .font(ArchiveTypography.monoScale(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                        if ch.isBuiltin {
+                                            Text("内置")
+                                                .font(ArchiveTypography.monoScale(size: 9.5))
+                                                .foregroundStyle(ArchivePalette.accentMoss)
+                                                .padding(.horizontal, 4)
+                                                .padding(.vertical, 1)
+                                                .background(ArchivePalette.archivePaper)
+                                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                        }
+                                    }
+                                    Text("每月 \(ch.repaymentDay) 日还款")
+                                        .font(ArchiveTypography.monoScale(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    editingChannelId = ch.id
+                                    editName = ch.name
+                                    editRepaymentDay = ch.repaymentDay
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .help("修改渠道与还款日")
+
+                                if !ch.isBuiltin {
+                                    Button {
+                                        deleteChannel(ch)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("删除自定义渠道")
+                                }
+                            }
+                        }
+                        .padding(10)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        )
+                    }
+                }
+            }
+            .frame(maxHeight: 220)
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            // 新增自定义信贷渠道
+            VStack(alignment: .leading, spacing: 8) {
+                Text("新增自定义信贷渠道")
+                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                HStack(spacing: 8) {
+                    TextField("渠道名称（如：招行信用卡）", text: $newName)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .padding(7)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                    TextField("代号（可选，如 cmb）", text: $newCode)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .padding(7)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .frame(width: 110)
+
+                    Picker("", selection: $newRepaymentDay) {
+                        ForEach(1...31, id: \.self) { day in
+                            Text("每月 \(day) 日").tag(day)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 95)
+
+                    Button("添加渠道") {
+                        createChannel()
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .disabled(isSubmitting || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+        .background(ArchivePalette.archivePaper)
+        .task {
+            if let list = try? await APIClient.shared.fetchCreditChannels() {
+                appState.creditChannels = list
+            }
+        }
+    }
+
+    private func createChannel() {
+        let cleanName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { return }
+        let cleanCode = newCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSubmitting = true
+        errorText = nil
+        Task { @MainActor in
+            do {
+                let req = CreateCreditChannelRequest(
+                    code: cleanCode.isEmpty ? nil : cleanCode,
+                    name: cleanName,
+                    repaymentDay: newRepaymentDay
+                )
+                _ = try await APIClient.shared.createCreditChannel(req)
+                AudioFeedback.shared.playShutter()
+                newName = ""
+                newCode = ""
+                await appState.loadTransactionsAndAssets(forceFull: true)
+            } catch {
+                errorText = error.localizedDescription
+            }
+            isSubmitting = false
+        }
+    }
+
+    private func saveChannelEdit(_ ch: CreditChannel) {
+        let cleanName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { return }
+        isSubmitting = true
+        errorText = nil
+        Task { @MainActor in
+            do {
+                let req = CreateCreditChannelRequest(
+                    code: ch.code,
+                    name: cleanName,
+                    repaymentDay: editRepaymentDay,
+                    color: ch.color
+                )
+                _ = try await APIClient.shared.updateCreditChannel(id: ch.id, req)
+                AudioFeedback.shared.playTink()
+                editingChannelId = nil
+                await appState.loadTransactionsAndAssets(forceFull: true)
+            } catch {
+                errorText = error.localizedDescription
+            }
+            isSubmitting = false
+        }
+    }
+
+    private func deleteChannel(_ ch: CreditChannel) {
+        isSubmitting = true
+        errorText = nil
+        Task { @MainActor in
+            do {
+                try await APIClient.shared.deleteCreditChannel(id: ch.id)
+                AudioFeedback.shared.playTink()
+                await appState.loadTransactionsAndAssets(forceFull: true)
+            } catch {
+                errorText = error.localizedDescription
+            }
+            isSubmitting = false
         }
     }
 }

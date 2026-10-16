@@ -143,12 +143,24 @@ public struct SettingsView: View {
                                 .font(ArchiveTypography.monoScale(size: 11))
                         }
                     } else {
-                        Button("立即更新并重启") {
-                            Task { @MainActor in
-                                await UpdateChecker.shared.performInAppUpdate()
+                        HStack(spacing: 8) {
+                            Button("浏览器下载") {
+                                UpdateChecker.shared.openDownloadInBrowser()
                             }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                            Button("复制终端命令") {
+                                UpdateChecker.shared.copyInstallCommandToClipboard()
+                            }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                            Button("应用内更新") {
+                                Task { @MainActor in
+                                    await UpdateChecker.shared.performInAppUpdate()
+                                }
+                            }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                         }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                     }
                 }
                 .padding(10)

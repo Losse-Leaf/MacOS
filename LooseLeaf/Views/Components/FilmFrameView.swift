@@ -80,6 +80,84 @@ public struct FilmFrameView: View {
         .onTapGesture {
             onTap?()
         }
+        .contextMenu {
+            Button {
+                copyFilmImage()
+            } label: {
+                Label("拷贝相纸", systemImage: "doc.on.doc")
+            }
+
+            if let url = imageURL {
+                Button {
+                    openInPreview(url: url)
+                } label: {
+                    Label("在系统「预览」中查看", systemImage: "macwindow.on.rectangle")
+                }
+
+                Button {
+                    saveFilmImage(url: url)
+                } label: {
+                    Label("导出存储相纸…", systemImage: "square.and.arrow.down")
+                }
+            }
+        }
+    }
+
+    private func copyFilmImage() {
+        if let localImage {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([localImage])
+            AudioFeedback.shared.playTink()
+            return
+        }
+        if let imageURL {
+            if let cached = PaperImageCache.image(for: imageURL) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([cached])
+                AudioFeedback.shared.playTink()
+                return
+            }
+            Task { @MainActor in
+                if let (data, _) = try? await URLSession.shared.data(from: imageURL),
+                   let img = NSImage(data: data) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.writeObjects([img])
+                    AudioFeedback.shared.playTink()
+                }
+            }
+        }
+    }
+
+    private func openInPreview(url: URL) {
+        Task { @MainActor in
+            if let cached = PaperImageCache.image(for: url),
+               let tiffData = cached.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? pngData.write(to: tempPath, options: .atomic)
+                NSWorkspace.shared.open(tempPath)
+                return
+            }
+            if let (data, _) = try? await URLSession.shared.data(from: url) {
+                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? data.write(to: tempPath, options: .atomic)
+                NSWorkspace.shared.open(tempPath)
+            }
+        }
+    }
+
+    private func saveFilmImage(url: URL) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = (caption?.isEmpty == false) ? "\(caption!).jpg" : url.lastPathComponent
+        if panel.runModal() == .OK, let targetURL = panel.url {
+            Task { @MainActor in
+                if let (data, _) = try? await URLSession.shared.data(from: url) {
+                    try? data.write(to: targetURL, options: .atomic)
+                    AudioFeedback.shared.playShutter()
+                }
+            }
+        }
     }
 
     private var hasFooter: Bool {
@@ -87,21 +165,69 @@ public struct FilmFrameView: View {
     }
 }
 
-/// 相纸画廊专用轻量内存解码缓存池（最大 80MB，超出自动 LRU 淘汰）
+/// 相纸画廊专用双级缓存池 (Memory NSCache + Disk MediaCache)
+/// 遵循 Local-First 架构：已查看相纸自动落盘，支持离线 0ms 本地显影
 public enum PaperImageCache {
-    private static let cache: NSCache<NSURL, NSImage> = {
+    private static let memoryCache: NSCache<NSURL, NSImage> = {
         let c = NSCache<NSURL, NSImage>()
-        c.totalCostLimit = 80 * 1024 * 1024 // 80 MB
-        c.countLimit = 120
+        c.totalCostLimit = 100 * 1024 * 1024 // 100 MB 内存解码池
+        c.countLimit = 150
         return c
     }()
 
-    public static func image(for url: URL) -> NSImage? {
-        cache.object(forKey: url as NSURL)
+    private static let diskQueue = DispatchQueue(label: "com.looseleaf.media.diskcache", qos: .utility)
+
+    public static var diskCacheDirectory: URL {
+        let dir = SyncManager.sharedStorageDirectory.appendingPathComponent("MediaCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
 
-    public static func setImage(_ image: NSImage, for url: URL, cost: Int = 0) {
-        cache.setObject(image, forKey: url as NSURL, cost: cost)
+    private static func cacheKey(for url: URL) -> String {
+        let raw = url.absoluteString
+        var hasher = Hasher()
+        hasher.combine(raw)
+        let hash = abs(hasher.finalize())
+        let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+        return "cache_\(hash).\(ext)"
+    }
+
+    private static func diskFileURL(for url: URL) -> URL {
+        diskCacheDirectory.appendingPathComponent(cacheKey(for: url))
+    }
+
+    public static func image(for url: URL) -> NSImage? {
+        // 1. 内存一级命中
+        if let memoryHit = memoryCache.object(forKey: url as NSURL) {
+            return memoryHit
+        }
+
+        // 2. 磁盘二级命中 (0ms 离线即刻读盘)
+        let diskPath = diskFileURL(for: url)
+        if FileManager.default.fileExists(atPath: diskPath.path),
+           let diskData = try? Data(contentsOf: diskPath),
+           let diskImage = NSImage(data: diskData) {
+            memoryCache.setObject(diskImage, forKey: url as NSURL, cost: diskData.count)
+            return diskImage
+        }
+
+        return nil
+    }
+
+    public static func setImage(_ image: NSImage, rawData: Data? = nil, for url: URL, cost: Int = 0) {
+        memoryCache.setObject(image, forKey: url as NSURL, cost: cost)
+
+        // 异步写入磁盘缓存，避免主线程 I/O 阻塞
+        let diskURL = diskFileURL(for: url)
+        diskQueue.async {
+            if let rawData {
+                try? rawData.write(to: diskURL, options: .atomic)
+            } else if let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let jpeg = rep.representation(using: .jpeg, properties: [:]) {
+                try? jpeg.write(to: diskURL, options: .atomic)
+            }
+        }
     }
 }
 
@@ -166,13 +292,17 @@ public struct CachedFilmImageView: View {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             if let image = NSImage(data: data) {
-                PaperImageCache.setImage(image, for: url, cost: data.count)
+                PaperImageCache.setImage(image, rawData: data, for: url, cost: data.count)
                 self.loadedImage = image
             } else {
                 self.hasFailed = true
             }
         } catch {
-            self.hasFailed = true
+            if let diskHit = PaperImageCache.image(for: url) {
+                self.loadedImage = diskHit
+            } else {
+                self.hasFailed = true
+            }
         }
     }
 }

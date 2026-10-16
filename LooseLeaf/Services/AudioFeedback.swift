@@ -15,7 +15,9 @@ public final class AudioFeedback {
     public static let soundEnabledKey = "looseleaf_sound_enabled"
     public static let hapticsEnabledKey = "looseleaf_haptics_enabled"
 
-    private var activePlayers: [String: AVAudioPlayer] = [:]
+    private var playerPools: [String: [AVAudioPlayer]] = [:]
+    private var poolIndices: [String: Int] = [:]
+    private let poolSize: Int = 4
 
     public var isSoundEnabled: Bool {
         get {
@@ -77,24 +79,35 @@ public final class AudioFeedback {
     // MARK: - 音频加载与零依赖内存 WAV 合成
 
     private func playSound(named name: String) {
-        if let player = activePlayers[name] {
-            player.currentTime = 0
-            player.play()
-        }
+        guard let pool = playerPools[name], !pool.isEmpty else { return }
+        let idx = poolIndices[name, default: 0]
+        let player = pool[idx]
+        player.currentTime = 0
+        player.play()
+        poolIndices[name] = (idx + 1) % pool.count
     }
 
     private func preloadSynthesizedAudio() {
         let names = ["shutter", "paper_flip", "tink"]
         for name in names {
-            if let url = locateBundledAudio(named: name),
-               let player = try? AVAudioPlayer(contentsOf: url) {
-                player.prepareToPlay()
-                activePlayers[name] = player
-            } else if let data = synthesizeWAVData(for: name),
-                      let player = try? AVAudioPlayer(data: data) {
-                player.prepareToPlay()
-                activePlayers[name] = player
+            var pool: [AVAudioPlayer] = []
+            let audioData: Data?
+            if let url = locateBundledAudio(named: name) {
+                audioData = try? Data(contentsOf: url)
+            } else {
+                audioData = synthesizeWAVData(for: name)
             }
+
+            if let audioData {
+                for _ in 0..<poolSize {
+                    if let player = try? AVAudioPlayer(data: audioData) {
+                        player.prepareToPlay()
+                        pool.append(player)
+                    }
+                }
+            }
+            playerPools[name] = pool
+            poolIndices[name] = 0
         }
     }
 

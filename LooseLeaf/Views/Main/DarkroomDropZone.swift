@@ -5,17 +5,29 @@ import AppKit
 /// 拖拽暗房相纸冲印工作台组件 (DarkroomDropZone)
 /// 严格遵循 docs/macos.md §3.3 规范：
 /// 1. 支持从 Finder 直接拖拽 .jpg, .jpeg, .png, .heic, .webp, .cr2, .nef, .arw, .dng 等底片
-/// 2. 端侧 ImageIO 提取 EXIF 相机型号、镜头焦段、光圈、快门与 ISO 参数
-/// 3. 自动执行最长边 3840px (4K) 缩放与 85% 质量压制
-/// 4. 预签名直传 R2 存储桶（展示拟物进度环）并伴生写入散页时间流
+/// 2. 支持多底片集合装裱 (Darkroom Film Strip) 与多相纸合并为单篇生活手记
+/// 3. 端侧 ImageIO 提取 EXIF 相机型号、镜头焦段、光圈、快门与 ISO 参数
+/// 4. 自动执行最长边 3840px (4K) 缩放与 85% 质量压制
+/// 5. 预签名直传 R2 存储桶并伴生写入散页时间流
 @MainActor
 public struct DarkroomDropZone: View {
     @Bindable var appState: AppState
 
+    public struct DarkroomPhotoItem: Identifiable, Equatable {
+        public let id = UUID()
+        public var photo: ImageProcessor.ProcessedPhoto
+        public var preview: NSImage
+        public var originalURL: URL?
+
+        public static func == (lhs: DarkroomPhotoItem, rhs: DarkroomPhotoItem) -> Bool {
+            lhs.id == rhs.id
+        }
+    }
+
+    @State private var items: [DarkroomPhotoItem] = []
+    @State private var selectedIndex: Int = 0
+    @State private var batchIntoSingleEntry: Bool = true
     @State private var isDragTargeted: Bool = false
-    @State private var previewImage: NSImage?
-    @State private var processedPhoto: ImageProcessor.ProcessedPhoto?
-    @State private var pendingPhotoURLs: [URL] = []
 
     @State private var entryTitle: String = ""
     @State private var entryContent: String = ""
@@ -32,6 +44,12 @@ public struct DarkroomDropZone: View {
         self.appState = appState
     }
 
+    private var currentItem: DarkroomPhotoItem? {
+        guard !items.isEmpty else { return nil }
+        let idx = min(max(selectedIndex, 0), items.count - 1)
+        return items[idx]
+    }
+
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -41,16 +59,20 @@ public struct DarkroomDropZone: View {
                         Text("银盐暗房 · 胶片冲印与相纸装裱")
                             .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("拖入摄影原片或日常照片，自动识别器材参数，高清装裱入册")
+                        Text("拖入摄影原片或日常照片，自动识别器材参数，支持底片卷多张合并或单张装裱入册")
                             .font(ArchiveTypography.bodySans(size: 12.5))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }
                     Spacer()
 
-                    if !pendingPhotoURLs.isEmpty {
-                        Text("待冲印 \(pendingPhotoURLs.count) 张")
-                            .font(ArchiveTypography.monoScale(size: 11))
+                    if !items.isEmpty {
+                        Text("底片卷 \(items.count) 张")
+                            .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
                             .foregroundStyle(ArchivePalette.accentWarm)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(ArchivePalette.accentWarm.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                     }
 
                     Button {
@@ -80,9 +102,9 @@ public struct DarkroomDropZone: View {
                     dropCanvasArea
                         .frame(maxWidth: .infinity)
 
-                    if let photo = processedPhoto {
-                        exifAndPublishInspector(photo: photo)
-                            .frame(width: 310)
+                    if let current = currentItem {
+                        exifAndPublishInspector(current: current)
+                            .frame(width: 320)
                     }
                 }
             }
@@ -93,72 +115,146 @@ public struct DarkroomDropZone: View {
     // MARK: - 拖拽画布与相纸装裱框
 
     private var dropCanvasArea: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(ArchivePalette.archiveSubtle)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(
-                            isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.borderDivider,
-                            style: StrokeStyle(lineWidth: isDragTargeted ? 1.5 : 0.8, dash: [6, 4])
-                        )
-                )
-
-            if let previewImage, let photo = processedPhoto {
-                VStack(spacing: 14) {
-                    FilmFrameView(
-                        localImage: previewImage,
-                        caption: entryTitle.isEmpty ? photo.filename : entryTitle,
-                        metaText: photo.exifMetadata.formattedCameraLine.isEmpty
-                            ? "\(photo.width) × \(photo.height)"
-                            : photo.exifMetadata.formattedCameraLine,
-                        maxHeight: 380
+        VStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(ArchivePalette.archiveSubtle)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(
+                                isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.borderDivider,
+                                style: StrokeStyle(lineWidth: isDragTargeted ? 1.5 : 0.8, dash: [6, 4])
+                            )
                     )
 
-                    if isUploading {
-                        HStack(spacing: 10) {
-                            ProgressView(value: uploadProgress)
-                                .progressViewStyle(.linear)
-                                .tint(ArchivePalette.accentWarm)
-                                .frame(width: 180)
-                            Text("正在冲印上传 \(Int(uploadProgress * 100))%…")
-                                .font(ArchiveTypography.monoScale(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
+                if let current = currentItem {
+                    VStack(spacing: 14) {
+                        FilmFrameView(
+                            localImage: current.preview,
+                            caption: entryTitle.isEmpty ? current.photo.filename : entryTitle,
+                            metaText: current.photo.exifMetadata.formattedCameraLine.isEmpty
+                                ? "\(current.photo.width) × \(current.photo.height)"
+                                : current.photo.exifMetadata.formattedCameraLine,
+                            maxHeight: 380
+                        )
+
+                        if isUploading {
+                            HStack(spacing: 10) {
+                                ProgressView(value: uploadProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(ArchivePalette.accentWarm)
+                                    .frame(width: 180)
+                                Text("正在冲印上传 \(Int(uploadProgress * 100))%…")
+                                    .font(ArchiveTypography.monoScale(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                            }
+                        }
+                    }
+                    .padding(20)
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: isProcessing ? "camera.metering.multispot" : "photo.on.rectangle.angled")
+                            .font(.system(size: 36, weight: .light))
+                            .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+
+                        Text(isProcessing ? "正在装裱底片…" : "将照片拖拽至此处装裱显影")
+                            .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+
+                        Text("支持常见图片与单反原片，支持一次拖入多张照片生成底片卷，或按 ⌘V 粘贴截图")
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .padding(48)
+                }
+            }
+            .frame(minHeight: 380)
+            .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
+                handleImageDrop(providers: providers)
+                return true
+            }
+            .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { _ in
+                pastePhotoFromClipboard()
+            }
+
+            // 3. 底片胶卷卷栏 (Film Strip / Darkroom Contact Sheet)
+            if items.count > 1 {
+                filmStripBar
+            }
+        }
+    }
+
+    private var filmStripBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("底片胶卷盒 (\(items.count) 张)")
+                    .font(ArchiveTypography.editorialSerif(size: 12, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                Spacer()
+                Text("点击底片切换预览 · 点击角标移除")
+                    .font(ArchiveTypography.monoScale(size: 10))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        VStack(spacing: 3) {
+                            ZStack(alignment: .topTrailing) {
+                                Image(nsImage: item.preview)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 58, height: 58)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .stroke(
+                                                selectedIndex == index ? ArchivePalette.accentWarm : ArchivePalette.borderDivider,
+                                                lineWidth: selectedIndex == index ? 2.0 : 0.5
+                                            )
+                                    )
+
+                                Button {
+                                    removePhoto(at: index)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                        .background(Circle().fill(Color.white))
+                                }
+                                .buttonStyle(.plain)
+                                .offset(x: 3, y: -3)
+                            }
+
+                            Text("\(index + 1)")
+                                .font(ArchiveTypography.monoScale(size: 10, weight: selectedIndex == index ? .bold : .regular))
+                                .foregroundStyle(selectedIndex == index ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedIndex = index
+                            AudioFeedback.shared.playTink()
                         }
                     }
                 }
-                .padding(20)
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: isProcessing ? "camera.metering.multispot" : "photo.on.rectangle.angled")
-                        .font(.system(size: 36, weight: .light))
-                        .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-
-                    Text(isProcessing ? "正在装裱相纸…" : "将照片拖拽至此处装裱显影")
-                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-
-                    Text("支持常见图片与单反原片，可多张拖入或按 ⌘V 直接粘贴截图")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-                .padding(48)
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
             }
         }
-        .frame(minHeight: 380)
-        .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
-            handleImageDrop(providers: providers)
-            return true
-        }
-        .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { _ in
-            pastePhotoFromClipboard()
-        }
+        .padding(10)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
     }
 
     // MARK: - 右侧检视器与归档表单
 
-    private func exifAndPublishInspector(photo: ImageProcessor.ProcessedPhoto) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private func exifAndPublishInspector(current: DarkroomPhotoItem) -> some View {
+        let photo = current.photo
+        return VStack(alignment: .leading, spacing: 14) {
             Text("拍摄参数与相纸手记")
                 .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
@@ -182,6 +278,14 @@ public struct DarkroomDropZone: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
             )
+
+            // 多图合并选项
+            if items.count > 1 {
+                Toggle("将全部 \(items.count) 张底片合并归档入同一篇散页手记", isOn: $batchIntoSingleEntry)
+                    .toggleStyle(.checkbox)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+            }
 
             // 归档形态
             HStack(spacing: 6) {
@@ -250,19 +354,20 @@ public struct DarkroomDropZone: View {
             }
 
             HStack(spacing: 8) {
-                Button("重选相片") {
+                Button("清空重选") {
                     resetDarkroom()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .disabled(isUploading)
 
                 Spacer()
 
                 Button {
-                    uploadAndPublishPhoto(photo)
+                    uploadAndPublishPhotos()
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles")
-                        Text(isUploading ? "冲印保存中…" : "装裱并保存")
+                        Text(isUploading ? "冲印上传中…" : (batchIntoSingleEntry && items.count > 1 ? "全部合并装裱入册" : "装裱并保存"))
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
@@ -299,33 +404,24 @@ public struct DarkroomDropZone: View {
             errorMessage = "剪贴板中未检测到图片或截图数据"
             return
         }
-        // 若当前暗房已有装裱中的底片，写入临时沙箱排入待冲印队列
-        if processedPhoto != nil {
-            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
-            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            let tempFile = tempDir.appendingPathComponent("paste-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(6)).jpg")
-            if (try? rawData.write(to: tempFile, options: .atomic)) != nil {
-                pendingPhotoURLs.append(tempFile)
-                AudioFeedback.shared.playTink()
-                appState.showTemporaryBanner("已从剪贴板排入待冲印队列（共 \(pendingPhotoURLs.count) 张待冲印）")
-                return
-            }
-        }
         isProcessing = true
         errorMessage = nil
         let name = "pasteboard-\(Int(Date().timeIntervalSince1970)).jpg"
         Task { @MainActor in
             do {
                 let result = try await ImageProcessor.processImageDataInBackground(rawData, originalFilename: name)
-                self.processedPhoto = result
-                self.previewImage = NSImage(data: result.compressedData)
-                if entryTitle.isEmpty {
-                    entryTitle = "剪贴板相片 · \(FormatUtils.beijingDateString())"
+                if let img = NSImage(data: result.compressedData) {
+                    let item = DarkroomPhotoItem(photo: result, preview: img)
+                    items.append(item)
+                    selectedIndex = items.count - 1
+                    if entryTitle.isEmpty {
+                        entryTitle = "剪贴板相片 · \(FormatUtils.beijingDateString())"
+                    }
+                    if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
+                        entryContent = result.exifMetadata.formattedCameraLine
+                    }
+                    AudioFeedback.shared.playPaperFlip()
                 }
-                if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
-                    entryContent = result.exifMetadata.formattedCameraLine
-                }
-                AudioFeedback.shared.playPaperFlip()
             } catch {
                 self.errorMessage = error.localizedDescription
             }
@@ -337,10 +433,14 @@ public struct DarkroomDropZone: View {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.image, .rawImage]
-        if panel.runModal() == .OK, let url = panel.url {
-            loadPhoto(from: url)
+        if panel.runModal() == .OK {
+            let urls = panel.urls
+            guard !urls.isEmpty else { return }
+            Task { @MainActor in
+                await loadPhotos(from: urls)
+            }
         }
     }
 
@@ -348,66 +448,133 @@ public struct DarkroomDropZone: View {
         guard !providers.isEmpty else { return }
         Task { @MainActor in
             let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
-            guard let first = urls.first else { return }
-            pendingPhotoURLs.append(contentsOf: urls.dropFirst())
-            loadPhoto(from: first)
+            guard !urls.isEmpty else { return }
+            await loadPhotos(from: urls)
         }
     }
 
-    private func loadPhoto(from url: URL) {
+    private func loadPhotos(from urls: [URL]) async {
         isProcessing = true
         errorMessage = nil
-        Task { @MainActor in
+        for url in urls {
             do {
                 let result = try await ImageProcessor.processImageFileInBackground(at: url)
-                self.processedPhoto = result
-                self.previewImage = NSImage(data: result.compressedData)
-                if entryTitle.isEmpty {
-                    entryTitle = (url.lastPathComponent as NSString).deletingPathExtension
+                if let img = NSImage(data: result.compressedData) {
+                    let item = DarkroomPhotoItem(photo: result, preview: img, originalURL: url)
+                    items.append(item)
+                    if entryTitle.isEmpty {
+                        entryTitle = (url.lastPathComponent as NSString).deletingPathExtension
+                    }
+                    if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
+                        entryContent = result.exifMetadata.formattedCameraLine
+                    }
                 }
-                if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
-                    entryContent = result.exifMetadata.formattedCameraLine
-                }
-                AudioFeedback.shared.playPaperFlip()
             } catch {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = "载入「\(url.lastPathComponent)」失败：\(error.localizedDescription)"
             }
-            self.isProcessing = false
         }
+        selectedIndex = max(0, items.count - 1)
+        AudioFeedback.shared.playPaperFlip()
+        isProcessing = false
     }
 
-    private func uploadAndPublishPhoto(_ photo: ImageProcessor.ProcessedPhoto) {
+    private func removePhoto(at index: Int) {
+        guard items.indices.contains(index) else { return }
+        items.remove(at: index)
+        if items.isEmpty {
+            resetDarkroom()
+        } else {
+            selectedIndex = min(selectedIndex, items.count - 1)
+        }
+        AudioFeedback.shared.playTink()
+    }
+
+    private func uploadAndPublishPhotos() {
+        guard !items.isEmpty, !isUploading else { return }
         isUploading = true
         uploadProgress = 0.05
         errorMessage = nil
 
         Task { @MainActor in
             do {
-                let att = try await R2DirectUploader.shared.uploadProcessedPhoto(photo) { prog in
-                    Task { @MainActor in
-                        self.uploadProgress = prog
+                if batchIntoSingleEntry && items.count > 1 {
+                    // 全部底片合并装裱入同一篇生活手记
+                    var attachmentIds: [Int] = []
+                    let total = Double(items.count)
+                    var finished = 0.0
+
+                    for item in items {
+                        let att = try await R2DirectUploader.shared.uploadProcessedPhoto(item.photo) { prog in
+                            Task { @MainActor in
+                                self.uploadProgress = (finished + prog) / total
+                            }
+                        }
+                        attachmentIds.append(att.id)
+                        finished += 1
+                        self.uploadProgress = finished / total
                     }
-                }
 
-                let bodyText = entryContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? (photo.exifMetadata.formattedCameraLine.isEmpty ? "暗房相纸显影归档" : photo.exifMetadata.formattedCameraLine)
-                    : entryContent
+                    var bodyText = entryContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let allExifLines = Array(Set(items.map { $0.photo.exifMetadata.formattedCameraLine }.filter { !$0.isEmpty }))
+                    if !allExifLines.isEmpty {
+                        let exifSuffix = allExifLines.map { "> \($0)" }.joined(separator: "\n")
+                        if bodyText.isEmpty {
+                            bodyText = exifSuffix
+                        } else if !bodyText.contains(allExifLines.first!) {
+                            bodyText += "\n\n" + exifSuffix
+                        }
+                    }
+                    if bodyText.isEmpty {
+                        bodyText = "银盐暗房 · 胶片相纸显影归档"
+                    }
 
-                _ = try await appState.submitQuickCapture(
-                    title: entryTitle,
-                    content: bodyText,
-                    type: entryType,
-                    location: entryLocation.isEmpty ? nil : entryLocation,
-                    attachmentIds: [att.id],
-                    featured: isFeatured
-                )
+                    _ = try await appState.submitQuickCapture(
+                        title: entryTitle,
+                        content: bodyText,
+                        type: entryType,
+                        location: entryLocation.isEmpty ? nil : entryLocation,
+                        attachmentIds: attachmentIds,
+                        featured: isFeatured
+                    )
 
-                let remainingCount = pendingPhotoURLs.count
-                resetDarkroom()
-                if remainingCount == 0 {
+                    resetDarkroom()
+                    appState.showTemporaryBanner("已装裱并归档 \(attachmentIds.count) 张相纸至散页手记")
                     appState.activeSection = .stream
                 } else {
-                    appState.showTemporaryBanner("已归档当前底片，已载入队列下一张（待冲印 \(remainingCount) 张）")
+                    // 单张装裱当前选中的底片
+                    let item = items[selectedIndex]
+                    let att = try await R2DirectUploader.shared.uploadProcessedPhoto(item.photo) { prog in
+                        Task { @MainActor in
+                            self.uploadProgress = prog
+                        }
+                    }
+
+                    var bodyText = entryContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !item.photo.exifMetadata.formattedCameraLine.isEmpty && !bodyText.contains(item.photo.exifMetadata.formattedCameraLine) {
+                        bodyText += (bodyText.isEmpty ? "" : "\n\n") + "> \(item.photo.exifMetadata.formattedCameraLine)"
+                    }
+                    if bodyText.isEmpty {
+                        bodyText = "银盐暗房 · 胶片相纸显影归档"
+                    }
+
+                    _ = try await appState.submitQuickCapture(
+                        title: entryTitle,
+                        content: bodyText,
+                        type: entryType,
+                        location: entryLocation.isEmpty ? nil : entryLocation,
+                        attachmentIds: [att.id],
+                        featured: isFeatured
+                    )
+
+                    items.remove(at: selectedIndex)
+                    if items.isEmpty {
+                        resetDarkroom()
+                        appState.activeSection = .stream
+                    } else {
+                        selectedIndex = min(selectedIndex, items.count - 1)
+                        entryTitle = items[selectedIndex].photo.filename
+                        appState.showTemporaryBanner("已归档底片，底片卷中还有 \(items.count) 张待装裱")
+                    }
                 }
             } catch {
                 self.errorMessage = error.localizedDescription
@@ -417,17 +584,13 @@ public struct DarkroomDropZone: View {
     }
 
     private func resetDarkroom() {
-        previewImage = nil
-        processedPhoto = nil
+        items.removeAll()
+        selectedIndex = 0
         entryTitle = ""
         entryContent = ""
+        entryLocation = ""
         uploadProgress = 0.0
         errorMessage = nil
-        // 队列流转：若还有待冲印底片，自动载入下一张
-        if !pendingPhotoURLs.isEmpty {
-            let next = pendingPhotoURLs.removeFirst()
-            loadPhoto(from: next)
-        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

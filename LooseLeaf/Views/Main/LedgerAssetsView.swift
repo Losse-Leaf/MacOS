@@ -27,6 +27,11 @@ public struct LedgerAssetsView: View {
     @State private var formRepaymentDay: Int = 10
 
     // 筛选与弹窗
+    @State private var selectedYear: Int = FormatUtils.beijingCurrentYearMonth().year
+    @State private var selectedMonth: Int = FormatUtils.beijingCurrentYearMonth().month
+    @State private var customMonthSummary: TransactionSummary?
+    @State private var isLoadingSummary: Bool = false
+    @State private var filterBySelectedMonth: Bool = true
     @State private var selectedCategoryFilter: String = "全部"
     @State private var showCalibrateBalanceSheet: Bool = false
     @State private var showAddGearSheet: Bool = false
@@ -54,11 +59,58 @@ public struct LedgerAssetsView: View {
         ]
     }
 
-    private var filteredTransactions: [Transaction] {
-        if selectedCategoryFilter == "全部" {
-            return appState.transactions
+    private var isCurrentMonthSelected: Bool {
+        let now = FormatUtils.beijingCurrentYearMonth()
+        return selectedYear == now.year && selectedMonth == now.month
+    }
+
+    private var activeSummary: TransactionSummary {
+        if isCurrentMonthSelected {
+            return appState.transactionSummary
         }
-        return appState.transactions.filter { $0.category == selectedCategoryFilter }
+        return customMonthSummary ?? TransactionSummary(year: selectedYear, month: selectedMonth, totalExpense: 0, totalIncome: 0, balance: 0, categoryBreakdown: [:])
+    }
+
+    private func changeMonth(by delta: Int) {
+        var y = selectedYear
+        var m = selectedMonth + delta
+        if m < 1 {
+            m = 12
+            y -= 1
+        } else if m > 12 {
+            m = 1
+            y += 1
+        }
+        selectedYear = y
+        selectedMonth = m
+        AudioFeedback.shared.playPaperFlip()
+        Task {
+            await loadSummaryForSelectedMonth()
+        }
+    }
+
+    private func loadSummaryForSelectedMonth() async {
+        if isCurrentMonthSelected {
+            customMonthSummary = nil
+            return
+        }
+        isLoadingSummary = true
+        defer { isLoadingSummary = false }
+        if let fetched = try? await APIClient.shared.fetchTransactionSummary(year: selectedYear, month: selectedMonth) {
+            customMonthSummary = fetched
+        }
+    }
+
+    private var filteredTransactions: [Transaction] {
+        var list = appState.transactions
+        if filterBySelectedMonth {
+            let prefix = String(format: "%04d-%02d", selectedYear, selectedMonth)
+            list = list.filter { $0.occurredAt.hasPrefix(prefix) }
+        }
+        if selectedCategoryFilter != "全部" {
+            list = list.filter { $0.category == selectedCategoryFilter }
+        }
+        return list
     }
 
     public var body: some View {
@@ -240,13 +292,79 @@ public struct LedgerAssetsView: View {
     // MARK: - 3. 月度收支光谱卡片
 
     private var monthlySpectrumCard: some View {
-        let sum = appState.transactionSummary
+        let sum = activeSummary
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("\(sum.year) 年 \(sum.month) 月 · 收支类目光谱")
-                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
+            HStack(alignment: .center) {
+                HStack(spacing: 8) {
+                    Button {
+                        changeMonth(by: -1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .padding(5)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("上一月")
+                    .help("查看上一月收支")
+
+                    Text("\(sum.year) 年 \(sum.month) 月 · 收支类目光谱")
+                        .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    Button {
+                        changeMonth(by: 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(isCurrentMonthSelected ? ArchivePalette.inkMuted : ArchivePalette.inkSecondary)
+                            .padding(5)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("下一月")
+                    .help("查看下一月收支")
+
+                    if !isCurrentMonthSelected {
+                        Button("回到本月") {
+                            let now = FormatUtils.beijingCurrentYearMonth()
+                            selectedYear = now.year
+                            selectedMonth = now.month
+                            customMonthSummary = nil
+                            AudioFeedback.shared.playPaperFlip()
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(ArchivePalette.accentWarm.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.5)
+                        )
+                    }
+
+                    if isLoadingSummary {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
                 Spacer()
+
                 HStack(spacing: 16) {
                     Text("支出 \(FormatUtils.formattedYuan(cents: sum.totalExpense, includeSymbol: true))")
                         .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
@@ -325,10 +443,16 @@ public struct LedgerAssetsView: View {
                         HStack(spacing: 4) {
                             PaperPillButton(title: "支出", isSelected: formType == "expense") {
                                 formType = "expense"
+                                if !appState.expenseCategories.contains(formCategory) {
+                                    formCategory = appState.expenseCategories.first ?? "餐饮"
+                                }
                                 AudioFeedback.shared.playTink()
                             }
                             PaperPillButton(title: "收入", isSelected: formType == "income") {
                                 formType = "income"
+                                if !appState.incomeCategories.contains(formCategory) {
+                                    formCategory = appState.incomeCategories.first ?? "薪资"
+                                }
                                 AudioFeedback.shared.playTink()
                             }
                         }
@@ -371,9 +495,10 @@ public struct LedgerAssetsView: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(.top, 4)
 
+                        let categoriesToShow = (formType == "income") ? appState.incomeCategories : appState.expenseCategories
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
-                                ForEach(appState.expenseCategories, id: \.self) { cat in
+                                ForEach(categoriesToShow, id: \.self) { cat in
                                     PaperPillButton(title: cat, isSelected: formCategory == cat) {
                                         formCategory = cat
                                         AudioFeedback.shared.playTink()
@@ -656,18 +781,37 @@ public struct LedgerAssetsView: View {
     private var transactionsListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("流水账目明细 (\(appState.transactions.count) 笔)")
+                Text("流水账目明细 (\(filteredTransactions.count) 笔)")
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
+
+                HStack(spacing: 4) {
+                    PaperPillButton(
+                        title: "\(selectedMonth)月流水",
+                        isSelected: filterBySelectedMonth
+                    ) {
+                        filterBySelectedMonth = true
+                        AudioFeedback.shared.playTink()
+                    }
+                    PaperPillButton(
+                        title: "全部历史",
+                        isSelected: !filterBySelectedMonth
+                    ) {
+                        filterBySelectedMonth = false
+                        AudioFeedback.shared.playTink()
+                    }
+                }
+                .padding(.leading, 6)
 
                 Spacer()
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        PaperPillButton(title: "全部", isSelected: selectedCategoryFilter == "全部") {
+                        PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部") {
                             selectedCategoryFilter = "全部"
                         }
-                        ForEach(appState.expenseCategories, id: \.self) { cat in
+                        let allCategories = appState.expenseCategories + appState.incomeCategories.filter { !appState.expenseCategories.contains($0) }
+                        ForEach(allCategories, id: \.self) { cat in
                             PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat) {
                                 selectedCategoryFilter = cat
                             }
@@ -801,6 +945,43 @@ public struct LedgerAssetsView: View {
             RoundedRectangle(cornerRadius: 5)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
         )
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            editingTransaction = tx
+            AudioFeedback.shared.playPaperFlip()
+        }
+        .contextMenu {
+            Button {
+                editingTransaction = tx
+            } label: {
+                Label("修订此笔账目", systemImage: "pencil")
+            }
+            if tx.id > 0 {
+                Button(role: .destructive) {
+                    txToDelete = tx
+                    showDeleteTxConfirm = true
+                } label: {
+                    Label("删除该笔账目", systemImage: "trash")
+                }
+            }
+            Divider()
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
+                AudioFeedback.shared.playTink()
+                appState.showTemporaryBanner("已拷贝金额至剪贴板")
+            } label: {
+                Label("拷贝金额", systemImage: "doc.on.doc")
+            }
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
+                AudioFeedback.shared.playTink()
+                appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
+            } label: {
+                Label("拷贝账目摘要", systemImage: "text.quote")
+            }
+        }
     }
 
     // MARK: - 弹窗表单
@@ -1003,8 +1184,18 @@ public struct EditTransactionSheet: View {
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             HStack(spacing: 8) {
-                PaperPillButton(title: "支出", isSelected: type == "expense") { type = "expense" }
-                PaperPillButton(title: "收入", isSelected: type == "income") { type = "income" }
+                PaperPillButton(title: "支出", isSelected: type == "expense") {
+                    type = "expense"
+                    if !appState.expenseCategories.contains(category) {
+                        category = appState.expenseCategories.first ?? "餐饮"
+                    }
+                }
+                PaperPillButton(title: "收入", isSelected: type == "income") {
+                    type = "income"
+                    if !appState.incomeCategories.contains(category) {
+                        category = appState.incomeCategories.first ?? "薪资"
+                    }
+                }
 
                 HStack(spacing: 4) {
                     Text("¥")
@@ -1031,9 +1222,10 @@ public struct EditTransactionSheet: View {
                 Text("类目选择")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
+                let availableCats = (type == "income") ? appState.incomeCategories : appState.expenseCategories
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(appState.expenseCategories, id: \.self) { cat in
+                        ForEach(availableCats, id: \.self) { cat in
                             PaperPillButton(title: cat, isSelected: category == cat) { category = cat }
                         }
                     }

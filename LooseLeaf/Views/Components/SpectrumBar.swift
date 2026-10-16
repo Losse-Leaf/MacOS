@@ -21,11 +21,13 @@ public struct ExpenseSpectrumBar: View {
                         .fill(ArchivePalette.borderSubtle)
                         .frame(height: 6)
                 } else {
+                    let totalSpacing = CGFloat(max(0, items.count - 1)) * 1.5
+                    let availableWidth = max(0, geo.size.width - totalSpacing)
                     HStack(spacing: 1.5) {
                         ForEach(items, id: \.category) { item in
                             Rectangle()
                                 .fill(ArchivePalette.categoryColor(for: item.category))
-                                .frame(width: max(4, geo.size.width * item.ratio), height: 6)
+                                .frame(width: max(2, availableWidth * item.ratio), height: 6)
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 2))

@@ -89,12 +89,38 @@ public final class UpdateChecker {
         }
     }
 
+    /// 在默认浏览器中打开对应版本的 GitHub Release 下载页面
+    public func openDownloadInBrowser() {
+        if let url = availableUpdate?.downloadURL {
+            NSWorkspace.shared.open(url)
+        } else {
+            guard let releaseURL = URL(string: "https://github.com/\(Self.repo)/releases/latest") else { return }
+            NSWorkspace.shared.open(releaseURL)
+        }
+    }
+
+    /// 复制终端全自动一键安装更新命令至剪贴板（全自动安装并放行 Gatekeeper，免终端输入配置）
+    public func copyInstallCommandToClipboard() {
+        let cmd = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh)""#
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(cmd, forType: .string)
+        AudioFeedback.shared.playTink()
+        AppState.shared.showTemporaryBanner("已复制终端安装命令，打开 Mac「终端」粘贴回车即可一键全自动升级")
+    }
+
     /// 执行一键无感下载、替换并重启
     public func performInAppUpdate() async {
         guard let update = availableUpdate, !isUpdating else { return }
         isUpdating = true
         updateProgress = 0.05
         updateError = nil
+
+        let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        if isSandboxed {
+            updateError = "系统沙箱 (App Sandbox) 安全机制拦截了应用内直接覆盖写入。推荐使用下方「浏览器下载安装」或「复制终端一键更新」完成升级。"
+            isUpdating = false
+            return
+        }
 
         do {
             // 1. 通过 URLSession 下载（不经过浏览器，系统不会打上 quarantine 属性）

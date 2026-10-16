@@ -14,30 +14,14 @@ public struct QuickCaptureView: View {
     @Environment(\.openWindow) private var openWindow
     var onClosePopover: (() -> Void)?
 
-    public enum CaptureTab: String, CaseIterable {
-        case thought = "极速记录"
-        case ledger = "快速记账"
-    }
+    public typealias CaptureTab = QuickCaptureTab
 
-    @State private var activeTab: CaptureTab = .thought
-    @State private var entryType: EntryType = .life
-    @State private var titleText: String = ""
-    @State private var contentText: String = ""
-    @State private var customLocation: String = ""
-    @State private var isFeatured: Bool = false
-
-    // 暗房相片拖拽与上传状态
+    // 暗房相片拖拽与上传状态（临时会话态）
     @State private var isDragTargeted: Bool = false
     @State private var isUploadingPhoto: Bool = false
     @State private var uploadProgress: Double = 0.0
-    @State private var uploadedAttachments: [Attachment] = []
-    @State private var extractedCameraLine: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
-
-    // 补记（回溯录入）状态
-    @State private var occurredAt: Date = Date()
-    @State private var showBackdatePicker: Bool = false
 
     @FocusState private var isContentFocused: Bool
 
@@ -47,11 +31,12 @@ public struct QuickCaptureView: View {
     }
 
     private var detectedTags: [String] {
-        FormatUtils.extractHashtags(from: contentText)
+        FormatUtils.extractHashtags(from: appState.quickDraft.contentText)
     }
 
     public var body: some View {
-        ZStack {
+        @Bindable var draft = appState.quickDraft
+        return ZStack {
             NoiseBackground(useSubtleSurface: false, enableVibrancy: true)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -75,7 +60,7 @@ public struct QuickCaptureView: View {
                 }
 
                 // 2. 主体内容区
-                if activeTab == .thought {
+                if draft.activeTab == .thought {
                     thoughtCaptureSection
                 } else {
                     QuickLedgerView(appState: appState) {
@@ -138,9 +123,9 @@ public struct QuickCaptureView: View {
                 ForEach(CaptureTab.allCases, id: \.rawValue) { tab in
                     PaperPillButton(
                         title: tab.rawValue,
-                        isSelected: activeTab == tab
+                        isSelected: appState.quickDraft.activeTab == tab
                     ) {
-                        activeTab = tab
+                        appState.quickDraft.activeTab = tab
                         AudioFeedback.shared.playPaperFlip()
                     }
                 }
@@ -151,23 +136,24 @@ public struct QuickCaptureView: View {
     // MARK: - 极速闪念记录区域
 
     private var thoughtCaptureSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        @Bindable var draft = appState.quickDraft
+        return VStack(alignment: .leading, spacing: 10) {
             // 形态选择胶囊
             HStack(spacing: 5) {
                 ForEach(EntryType.allCases) { kind in
                     PaperPillButton(
                         title: kind.label,
                         icon: kind.symbolName,
-                        isSelected: entryType == kind
+                        isSelected: draft.entryType == kind
                     ) {
-                        entryType = kind
+                        draft.entryType = kind
                         AudioFeedback.shared.playTink()
                     }
                 }
             }
 
             // 可选标题行
-            TextField("标题（可选，留空则为极速闪念片羽）", text: $titleText)
+            TextField("标题（可选，留空则为极速闪念片羽）", text: $draft.titleText)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
@@ -182,7 +168,7 @@ public struct QuickCaptureView: View {
 
             // 正文 Markdown 输入框 (支持 #标签 实时识别)
             ZStack(alignment: .topLeading) {
-                if contentText.isEmpty {
+                if draft.contentText.isEmpty {
                     Text("写下此刻闪念，支持 Markdown 与 #标签，按 ⌘ + Return 即刻归档…")
                         .font(ArchiveTypography.bodySans(size: 12.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
@@ -191,7 +177,7 @@ public struct QuickCaptureView: View {
                         .allowsHitTesting(false)
                 }
 
-                TextEditor(text: $contentText)
+                TextEditor(text: $draft.contentText)
                     .font(ArchiveTypography.bodySans(size: 12.5))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                     .scrollContentBackground(.hidden)
@@ -214,7 +200,7 @@ public struct QuickCaptureView: View {
             }
 
             // 自动识别出的 #标签 与 EXIF 相机印记展示
-            if !detectedTags.isEmpty || !extractedCameraLine.isEmpty {
+            if !detectedTags.isEmpty || !draft.extractedCameraLine.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(detectedTags, id: \.self) { tag in
@@ -226,8 +212,8 @@ public struct QuickCaptureView: View {
                                 .background(ArchivePalette.archiveSubtle)
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
-                        if !extractedCameraLine.isEmpty {
-                            Text(extractedCameraLine)
+                        if !draft.extractedCameraLine.isEmpty {
+                            Text(draft.extractedCameraLine)
                                 .font(ArchiveTypography.monoScale(size: 10.5))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                                 .padding(.horizontal, 6)
@@ -250,7 +236,7 @@ public struct QuickCaptureView: View {
                         .foregroundStyle(ArchivePalette.inkMuted)
                     TextField(
                         appState.profile.displayCity.isEmpty ? "记录地点（可选）" : appState.profile.displayCity,
-                        text: $customLocation
+                        text: $draft.customLocation
                     )
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 11.5))
@@ -267,12 +253,12 @@ public struct QuickCaptureView: View {
                 )
 
                 Button {
-                    showBackdatePicker.toggle()
+                    draft.showBackdatePicker.toggle()
                     AudioFeedback.shared.playTink()
                 } label: {
                     Image(systemName: "clock")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(showBackdatePicker ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        .foregroundStyle(draft.showBackdatePicker ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                         .padding(6)
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -282,12 +268,12 @@ public struct QuickCaptureView: View {
                 .help("补记过去的时刻")
 
                 Button {
-                    isFeatured.toggle()
+                    draft.isFeatured.toggle()
                     AudioFeedback.shared.playTink()
                 } label: {
-                    Image(systemName: isFeatured ? "star.fill" : "star")
+                    Image(systemName: draft.isFeatured ? "star.fill" : "star")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(isFeatured ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        .foregroundStyle(draft.isFeatured ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                         .padding(6)
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -308,20 +294,20 @@ public struct QuickCaptureView: View {
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && uploadedAttachments.isEmpty || isSubmitting || isUploadingPhoto)
+                .disabled(draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.uploadedAttachments.isEmpty || isSubmitting || isUploadingPhoto)
             }
 
-            if showBackdatePicker {
+            if draft.showBackdatePicker {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar.badge.clock")
                         .font(.system(size: 11))
                         .foregroundStyle(ArchivePalette.accentWarm)
-                    DatePicker("", selection: $occurredAt, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("", selection: $draft.occurredAt, displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
                         .datePickerStyle(.compact)
                         .environment(\.timeZone, FormatUtils.beijingTimeZone)
                     Spacer()
-                    if Calendar.current.isDateInToday(occurredAt) == false || !isSameMinute(occurredAt, Date()) {
+                    if Calendar.current.isDateInToday(draft.occurredAt) == false || !isSameMinute(draft.occurredAt, Date()) {
                         Text("回溯补记")
                             .font(ArchiveTypography.monoScale(size: 10.5))
                             .foregroundStyle(ArchivePalette.accentWarm)
@@ -358,23 +344,47 @@ public struct QuickCaptureView: View {
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                 Spacer(minLength: 0)
-            } else if !uploadedAttachments.isEmpty {
-                Text("已添加 \(uploadedAttachments.count) 张相片")
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                    .foregroundStyle(ArchivePalette.accentMoss)
-                Spacer()
-                Button("粘贴剪贴板图片 (⌘V)") {
-                    pasteImageFromPasteboard()
+            } else if !appState.quickDraft.uploadedAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(appState.quickDraft.uploadedAttachments) { att in
+                            HStack(spacing: 4) {
+                                if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                    CachedFilmImageView(url: url, maxHeight: 18)
+                                        .frame(width: 18, height: 18)
+                                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                                }
+                                Text(att.originalFilename)
+                                    .font(ArchiveTypography.monoScale(size: 10))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: 80)
+                                Button {
+                                    appState.quickDraft.uploadedAttachments.removeAll { $0.id == att.id }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2.5)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                        }
+                    }
+                }
+                Spacer(minLength: 4)
+                Button("清空") {
+                    appState.quickDraft.uploadedAttachments.removeAll()
+                    appState.quickDraft.extractedCameraLine = ""
                 }
                 .font(ArchiveTypography.bodySans(size: 10.5))
-                .buttonStyle(.plain)
-                .foregroundStyle(ArchivePalette.accentWarm)
-
-                Button("清除") {
-                    uploadedAttachments.removeAll()
-                    extractedCameraLine = ""
-                }
-                .font(ArchiveTypography.bodySans(size: 11))
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.inkMuted)
             } else {
@@ -469,20 +479,26 @@ public struct QuickCaptureView: View {
     /// 消费系统「服务」菜单摘录的待归档文本（预填正文并聚焦）
     private func consumePendingCaptureText() {
         guard let pending = appState.pendingCaptureText, !pending.isEmpty else { return }
-        contentText = pending
+        if appState.quickDraft.contentText.isEmpty {
+            appState.quickDraft.contentText = pending
+        } else {
+            appState.quickDraft.contentText += "\n\n" + pending
+        }
+        appState.quickDraft.activeTab = .thought
         appState.pendingCaptureText = nil
         isContentFocused = true
     }
 
     private func submitThought() {
-        var finalContent = contentText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if finalContent.isEmpty && !uploadedAttachments.isEmpty {
-            finalContent = extractedCameraLine.isEmpty ? "暗房胶片冲印归档" : extractedCameraLine
+        let draft = appState.quickDraft
+        var finalContent = draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if finalContent.isEmpty && !draft.uploadedAttachments.isEmpty {
+            finalContent = draft.extractedCameraLine.isEmpty ? "暗房胶片冲印归档" : draft.extractedCameraLine
         }
         guard !finalContent.isEmpty, !isSubmitting else { return }
 
-        if !extractedCameraLine.isEmpty && !finalContent.contains(extractedCameraLine) {
-            finalContent += "\n\n> \(extractedCameraLine)"
+        if !draft.extractedCameraLine.isEmpty && !finalContent.contains(draft.extractedCameraLine) {
+            finalContent += "\n\n> \(draft.extractedCameraLine)"
         }
 
         let contentToSubmit = finalContent
@@ -492,22 +508,16 @@ public struct QuickCaptureView: View {
         Task { @MainActor in
             do {
                 _ = try await appState.submitQuickCapture(
-                    title: titleText,
+                    title: draft.titleText,
                     content: contentToSubmit,
-                    type: entryType,
-                    location: customLocation.isEmpty ? nil : customLocation,
-                    attachmentIds: uploadedAttachments.map(\.id),
-                    featured: isFeatured,
-                    occurredAt: FormatUtils.beijingISOString(from: occurredAt)
+                    type: draft.entryType,
+                    location: draft.customLocation.isEmpty ? nil : draft.customLocation,
+                    attachmentIds: draft.uploadedAttachments.map(\.id),
+                    featured: draft.isFeatured,
+                    occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
                 )
-                titleText = ""
-                contentText = ""
-                uploadedAttachments.removeAll()
-                extractedCameraLine = ""
-                isFeatured = false
+                draft.reset()
                 isSubmitting = false
-                occurredAt = Date()
-                showBackdatePicker = false
                 onClosePopover?()
             } catch {
                 errorText = error.localizedDescription
@@ -535,15 +545,15 @@ public struct QuickCaptureView: View {
         for url in urls {
             do {
                 let processed = try await ImageProcessor.processImageFileInBackground(at: url)
-                if extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
-                    extractedCameraLine = processed.exifMetadata.formattedCameraLine
+                if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
+                    appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
                 }
                 let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
                     Task { @MainActor in
                         self.uploadProgress = (finished + prog) / total
                     }
                 }
-                uploadedAttachments.append(attachment)
+                appState.quickDraft.uploadedAttachments.append(attachment)
                 AudioFeedback.shared.playShutter()
             } catch {
                 errorText = "「\(url.lastPathComponent)」上传失败：\(error.localizedDescription)"
@@ -569,15 +579,15 @@ public struct QuickCaptureView: View {
                     rawData,
                     originalFilename: "pasteboard-\(Int(Date().timeIntervalSince1970)).jpg"
                 )
-                if extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
-                    extractedCameraLine = processed.exifMetadata.formattedCameraLine
+                if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
+                    appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
                 }
                 let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
                     Task { @MainActor in
                         self.uploadProgress = prog
                     }
                 }
-                uploadedAttachments.append(attachment)
+                appState.quickDraft.uploadedAttachments.append(attachment)
                 AudioFeedback.shared.playShutter()
             } catch {
                 errorText = "剪贴板图片处理失败：\(error.localizedDescription)"
@@ -600,15 +610,15 @@ public struct QuickCaptureView: View {
                         data,
                         originalFilename: "clipboard-\(Int(Date().timeIntervalSince1970))-\(index)"
                     )
-                    if extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
-                        extractedCameraLine = processed.exifMetadata.formattedCameraLine
+                    if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
+                        appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
                     }
                     let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
                         Task { @MainActor in
                             self.uploadProgress = prog
                         }
                     }
-                    uploadedAttachments.append(attachment)
+                    appState.quickDraft.uploadedAttachments.append(attachment)
                     AudioFeedback.shared.playShutter()
                 } catch {
                     errorText = error.localizedDescription

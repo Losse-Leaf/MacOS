@@ -457,4 +457,93 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertTrue(lonLat.lon > 85.0 && lonLat.lon < 125.0)
         XCTAssertTrue(lonLat.lat > 18.0 && lonLat.lat < 50.0)
     }
+
+    // MARK: - 18. Spotlight Navigation & Update Checker Fallback Tests
+
+    @MainActor
+    func testSpotlightNavigationStateTransition() {
+        let entry = LifeEntry(id: 777, title: "聚焦测试", content: "通过聚焦搜索直达", occurredAt: "2026-10-15 12:00:00")
+        AppState.shared.entries = [entry]
+        AppState.shared.activeSection = .ledger
+        AppState.shared.selectedCategory = .transaction
+
+        AppState.shared.navigateToEntry(id: 777)
+        XCTAssertEqual(AppState.shared.activeSection, .stream)
+        XCTAssertEqual(AppState.shared.selectedCategory, .all)
+        XCTAssertEqual(AppState.shared.keyboardFocusedEntryId, 777)
+        XCTAssertEqual(AppState.shared.highlightedEntry?.id, 777)
+    }
+
+    @MainActor
+    func testUpdateCheckerClipboardCommand() {
+        UpdateChecker.shared.copyInstallCommandToClipboard()
+        let clip = NSPasteboard.general.string(forType: .string) ?? ""
+        XCTAssertTrue(clip.contains("raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh"))
+        XCTAssertTrue(clip.contains("/bin/bash -c"))
+    }
+
+    @MainActor
+    func testQuickCaptureDraftStateSharingAndReset() {
+        let draft = AppState.shared.quickDraft
+        draft.reset()
+        draft.titleText = "测试草稿"
+        draft.contentText = "草稿正文"
+        draft.isFeatured = true
+        draft.activeTab = .thought
+
+        XCTAssertEqual(AppState.shared.quickDraft.titleText, "测试草稿")
+        XCTAssertEqual(AppState.shared.quickDraft.contentText, "草稿正文")
+        XCTAssertTrue(AppState.shared.quickDraft.isFeatured)
+
+        draft.reset()
+        XCTAssertTrue(draft.titleText.isEmpty)
+        XCTAssertTrue(draft.contentText.isEmpty)
+        XCTAssertFalse(draft.isFeatured)
+    }
+
+    // MARK: - 19. Two-Tier Disk Image Cache & International Coordinates Tests
+
+    func testPaperImageCacheTwoTierDiskCache() throws {
+        let testURL = URL(string: "https://example.com/media/sample_photo_test.jpg")!
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 100,
+            pixelsHigh: 100,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )!
+        let img = NSImage(size: NSSize(width: 100, height: 100))
+        img.addRepresentation(rep)
+
+        PaperImageCache.setImage(img, for: testURL)
+        let hit = PaperImageCache.image(for: testURL)
+        XCTAssertNotNil(hit)
+    }
+
+    func testCityDictionaryInternationalCoordinates() {
+        let tokyo = CityDictionary.coordinate(forCode: "", cityName: "东京 · 涩谷")
+        XCTAssertEqual(tokyo.x, 585.0)
+        XCTAssertEqual(tokyo.y, 310.0)
+
+        let london = CityDictionary.coordinate(forCode: "", cityName: "伦敦")
+        XCTAssertEqual(london.x, 120.0)
+        XCTAssertEqual(london.y, 180.0)
+
+        let unknown = CityDictionary.coordinate(forCode: "", cityName: "苏黎世小镇")
+        XCTAssertFalse(unknown.x == 462.3 && unknown.y == 300.0, "未匹配地名应有离散散列坐标，避免死锁在中原原点")
+    }
+
+    @MainActor
+    func testAudioFeedbackPolyphonicPool() {
+        // Rapid sequential calls should not crash or throw
+        for _ in 0..<10 {
+            AudioFeedback.shared.playTink()
+            AudioFeedback.shared.playPaperFlip()
+        }
+    }
 }

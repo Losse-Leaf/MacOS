@@ -62,6 +62,39 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// 极速捕捉模式选项 (极速记录 / 快速记账)
+public enum QuickCaptureTab: String, CaseIterable, Sendable {
+    case thought = "极速记录"
+    case ledger = "快速记账"
+}
+
+/// 跨窗口持久化快速捕捉草稿容器 (@Observable)
+/// 统一 MenuBar 与悬浮窗状态实例，消除草稿割裂
+@Observable
+@MainActor
+public final class QuickCaptureDraft {
+    public var activeTab: QuickCaptureTab = .thought
+    public var entryType: EntryType = .life
+    public var titleText: String = ""
+    public var contentText: String = ""
+    public var customLocation: String = ""
+    public var isFeatured: Bool = false
+    public var uploadedAttachments: [Attachment] = []
+    public var extractedCameraLine: String = ""
+    public var occurredAt: Date = Date()
+    public var showBackdatePicker: Bool = false
+
+    public func reset() {
+        titleText = ""
+        contentText = ""
+        uploadedAttachments.removeAll()
+        extractedCameraLine = ""
+        isFeatured = false
+        occurredAt = Date()
+        showBackdatePicker = false
+    }
+}
+
 /// 全局响应式状态中心 (@Observable)
 /// 遵循本地优先 (Local-First) 毫秒级上屏 + 后台异步增量同步架构
 @Observable
@@ -105,6 +138,9 @@ public final class AppState {
 
     /// 系统「服务」菜单摘录的待归档文本（QuickCaptureView 消费后清空）
     public var pendingCaptureText: String?
+
+    /// 跨窗口持久化快速捕捉草稿中心（MenuBar 与 ⌘⇧L 悬浮窗实时共享）
+    public var quickDraft: QuickCaptureDraft = QuickCaptureDraft()
 
     // MARK: - 鉴权、网络与偏好设置状态
     public var isPaired: Bool = false
@@ -558,6 +594,29 @@ public final class AppState {
         showTemporaryBanner("已清除本机设备配对凭证")
     }
 
+    /// 导航定位并打开指定散页（Spotlight 系统搜索 / 深链直达）
+    public func navigateToEntry(id entryId: Int) {
+        self.activeSection = .stream
+        self.selectedCategory = .all
+        self.selectedHashtag = nil
+        self.searchQuery = ""
+        self.keyboardFocusedEntryId = entryId
+
+        if let found = entries.first(where: { $0.id == entryId }) {
+            self.highlightedEntry = found
+            AudioFeedback.shared.playPaperFlip()
+        } else {
+            // 若当前本地快照中尚未载入该条目，异步刷新后再次尝试查找
+            Task { @MainActor in
+                await self.loadEntries(forceFull: true)
+                if let found = self.entries.first(where: { $0.id == entryId }) {
+                    self.highlightedEntry = found
+                    AudioFeedback.shared.playPaperFlip()
+                }
+            }
+        }
+    }
+
     /// 处理自定义 URL Scheme:
     /// - looseleaf://pair?hub=http://...&ticket=pair_tk_...
     /// - looseleaf://entry/123
@@ -574,10 +633,8 @@ public final class AppState {
                 }
             }
         } else if url.host == "entry" {
-            if let idStr = url.pathComponents.last, let entryId = Int(idStr),
-               let found = entries.first(where: { $0.id == entryId }) {
-                self.activeSection = .stream
-                self.highlightedEntry = found
+            if let idStr = url.pathComponents.last, let entryId = Int(idStr) {
+                navigateToEntry(id: entryId)
             }
         }
     }

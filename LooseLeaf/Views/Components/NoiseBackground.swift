@@ -68,12 +68,14 @@ public struct NoiseBackground: View {
 /// 零外部依赖的纸本微噪点纹理层
 /// 噪点图案由确定性 hash 在启动时生成一次 256x256 瓦片并缓存，
 /// 渲染时由系统 Metal/CoreAnimation 硬件直接平铺（resizingMode: .tile），
-/// 彻底消除此前每次窗口尺寸改变时全屏重画数千点导致的丢帧与内存激增。
+/// 浅色模式自适应棉纸黑墨纤维；暗房模式自适应银盐感光微晶 (Silver Grain)。
 private struct PaperGrainCanvas: View {
+    @Environment(\.colorScheme) private var colorScheme
     let opacity: Double
 
     var body: some View {
-        if let tile = PaperGrainTileCache.tileImage(opacity: opacity) {
+        let isDark = colorScheme == .dark
+        if let tile = PaperGrainTileCache.tileImage(opacity: opacity, isDark: isDark) {
             Image(decorative: tile, scale: 2)
                 .resizable(resizingMode: .tile)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -84,13 +86,13 @@ private struct PaperGrainCanvas: View {
 
 /// 纸纹 256x256 硬件瓦片缓存（同透明度只生成一次，内存占用 < 0.25MB）
 private enum PaperGrainTileCache {
-    private static var tileCache: [Double: CGImage] = [:]
+    private static var tileCache: [String: CGImage] = [:]
     private static let lock = NSLock()
 
-    static func tileImage(opacity: Double) -> CGImage? {
+    static func tileImage(opacity: Double, isDark: Bool = false) -> CGImage? {
         lock.lock()
         defer { lock.unlock() }
-        let key = (opacity * 1000).rounded() / 1000
+        let key = "\(isDark ? "dark" : "light")_\((opacity * 1000).rounded() / 1000)"
         if let hit = tileCache[key] {
             return hit
         }
@@ -111,7 +113,11 @@ private enum PaperGrainTileCache {
         ctx.scaleBy(x: renderScale, y: renderScale)
         let step: CGFloat = 14
         let count = Int(tileSize / step)
-        let ink = CGColor(gray: 0.09, alpha: opacity)
+
+        // 浅色模式为宣纸黑墨纤维 (Dark Ink)；深色模式为银盐感光微晶 (Silver Grain / Halide Crystals)
+        let ink = isDark
+            ? CGColor(gray: 0.88, alpha: opacity * 1.35)
+            : CGColor(gray: 0.10, alpha: opacity)
 
         ctx.setFillColor(ink)
         for row in 0..<count {
@@ -120,7 +126,7 @@ private enum PaperGrainTileCache {
                 if hash % 3 == 0 {
                     let offsetX = CGFloat((hash >> 3) % 11)
                     let offsetY = CGFloat((hash >> 7) % 11)
-                    let dotSize: CGFloat = (hash % 2 == 0) ? 1.1 : 0.75
+                    let dotSize: CGFloat = (hash % 2 == 0) ? 1.05 : 0.7
                     let rect = CGRect(
                         x: CGFloat(col) * step + offsetX,
                         y: CGFloat(row) * step + offsetY,

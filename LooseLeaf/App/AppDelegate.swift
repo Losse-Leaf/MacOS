@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Carbon
+import CoreSpotlight
 import os
 
 /// 应用系统事件与全局快捷键托管代理 (AppDelegate)
@@ -24,6 +25,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.servicesProvider = self
         registerGlobalHotKeyFromPreferences()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            for window in NSApp.windows {
+                window.isMovableByWindowBackground = true
+            }
+        }
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
@@ -41,9 +48,27 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    public func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        if userActivity.activityType == CSSearchableItemActionType,
+           let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
+            if uniqueId.hasPrefix("looseleaf-entry-"),
+               let idStr = uniqueId.split(separator: "-").last,
+               let entryId = Int(idStr) {
+                AppState.shared.navigateToEntry(id: entryId)
+                return true
+            }
+        }
+        return false
+    }
+
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             for window in sender.windows where window.identifier?.rawValue == "main" || window.canBecomeMain {
+                window.isMovableByWindowBackground = true
                 window.makeKeyAndOrderFront(nil)
                 sender.activate(ignoringOtherApps: true)
                 return true
@@ -226,7 +251,20 @@ private final class KeyableFloatingPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        onResignKey?()
+        // 延迟短暂检测，避免系统 DatePicker 弹层、下拉菜单或文件选择弹窗短暂抢焦点导致面板误收起
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            if !self.isKeyWindow {
+                // 如果当前激活窗口是 Popover、Picker、或者本面板的子窗口，不自动收起
+                if let keyWin = NSApp.keyWindow, keyWin != self {
+                    let className = keyWin.className
+                    if className.contains("Popover") || className.contains("Picker") || className.contains("Menu") || keyWin.parent == self {
+                        return
+                    }
+                }
+                self.onResignKey?()
+            }
+        }
     }
 
     override func cancelOperation(_ sender: Any?) {

@@ -44,66 +44,69 @@ public struct PairingGateView: View {
         ZStack {
             NoiseBackground(useSubtleSurface: false, enableVibrancy: true)
 
-            VStack(spacing: 24) {
-                Spacer(minLength: 20)
+            ScrollView {
+                VStack(spacing: 20) {
+                    Spacer(minLength: 12)
 
-                // 1. 散页标志性刊头
-                VStack(spacing: 8) {
-                    Image(systemName: "book.pages.fill")
-                        .font(.system(size: 38))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-
-                    Text("散页 · Loose-Leaf")
-                        .font(ArchiveTypography.editorialSerif(size: 26, weight: .bold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-
-                    Text("主理人专属数字档案馆与桌面暗房工作台")
-                        .font(ArchiveTypography.bodySans(size: 13))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                }
-
-                // 2. 中枢连接状态胶囊
-                hubStatusPill
-
-                // 3. 核心认证卡片
-                VStack(spacing: 18) {
-                    if isProbing {
-                        probingView
-                    } else if let err = probeError {
-                        connectionFailedView(error: err)
-                    } else if systemStatus?.initialized == false {
-                        bootstrapGuideView
-                    } else {
-                        pairedLoginView
-                    }
-                }
-                .padding(24)
-                .frame(width: 440)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
-
-                if let error = errorMessage {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.circle.fill")
+                    // 1. 散页标志性刊头
+                    VStack(spacing: 8) {
+                        Image(systemName: "book.pages.fill")
+                            .font(.system(size: 36))
                             .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(error)
-                            .font(ArchiveTypography.bodySans(size: 12))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(Capsule())
-                }
 
-                Spacer(minLength: 20)
+                        Text("散页 · Loose-Leaf")
+                            .font(ArchiveTypography.editorialSerif(size: 24, weight: .bold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+
+                        Text("主理人专属数字档案馆与桌面暗房工作台")
+                            .font(ArchiveTypography.bodySans(size: 12.5))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                    }
+
+                    // 2. 中枢连接状态胶囊
+                    hubStatusPill
+
+                    // 3. 核心认证卡片
+                    VStack(spacing: 16) {
+                        if isProbing {
+                            probingView
+                        } else if let err = probeError {
+                            connectionFailedView(error: err)
+                        } else if systemStatus?.initialized == false {
+                            bootstrapGuideView
+                        } else {
+                            pairedLoginView
+                        }
+                    }
+                    .padding(20)
+                    .frame(maxWidth: 440)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+
+                    if let error = errorMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Text(error)
+                                .font(ArchiveTypography.bodySans(size: 12))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(Capsule())
+                    }
+
+                    Spacer(minLength: 16)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity)
             }
-            .padding(24)
         }
         .task {
             await probeHub()

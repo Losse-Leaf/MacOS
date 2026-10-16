@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreSpotlight
 
 /// Loose-Leaf (活页集 · 散页) macOS 原生客户端入口 (`SwiftUI + AppKit`).
 @main
@@ -25,6 +26,15 @@ public struct LooseLeafApp: App {
                         }
                         .onOpenURL { url in
                             appState.handleIncomingURL(url)
+                        }
+                        .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
+                            if let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
+                                if uniqueId.hasPrefix("looseleaf-entry-"),
+                                   let idStr = uniqueId.split(separator: "-").last,
+                                   let entryId = Int(idStr) {
+                                    appState.navigateToEntry(id: entryId)
+                                }
+                            }
                         }
                 }
             }
@@ -76,17 +86,17 @@ public struct LooseLeafApp: App {
                 Button("上一条散页") {
                     appState.moveSelection(by: -1)
                 }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .keyboardShortcut(.upArrow, modifiers: [.command])
 
                 Button("下一条散页") {
                     appState.moveSelection(by: 1)
                 }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .keyboardShortcut(.downArrow, modifiers: [.command])
 
                 Button("打开选中的散页") {
                     appState.openKeyboardFocusedEntry()
                 }
-                .keyboardShortcut("o", modifiers: [.command])
+                .keyboardShortcut(.return, modifiers: [.command])
             }
         }
 

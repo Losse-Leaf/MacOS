@@ -869,6 +869,24 @@ public enum CityDictionary {
         "710500": (542.5, 409.1), "810000": (461.9, 454.6), "820000": (454.4, 456.8)
     ]
 
+    /// 常见境外出游目的地标尺映射 (Tokyo, Kyoto, London, Paris, Iceland, etc.)
+    public static let internationalCoordinates: [String: (x: Double, y: Double)] = [
+        "东京": (585.0, 310.0),
+        "京都": (575.0, 320.0),
+        "大阪": (570.0, 325.0),
+        "首尔": (525.0, 260.0),
+        "曼谷": (360.0, 480.0),
+        "清迈": (330.0, 465.0),
+        "新加坡": (370.0, 520.0),
+        "伦敦": (120.0, 180.0),
+        "巴黎": (135.0, 200.0),
+        "雷克雅未克": (90.0, 120.0),
+        "冰岛": (95.0, 125.0),
+        "纽约": (530.0, 190.0),
+        "旧金山": (110.0, 270.0),
+        "悉尼": (560.0, 510.0)
+    ]
+
     /// 查询城市在星野图谱中的 Albers 坐标 (x: 60~590, y: 45~530)
     public static func coordinate(forCode code: String, cityName: String = "") -> (x: Double, y: Double) {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -883,6 +901,20 @@ public enum CityDictionary {
             if let hit = coordinatesByCode[capitalCode] {
                 return hit
             }
+        }
+        if !cityName.isEmpty {
+            for (key, coord) in internationalCoordinates {
+                if cityName.contains(key) {
+                    return coord
+                }
+            }
+            // 确定性伪随机离散分布（避免所有未匹配境外/未知城市重叠在同一坐标）
+            var hasher = Hasher()
+            hasher.combine(cityName)
+            let hashVal = abs(hasher.finalize())
+            let scatterX = 220.0 + Double(hashVal % 260)
+            let scatterY = 180.0 + Double((hashVal / 1000) % 220)
+            return (scatterX, scatterY)
         }
         return (462.3, 300.0)
     }

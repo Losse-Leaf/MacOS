@@ -381,11 +381,15 @@ public struct CuratorDossierView: View {
             Task { @MainActor in
                 isUploadingAvatar = true
                 do {
-                    let data = try Data(contentsOf: url)
-                    avatarPreviewImage = NSImage(data: data)
+                    let processed = try await ImageProcessor.processImageFileInBackground(
+                        at: url,
+                        maxPixelSize: 1024,
+                        quality: 0.85
+                    )
+                    avatarPreviewImage = NSImage(data: processed.compressedData)
                     let att = try await APIClient.shared.uploadUnifiedMultipart(
-                        fileData: data,
-                        filename: url.lastPathComponent,
+                        fileData: processed.compressedData,
+                        filename: "avatar-\(Int(Date().timeIntervalSince1970)).jpg",
                         mimeType: "image/jpeg",
                         folder: "avatar"
                     )

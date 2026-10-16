@@ -21,6 +21,7 @@ public struct StreamView: View {
     @State private var composeOccurredAt: Date = Date()
 
     // 行内速写卡片状态 (Inline Quick Composer)
+    @State private var isQuickComposerExpanded: Bool = false
     @State private var quickType: EntryType = .life
     @State private var quickTitle: String = ""
     @State private var quickContent: String = ""
@@ -28,15 +29,19 @@ public struct StreamView: View {
     @State private var quickFeatured: Bool = false
     @State private var quickOccurredAt: Date = Date()
 
-    // 键盘流（⌘↑ / ⌘↓）滚动跟随
+    // 键盘流与检索状态
     @State private var keyboardScrollPosition: Int?
     @State private var localSearchText: String = ""
+    @FocusState private var isSearchFocused: Bool
     @State private var isOnThisDayExpanded: Bool = true
 
     // 管理模式：编辑与删除状态
     @State private var editingEntry: LifeEntry?
     @State private var entryToDelete: LifeEntry?
     @State private var showDeleteConfirm: Bool = false
+    @State private var editingTransaction: Transaction?
+    @State private var txToDelete: Transaction?
+    @State private var showDeleteTxConfirm: Bool = false
 
     public init(appState: AppState) {
         self.appState = appState
@@ -89,7 +94,12 @@ public struct StreamView: View {
 
             // 暗房全屏看图灯箱
             if let att = appState.lightboxAttachment {
-                editorialLightboxOverlay(attachment: att)
+                EditorialLightboxView(
+                    attachment: att,
+                    allAttachments: appState.entries.first(where: { $0.attachments.contains(where: { $0.id == att.id }) })?.attachments ?? [att]
+                ) {
+                    appState.lightboxAttachment = nil
+                }
             }
         }
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
@@ -98,6 +108,14 @@ public struct StreamView: View {
         }
         .sheet(item: $editingEntry) { entry in
             editEntrySheet(entry: entry)
+        }
+        .sheet(item: $editingTransaction) { tx in
+            EditTransactionSheet(appState: appState, transaction: tx) {
+                editingTransaction = nil
+                Task { @MainActor in
+                    await appState.loadTransactionsAndAssets(forceFull: true)
+                }
+            }
         }
         .sheet(item: $appState.highlightedEntry) { entry in
             entryDetailSheet(entry: entry)
@@ -115,6 +133,20 @@ public struct StreamView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。")
+        }
+        .confirmationDialog(
+            "确认删除该笔流水账目？",
+            isPresented: $showDeleteTxConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除账目", role: .destructive) {
+                if let target = txToDelete {
+                    deleteTransactionAction(target)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。")
         }
         .task {
             await appState.refreshAll()
@@ -149,7 +181,12 @@ public struct StreamView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.top, 18)
+            .padding(.top, 44)
+            .overlay(
+                WindowDragHandleView()
+                    .frame(height: 38),
+                alignment: .top
+            )
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
@@ -292,15 +329,17 @@ public struct StreamView: View {
 
                     Spacer()
 
-                    // 即时模糊搜索框（带 180ms 防抖，避免按键高频触发重算）
+                    // 即时模糊搜索框（带 180ms 防抖，⌘F 自动聚焦与宽度弹性展开）
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                        TextField("检索散页标题、正文或城市…", text: $localSearchText)
+                            .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        TextField("检索散页标题、正文或城市… (⌘F)", text: $localSearchText)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
-                            .frame(width: 175)
+                            .focused($isSearchFocused)
+                            .frame(width: isSearchFocused ? 240 : 180)
+                            .animation(.easeOut(duration: 0.16), value: isSearchFocused)
                             .onChange(of: localSearchText) { _, newVal in
                                 if newVal.isEmpty {
                                     appState.searchQuery = ""
@@ -326,6 +365,14 @@ public struct StreamView: View {
                             .accessibilityLabel("清除搜索")
                         }
                     }
+                    .background(
+                        Button("") {
+                            isSearchFocused = true
+                        }
+                        .keyboardShortcut("f", modifiers: [.command])
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                    )
                     .onAppear {
                         localSearchText = appState.searchQuery
                     }
@@ -446,6 +493,7 @@ public struct StreamView: View {
                                 }
                             }
                             entryCardView(entry)
+                                .id(entry.id)
                         }
                     }
                 }
@@ -511,38 +559,66 @@ public struct StreamView: View {
                 Spacer()
 
                 // 管理级别专属操作按钮
-                Button {
-                    toggleFeatured(entry)
-                } label: {
-                    Image(systemName: entry.featured == true ? "star.fill" : "star")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
-                .help(entry.featured == true ? "取消精选" : "设为精选")
+                if entry.type == "transaction" {
+                    Button("编辑") {
+                        if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                            editingTransaction = tx
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .buttonStyle(.plain)
 
-                Button("编辑") {
-                    editingEntry = entry
-                }
-                .font(ArchiveTypography.bodySans(size: 11))
-                .foregroundStyle(ArchivePalette.inkSecondary)
-                .buttonStyle(.plain)
+                    Button("删除") {
+                        if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                            txToDelete = tx
+                            showDeleteTxConfirm = true
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .buttonStyle(.plain)
 
-                Button("删除") {
-                    entryToDelete = entry
-                    showDeleteConfirm = true
-                }
-                .font(ArchiveTypography.bodySans(size: 11))
-                .foregroundStyle(ArchivePalette.accentWarm)
-                .buttonStyle(.plain)
+                    Button("详情") {
+                        appState.highlightedEntry = entry
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        toggleFeatured(entry)
+                    } label: {
+                        Image(systemName: entry.featured == true ? "star.fill" : "star")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
+                    .help(entry.featured == true ? "取消精选" : "设为精选")
 
-                Button("详情") {
-                    appState.highlightedEntry = entry
+                    Button("编辑") {
+                        editingEntry = entry
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .buttonStyle(.plain)
+
+                    Button("删除") {
+                        entryToDelete = entry
+                        showDeleteConfirm = true
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .buttonStyle(.plain)
+
+                    Button("详情") {
+                        appState.highlightedEntry = entry
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .buttonStyle(.plain)
                 }
-                .font(ArchiveTypography.bodySans(size: 11))
-                .foregroundStyle(ArchivePalette.inkMuted)
-                .buttonStyle(.plain)
             }
 
             if !entry.title.isEmpty {
@@ -608,6 +684,85 @@ public struct StreamView: View {
                     lineWidth: appState.keyboardFocusedEntryId == entry.id ? 1.0 : 0.5
                 )
         )
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            appState.highlightedEntry = entry
+            AudioFeedback.shared.playPaperFlip()
+        }
+        .contextMenu {
+            if entry.type == "transaction" {
+                if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                    Button {
+                        editingTransaction = tx
+                    } label: {
+                        Label("编辑账目", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        txToDelete = tx
+                        showDeleteTxConfirm = true
+                    } label: {
+                        Label("删除账目", systemImage: "trash")
+                    }
+                    Divider()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
+                        AudioFeedback.shared.playTink()
+                        appState.showTemporaryBanner("已拷贝金额至剪贴板")
+                    } label: {
+                        Label("拷贝金额", systemImage: "doc.on.doc")
+                    }
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
+                        AudioFeedback.shared.playTink()
+                        appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
+                    } label: {
+                        Label("拷贝账目摘要", systemImage: "text.quote")
+                    }
+                }
+            } else {
+                Button {
+                    appState.highlightedEntry = entry
+                    AudioFeedback.shared.playPaperFlip()
+                } label: {
+                    Label("查看手稿详情", systemImage: "book.pages")
+                }
+                Button {
+                    toggleFeatured(entry)
+                } label: {
+                    Label(entry.featured == true ? "取消精选印记" : "标记为精选印记", systemImage: entry.featured == true ? "star.slash" : "star")
+                }
+                Button {
+                    editingEntry = entry
+                } label: {
+                    Label("编辑手稿", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    entryToDelete = entry
+                    showDeleteConfirm = true
+                } label: {
+                    Label("删除手稿", systemImage: "trash")
+                }
+                Divider()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(entry.content, forType: .string)
+                    AudioFeedback.shared.playTink()
+                    appState.showTemporaryBanner("已拷贝手稿正文至剪贴板")
+                } label: {
+                    Label("拷贝手稿正文", systemImage: "doc.on.doc")
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(entry.parsedDate.dotDateTime, forType: .string)
+                    AudioFeedback.shared.playTink()
+                    appState.showTemporaryBanner("已拷贝时间戳至剪贴板")
+                } label: {
+                    Label("拷贝时间戳", systemImage: "clock")
+                }
+            }
+        }
         .paperHover()
     }
 
@@ -636,37 +791,63 @@ public struct StreamView: View {
     }
 
     private func updateAvailableStrip(update: UpdateChecker.ReleaseInfo) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(ArchivePalette.accentWarm)
-            Text("发现新版本 \(update.tagName)（当前版本 v\(UpdateChecker.shared.currentVersion)）")
-                .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                Text("发现新版本 \(update.tagName)（当前版本 v\(UpdateChecker.shared.currentVersion)）")
+                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
 
-            Spacer()
+                Spacer()
 
-            if UpdateChecker.shared.isUpdating {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("正在下载并重启更新 (\(Int(UpdateChecker.shared.updateProgress * 100))%)…")
-                        .font(ArchiveTypography.monoScale(size: 11.5))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                }
-            } else {
-                Button("立即更新并重启") {
-                    Task { @MainActor in
-                        await UpdateChecker.shared.performInAppUpdate()
+                if UpdateChecker.shared.isUpdating {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("正在下载更新 (\(Int(UpdateChecker.shared.updateProgress * 100))%)…")
+                            .font(ArchiveTypography.monoScale(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
                     }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                } else {
+                    Button("浏览器下载") {
+                        UpdateChecker.shared.openDownloadInBrowser()
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .help("在浏览器直接下载新版 DMG / ZIP 安装包")
 
-                Button("稍后提醒") {
-                    UpdateChecker.shared.availableUpdate = nil
+                    Button("终端极速更新") {
+                        UpdateChecker.shared.copyInstallCommandToClipboard()
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .help("复制终端一键全自动安装更新命令")
+
+                    Button("应用内更新") {
+                        Task { @MainActor in
+                            await UpdateChecker.shared.performInAppUpdate()
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+
+                    Button("稍后提醒") {
+                        UpdateChecker.shared.availableUpdate = nil
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ArchivePalette.inkMuted)
                 }
-                .font(ArchiveTypography.bodySans(size: 11.5))
-                .buttonStyle(.plain)
-                .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            if let err = UpdateChecker.shared.updateError {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Text(err)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
+                .padding(.top, 2)
             }
         }
         .padding(.horizontal, 20)
@@ -876,90 +1057,153 @@ public struct StreamView: View {
     // MARK: - 行内速写卡片与管理动作 (Inline Quick Composer & Management)
 
     private var inlineQuickComposerCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 6) {
-                    ForEach(EntryType.allCases) { kind in
-                        PaperPillButton(
-                            title: kind.label,
-                            icon: kind.symbolName,
-                            isSelected: quickType == kind
-                        ) {
-                            quickType = kind
+        Group {
+            if !isQuickComposerExpanded {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Text("此刻随笔碎念…")
+                        .font(ArchiveTypography.bodySans(size: 12.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            isQuickComposerExpanded = true
                         }
+                        AudioFeedback.shared.playPaperFlip()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("展开速写")
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9))
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isQuickComposerExpanded = true
+                    }
+                    AudioFeedback.shared.playPaperFlip()
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            ForEach(EntryType.allCases) { kind in
+                                PaperPillButton(
+                                    title: kind.label,
+                                    icon: kind.symbolName,
+                                    isSelected: quickType == kind
+                                ) {
+                                    quickType = kind
+                                }
+                            }
+                        }
+
+                        Spacer()
+
+                        Toggle("精选", isOn: $quickFeatured)
+                            .toggleStyle(.checkbox)
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                isQuickComposerExpanded = false
+                            }
+                            AudioFeedback.shared.playPaperFlip()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text("收起")
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: 9))
+                            }
+                            .font(ArchiveTypography.bodySans(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("收起速写卡片")
+                    }
+
+                    TextField("标题（选填，留空则为随笔短笺）", text: $quickTitle)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                        .padding(8)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                    TextEditor(text: $quickContent)
+                        .font(ArchiveTypography.bodySans(size: 13))
+                        .scrollContentBackground(.hidden)
+                        .padding(6)
+                        .frame(minHeight: 68, maxHeight: 110)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            Group {
+                                if quickContent.isEmpty {
+                                    Text("随时在此写下一笔散页手稿或灵感碎念（支持 #标签），按 ⌘↩ 直接归档…")
+                                        .font(ArchiveTypography.bodySans(size: 12.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 10)
+                                        .allowsHitTesting(false)
+                                }
+                            },
+                            alignment: .topLeading
+                        )
+
+                    HStack {
+                        TextField(
+                            appState.profile.displayCity.isEmpty ? "地点（如：杭州，自动点亮行迹）" : appState.profile.displayCity,
+                            text: $quickLocation
+                        )
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .padding(6)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .frame(maxWidth: 240)
+
+                        DatePicker("", selection: $quickOccurredAt, displayedComponents: [.date, .hourAndMinute])
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                            .environment(\.timeZone, FormatUtils.beijingTimeZone)
+                            .help("补记发生时间（默认此刻）")
+
+                        Spacer()
+
+                        Button("落墨归档 (⌘↩)") {
+                            submitInlineQuickEntry()
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .disabled(quickContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-
-                Spacer()
-
-                Toggle("精选", isOn: $quickFeatured)
-                    .toggleStyle(.checkbox)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-            }
-
-            TextField("标题（选填，留空则为随笔短笺）", text: $quickTitle)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
-                .padding(8)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            TextEditor(text: $quickContent)
-                .font(ArchiveTypography.bodySans(size: 13))
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .frame(minHeight: 68, maxHeight: 110)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .padding(14)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(
-                    Group {
-                        if quickContent.isEmpty {
-                            Text("随时在此写下一笔散页手稿或灵感碎念（支持 #标签），按 ⌘↩ 直接归档…")
-                                .font(ArchiveTypography.bodySans(size: 12.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 10)
-                                .allowsHitTesting(false)
-                        }
-                    },
-                    alignment: .topLeading
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
-
-            HStack {
-                TextField(
-                    appState.profile.displayCity.isEmpty ? "地点（如：杭州，自动点亮行迹）" : appState.profile.displayCity,
-                    text: $quickLocation
-                )
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: 11.5))
-                .padding(6)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .frame(maxWidth: 240)
-
-                DatePicker("", selection: $quickOccurredAt, displayedComponents: [.date, .hourAndMinute])
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-                    .environment(\.timeZone, FormatUtils.beijingTimeZone)
-                    .help("补记发生时间（默认此刻）")
-
-                Spacer()
-
-                Button("落墨归档 (⌘↩)") {
-                    submitInlineQuickEntry()
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(quickContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(14)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-        )
     }
 
     private func submitInlineQuickEntry() {
@@ -986,6 +1230,9 @@ public struct StreamView: View {
             quickLocation = ""
             quickFeatured = false
             quickOccurredAt = Date()
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isQuickComposerExpanded = false
+            }
             await appState.loadConfigAndProfile()
         }
     }
@@ -1041,6 +1288,19 @@ public struct StreamView: View {
         }
     }
 
+    private func deleteTransactionAction(_ tx: Transaction) {
+        guard tx.id > 0 else { return }
+        Task { @MainActor in
+            _ = try? await APIClient.shared.deleteTransaction(id: tx.id)
+            AudioFeedback.shared.playPaperFlip()
+            await appState.loadTransactionsAndAssets(forceFull: true)
+            await appState.loadConfigAndProfile()
+            if appState.highlightedEntry?.id == tx.id {
+                appState.highlightedEntry = nil
+            }
+        }
+    }
+
     private func editEntrySheet(entry: LifeEntry) -> some View {
         EditEntrySheetView(entry: entry) { updated in
             Task { @MainActor in
@@ -1056,7 +1316,9 @@ public struct StreamView: View {
     }
 
     private func entryDetailSheet(entry: LifeEntry) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let isTx = (entry.type == "transaction")
+        let matchingTx = isTx ? appState.transactions.first(where: { $0.id == entry.id }) : nil
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(entryTypeBadge(entry.type))
                     .font(ArchiveTypography.monoScale(size: 11))
@@ -1066,16 +1328,36 @@ public struct StreamView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Spacer()
                 if appState.isPaired && entry.id > 0 {
-                    Button("删除记录") {
-                        Task { @MainActor in
-                            try? await APIClient.shared.deleteEntry(id: entry.id)
-                            await appState.loadEntries(forceFull: true)
-                            appState.highlightedEntry = nil
+                    if isTx {
+                        if let tx = matchingTx {
+                            Button("编辑账目") {
+                                appState.highlightedEntry = nil
+                                editingTransaction = tx
+                            }
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .buttonStyle(.plain)
+
+                            Button("删除账目") {
+                                txToDelete = tx
+                                showDeleteTxConfirm = true
+                            }
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .buttonStyle(.plain)
                         }
+                    } else {
+                        Button("删除记录") {
+                            Task { @MainActor in
+                                try? await APIClient.shared.deleteEntry(id: entry.id)
+                                await appState.loadEntries(forceFull: true)
+                                appState.highlightedEntry = nil
+                            }
+                        }
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .buttonStyle(.plain)
                     }
-                    .font(ArchiveTypography.bodySans(size: 12))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .buttonStyle(.plain)
                 }
                 Button("关闭") {
                     appState.highlightedEntry = nil
@@ -1083,50 +1365,208 @@ public struct StreamView: View {
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
             }
 
-            if !entry.title.isEmpty {
-                Text(entry.title)
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-            }
+            if let tx = matchingTx {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(tx.title.isEmpty ? tx.category : tx.title)
+                            .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Spacer()
+                        Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
+                            .font(ArchiveTypography.monoScale(size: 22, weight: .bold))
+                            .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
+                    }
 
-            ScrollView {
-                Text(LocalizedStringKey(entry.content))
-                    .font(ArchiveTypography.bodySans(size: 14))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .lineSpacing(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
+                    HStack(spacing: 8) {
+                        Text(tx.category)
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                        if let pay = tx.paymentMethod, !pay.isEmpty {
+                            Text(pay)
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(ArchivePalette.archiveSubtle)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+
+                        if tx.isInstallment == true, let months = tx.installmentMonths, months > 0 {
+                            Text("分期 \(months) 期")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
+                                )
+                        }
+                    }
+
+                    if let note = tx.note, !note.isEmpty {
+                        Text(note)
+                            .font(ArchiveTypography.bodySans(size: 13.5))
+                            .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.88))
+                            .padding(.top, 4)
+                    }
+                }
+                .padding(.vertical, 6)
+            } else {
+                if !entry.title.isEmpty {
+                    Text(entry.title)
+                        .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                }
+
+                ScrollView {
+                    Text(LocalizedStringKey(entry.content))
+                        .font(ArchiveTypography.bodySans(size: 14))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .lineSpacing(5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(minHeight: 160, maxHeight: 340)
             }
-            .frame(minHeight: 160, maxHeight: 340)
         }
         .padding(24)
         .frame(width: 520)
         .background(ArchivePalette.archivePaper)
     }
 
-    // MARK: - 暗房全屏看图灯箱 (EditorialLightbox)
+    // MARK: - 暗房全屏看图灯箱 (EditorialLightboxView)
 
-    private func editorialLightboxOverlay(attachment: Attachment) -> some View {
+/// 暗房全屏沉浸式看图灯箱：支持触控板双指缩放、拖拽平移、双击 2x 放大、键盘左右键切图与原片系统预览
+public struct EditorialLightboxView: View {
+    @State private var currentAttachment: Attachment
+    let allAttachments: [Attachment]
+    var onClose: () -> Void
+
+    @State private var scale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    @State private var noticeText: String?
+
+    public init(attachment: Attachment, allAttachments: [Attachment], onClose: @escaping () -> Void) {
+        _currentAttachment = State(initialValue: attachment)
+        self.allAttachments = allAttachments
+        self.onClose = onClose
+    }
+
+    private var currentIndex: Int {
+        allAttachments.firstIndex(where: { $0.id == currentAttachment.id }) ?? 0
+    }
+
+    public var body: some View {
         ZStack {
-            ArchivePalette.inkPrimary.opacity(0.88)
+            ArchivePalette.inkPrimary.opacity(0.92)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    appState.lightboxAttachment = nil
+                    if scale <= 1.0 {
+                        onClose()
+                    } else {
+                        withAnimation(.spring(response: 0.25)) {
+                            scale = 1.0
+                            offset = .zero
+                            lastOffset = .zero
+                        }
+                    }
                 }
 
             VStack(spacing: 16) {
-                if let url = APIClient.shared.resolveMediaURL(attachment.url) {
-                    FilmFrameView(
-                        imageURL: url,
-                        caption: attachment.originalFilename,
-                        metaText: (attachment.width != nil && attachment.height != nil)
-                            ? "\(attachment.width!) × \(attachment.height!) px"
-                            : nil,
-                        maxHeight: 520
-                    )
+                if let url = APIClient.shared.resolveMediaURL(currentAttachment.url) {
+                    ZStack {
+                        FilmFrameView(
+                            imageURL: url,
+                            caption: currentAttachment.originalFilename,
+                            metaText: (currentAttachment.width != nil && currentAttachment.height != nil)
+                                ? "\(currentAttachment.width!) × \(currentAttachment.height!) px"
+                                : nil,
+                            maxHeight: 520
+                        )
+                        .scaleEffect(scale)
+                        .offset(offset)
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    scale = min(max(value, 0.8), 3.5)
+                                }
+                                .onEnded { _ in
+                                    withAnimation(.spring(response: 0.25)) {
+                                        if scale < 1.0 {
+                                            scale = 1.0
+                                            offset = .zero
+                                            lastOffset = .zero
+                                        }
+                                    }
+                                }
+                        )
+                        .simultaneousGesture(
+                            scale > 1.0 ? DragGesture()
+                                .onChanged { value in
+                                    offset = CGSize(
+                                        width: lastOffset.width + value.translation.width,
+                                        height: lastOffset.height + value.translation.height
+                                    )
+                                }
+                                .onEnded { _ in
+                                    lastOffset = offset
+                                } : nil
+                        )
+                        .onTapGesture(count: 2) {
+                            withAnimation(.spring(response: 0.25)) {
+                                if scale > 1.0 {
+                                    scale = 1.0
+                                    offset = .zero
+                                    lastOffset = .zero
+                                } else {
+                                    scale = 2.0
+                                }
+                            }
+                        }
+                    }
                     .frame(maxWidth: 780)
 
-                    // 桌面原生动作栏：系统预览查看、拷贝相纸、导出保存
+                    // 左右翻页控制器与相册计数指示
+                    if allAttachments.count > 1 {
+                        HStack(spacing: 20) {
+                            Button {
+                                changePhoto(by: -1)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "chevron.left")
+                                    Text("上一张")
+                                }
+                            }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .keyboardShortcut(.leftArrow, modifiers: [])
+                            .disabled(currentIndex == 0)
+
+                            Text("\(currentIndex + 1) / \(allAttachments.count)")
+                                .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.archivePaper)
+
+                            Button {
+                                changePhoto(by: 1)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("下一张")
+                                    Image(systemName: "chevron.right")
+                                }
+                            }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .keyboardShortcut(.rightArrow, modifiers: [])
+                            .disabled(currentIndex == allAttachments.count - 1)
+                        }
+                    }
+
+                    // 动作栏
                     HStack(spacing: 10) {
                         Button {
                             openInSystemPreview(url: url)
@@ -1137,7 +1577,7 @@ public struct StreamView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                        .help("使用 macOS 系统原生 Preview 打开查看")
+                        .help("使用 macOS 系统原生 Preview 打开原片")
 
                         Button {
                             copyImageToClipboard(url: url)
@@ -1148,10 +1588,9 @@ public struct StreamView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                        .help("将此相纸拷贝至系统剪贴板 (可直接 ⌘V 粘贴)")
 
                         Button {
-                            saveImageToDisk(url: url, filename: attachment.originalFilename)
+                            saveImageToDisk(url: url, filename: currentAttachment.originalFilename)
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "square.and.arrow.down")
@@ -1160,16 +1599,34 @@ public struct StreamView: View {
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
-                        Button("关闭灯箱 ESC") {
-                            appState.lightboxAttachment = nil
+                        Button("关闭 ESC") {
+                            onClose()
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                         .keyboardShortcut(.cancelAction)
                     }
+
+                    if let noticeText {
+                        Text(noticeText)
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    }
                 }
             }
-            .padding(32)
+            .padding(24)
         }
+    }
+
+    private func changePhoto(by delta: Int) {
+        let newIdx = currentIndex + delta
+        guard allAttachments.indices.contains(newIdx) else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            scale = 1.0
+            offset = .zero
+            lastOffset = .zero
+            currentAttachment = allAttachments[newIdx]
+        }
+        AudioFeedback.shared.playPaperFlip()
     }
 
     private func openInSystemPreview(url: URL) {
@@ -1197,14 +1654,14 @@ public struct StreamView: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([cached])
                 AudioFeedback.shared.playTink()
-                appState.showTemporaryBanner("已拷贝相纸至剪贴板")
+                noticeText = "已拷贝相纸至剪贴板"
                 return
             }
             if let (data, _) = try? await URLSession.shared.data(from: url), let img = NSImage(data: data) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([img])
                 AudioFeedback.shared.playTink()
-                appState.showTemporaryBanner("已拷贝相纸至剪贴板")
+                noticeText = "已拷贝相纸至剪贴板"
             }
         }
     }
@@ -1217,11 +1674,12 @@ public struct StreamView: View {
                 if let (data, _) = try? await URLSession.shared.data(from: url) {
                     try? data.write(to: targetURL, options: .atomic)
                     AudioFeedback.shared.playShutter()
-                    appState.showTemporaryBanner("相纸已导出落盘")
+                    noticeText = "相纸已导出落盘"
                 }
             }
         }
     }
+}
 
     private func entryTypeBadge(_ raw: String) -> String {
         switch raw {
@@ -1324,5 +1782,17 @@ public struct EditEntrySheetView: View {
         .frame(width: 520)
         .background(ArchivePalette.archivePaper)
     }
+}
+
+/// macOS 标题栏窗口拖拽手势区域（配合 .hiddenTitleBar 实现全区域平滑拖拽）
+fileprivate struct WindowDragHandleView: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowDragNSView {
+        WindowDragNSView()
+    }
+    func updateNSView(_ nsView: WindowDragNSView, context: Context) {}
+}
+
+fileprivate final class WindowDragNSView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
 }
 

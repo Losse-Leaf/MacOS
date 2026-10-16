@@ -1891,6 +1891,16 @@ public struct AnnualAlmanacSheet: View {
     @State private var isLoading: Bool = true
     @State private var errorText: String?
 
+    private var availableYears: [Int] {
+        let currentYear = FormatUtils.beijingCurrentYearMonth().year
+        let entryYears = AppState.shared.entries.compactMap { entry -> Int? in
+            guard entry.occurredAt.count >= 4 else { return nil }
+            return Int(entry.occurredAt.prefix(4))
+        }
+        let earliest = min(entryYears.min() ?? currentYear, currentYear)
+        return Array((earliest...currentYear).reversed())
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -1904,8 +1914,8 @@ public struct AnnualAlmanacSheet: View {
                 }
                 Spacer()
                 HStack(spacing: 6) {
-                    ForEach([selectedYear - 1, selectedYear], id: \.self) { yr in
-                        PaperPillButton(title: "\(yr)", isSelected: selectedYear == yr) {
+                    ForEach(availableYears, id: \.self) { yr in
+                        PaperPillButton(title: "\(yr) 年", isSelected: selectedYear == yr) {
                             selectedYear = yr
                             Task { await loadAlmanac() }
                         }

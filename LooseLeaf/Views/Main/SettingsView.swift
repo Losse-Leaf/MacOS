@@ -8,13 +8,6 @@ import UniformTypeIdentifiers
 public struct SettingsView: View {
     @Bindable var appState: AppState
 
-    public enum PairingMethod: String, CaseIterable {
-        case passcode = "主理人密钥授权"
-        case ticketURI = "配对链接"
-    }
-
-    @State private var selectedMethod: PairingMethod = .ticketURI
-    @State private var passcodeInput: String = ""
     @State private var ticketURIInput: String = ""
     @State private var isSubmittingAuth: Bool = false
     @State private var authFeedback: String?
@@ -284,59 +277,23 @@ public struct SettingsView: View {
                 .background(ArchivePalette.archivePaper)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
             } else {
-                HStack(spacing: 6) {
-                    ForEach(PairingMethod.allCases, id: \.rawValue) { method in
-                        PaperPillButton(
-                            title: method.rawValue,
-                            isSelected: selectedMethod == method
-                        ) {
-                            selectedMethod = method
-                            authError = nil
-                            AudioFeedback.shared.playTink()
-                        }
+                HStack(spacing: 10) {
+                    TextField("粘贴配对链接 looseleaf://pair?hub=...&ticket=pair_tk_...", text: $ticketURIInput)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.monoScale(size: 12))
+                        .padding(9)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                        )
+
+                    Button(isSubmittingAuth ? "核销中…" : "核销工单配对") {
+                        performTicketPairing()
                     }
-                }
-
-                switch selectedMethod {
-                case .passcode:
-                    HStack(spacing: 10) {
-                        SecureField("输入主理人管理员密钥（直接签发本机专属子钥匙）", text: $passcodeInput)
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.monoScale(size: 13))
-                            .padding(9)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                            )
-
-                        Button(isSubmittingAuth ? "验证中…" : "验证并绑定本机") {
-                            performPasscodeVerify()
-                        }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                        .disabled(passcodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingAuth)
-                    }
-
-                case .ticketURI:
-                    HStack(spacing: 10) {
-                        TextField("粘贴配对链接 looseleaf://pair?hub=...&ticket=pair_tk_...", text: $ticketURIInput)
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.monoScale(size: 12))
-                            .padding(9)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                            )
-
-                        Button(isSubmittingAuth ? "核销中…" : "核销工单配对") {
-                            performTicketPairing()
-                        }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                        .disabled(ticketURIInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingAuth)
-                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .disabled(ticketURIInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingAuth)
                 }
             }
 
@@ -898,23 +855,6 @@ public struct SettingsView: View {
     }
 
     // MARK: - 配对动作执行
-
-    private func performPasscodeVerify() {
-        isSubmittingAuth = true
-        authError = nil
-        authFeedback = nil
-        Task { @MainActor in
-            do {
-                try await appState.verifyWithMasterPasscode(passcodeInput, hubURL: appState.hubURLString)
-                passcodeInput = ""
-                authFeedback = "验证通过！本机设备凭证已更新。"
-                await refreshDevicesList()
-            } catch {
-                authError = error.localizedDescription
-            }
-            isSubmittingAuth = false
-        }
-    }
 
     private func performTicketPairing() {
         let raw = ticketURIInput.trimmingCharacters(in: .whitespacesAndNewlines)

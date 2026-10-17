@@ -217,3 +217,197 @@ public struct PaperPrimaryButtonStyle: ButtonStyle {
             )
     }
 }
+
+/// 散页古典纸墨风时间选择器 (PaperDateTimePicker)
+/// 彻底替代系统原生丑陋灰块控件，提供打字机等宽时间戳胶囊与快捷时空锚点
+public struct PaperDateTimePicker: View {
+    @Binding public var selection: Date
+    public var label: String?
+    public var showQuickShortcuts: Bool
+
+    @State private var isPopoverPresented: Bool = false
+
+    public init(
+        selection: Binding<Date>,
+        label: String? = nil,
+        showQuickShortcuts: Bool = true
+    ) {
+        self._selection = selection
+        self.label = label
+        self.showQuickShortcuts = showQuickShortcuts
+    }
+
+    private var parsed: FormatUtils.ParsedBeijingDate {
+        FormatUtils.formatBeijingDate(selection)
+    }
+
+    private var isToday: Bool {
+        FormatUtils.beijingCalendar.isDateInToday(selection)
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            if let label, !label.isEmpty {
+                Text(label)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            Button {
+                isPopoverPresented.toggle()
+                AudioFeedback.shared.playTink()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 11))
+                        .foregroundStyle(isToday ? ArchivePalette.inkMuted : ArchivePalette.accentWarm)
+
+                    Text(parsed.dotDateTime)
+                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4.5)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isToday ? ArchivePalette.borderSubtle : ArchivePalette.accentWarm.opacity(0.6), lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+                pickerPopoverContent
+            }
+
+            if !isToday {
+                Text("回溯补记")
+                    .font(ArchiveTypography.monoScale(size: 10))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(ArchivePalette.accentWarm.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+
+            if showQuickShortcuts {
+                HStack(spacing: 4) {
+                    Button("此刻") {
+                        selection = Date()
+                        AudioFeedback.shared.playTink()
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2.5)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                    Button("昨日") {
+                        if let yesterday = FormatUtils.beijingCalendar.date(byAdding: .day, value: -1, to: Date()) {
+                            selection = yesterday
+                            AudioFeedback.shared.playTink()
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2.5)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+        }
+    }
+
+    private var pickerPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("时间刻度印记")
+                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Spacer()
+                Text("北京时间 (UTC+8)")
+                    .font(ArchiveTypography.monoScale(size: 10))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            // 快捷时间胶囊
+            HStack(spacing: 6) {
+                shortcutPill("现在此时") {
+                    selection = Date()
+                }
+                shortcutPill("今日 09:00") {
+                    let cal = FormatUtils.beijingCalendar
+                    var comps = cal.dateComponents([.year, .month, .day], from: Date())
+                    comps.hour = 9
+                    comps.minute = 0
+                    if let d = cal.date(from: comps) { selection = d }
+                }
+                shortcutPill("今日 14:00") {
+                    let cal = FormatUtils.beijingCalendar
+                    var comps = cal.dateComponents([.year, .month, .day], from: Date())
+                    comps.hour = 14
+                    comps.minute = 0
+                    if let d = cal.date(from: comps) { selection = d }
+                }
+                shortcutPill("昨日此时") {
+                    if let d = FormatUtils.beijingCalendar.date(byAdding: .day, value: -1, to: Date()) {
+                        selection = d
+                    }
+                }
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            DatePicker(
+                "",
+                selection: $selection,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+            .environment(\.timeZone, FormatUtils.beijingTimeZone)
+            .tint(ArchivePalette.accentWarm)
+
+            HStack {
+                Text(parsed.dotDateTime)
+                    .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+
+                Spacer()
+
+                Button("完成") {
+                    isPopoverPresented = false
+                    AudioFeedback.shared.playTink()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            }
+        }
+        .padding(14)
+        .frame(width: 290)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func shortcutPill(_ text: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            AudioFeedback.shared.playTink()
+        } label: {
+            Text(text)
+                .font(ArchiveTypography.bodySans(size: 10.5))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .buttonStyle(.plain)
+    }
+}

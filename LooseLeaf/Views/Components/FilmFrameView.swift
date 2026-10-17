@@ -35,6 +35,8 @@ public struct FilmFrameView: View {
 
                 if let localImage {
                     Image(nsImage: localImage)
+                        .interpolation(.high)
+                        .antialiased(true)
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: maxHeight)
@@ -207,6 +209,9 @@ public enum PaperImageCache {
         if FileManager.default.fileExists(atPath: diskPath.path),
            let diskData = try? Data(contentsOf: diskPath),
            let diskImage = NSImage(data: diskData) {
+            if let rep = diskImage.representations.first as? NSBitmapImageRep {
+                diskImage.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+            }
             memoryCache.setObject(diskImage, forKey: url as NSURL, cost: diskData.count)
             return diskImage
         }
@@ -215,6 +220,9 @@ public enum PaperImageCache {
     }
 
     public static func setImage(_ image: NSImage, rawData: Data? = nil, for url: URL, cost: Int = 0) {
+        if let rep = image.representations.first as? NSBitmapImageRep {
+            image.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+        }
         memoryCache.setObject(image, forKey: url as NSURL, cost: cost)
 
         // 异步写入磁盘缓存，避免主线程 I/O 阻塞
@@ -250,6 +258,8 @@ public struct CachedFilmImageView: View {
         Group {
             if let image = loadedImage {
                 Image(nsImage: image)
+                    .interpolation(.high)
+                    .antialiased(true)
                     .resizable()
                     .scaledToFit()
                     .frame(maxHeight: maxHeight)

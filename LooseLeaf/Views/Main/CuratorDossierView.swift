@@ -47,11 +47,11 @@ public struct CuratorDossierView: View {
                     if !prof.avatarUrl.isEmpty, let url = APIClient.shared.resolveMediaURL(prof.avatarUrl) {
                         FilmFrameView(
                             imageURL: url,
-                            caption: prof.name.isEmpty ? "主理人肖像" : prof.name,
-                            metaText: prof.displayCity,
-                            maxHeight: 130
+                            caption: "银盐肖像",
+                            metaText: prof.displayCity.isEmpty ? nil : prof.displayCity,
+                            maxHeight: 180
                         )
-                        .frame(width: 150)
+                        .frame(width: 180)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {

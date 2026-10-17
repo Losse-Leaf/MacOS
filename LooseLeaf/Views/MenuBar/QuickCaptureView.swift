@@ -299,24 +299,11 @@ public struct QuickCaptureView: View {
 
             if draft.showBackdatePicker {
                 HStack(spacing: 6) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 11))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    DatePicker("", selection: $draft.occurredAt, displayedComponents: [.date, .hourAndMinute])
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
-                        .environment(\.timeZone, FormatUtils.beijingTimeZone)
+                    PaperDateTimePicker(selection: $draft.occurredAt, showQuickShortcuts: true)
                     Spacer()
-                    if Calendar.current.isDateInToday(draft.occurredAt) == false || !isSameMinute(draft.occurredAt, Date()) {
-                        Text("回溯补记")
-                            .font(ArchiveTypography.monoScale(size: 10.5))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                    }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .padding(.horizontal, 2)
+                .padding(.vertical, 2)
             }
 
             if let errorText {

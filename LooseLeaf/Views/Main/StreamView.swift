@@ -219,26 +219,31 @@ public struct StreamView: View {
 
             Spacer()
 
-            // 底部全局指标小卡片
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    metricMiniItem(label: "散页", value: "\(max(appState.stats.totalEntries, appState.entries.count))")
-                    Spacer()
-                    metricMiniItem(label: "底片", value: "\(appState.stats.totalPhotos)")
-                    Spacer()
-                    metricMiniItem(label: "造物", value: "\(max(appState.stats.totalProjects, appState.projects.count))")
-                }
-
-                Divider().overlay(ArchivePalette.borderSubtle)
+            // 底部藏书票与中枢状态微标 (Ex-Libris Seal)
+            VStack(alignment: .leading, spacing: 6) {
+                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+                    .padding(.bottom, 4)
 
                 HStack(spacing: 6) {
+                    Text("\(max(appState.stats.totalEntries, appState.entries.count)) 散页")
+                    Text("·")
+                    Text("\(appState.stats.totalPhotos) 底片")
+                    Text("·")
+                    Text("\(max(appState.stats.totalProjects, appState.projects.count)) 造物")
+                }
+                .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+
+                HStack(spacing: 5) {
                     Circle()
                         .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
-                        .frame(width: 6, height: 6)
-                    Text(appState.isOnline ? (appState.isFlushingOutbox ? "正在同步…" : "已连接数据中枢") : "离线工作态 · 发件箱守护")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
-                        .foregroundStyle(appState.isOnline ? ArchivePalette.inkMuted : ArchivePalette.accentWarm)
+                        .frame(width: 5, height: 5)
+                    Text(appState.isOnline ? (appState.isFlushingOutbox ? "同步中…" : "中枢就绪") : "离线发件箱守护")
+                        .font(ArchiveTypography.bodySans(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+
                     Spacer()
+
                     if !appState.outboxItems.isEmpty {
                         Text("\(appState.outboxItems.count) 待发")
                             .font(ArchiveTypography.monoScale(size: 10, weight: .semibold))
@@ -246,18 +251,12 @@ public struct StreamView: View {
                     } else {
                         Text(appState.globalHotkeyLabel)
                             .font(ArchiveTypography.monoScale(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .foregroundStyle(ArchivePalette.inkMuted.opacity(0.8))
                     }
                 }
             }
-            .padding(12)
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-            )
-            .padding(12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
         }
         .background(ArchivePalette.archivePaper.opacity(0.65))
     }
@@ -323,27 +322,27 @@ public struct StreamView: View {
     private var streamTimelineCanvas: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // 1. 顶部引言与工具栏
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
+                // 1. 顶部引言与工具栏 (32pt 统一高度与水平对齐)
+                HStack(alignment: .center, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("生活档案与时光手账")
-                            .font(ArchiveTypography.editorialSerif(size: 21, weight: .semibold))
+                            .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                         if !appState.profile.motto.isEmpty {
                             Text(appState.profile.motto)
-                                .font(ArchiveTypography.editorialSerif(size: 13))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                .font(ArchiveTypography.editorialSerif(size: 12.5))
+                                .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.8))
                         }
                     }
 
                     Spacer()
 
-                    // 即时模糊搜索框（带 180ms 防抖，⌘F 自动聚焦与宽度弹性展开）
+                    // 即时模糊搜索框 (32pt 统一高度，⌘F 自动聚焦与宽度弹性展开)
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 11.5))
                             .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                        TextField("检索散页标题、正文或城市… (⌘F)", text: $localSearchText)
+                        TextField("检索散页手稿、地点或 #标签… (⌘F)", text: $localSearchText)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
                             .focused($isSearchFocused)
@@ -374,6 +373,11 @@ public struct StreamView: View {
                             .accessibilityLabel("清除搜索")
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                    .paperElevation(1)
                     .background(
                         Button("") {
                             isSearchFocused = true
@@ -382,50 +386,60 @@ public struct StreamView: View {
                         .opacity(0)
                         .allowsHitTesting(false)
                     )
-                    .onAppear {
-                        localSearchText = appState.searchQuery
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                    )
 
-                    Button {
-                        exportMarkdown()
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .accessibilityLabel("导出当前视图为 Markdown")
-                    .help("导出当前视图为 Markdown")
-
-                    Button {
-                        Task { @MainActor in
-                            await appState.refreshAll(forceFull: true)
+                    // 右侧精细操作胶囊组 (32pt 统一高度)
+                    HStack(spacing: 6) {
+                        Button {
+                            exportMarkdown()
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                .frame(width: 32, height: 32)
                         }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .accessibilityLabel("同步最新档案")
-                    .help("同步最新档案 (⌘R)")
+                        .buttonStyle(.plain)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                        .paperElevation(1)
+                        .accessibilityLabel("导出当前视图为 Markdown")
+                        .help("导出当前视图为 Markdown")
 
-                    Button {
-                        showComposeSheet = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "square.and.pencil")
-                            Text("撰写散页")
+                        Button {
+                            Task { @MainActor in
+                                await appState.refreshAll(forceFull: true)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                .frame(width: 32, height: 32)
                         }
+                        .buttonStyle(.plain)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                        .paperElevation(1)
+                        .accessibilityLabel("同步最新档案")
+                        .help("全量同步中枢档案 (⌘R)")
+
+                        Button {
+                            showComposeSheet = true
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 11))
+                                Text("撰写散页")
+                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
+                            .foregroundStyle(ArchivePalette.archivePaper)
+                            .background(ArchivePalette.inkPrimary)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                        }
+                        .buttonStyle(.plain)
+                        .paperElevation(1)
+                        .keyboardShortcut("n", modifiers: [.command])
                     }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                    .keyboardShortcut("n", modifiers: [.command])
                 }
 
                 // 2. 顶部行内即时手稿速写卡片 (Inline Quick Composer)
@@ -501,8 +515,17 @@ public struct StreamView: View {
                                     TemporalGapDivider(days: gapDays)
                                 }
                             }
-                            entryCardView(entry)
-                                .id(entry.id)
+                            TimelineEntryCardView(
+                                entry: entry,
+                                appState: appState,
+                                onEditEntry: { editingEntry = entry },
+                                onDeleteEntry: { entryToDelete = entry; showDeleteConfirm = true },
+                                onEditTransaction: { tx in editingTransaction = tx },
+                                onDeleteTransaction: { tx in txToDelete = tx; showDeleteTxConfirm = true },
+                                onToggleFeatured: { toggleFeatured(entry) },
+                                onOpenDetail: { appState.highlightedEntry = entry; AudioFeedback.shared.playPaperFlip() }
+                            )
+                            .id(entry.id)
                         }
                     }
                 }
@@ -518,261 +541,334 @@ public struct StreamView: View {
         }
     }
 
-    // MARK: - 单条散页卡片渲染
+    // MARK: - 单条散页卡片渲染组件 (TimelineEntryCardView)
 
-    private func entryCardView(_ entry: LifeEntry) -> some View {
-        let parsed = entry.parsedDate
-        return VStack(alignment: .leading, spacing: 10) {
-            // 顶栏：形态印章 + 北京时间戳 + 地点 + 管理操作
-            HStack(spacing: 8) {
-                Text(entryTypeBadge(entry.type))
-                    .font(ArchiveTypography.monoScale(size: 10.5, weight: .medium))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(ArchivePalette.archivePaper)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
+    struct TimelineEntryCardView: View {
+        let entry: LifeEntry
+        @Bindable var appState: AppState
+        var onEditEntry: () -> Void
+        var onDeleteEntry: () -> Void
+        var onEditTransaction: (Transaction) -> Void
+        var onDeleteTransaction: (Transaction) -> Void
+        var onToggleFeatured: () -> Void
+        var onOpenDetail: () -> Void
 
-                Text(parsed.dotDateTime)
-                    .font(ArchiveTypography.monoScale(size: 11.5))
-                    .foregroundStyle(ArchivePalette.inkMuted)
+        @State private var isHovering: Bool = false
 
-                if let loc = entry.location ?? entry.cityName, !loc.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: "location")
-                            .font(.system(size: 9.5))
-                        Text(loc)
-                            .font(ArchiveTypography.bodySans(size: 11))
-                    }
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                }
+        private var parsed: FormatUtils.ParsedBeijingDate {
+            entry.parsedDate
+        }
 
-                if entry.featured == true {
-                    Text("精选")
-                        .font(ArchiveTypography.monoScale(size: 10))
-                        .foregroundStyle(ArchivePalette.accentMoss)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(ArchivePalette.accentMoss, lineWidth: 0.5)
-                        )
-                }
-
-                if (entry.syncStatus ?? "synced") != "synced" {
-                    Text("待同步")
-                        .font(ArchiveTypography.monoScale(size: 10))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
-
-                Spacer()
-
-                // 管理级别专属操作按钮
-                if entry.type == "transaction" {
-                    Button("编辑") {
-                        if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
-                            editingTransaction = tx
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .buttonStyle(.plain)
-
-                    Button("删除") {
-                        if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
-                            txToDelete = tx
-                            showDeleteTxConfirm = true
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .buttonStyle(.plain)
-
-                    Button("详情") {
-                        appState.highlightedEntry = entry
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                    .buttonStyle(.plain)
-                } else {
-                    Button {
-                        toggleFeatured(entry)
-                    } label: {
-                        Image(systemName: entry.featured == true ? "star.fill" : "star")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
-                    .help(entry.featured == true ? "取消精选" : "设为精选")
-
-                    Button("编辑") {
-                        editingEntry = entry
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .buttonStyle(.plain)
-
-                    Button("删除") {
-                        entryToDelete = entry
-                        showDeleteConfirm = true
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .buttonStyle(.plain)
-
-                    Button("详情") {
-                        appState.highlightedEntry = entry
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                    .buttonStyle(.plain)
-                }
+        private var typeAccentColor: Color {
+            switch entry.type {
+            case "travel": return ArchivePalette.accentWarm
+            case "project": return Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
+            case "wish": return Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle)
+            case "transaction": return Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle)
+            default: return ArchivePalette.accentMoss
             }
+        }
 
-            if !entry.title.isEmpty {
-                Text(entry.title)
-                    .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
+        private var entryTypeBadgeName: String {
+            switch entry.type {
+            case "travel": return "山川游历"
+            case "project": return "造物演进"
+            case "wish": return "心愿印记"
+            case "transaction": return "柴米油盐"
+            default: return "日常随笔"
             }
+        }
 
-            Text(LocalizedStringKey(entry.content))
-                .font(ArchiveTypography.bodySans(size: 13.5))
-                .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.92))
-                .lineSpacing(4)
-                .textSelection(.enabled)
+        var body: some View {
+            HStack(alignment: .top, spacing: 0) {
+                // 左侧时光彩色印线 (2.5pt 细微边缘色标)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(typeAccentColor.opacity(0.85))
+                    .frame(width: 3)
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 14)
 
-            // 附件胶片相框画廊 (.film-frame)
-            if !entry.attachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(entry.attachments) { att in
-                            if let url = APIClient.shared.resolveMediaURL(att.url) {
-                                FilmFrameView(
-                                    imageURL: url,
-                                    caption: entry.title.isEmpty ? att.originalFilename : entry.title,
-                                    metaText: parsed.dotDate,
-                                    maxHeight: 220
-                                ) {
-                                    appState.lightboxAttachment = att
-                                    AudioFeedback.shared.playPaperFlip()
+                VStack(alignment: .leading, spacing: 10) {
+                    // 顶栏：形态印章 + 北京时间戳 + 地点 + 悬停优雅动作
+                    HStack(spacing: 8) {
+                        Text(entryTypeBadgeName)
+                            .font(ArchiveTypography.monoScale(size: 10.5, weight: .medium))
+                            .foregroundStyle(typeAccentColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(typeAccentColor.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                        Text(parsed.dotDateTime)
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                        if let loc = entry.location ?? entry.cityName, !loc.isEmpty {
+                            HStack(spacing: 3) {
+                                Image(systemName: "location")
+                                    .font(.system(size: 9.5))
+                                Text(loc)
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                            }
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+
+                        if entry.featured == true {
+                            Text("精选")
+                                .font(ArchiveTypography.monoScale(size: 10, weight: .medium))
+                                .foregroundStyle(ArchivePalette.accentMoss)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                        .stroke(ArchivePalette.accentMoss.opacity(0.4), lineWidth: 0.5)
+                                )
+                        }
+
+                        if (entry.syncStatus ?? "synced") != "synced" {
+                            Text("待同步")
+                                .font(ArchiveTypography.monoScale(size: 10))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                        }
+
+                        Spacer()
+
+                        // 右侧操作：仅在鼠标悬停时优雅淡现，默认保持日记纯粹无噪点
+                        HStack(spacing: 6) {
+                            if isHovering {
+                                if entry.type == "transaction" {
+                                    if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                                        Button {
+                                            onEditTransaction(tx)
+                                        } label: {
+                                            Image(systemName: "pencil")
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                                .frame(width: 24, height: 24)
+                                                .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                                .clipShape(Circle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("编辑账目")
+
+                                        Button {
+                                            onDeleteTransaction(tx)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(ArchivePalette.accentWarm)
+                                                .frame(width: 24, height: 24)
+                                                .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                                .clipShape(Circle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("删除账目")
+                                    }
+                                } else {
+                                    Button {
+                                        onToggleFeatured()
+                                    } label: {
+                                        Image(systemName: entry.featured == true ? "star.fill" : "star")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                                            .frame(width: 24, height: 24)
+                                            .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                            .clipShape(Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(entry.featured == true ? "取消精选" : "设为精选")
+
+                                    Button {
+                                        onEditEntry()
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .frame(width: 24, height: 24)
+                                            .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                            .clipShape(Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("编辑手稿")
+
+                                    Button {
+                                        onDeleteEntry()
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                            .frame(width: 24, height: 24)
+                                            .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                            .clipShape(Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("删除手稿")
                                 }
-                                .frame(width: 280)
+                            }
+
+                            Button {
+                                onOpenDetail()
+                            } label: {
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .frame(width: 24, height: 24)
+                                    .background(isHovering ? ArchivePalette.archiveSubtle.opacity(0.8) : Color.clear)
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("查看手稿完整详情")
+                        }
+                        .animation(.easeInOut(duration: 0.15), value: isHovering)
+                    }
+
+                    if !entry.title.isEmpty {
+                        Text(entry.title)
+                            .font(ArchiveTypography.editorialSerif(size: 17.5, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                    }
+
+                    Text(LocalizedStringKey(entry.content))
+                        .font(ArchiveTypography.bodySans(size: 13.5))
+                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.92))
+                        .lineSpacing(5)
+                        .textSelection(.enabled)
+
+                    // 附件胶片相框画廊 (.film-frame)
+                    if !entry.attachments.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(entry.attachments) { att in
+                                    if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                        FilmFrameView(
+                                            imageURL: url,
+                                            caption: entry.title.isEmpty ? att.originalFilename : entry.title,
+                                            metaText: parsed.dotDate,
+                                            maxHeight: 220
+                                        ) {
+                                            appState.lightboxAttachment = att
+                                            AudioFeedback.shared.playPaperFlip()
+                                        }
+                                        .frame(width: 260)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+
+                    // #标签 列表
+                    let tags = entry.hashtags
+                    if !tags.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                Button {
+                                    appState.selectedHashtag = tag
+                                    AudioFeedback.shared.playTink()
+                                } label: {
+                                    Text("#\(tag)")
+                                        .font(ArchiveTypography.monoScale(size: 10.5))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(ArchivePalette.accentWarm.opacity(0.08))
+                                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
                 }
-                .padding(.top, 4)
             }
-
-            // #标签 列表
-            let tags = entry.hashtags
-            if !tags.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(tags, id: \.self) { tag in
+            .padding(16)
+            .background(ArchivePalette.archivePaper)
+            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+            .paperElevation(isHovering ? 2 : 1)
+            .overlay(
+                RoundedRectangle(cornerRadius: ArchiveRadius.md)
+                    .stroke(
+                        appState.keyboardFocusedEntryId == entry.id ? ArchivePalette.accentWarm : Color.clear,
+                        lineWidth: 1.0
+                    )
+            )
+            .onHover { isHovering = $0 }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                onOpenDetail()
+            }
+            .contextMenu {
+                if entry.type == "transaction" {
+                    if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
                         Button {
-                            appState.selectedHashtag = tag
-                            AudioFeedback.shared.playTink()
+                            onEditTransaction(tx)
                         } label: {
-                            Text("#\(tag)")
-                                .font(ArchiveTypography.monoScale(size: 11))
-                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Label("编辑账目", systemImage: "pencil")
                         }
-                        .buttonStyle(.plain)
+                        Button(role: .destructive) {
+                            onDeleteTransaction(tx)
+                        } label: {
+                            Label("删除账目", systemImage: "trash")
+                        }
+                        Divider()
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
+                            AudioFeedback.shared.playTink()
+                            appState.showTemporaryBanner("已拷贝金额至剪贴板")
+                        } label: {
+                            Label("拷贝金额", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
+                            AudioFeedback.shared.playTink()
+                            appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
+                        } label: {
+                            Label("拷贝账目摘要", systemImage: "text.quote")
+                        }
                     }
-                }
-            }
-        }
-        .padding(16)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(
-                    appState.keyboardFocusedEntryId == entry.id ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle,
-                    lineWidth: appState.keyboardFocusedEntryId == entry.id ? 1.0 : 0.5
-                )
-        )
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            appState.highlightedEntry = entry
-            AudioFeedback.shared.playPaperFlip()
-        }
-        .contextMenu {
-            if entry.type == "transaction" {
-                if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                } else {
                     Button {
-                        editingTransaction = tx
+                        onOpenDetail()
                     } label: {
-                        Label("编辑账目", systemImage: "pencil")
+                        Label("查看手稿详情", systemImage: "book.pages")
+                    }
+                    Button {
+                        onToggleFeatured()
+                    } label: {
+                        Label(entry.featured == true ? "取消精选印记" : "标记为精选印记", systemImage: entry.featured == true ? "star.slash" : "star")
+                    }
+                    Button {
+                        onEditEntry()
+                    } label: {
+                        Label("编辑手稿", systemImage: "pencil")
                     }
                     Button(role: .destructive) {
-                        txToDelete = tx
-                        showDeleteTxConfirm = true
+                        onDeleteEntry()
                     } label: {
-                        Label("删除账目", systemImage: "trash")
+                        Label("删除手稿", systemImage: "trash")
                     }
                     Divider()
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
+                        NSPasteboard.general.setString(entry.content, forType: .string)
                         AudioFeedback.shared.playTink()
-                        appState.showTemporaryBanner("已拷贝金额至剪贴板")
+                        appState.showTemporaryBanner("已拷贝手稿正文至剪贴板")
                     } label: {
-                        Label("拷贝金额", systemImage: "doc.on.doc")
+                        Label("拷贝手稿正文", systemImage: "doc.on.doc")
                     }
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
+                        NSPasteboard.general.setString(parsed.dotDateTime, forType: .string)
                         AudioFeedback.shared.playTink()
-                        appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
+                        appState.showTemporaryBanner("已拷贝时间戳至剪贴板")
                     } label: {
-                        Label("拷贝账目摘要", systemImage: "text.quote")
+                        Label("拷贝时间戳", systemImage: "clock")
                     }
                 }
-            } else {
-                Button {
-                    appState.highlightedEntry = entry
-                    AudioFeedback.shared.playPaperFlip()
-                } label: {
-                    Label("查看手稿详情", systemImage: "book.pages")
-                }
-                Button {
-                    toggleFeatured(entry)
-                } label: {
-                    Label(entry.featured == true ? "取消精选印记" : "标记为精选印记", systemImage: entry.featured == true ? "star.slash" : "star")
-                }
-                Button {
-                    editingEntry = entry
-                } label: {
-                    Label("编辑手稿", systemImage: "pencil")
-                }
-                Button(role: .destructive) {
-                    entryToDelete = entry
-                    showDeleteConfirm = true
-                } label: {
-                    Label("删除手稿", systemImage: "trash")
-                }
-                Divider()
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(entry.content, forType: .string)
-                    AudioFeedback.shared.playTink()
-                    appState.showTemporaryBanner("已拷贝手稿正文至剪贴板")
-                } label: {
-                    Label("拷贝手稿正文", systemImage: "doc.on.doc")
-                }
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(entry.parsedDate.dotDateTime, forType: .string)
-                    AudioFeedback.shared.playTink()
-                    appState.showTemporaryBanner("已拷贝时间戳至剪贴板")
-                } label: {
-                    Label("拷贝时间戳", systemImage: "clock")
-                }
             }
+            .paperHover()
         }
-        .paperHover()
     }
 
     // MARK: - 空态与顶部横幅
@@ -1172,38 +1268,31 @@ public struct StreamView: View {
     private var inlineQuickComposerCard: some View {
         Group {
             if !isQuickComposerExpanded {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(ArchivePalette.accentWarm)
-                    Text("此刻随笔碎念…")
-                        .font(ArchiveTypography.bodySans(size: 12.5))
+                    Text("写下此刻生活手稿与灵感碎念…")
+                        .font(ArchiveTypography.bodySans(size: 13))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     Spacer()
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            isQuickComposerExpanded = true
-                        }
-                        AudioFeedback.shared.playPaperFlip()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("展开速写")
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9))
-                        }
-                        .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                        .foregroundStyle(ArchivePalette.accentWarm)
+                    HStack(spacing: 4) {
+                        Text("展开速写")
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9))
                     }
-                    .buttonStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(ArchivePalette.accentWarm.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                )
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+                .paperElevation(1)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.18)) {
@@ -1214,7 +1303,7 @@ public struct StreamView: View {
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             ForEach(EntryType.allCases) { kind in
                                 PaperPillButton(
                                     title: kind.label,
@@ -1231,6 +1320,7 @@ public struct StreamView: View {
                         Toggle("精选", isOn: $quickFeatured)
                             .toggleStyle(.checkbox)
                             .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
 
                         Button {
                             withAnimation(.easeInOut(duration: 0.18)) {
@@ -1241,44 +1331,47 @@ public struct StreamView: View {
                             HStack(spacing: 3) {
                                 Text("收起")
                                 Image(systemName: "chevron.up")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 8))
                             }
                             .font(ArchiveTypography.bodySans(size: 11))
                             .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         }
                         .buttonStyle(.plain)
                         .help("收起速写卡片")
                     }
 
+                    // 沉浸无界标题行（无内外嵌套框）
                     TextField("标题（选填，留空则为随笔短笺）", text: $quickTitle)
                         .textFieldStyle(.plain)
-                        .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
-                        .padding(8)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .font(ArchiveTypography.editorialSerif(size: 16.5, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .padding(.vertical, 2)
 
-                    TextEditor(text: $quickContent)
-                        .font(ArchiveTypography.bodySans(size: 13))
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .frame(minHeight: 68, maxHeight: 110)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(
-                            Group {
-                                if quickContent.isEmpty {
-                                    Text("随时在此写下一笔散页手稿或灵感碎念（支持 #标签），按 ⌘↩ 直接归档…")
-                                        .font(ArchiveTypography.bodySans(size: 12.5))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 10)
-                                        .allowsHitTesting(false)
-                                }
-                            },
-                            alignment: .topLeading
-                        )
+                    Rectangle()
+                        .fill(ArchivePalette.borderSubtle.opacity(0.6))
+                        .frame(height: 0.5)
+
+                    // 沉浸无界正文（如真纸落墨，无灰色内嵌框）
+                    ZStack(alignment: .topLeading) {
+                        if quickContent.isEmpty {
+                            Text("随时在此落墨写下散页手稿或灵感碎念（支持 #标签），按 ⌘↩ 直接归档…")
+                                .font(ArchiveTypography.bodySans(size: 13.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(.top, 2)
+                                .allowsHitTesting(false)
+                        }
+
+                        TextEditor(text: $quickContent)
+                            .font(ArchiveTypography.bodySans(size: 13.5))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                            .scrollContentBackground(.hidden)
+                            .lineSpacing(4)
+                            .frame(minHeight: 72, maxHeight: 130)
+                    }
 
                     // 附带相片缩略条
                     if !quickAttachments.isEmpty {
@@ -1287,15 +1380,15 @@ public struct StreamView: View {
                                 ForEach(quickAttachments) { att in
                                     HStack(spacing: 4) {
                                         if let url = APIClient.shared.resolveMediaURL(att.url) {
-                                            CachedFilmImageView(url: url, maxHeight: 18)
-                                                .frame(width: 18, height: 18)
+                                            CachedFilmImageView(url: url, maxHeight: 20)
+                                                .frame(width: 20, height: 20)
                                                 .clipShape(RoundedRectangle(cornerRadius: 2))
                                         }
                                         Text(att.originalFilename)
                                             .font(ArchiveTypography.monoScale(size: 10.5))
                                             .foregroundStyle(ArchivePalette.inkPrimary)
                                             .lineLimit(1)
-                                            .frame(maxWidth: 80)
+                                            .frame(maxWidth: 85)
                                         Button {
                                             quickAttachments.removeAll { $0.id == att.id }
                                         } label: {
@@ -1305,30 +1398,33 @@ public struct StreamView: View {
                                         }
                                         .buttonStyle(.plain)
                                     }
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2.5)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 3)
-                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                                    )
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                                 }
                             }
                         }
                     }
 
+                    // 底栏所有控件严格 30pt 等高与水平对齐
                     HStack(spacing: 8) {
-                        TextField(
-                            appState.profile.displayCity.isEmpty ? "地点（如：杭州）" : appState.profile.displayCity,
-                            text: $quickLocation
-                        )
-                        .textFieldStyle(.plain)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .padding(6)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .frame(maxWidth: 160)
+                        HStack(spacing: 5) {
+                            Image(systemName: "location")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                            TextField(
+                                appState.profile.displayCity.isEmpty ? "地点（选填）" : appState.profile.displayCity,
+                                text: $quickLocation
+                            )
+                            .textFieldStyle(.plain)
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .frame(maxWidth: 120)
+                        }
+                        .padding(.horizontal, 8)
+                        .frame(height: 30)
+                        .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
 
                         PaperDateTimePicker(selection: $quickOccurredAt, showQuickShortcuts: false)
 
@@ -1340,18 +1436,14 @@ public struct StreamView: View {
                                     .font(.system(size: 11))
                                 if !quickAttachments.isEmpty {
                                     Text("\(quickAttachments.count)")
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
+                                        .font(ArchiveTypography.monoScale(size: 10.5, weight: .semibold))
                                 }
                             }
                             .foregroundStyle(quickAttachments.isEmpty ? ArchivePalette.inkSecondary : ArchivePalette.accentMoss)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
+                            .padding(.horizontal, 8)
+                            .frame(height: 30)
+                            .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         }
                         .buttonStyle(.plain)
                         .help("添加相纸底片照片…")
@@ -1362,21 +1454,31 @@ public struct StreamView: View {
 
                         Spacer()
 
-                        Button("落墨归档 (⌘↩)") {
+                        Button {
                             submitInlineQuickEntry()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "paperplane")
+                                    .font(.system(size: 11))
+                                Text("落墨归档 ⌘↩")
+                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                            }
+                            .padding(.horizontal, 14)
+                            .frame(height: 30)
+                            .foregroundStyle(ArchivePalette.archivePaper)
+                            .background(ArchivePalette.inkPrimary)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .buttonStyle(.plain)
+                        .paperElevation(1)
                         .keyboardShortcut(.return, modifiers: [.command])
                         .disabled((quickContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && quickAttachments.isEmpty) || isQuickUploading)
                     }
                 }
-                .padding(14)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                )
+                .padding(16)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+                .paperElevation(1)
             }
         }
     }

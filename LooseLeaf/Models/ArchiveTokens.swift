@@ -80,3 +80,38 @@ public enum ArchiveTypography {
         return .system(size: size, weight: weight, design: .monospaced).monospacedDigit()
     }
 }
+
+/// 统一圆角系统阶梯 (Corner Radii Scale)
+public enum ArchiveRadius {
+    public static let xs: CGFloat = 4   // 极小徽标
+    public static let sm: CGFloat = 6   // 胶囊、按钮、输入框、微控件
+    public static let md: CGFloat = 10  // 标准日记卡片、面板
+    public static let lg: CGFloat = 14  // 模态弹窗、主工作区
+}
+
+/// 纸张物理微投影修饰符（取代死板 0.5pt 灰色硬边框）
+public struct PaperElevationModifier: ViewModifier {
+    public var level: Int
+
+    public func body(content: Content) -> some View {
+        switch level {
+        case 1:
+            content
+                .shadow(color: Color.black.opacity(0.025), radius: 1, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(0.035), radius: 6, x: 0, y: 2)
+        case 2:
+            content
+                .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 2)
+                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+        default:
+            content
+        }
+    }
+}
+
+public extension View {
+    /// 纸张物理轻微投影
+    func paperElevation(_ level: Int = 1) -> some View {
+        modifier(PaperElevationModifier(level: level))
+    }
+}

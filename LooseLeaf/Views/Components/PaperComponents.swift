@@ -65,43 +65,71 @@ public struct LifeActivityHeatmapView: View {
         self.precomputedWeeks = weeks
     }
 
+    @State private var isExpanded: Bool = false
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("生活刻度 · 最近印记密度")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.dots.scatter")
+                    .font(.system(size: 11))
+                    .foregroundStyle(ArchivePalette.accentMoss)
+                Text("时光生活刻度")
                     .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkSecondary)
-                Spacer()
-                Text("共 \(totalCount) 篇散页")
+                Text("·")
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                Text("共 \(totalCount) 篇散页手稿留痕")
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isExpanded.toggle()
+                    }
+                    AudioFeedback.shared.playPaperFlip()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(isExpanded ? "收起星野" : "展开刻度网格")
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3.5)
+                    .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
+                .buttonStyle(.plain)
             }
 
-            HStack(alignment: .top, spacing: 3) {
-                ForEach(precomputedWeeks.indices, id: \.self) { weekIdx in
-                    VStack(spacing: 3) {
-                        ForEach(precomputedWeeks[weekIdx]) { cell in
-                            let count = entryCounts[cell.dateKey, default: 0]
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(cellColor(for: count))
-                                .frame(width: 9, height: 9)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 1.5)
-                                        .stroke(cell.isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
-                                )
-                                .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇记录")
+            if isExpanded {
+                HStack(alignment: .top, spacing: 3) {
+                    ForEach(precomputedWeeks.indices, id: \.self) { weekIdx in
+                        VStack(spacing: 3) {
+                            ForEach(precomputedWeeks[weekIdx]) { cell in
+                                let count = entryCounts[cell.dateKey, default: 0]
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(cellColor(for: count))
+                                    .frame(width: 9, height: 9)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 1.5)
+                                            .stroke(cell.isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
+                                    )
+                                    .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇记录")
+                            }
                         }
                     }
                 }
+                .padding(.top, 4)
             }
         }
         .padding(12)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-        )
+        .background(ArchivePalette.archivePaper)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+        .paperElevation(1)
     }
 
     private func cellColor(for count: Int) -> Color {
@@ -120,7 +148,7 @@ public struct LifeActivityHeatmapView: View {
     }
 }
 
-/// 纸签胶囊按钮 (用于分类切换、标签选择，摒弃系统原生蓝色高亮)
+/// 纸签胶囊按钮 (用于分类切换、标签选择，排版杂志风格微高亮)
 public struct PaperPillButton: View {
     public let title: String
     public var icon: String?
@@ -144,21 +172,21 @@ public struct PaperPillButton: View {
             HStack(spacing: 5) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
                 }
                 Text(title)
-                    .font(ArchiveTypography.bodySans(size: 12, weight: isSelected ? .semibold : .regular))
+                    .font(ArchiveTypography.bodySans(size: 11.5, weight: isSelected ? .semibold : .regular))
             }
-            .foregroundStyle(isSelected ? ArchivePalette.archivePaper : ArchivePalette.inkSecondary)
+            .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isSelected ? ArchivePalette.accentWarm : ArchivePalette.archiveSubtle)
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                    .fill(isSelected ? ArchivePalette.accentWarm.opacity(0.12) : ArchivePalette.archiveSubtle.opacity(0.65))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(isSelected ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                    .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.35) : Color.clear, lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -171,12 +199,7 @@ public struct PaperHoverModifier: ViewModifier {
 
     public func body(content: Content) -> some View {
         content
-            .brightness(isHovering ? 0.018 : 0)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isHovering ? ArchivePalette.borderDivider : Color.clear, lineWidth: 0.5)
-                    .allowsHitTesting(false)
-            )
+            .brightness(isHovering ? 0.015 : 0)
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.12)) {
                     isHovering = hovering
@@ -192,7 +215,7 @@ public extension View {
     }
 }
 
-/// 出版物操作按钮样式 (0.5pt 微墨线 + 陶土赭石高亮)
+/// 出版物操作按钮样式 (优雅墨色/纸本微高亮，告别大泥红)
 public struct PaperPrimaryButtonStyle: ButtonStyle {
     public var isProminent: Bool
 
@@ -202,19 +225,20 @@ public struct PaperPrimaryButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
             .foregroundStyle(isProminent ? ArchivePalette.archivePaper : ArchivePalette.inkPrimary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(isProminent ? ArchivePalette.accentWarm : ArchivePalette.archiveSubtle)
-                    .opacity(configuration.isPressed ? 0.84 : 1.0)
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                    .fill(isProminent ? ArchivePalette.inkPrimary : ArchivePalette.archivePaper)
+                    .opacity(configuration.isPressed ? 0.85 : 1.0)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(isProminent ? ArchivePalette.accentWarm : ArchivePalette.borderDivider, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                    .stroke(isProminent ? Color.clear : ArchivePalette.borderSubtle, lineWidth: 0.5)
             )
+            .paperElevation(isProminent ? 1 : 0)
     }
 }
 

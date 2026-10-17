@@ -124,9 +124,14 @@ public struct SettingsView: View {
             if let update = UpdateChecker.shared.availableUpdate {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("🎉 发现新版本 \(update.tagName)")
-                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.accentWarm)
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Text("发现新版本 \(update.tagName)")
+                                .font(ArchiveTypography.bodySans(size: 12.5, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                        }
                         Text(update.body.isEmpty ? "包含功能更新与稳定性增强。" : update.body)
                             .font(ArchiveTypography.bodySans(size: 11))
                             .foregroundStyle(ArchivePalette.inkSecondary)

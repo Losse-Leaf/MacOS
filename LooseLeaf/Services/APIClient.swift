@@ -336,6 +336,33 @@ public actor APIClient {
         )
     }
 
+    public func updateCategoryOption(id: Int, name: String, renameRecords: Bool = true) async throws -> CategoryOption {
+        struct Payload: Codable, Sendable {
+            let name: String
+            let renameRecords: Bool
+            enum CodingKeys: String, CodingKey {
+                case name
+                case renameRecords = "rename_records"
+            }
+        }
+        return try await performEnvelopeRequest(
+            path: "/api/v1/categories/\(id)",
+            method: "PUT",
+            body: Payload(name: name, renameRecords: renameRecords)
+        )
+    }
+
+    public func resetCategories(scope: String? = nil) async throws {
+        struct Payload: Codable, Sendable {
+            let scope: String?
+        }
+        let _: CategoryResetResponse = try await performEnvelopeRequest(
+            path: "/api/v1/categories/reset",
+            method: "POST",
+            body: Payload(scope: scope)
+        )
+    }
+
     /// 获取那年今日历史归档 (GET /api/v1/entries/on-this-day)
     public func fetchOnThisDayEntries() async throws -> OnThisDayResponse {
         try await performEnvelopeRequest(path: "/api/v1/entries/on-this-day")

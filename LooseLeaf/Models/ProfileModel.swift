@@ -1455,4 +1455,14 @@ public struct GlobalSearchResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct CategoryResetResponse: Codable, Sendable {
+    public var items: [CategoryOption]?
+    public var byScope: [String: [String]]?
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case byScope = "by_scope"
+    }
+}
+
 

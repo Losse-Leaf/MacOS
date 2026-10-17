@@ -42,7 +42,7 @@ public struct LifeActivityHeatmapView: View {
 
     private let precomputedWeeks: [[DayCell]]
 
-    public init(entryCounts: [String: Int], totalCount: Int, weeksCount: Int = 32) {
+    public init(entryCounts: [String: Int], totalCount: Int, weeksCount: Int = 52) {
         self.entryCounts = entryCounts
         self.totalCount = totalCount
         self.weeksCount = weeksCount
@@ -449,7 +449,7 @@ public struct PaperCityPicker: View {
     public init(
         selectedCode: Binding<String>,
         selectedName: Binding<String>,
-        placeholder: String = "点击点选行政区划城市…"
+        placeholder: String = "选择行政区划城市…"
     ) {
         self._selectedCode = selectedCode
         self._selectedName = selectedName

@@ -78,6 +78,8 @@ public final class QuickCaptureDraft {
     public var titleText: String = ""
     public var contentText: String = ""
     public var customLocation: String = ""
+    public var selectedCityCode: String = ""
+    public var selectedCityName: String = ""
     public var isFeatured: Bool = false
     public var uploadedAttachments: [Attachment] = []
     public var extractedCameraLine: String = ""
@@ -87,6 +89,9 @@ public final class QuickCaptureDraft {
     public func reset() {
         titleText = ""
         contentText = ""
+        customLocation = ""
+        selectedCityCode = ""
+        selectedCityName = ""
         uploadedAttachments.removeAll()
         extractedCameraLine = ""
         isFeatured = false
@@ -129,6 +134,8 @@ public final class AppState {
     public var activeSection: WorkbenchSection = .stream
     public var selectedCategory: ArchiveCategory = .all
     public var searchQuery: String = ""
+    public var globalSearchResult: GlobalSearchResponse?
+    public var isGlobalSearching: Bool = false
     public var highlightedEntry: LifeEntry?
     public var lightboxAttachment: Attachment?
 
@@ -259,6 +266,23 @@ public final class AppState {
             }
         }
         return source
+    }
+
+    /// 全库跨模块网络搜索（当已配对时发起，支持足迹、心愿与造物项目联动检索）
+    public func performGlobalSearch(query: String) async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, isPaired else {
+            self.globalSearchResult = nil
+            return
+        }
+        self.isGlobalSearching = true
+        defer { self.isGlobalSearching = false }
+        do {
+            let res = try await APIClient.shared.searchGlobalArchive(query: q, limit: 30)
+            self.globalSearchResult = res
+        } catch {
+            // 网络受阻或离线时保持本地纯粹搜索
+        }
     }
 
     /// 按北京时间自然日聚合的记录密度（52 周热力图数据源，带记忆缓存）
@@ -459,6 +483,8 @@ public final class AppState {
         content: String,
         type: EntryType = .life,
         location: String? = nil,
+        cityCode: String? = nil,
+        cityName: String? = nil,
         attachmentIds: [Int] = [],
         featured: Bool = false,
         occurredAt: String? = nil
@@ -467,6 +493,18 @@ public final class AppState {
             ? location!.trimmingCharacters(in: .whitespacesAndNewlines)
             : (profile.displayCity.isEmpty ? nil : profile.displayCity)
 
+        var resolvedCode = cityCode?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if resolvedCode?.isEmpty == true { resolvedCode = nil }
+        var resolvedCityName = cityName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if resolvedCityName?.isEmpty == true { resolvedCityName = nil }
+
+        if resolvedCode == nil, let loc = finalLocation {
+            resolvedCode = FormatUtils.resolveCityCode(from: loc)
+        }
+        if resolvedCode != nil && resolvedCityName == nil {
+            resolvedCityName = CityDictionary.standardCities.first(where: { $0.code == resolvedCode })?.name
+        }
+
         let req = CreateEntryRequest(
             type: type.rawValue,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -474,6 +512,8 @@ public final class AppState {
             occurredAt: occurredAt ?? FormatUtils.beijingISOString(),
             location: finalLocation,
             featured: featured,
+            cityCode: resolvedCode,
+            cityName: resolvedCityName,
             attachmentIds: attachmentIds
         )
 
@@ -494,7 +534,9 @@ public final class AppState {
         category: String,
         title: String,
         note: String? = nil,
-        paymentMethod: String? = nil
+        paymentMethod: String? = nil,
+        cityCode: String? = nil,
+        occurredAt: String? = nil
     ) async throws -> Bool {
         let req = CreateTransactionRequest(
             amount: amountCents,
@@ -503,7 +545,8 @@ public final class AppState {
             title: title,
             note: note,
             paymentMethod: paymentMethod ?? paymentMethods.first ?? "微信支付",
-            occurredAt: FormatUtils.beijingISOString()
+            cityCode: cityCode,
+            occurredAt: occurredAt ?? FormatUtils.beijingISOString()
         )
 
         let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
@@ -549,10 +592,13 @@ public final class AppState {
         await refreshAll(forceFull: true)
     }
 
-    public func disconnectDevice() {
+    public func disconnectDevice() async {
+        if let devId = CredentialStore.getDeviceId() {
+            try? await APIClient.shared.revokeDevice(id: devId)
+        }
         CredentialStore.clearAllCredentials()
         self.isPaired = false
-        showTemporaryBanner("已清除本机设备配对凭证")
+        showTemporaryBanner("已安全吊销并清除本机设备配对凭证")
     }
 
     /// 导航定位并打开指定散页（Spotlight 系统搜索 / 深链直达）

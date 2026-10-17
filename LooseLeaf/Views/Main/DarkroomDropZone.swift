@@ -32,6 +32,7 @@ public struct DarkroomDropZone: View {
     @State private var entryTitle: String = ""
     @State private var entryContent: String = ""
     @State private var entryLocation: String = ""
+    @State private var entryOccurredAt: Date = Date()
     @State private var entryType: EntryType = .life
     @State private var isFeatured: Bool = true
 
@@ -109,6 +110,13 @@ public struct DarkroomDropZone: View {
                 }
             }
             .padding(24)
+            .onChange(of: selectedIndex) { _, newIndex in
+                if items.indices.contains(newIndex),
+                   let capAt = items[newIndex].photo.exifMetadata.capturedAt,
+                   let date = FormatUtils.parseFlexDate(capAt) {
+                    entryOccurredAt = date
+                }
+            }
         }
     }
 
@@ -161,7 +169,7 @@ public struct DarkroomDropZone: View {
                             .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
 
-                        Text("支持常见图片与单反原片，支持一次拖入多张照片生成底片卷，或按 ⌘V 粘贴截图")
+                        Text("支持常见相片与单反原片，按 ⌘V 粘贴截图")
                             .font(ArchiveTypography.monoScale(size: 11))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
@@ -191,9 +199,6 @@ public struct DarkroomDropZone: View {
                     .font(ArchiveTypography.editorialSerif(size: 12, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                 Spacer()
-                Text("点击底片切换预览 · 点击角标移除")
-                    .font(ArchiveTypography.monoScale(size: 10))
-                    .foregroundStyle(ArchivePalette.inkMuted)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -298,7 +303,7 @@ public struct DarkroomDropZone: View {
             }
 
             // 标题与手记输入
-            TextField("相片标题（可选）", text: $entryTitle)
+            TextField("相片标题", text: $entryTitle)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.editorialSerif(size: 13.5))
                 .foregroundStyle(ArchivePalette.inkPrimary)
@@ -310,8 +315,10 @@ public struct DarkroomDropZone: View {
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
 
+            PaperDateTimePicker(selection: $entryOccurredAt, label: "记录时间", showQuickShortcuts: true)
+
             TextField(
-                appState.profile.displayCity.isEmpty ? "拍摄地点（如：杭州 · 满觉陇）" : appState.profile.displayCity,
+                appState.profile.displayCity.isEmpty ? "拍摄地点" : appState.profile.displayCity,
                 text: $entryLocation
             )
             .textFieldStyle(.plain)
@@ -468,6 +475,9 @@ public struct DarkroomDropZone: View {
                     if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
                         entryContent = result.exifMetadata.formattedCameraLine
                     }
+                    if let capAt = result.exifMetadata.capturedAt, let date = FormatUtils.parseFlexDate(capAt) {
+                        entryOccurredAt = date
+                    }
                 }
             } catch {
                 self.errorMessage = "载入「\(url.lastPathComponent)」失败：\(error.localizedDescription)"
@@ -534,7 +544,8 @@ public struct DarkroomDropZone: View {
                         type: entryType,
                         location: entryLocation.isEmpty ? nil : entryLocation,
                         attachmentIds: attachmentIds,
-                        featured: isFeatured
+                        featured: isFeatured,
+                        occurredAt: FormatUtils.beijingISOString(from: entryOccurredAt)
                     )
 
                     resetDarkroom()
@@ -563,7 +574,8 @@ public struct DarkroomDropZone: View {
                         type: entryType,
                         location: entryLocation.isEmpty ? nil : entryLocation,
                         attachmentIds: [att.id],
-                        featured: isFeatured
+                        featured: isFeatured,
+                        occurredAt: FormatUtils.beijingISOString(from: entryOccurredAt)
                     )
 
                     items.remove(at: selectedIndex)
@@ -589,6 +601,8 @@ public struct DarkroomDropZone: View {
         entryTitle = ""
         entryContent = ""
         entryLocation = ""
+        entryOccurredAt = Date()
+        isUploading = false
         uploadProgress = 0.0
         errorMessage = nil
     }

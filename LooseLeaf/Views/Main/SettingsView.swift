@@ -25,6 +25,8 @@ public struct SettingsView: View {
     @State private var selectedCategoryScope: String = "expense"
     @State private var newCategoryNameInput: String = ""
     @State private var allCategoriesList: [CategoryOption] = []
+    @State private var renamingCategory: CategoryOption?
+    @State private var renameCategoryInput: String = ""
     @State private var isExportingArchive: Bool = false
 
     // 全局热键录制状态
@@ -65,6 +67,9 @@ public struct SettingsView: View {
         }
         .sheet(item: $renamingDevice) { dev in
             renameDeviceSheetView(dev: dev)
+        }
+        .sheet(item: $renamingCategory) { cat in
+            renameCategorySheetView(cat: cat)
         }
         .task {
             if appState.isPaired {
@@ -269,7 +274,9 @@ public struct SettingsView: View {
                     }
                     Spacer()
                     Button("解除本机配对") {
-                        appState.disconnectDevice()
+                        Task { @MainActor in
+                            await appState.disconnectDevice()
+                        }
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 }
@@ -525,15 +532,46 @@ public struct SettingsView: View {
         )
     }
 
-    // MARK: - 3.5 分类标签字典管理
+    // MARK: - 3.5 分类字典管理
     private var categoryManagerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("04 · 分类标签字典管理")
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+            HStack {
+                Text("04 · 分类字典管理")
+                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Spacer()
+                Button {
+                    Task { @MainActor in
+                        do {
+                            try await APIClient.shared.resetCategories(scope: selectedCategoryScope)
+                            await appState.loadConfigAndProfile()
+                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                            AudioFeedback.shared.playPaperFlip()
+                            appState.showTemporaryBanner("已恢复「\(selectedCategoryScope)」的默认预置分类")
+                        } catch {
+                            authError = "恢复分类失败: \(error.localizedDescription)"
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10))
+                        Text("恢复本模块默认")
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+                .buttonStyle(.plain)
+            }
 
             HStack(spacing: 6) {
-                ForEach([("expense", "支出类目"), ("income", "收入类目"), ("gear", "随身装备"), ("project", "造物标签")], id: \.0) { scope, label in
+                ForEach([
+                    ("expense", "支出类目"),
+                    ("income", "收入类目"),
+                    ("gear", "随身装备"),
+                    ("payment", "支付方式"),
+                    ("project", "造物分类")
+                ], id: \.0) { scope, label in
                     PaperPillButton(
                         title: label,
                         isSelected: selectedCategoryScope == scope
@@ -545,7 +583,7 @@ public struct SettingsView: View {
             }
 
             HStack(spacing: 8) {
-                TextField("输入新分类标签…", text: $newCategoryNameInput)
+                TextField("输入新分类名称…", text: $newCategoryNameInput)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 12))
                     .padding(8)
@@ -577,40 +615,55 @@ public struct SettingsView: View {
 
             let currentScopeCats = allCategoriesList.filter { $0.scope == selectedCategoryScope }
             if currentScopeCats.isEmpty {
-                Text("展示当前分类项。")
+                Text("暂无分类项，可点击右上角「恢复本模块默认」或手动添加。")
                     .font(ArchiveTypography.bodySans(size: 11.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
                     ForEach(currentScopeCats) { cat in
-                        HStack(spacing: 4) {
-                            Text(cat.name)
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-                            if cat.isBuiltin {
-                                Text("预置")
-                                    .font(ArchiveTypography.monoScale(size: 9))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                            } else {
-                                Spacer()
-                                Button {
-                                    Task { @MainActor in
-                                        do {
-                                            try await APIClient.shared.deleteCategoryOption(id: cat.id)
-                                            await appState.loadConfigAndProfile()
-                                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                                            AudioFeedback.shared.playTink()
-                                        } catch {
-                                            authError = "删除分类失败: \(error.localizedDescription)"
-                                        }
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
+                        HStack(spacing: 6) {
+                            Button {
+                                renamingCategory = cat
+                                renameCategoryInput = cat.name
+                            } label: {
+                                Text(cat.name)
+                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                    .lineLimit(1)
                             }
+                            .buttonStyle(.plain)
+                            .help("点击修改分类名称（自动同步历史账目）")
+
+                            Spacer()
+
+                            Button {
+                                renamingCategory = cat
+                                renameCategoryInput = cat.name
+                            } label: {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                Task { @MainActor in
+                                    do {
+                                        try await APIClient.shared.deleteCategoryOption(id: cat.id)
+                                        await appState.loadConfigAndProfile()
+                                        allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                                        AudioFeedback.shared.playTink()
+                                    } catch {
+                                        authError = "删除分类失败: \(error.localizedDescription)"
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            }
+                            .buttonStyle(.plain)
+                            .help("删除分类")
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
@@ -631,6 +684,51 @@ public struct SettingsView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
         )
+    }
+
+    private func renameCategorySheetView(cat: CategoryOption) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("重命名分类「\(cat.name)」")
+                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+            Text("修改后将自动级联更新归属于该分类的所有历史账目与业务记录。")
+                .font(ArchiveTypography.bodySans(size: 11.5))
+                .foregroundStyle(ArchivePalette.inkMuted)
+
+            TextField("分类新名称", text: $renameCategoryInput)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.bodySans(size: 13))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            HStack {
+                Button("取消") { renamingCategory = nil }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                Spacer()
+                Button("保存修改") {
+                    let clean = renameCategoryInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !clean.isEmpty else { return }
+                    renamingCategory = nil
+                    Task { @MainActor in
+                        do {
+                            _ = try await APIClient.shared.updateCategoryOption(id: cat.id, name: clean)
+                            await appState.loadConfigAndProfile()
+                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                            AudioFeedback.shared.playTink()
+                            appState.showTemporaryBanner("分类已成功更新为「\(clean)」")
+                        } catch {
+                            authError = "更新分类失败: \(error.localizedDescription)"
+                        }
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .disabled(renameCategoryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 340)
+        .background(ArchivePalette.archivePaper)
     }
 
     // MARK: - 4. 视觉与声学触觉偏好
@@ -703,7 +801,7 @@ public struct SettingsView: View {
                     Text("全局呼出极速闪念悬浮窗热键")
                         .font(ArchiveTypography.bodySans(size: 12.5))
                         .foregroundStyle(ArchivePalette.inkSecondary)
-                    Text("点击「修改」后按下新的组合键（须包含 ⌘ / ⌥ / ⌃ 之一）")
+                    Text("按下新的快捷键（须包含 ⌘ / ⌥ / ⌃ 之一）")
                         .font(ArchiveTypography.bodySans(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -805,7 +903,7 @@ public struct SettingsView: View {
                 Text("全量多格式文稿与数据导出")
                     .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("数据 100% 属于你，永远可导出，格式开放且永久兼容：")
+                Text("格式开放且支持完整导出：")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
 

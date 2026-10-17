@@ -31,6 +31,8 @@ public struct StreamView: View {
     @State private var quickTitle: String = ""
     @State private var quickContent: String = ""
     @State private var quickLocation: String = ""
+    @State private var quickCityCode: String = ""
+    @State private var quickCityName: String = ""
     @State private var quickFeatured: Bool = false
     @State private var quickOccurredAt: Date = Date()
     @State private var quickAttachments: [Attachment] = []
@@ -51,6 +53,10 @@ public struct StreamView: View {
     @State private var editingTransaction: Transaction?
     @State private var txToDelete: Transaction?
     @State private var showDeleteTxConfirm: Bool = false
+    // 全局检索关联发现弹窗
+    @State private var inspectingSearchFootprint: Footprint?
+    @State private var inspectingSearchWish: Wish?
+    @State private var inspectingSearchProject: Project?
 
     public init(appState: AppState) {
         self.appState = appState
@@ -128,6 +134,15 @@ public struct StreamView: View {
         }
         .sheet(item: $appState.highlightedEntry) { entry in
             entryDetailSheet(entry: entry)
+        }
+        .sheet(item: $inspectingSearchFootprint) { fp in
+            searchFootprintDetailSheet(fp: fp)
+        }
+        .sheet(item: $inspectingSearchWish) { wish in
+            searchWishDetailSheet(wish: wish)
+        }
+        .sheet(item: $inspectingSearchProject) { project in
+            searchProjectDetailSheet(project: project)
         }
         .confirmationDialog(
             "确认删除该条生活手稿？",
@@ -342,7 +357,7 @@ public struct StreamView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 11.5))
                             .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                        TextField("检索散页手稿、地点或 #标签… (⌘F)", text: $localSearchText)
+                        TextField("检索散页手稿或地点… (⌘F)", text: $localSearchText)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
                             .focused($isSearchFocused)
@@ -351,6 +366,7 @@ public struct StreamView: View {
                             .onChange(of: localSearchText) { _, newVal in
                                 if newVal.isEmpty {
                                     appState.searchQuery = ""
+                                    appState.globalSearchResult = nil
                                 }
                             }
                             .task(id: localSearchText) {
@@ -358,12 +374,19 @@ public struct StreamView: View {
                                 do {
                                     try await Task.sleep(nanoseconds: 180_000_000)
                                     appState.searchQuery = localSearchText
+                                    await appState.performGlobalSearch(query: localSearchText)
                                 } catch {}
                             }
+                        if appState.isGlobalSearching {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .padding(.trailing, 2)
+                        }
                         if !localSearchText.isEmpty {
                             Button {
                                 localSearchText = ""
                                 appState.searchQuery = ""
+                                appState.globalSearchResult = nil
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.system(size: 11))
@@ -453,7 +476,7 @@ public struct StreamView: View {
                 LifeActivityHeatmapView(
                     entryCounts: appState.entryCountsByDate,
                     totalCount: appState.entries.count,
-                    weeksCount: 38
+                    weeksCount: 52
                 )
 
                 // 4. 四维母体分类切换栏与 #标签 筛选
@@ -471,6 +494,12 @@ public struct StreamView: View {
                     }
 
                     Spacer()
+                }
+
+                // 4.1 全库跨模块检索关联发现 (足迹 / 心愿 / 造物)
+                if !appState.searchQuery.isEmpty, let res = appState.globalSearchResult,
+                   (!res.footprints.isEmpty || !res.wishes.isEmpty || !res.projects.isEmpty) {
+                    globalSearchCrossModuleBanner(res: res)
                 }
 
                 // 5. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
@@ -609,7 +638,8 @@ public struct StreamView: View {
                         HStack(spacing: 6) {
                             if isHovering {
                                 if entry.type == "transaction" {
-                                    if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                                    let txId = entry.associatedTransactionId ?? Int64(entry.id)
+                                    if let tx = appState.transactions.first(where: { $0.id == txId }) {
                                         Button {
                                             onEditTransaction(tx)
                                         } label: {
@@ -748,7 +778,8 @@ public struct StreamView: View {
             }
             .contextMenu {
                 if entry.type == "transaction" {
-                    if let tx = appState.transactions.first(where: { $0.id == entry.id }) {
+                    let txId = entry.associatedTransactionId ?? Int64(entry.id)
+                    if let tx = appState.transactions.first(where: { $0.id == txId }) {
                         Button {
                             onEditTransaction(tx)
                         } label: {
@@ -831,7 +862,7 @@ public struct StreamView: View {
             Text("散页手记尚待落墨")
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
-            Text("随时按下 ⌘ + ⇧ + L 呼出极速闪念窗，或点击右上角「撰写散页」记录真实可感的当下。")
+            Text("记录真实可感的当下")
                 .font(ArchiveTypography.bodySans(size: 12.5))
                 .foregroundStyle(ArchivePalette.inkMuted)
         }
@@ -957,7 +988,7 @@ public struct StreamView: View {
                 }
             }
 
-            TextField("标题（可选）", text: $composeTitle)
+            TextField("标题", text: $composeTitle)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.editorialSerif(size: 14))
                 .padding(8)
@@ -966,7 +997,7 @@ public struct StreamView: View {
 
             HStack(spacing: 8) {
                 TextField(
-                    appState.profile.displayCity.isEmpty ? "所处地点（如：杭州，自动点亮行迹）" : appState.profile.displayCity,
+                    appState.profile.displayCity.isEmpty ? "所处地点" : appState.profile.displayCity,
                     text: $composeLocation
                 )
                 .textFieldStyle(.plain)
@@ -1295,7 +1326,7 @@ public struct StreamView: View {
                     }
 
                     // 沉浸无界标题行（无内外嵌套框）
-                    TextField("标题（选填，留空则为随笔短笺）", text: $quickTitle)
+                    TextField("标题", text: $quickTitle)
                         .textFieldStyle(.plain)
                         .font(ArchiveTypography.editorialSerif(size: 16.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
@@ -1308,7 +1339,7 @@ public struct StreamView: View {
                     // 沉浸无界正文（如真纸落墨，无灰色内嵌框）
                     ZStack(alignment: .topLeading) {
                         if quickContent.isEmpty {
-                            Text("随时在此落墨写下散页手稿或灵感碎念（支持 #标签），按 ⌘↩ 直接归档…")
+                            Text("随时在此落墨写下散页手稿或灵感碎念，按 ⌘↩ 直接归档…")
                                 .font(ArchiveTypography.bodySans(size: 13.5))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                                 .padding(.top, 2)
@@ -1359,17 +1390,20 @@ public struct StreamView: View {
 
                     // 底栏所有控件严格 30pt 等高与水平对齐
                     HStack(spacing: 8) {
+                        PaperCityPicker(
+                            selectedCode: $quickCityCode,
+                            selectedName: $quickCityName,
+                            placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
+                        )
+
                         HStack(spacing: 5) {
-                            Image(systemName: "location")
+                            Image(systemName: "mappin.and.ellipse")
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(ArchivePalette.inkMuted)
-                            TextField(
-                                appState.profile.displayCity.isEmpty ? "地点（选填）" : appState.profile.displayCity,
-                                text: $quickLocation
-                            )
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.bodySans(size: 12))
-                            .frame(maxWidth: 120)
+                            TextField("街巷/景点(选填)", text: $quickLocation)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.bodySans(size: 12))
+                                .frame(maxWidth: 110)
                         }
                         .padding(.horizontal, 8)
                         .frame(height: 30)
@@ -1445,8 +1479,15 @@ public struct StreamView: View {
         }
 
         let location = quickLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedCode = FormatUtils.resolveCityCode(from: location)
-        let finalLoc = location.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : location
+        var resolvedCode = quickCityCode.isEmpty ? nil : quickCityCode
+        var resolvedCity = quickCityName.isEmpty ? nil : quickCityName
+        if resolvedCode == nil && !location.isEmpty {
+            resolvedCode = FormatUtils.resolveCityCode(from: location)
+        }
+        if resolvedCity == nil, let code = resolvedCode {
+            resolvedCity = CityDictionary.standardCities.first(where: { $0.code == code })?.name
+        }
+        let finalLoc = location.isEmpty ? (resolvedCity ?? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity)) : location
         let attIds = quickAttachments.map(\.id)
         let contentToSubmit = content
 
@@ -1459,7 +1500,7 @@ public struct StreamView: View {
                 location: finalLoc,
                 featured: quickFeatured,
                 cityCode: resolvedCode,
-                cityName: finalLoc,
+                cityName: resolvedCity,
                 attachmentIds: attIds
             )
             _ = try? await SyncManager.shared.submitEntry(req)
@@ -1467,6 +1508,8 @@ public struct StreamView: View {
             quickTitle = ""
             quickContent = ""
             quickLocation = ""
+            quickCityCode = ""
+            quickCityName = ""
             quickFeatured = false
             quickOccurredAt = Date()
             quickAttachments.removeAll()
@@ -1656,7 +1699,8 @@ public struct StreamView: View {
 
     private func entryDetailSheet(entry: LifeEntry) -> some View {
         let isTx = (entry.type == "transaction")
-        let matchingTx = isTx ? appState.transactions.first(where: { $0.id == entry.id }) : nil
+        let txId = entry.associatedTransactionId ?? Int64(entry.id)
+        let matchingTx = isTx ? appState.transactions.first(where: { $0.id == txId }) : nil
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(entryTypeBadge(entry.type))
@@ -1666,7 +1710,7 @@ public struct StreamView: View {
                     .font(ArchiveTypography.monoScale(size: 11.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Spacer()
-                if appState.isPaired && entry.id > 0 {
+                if appState.isPaired && (entry.id > 0 || (isTx && matchingTx != nil)) {
                     if isTx {
                         if let tx = matchingTx {
                             Button("编辑账目") {
@@ -1776,6 +1820,378 @@ public struct StreamView: View {
         }
         .padding(24)
         .frame(width: 520)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    // MARK: - 全库跨模块关联检索发现 (Global Search Cross-Module Discovery)
+
+    private func globalSearchCrossModuleBanner(res: GlobalSearchResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                Text("全库关联发现")
+                    .font(ArchiveTypography.editorialSerif(size: 14, weight: .bold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                Text("跨模块命中 \(res.footprints.count + res.wishes.count + res.projects.count) 项")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+
+                Spacer()
+
+                Button {
+                    appState.activeSection = .creations
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("进入造物与心愿工作台")
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 1. 足迹发现
+            if !res.footprints.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("山川行迹票根 (\(res.footprints.count))")
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(res.footprints) { fp in
+                                Button {
+                                    inspectingSearchFootprint = fp
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "mappin.and.ellipse")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                        Text(fp.cityName.isEmpty ? fp.cityCode : fp.cityName)
+                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        if let title = fp.title, !title.isEmpty {
+                                            Text("· \(title)")
+                                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.8)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. 心愿发现
+            if !res.wishes.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("三维心愿单 (\(res.wishes.count))")
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(res.wishes) { wish in
+                                Button {
+                                    inspectingSearchWish = wish
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: wish.status == "fulfilled" ? "checkmark.circle.fill" : "sparkles")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(wish.status == "fulfilled" ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                                        Text(wish.title)
+                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                            .lineLimit(1)
+                                        if wish.budget > 0 {
+                                            Text(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))
+                                                .font(ArchiveTypography.monoScale(size: 11))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.8)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. 造物发现
+            if !res.projects.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("造物与项目 (\(res.projects.count))")
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(res.projects) { project in
+                                Button {
+                                    inspectingSearchProject = project
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "hammer.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                        Text(project.title)
+                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                            .lineLimit(1)
+                                        if let sub = project.subtitle, !sub.isEmpty {
+                                            Text("· \(sub)")
+                                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.8)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(ArchivePalette.archiveSubtle.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.md)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+        )
+    }
+
+    private func searchFootprintDetailSheet(fp: Footprint) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("山川行迹 · 票根")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                Spacer()
+                Button("关闭") {
+                    inspectingSearchFootprint = nil
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(fp.title?.isEmpty == false ? fp.title! : fp.cityName)
+                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                HStack(spacing: 8) {
+                    Text(fp.cityName.isEmpty ? fp.cityCode : "\(fp.cityName) (\(fp.cityCode))")
+                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Text("· 到访：\(FormatUtils.formatDate(fp.visitedAt))")
+                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    if let dep = fp.departedAt, !dep.isEmpty {
+                        Text("至 \(FormatUtils.formatDate(dep))")
+                            .font(ArchiveTypography.monoScale(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                }
+            }
+
+            if let note = fp.note, !note.isEmpty {
+                Text(note)
+                    .font(ArchiveTypography.bodySans(size: 13.5))
+                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
+                    .padding(.top, 4)
+            }
+
+            HStack {
+                Button("前往山川行迹工作台查看全部 →") {
+                    inspectingSearchFootprint = nil
+                    appState.activeSection = .creations
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                Spacer()
+            }
+            .padding(.top, 8)
+        }
+        .padding(24)
+        .frame(width: 480)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func searchWishDetailSheet(wish: Wish) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(wish.kind == "travel" ? "旅程愿望" : (wish.kind == "milestone" ? "里程碑" : "心愿单"))
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                Spacer()
+                Button("关闭") {
+                    inspectingSearchWish = nil
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(wish.title)
+                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                HStack(spacing: 10) {
+                    Text(wish.status == "fulfilled" ? "已圆满" : "待实现")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(wish.status == "fulfilled" ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                    if wish.budget > 0 {
+                        Text("预算 \(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))")
+                            .font(ArchiveTypography.monoScale(size: 12))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                    }
+
+                    if let target = wish.targetDate, !target.isEmpty {
+                        Text("目标 \(FormatUtils.formatDate(target))")
+                            .font(ArchiveTypography.monoScale(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                }
+            }
+
+            if let spec = wish.spec, !spec.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("规格与意向")
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text(spec)
+                        .font(ArchiveTypography.bodySans(size: 12.5))
+                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.85))
+                }
+            }
+
+            if let note = wish.note, !note.isEmpty {
+                Text(note)
+                    .font(ArchiveTypography.bodySans(size: 13))
+                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
+            }
+
+            HStack {
+                Button("前往造物与心愿工作台查看全部 →") {
+                    inspectingSearchWish = nil
+                    appState.activeSection = .creations
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                Spacer()
+            }
+            .padding(.top, 8)
+        }
+        .padding(24)
+        .frame(width: 480)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func searchProjectDetailSheet(project: Project) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("造物与项目")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                Spacer()
+                Button("关闭") {
+                    inspectingSearchProject = nil
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(project.title)
+                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                if let sub = project.subtitle, !sub.isEmpty {
+                    Text(sub)
+                        .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+
+                HStack(spacing: 8) {
+                    if let cat = project.category, !cat.isEmpty {
+                        Text(cat)
+                            .font(ArchiveTypography.bodySans(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                    if let st = project.status, !st.isEmpty {
+                        Text(st)
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                    }
+                }
+            }
+
+            if !project.description.isEmpty {
+                Text(project.description)
+                    .font(ArchiveTypography.bodySans(size: 13))
+                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
+            }
+
+            if let story = project.story, !story.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("造物始末与手记")
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text(story)
+                        .font(ArchiveTypography.bodySans(size: 12.5))
+                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.85))
+                }
+            }
+
+            HStack {
+                Button("前往造物与项目工作台查看全部 →") {
+                    inspectingSearchProject = nil
+                    appState.activeSection = .creations
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                Spacer()
+            }
+            .padding(.top, 8)
+        }
+        .padding(24)
+        .frame(width: 480)
         .background(ArchivePalette.archivePaper)
     }
 
@@ -2043,6 +2459,8 @@ public struct EditEntrySheetView: View {
     @State private var editCityCode: String
     @State private var editCityName: String
     @State private var editFeatured: Bool
+    @State private var editAttachments: [Attachment]
+    @State private var isUploading: Bool = false
 
     public init(
         entry: LifeEntry,
@@ -2057,6 +2475,7 @@ public struct EditEntrySheetView: View {
         _editCityCode = State(initialValue: entry.cityCode ?? "")
         _editCityName = State(initialValue: entry.cityName ?? entry.location ?? "")
         _editFeatured = State(initialValue: entry.featured ?? false)
+        _editAttachments = State(initialValue: entry.attachments)
     }
 
     public var body: some View {
@@ -2080,7 +2499,73 @@ public struct EditEntrySheetView: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "点击点选属地行政区划城市…")
+            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "选择属地行政区划城市…")
+
+            // 照片相纸附件管理与增删
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("手账影像相纸 (\(editAttachments.count))")
+                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    Spacer()
+
+                    if isUploading {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("暗房直传中…")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                        }
+                    } else {
+                        Button("+ 补选相纸照片") {
+                            selectPhotosForEdit()
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .controlSize(.small)
+                    }
+                }
+
+                if !editAttachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(editAttachments) { att in
+                                ZStack(alignment: .topTrailing) {
+                                    if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                        AsyncImage(url: url) { phase in
+                                            if let image = phase.image {
+                                                image
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                            } else {
+                                                ArchivePalette.archiveSubtle
+                                            }
+                                        }
+                                        .frame(width: 68, height: 68)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                                        )
+                                    }
+
+                                    Button {
+                                        editAttachments.removeAll(where: { $0.id == att.id })
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(Color.white, ArchivePalette.inkPrimary.opacity(0.85))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(2)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
 
             HStack {
                 Toggle("标记为精选印记", isOn: $editFeatured)
@@ -2105,7 +2590,8 @@ public struct EditEntrySheetView: View {
                         location: cleanCity.isEmpty ? nil : cleanCity,
                         featured: editFeatured,
                         cityCode: code,
-                        cityName: cleanCity.isEmpty ? nil : cleanCity
+                        cityName: cleanCity.isEmpty ? nil : cleanCity,
+                        attachmentIds: editAttachments.map(\.id)
                     )
                     onSave(req)
                 }
@@ -2117,6 +2603,30 @@ public struct EditEntrySheetView: View {
         .padding(24)
         .frame(width: 520)
         .background(ArchivePalette.archivePaper)
+    }
+
+    private func selectPhotosForEdit() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .rawImage]
+        if panel.runModal() == .OK {
+            let urls = panel.urls
+            guard !urls.isEmpty else { return }
+            Task { @MainActor in
+                isUploading = true
+                for url in urls {
+                    do {
+                        let processed = try await ImageProcessor.processImageFileInBackground(at: url)
+                        let att = try await R2DirectUploader.shared.uploadProcessedPhoto(processed)
+                        editAttachments.append(att)
+                        AudioFeedback.shared.playShutter()
+                    } catch {}
+                }
+                isUploading = false
+            }
+        }
     }
 }
 

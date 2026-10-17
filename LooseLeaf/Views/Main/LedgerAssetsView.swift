@@ -18,6 +18,9 @@ public struct LedgerAssetsView: View {
     @State private var formCategory: String = "餐饮"
     @State private var formPaymentMethod: String = "微信支付"
     @State private var formNote: String = ""
+    @State private var formCityCode: String = ""
+    @State private var formCityName: String = ""
+    @State private var formOccurredAt: Date = Date()
     @State private var formLinkGear: Bool = false
     @State private var formGearCategory: String = "数码器材"
     @State private var formGearSpec: String = ""
@@ -399,7 +402,7 @@ public struct LedgerAssetsView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(ArchivePalette.accentWarm)
 
-                TextField("快速指令（如：42.5 午餐咖啡 或 +5000 稿费），按 Return 直接入账…", text: $quickLine)
+                TextField("快速记账指令（如：42.5 咖啡），按 ↩ 直接入账…", text: $quickLine)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: 13))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -475,7 +478,7 @@ public struct LedgerAssetsView: View {
                                 .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
                         )
 
-                        TextField("账目说明/标题（如：数码器材、春季外卖）", text: $formTitle)
+                        TextField("账目说明", text: $formTitle)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12.5))
                             .padding(.horizontal, 8)
@@ -525,6 +528,35 @@ public struct LedgerAssetsView: View {
 
                         Spacer()
 
+                        // 发生时刻
+                        PaperDateTimePicker(selection: $formOccurredAt, label: "时间：", showQuickShortcuts: true)
+
+                        // 属地城市
+                        HStack(spacing: 4) {
+                            Text("城市：")
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+
+                            PaperCityPicker(
+                                selectedCode: $formCityCode,
+                                selectedName: $formCityName,
+                                placeholder: appState.profile.displayCity.isEmpty ? "选填城市" : appState.profile.displayCity
+                            )
+
+                            if !formCityCode.isEmpty {
+                                Button {
+                                    formCityCode = ""
+                                    formCityName = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .help("清除选中的属地城市")
+                            }
+                        }
+
                         // 联动固资与分期复选
                         Toggle("建入固资大盘", isOn: $formLinkGear)
                             .toggleStyle(.checkbox)
@@ -540,14 +572,14 @@ public struct LedgerAssetsView: View {
                     // 固资扩展信息
                     if formLinkGear {
                         HStack(spacing: 8) {
-                            TextField("固资分类（如：数码摄影、桌面办公）", text: $formGearCategory)
+                            TextField("固资分类", text: $formGearCategory)
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.bodySans(size: 12))
                                 .padding(6)
                                 .background(ArchivePalette.archivePaper)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                            TextField("固资规格说明（如：M3 Max / 36GB / 1TB）", text: $formGearSpec)
+                            TextField("规格参数", text: $formGearSpec)
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.bodySans(size: 12))
                                 .padding(6)
@@ -641,7 +673,7 @@ public struct LedgerAssetsView: View {
 
                     // 提交表单按钮行
                     HStack {
-                        TextField("附加备注手记（可选）", text: $formNote)
+                        TextField("附加备注手记", text: $formNote)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
                             .padding(6)
@@ -683,7 +715,7 @@ public struct LedgerAssetsView: View {
             }
 
             if gearList.isEmpty {
-                Text("暂无随身器材记录，可在记账时勾选「建入固资大盘」或点击右上角「添置随身设备」。")
+                Text("暂无在役随身设备记录")
                     .font(ArchiveTypography.bodySans(size: 12))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .padding(16)
@@ -995,7 +1027,7 @@ public struct LedgerAssetsView: View {
                 .font(ArchiveTypography.bodySans(size: 12))
                 .foregroundStyle(ArchivePalette.inkSecondary)
 
-            TextField("例如：50000.00", text: $initialBalanceYuanInput)
+            TextField("0.00", text: $initialBalanceYuanInput)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: 14))
                 .padding(9)
@@ -1095,7 +1127,8 @@ public struct LedgerAssetsView: View {
                     title: finalTitle,
                     note: formNote.isEmpty ? nil : formNote,
                     paymentMethod: formPaymentMethod,
-                    occurredAt: FormatUtils.beijingISOString(),
+                    cityCode: formCityCode.isEmpty ? nil : formCityCode,
+                    occurredAt: FormatUtils.beijingISOString(from: formOccurredAt),
                     isInstallment: isInst,
                     installmentChannelCode: isInst ? formInstallmentChannelCode : nil,
                     installmentTotalAmount: isInst ? cents : nil,
@@ -1112,6 +1145,9 @@ public struct LedgerAssetsView: View {
                 formAmountYuan = ""
                 formTitle = ""
                 formNote = ""
+                formCityCode = ""
+                formCityName = ""
+                formOccurredAt = Date()
                 formLinkGear = false
                 formIsInstallment = false
                 await appState.loadTransactionsAndAssets(forceFull: true)
@@ -1162,6 +1198,9 @@ public struct EditTransactionSheet: View {
     @State private var category: String
     @State private var paymentMethod: String
     @State private var note: String
+    @State private var cityCode: String
+    @State private var cityName: String
+    @State private var occurredDate: Date
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
@@ -1175,6 +1214,12 @@ public struct EditTransactionSheet: View {
         _category = State(initialValue: transaction.category)
         _paymentMethod = State(initialValue: transaction.paymentMethod ?? "微信支付")
         _note = State(initialValue: transaction.note ?? "")
+        _cityCode = State(initialValue: transaction.cityCode ?? "")
+        let resolvedName = transaction.cityCode.flatMap { code in
+            CityDictionary.standardCities.first(where: { $0.code == code })?.name
+        } ?? ""
+        _cityName = State(initialValue: resolvedName)
+        _occurredDate = State(initialValue: FormatUtils.parseFlexDate(transaction.occurredAt) ?? Date())
     }
 
     public var body: some View {
@@ -1243,6 +1288,12 @@ public struct EditTransactionSheet: View {
                 }
             }
 
+            HStack(spacing: 8) {
+                PaperDateTimePicker(selection: $occurredDate, label: "发生时间", showQuickShortcuts: true)
+                Spacer()
+                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "属地城市")
+            }
+
             TextField("补充备注手记", text: $note)
                 .textFieldStyle(.plain)
                 .padding(8)
@@ -1267,7 +1318,7 @@ public struct EditTransactionSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(width: 440)
         .background(ArchivePalette.archivePaper)
     }
 
@@ -1284,7 +1335,8 @@ public struct EditTransactionSheet: View {
                     title: title.isEmpty ? category : title,
                     note: note.isEmpty ? nil : note,
                     paymentMethod: paymentMethod,
-                    occurredAt: transaction.occurredAt
+                    cityCode: cityCode.isEmpty ? nil : cityCode,
+                    occurredAt: FormatUtils.beijingISOString(from: occurredDate)
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
                 AudioFeedback.shared.playShutter()
@@ -1321,20 +1373,20 @@ public struct AddGearSheet: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            TextField("设备名称（如：Sony A7C2 相机、HHKB 键盘）", text: $name)
+            TextField("设备名称", text: $name)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("规格参数（如：单机身银色、Type-S 静音版）", text: $spec)
+            TextField("规格参数", text: $spec)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                TextField("器物分类（如：摄影器材、生活物件）", text: $category)
+                TextField("器物分类", text: $category)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
@@ -1438,14 +1490,14 @@ public struct SellGearSheet: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            TextField("实际转售回血金额（元，如：3200.00）", text: $soldPriceYuan)
+            TextField("实际转售回血金额（元）", text: $soldPriceYuan)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: 14))
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("转让交接随笔手记（如：闲鱼面交出给同城摄友）", text: $note)
+            TextField("转让流转手记", text: $note)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
@@ -1644,14 +1696,14 @@ public struct CreditChannelsManagerSheet: View {
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                 HStack(spacing: 8) {
-                    TextField("渠道名称（如：招行信用卡）", text: $newName)
+                    TextField("渠道名称", text: $newName)
                         .textFieldStyle(.plain)
                         .font(ArchiveTypography.bodySans(size: 12))
                         .padding(7)
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                    TextField("代号（可选，如 cmb）", text: $newCode)
+                    TextField("代号（如 cmb）", text: $newCode)
                         .textFieldStyle(.plain)
                         .font(ArchiveTypography.monoScale(size: 11.5))
                         .padding(7)

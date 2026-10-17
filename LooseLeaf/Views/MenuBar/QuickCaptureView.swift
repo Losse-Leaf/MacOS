@@ -149,7 +149,7 @@ public struct QuickCaptureView: View {
             }
 
             // 可选标题行
-            TextField("标题（可选，留空则为极速闪念片羽）", text: $draft.titleText)
+            TextField("标题", text: $draft.titleText)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
@@ -162,10 +162,10 @@ public struct QuickCaptureView: View {
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
 
-            // 正文 Markdown 输入框 (支持 #标签 实时识别)
+            // 正文 Markdown 输入框
             ZStack(alignment: .topLeading) {
                 if draft.contentText.isEmpty {
-                    Text("写下此刻闪念，支持 Markdown 与 #标签，按 ⌘ + Return 即刻归档…")
+                    Text("写下此刻闪念，按 ⌘ + Return 即刻归档…")
                         .font(ArchiveTypography.bodySans(size: 12.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
                         .padding(.horizontal, 10)
@@ -215,18 +215,21 @@ public struct QuickCaptureView: View {
 
             // 地点与提交按钮行
             HStack(spacing: 8) {
+                PaperCityPicker(
+                    selectedCode: $draft.selectedCityCode,
+                    selectedName: $draft.selectedCityName,
+                    placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
+                )
+
                 HStack(spacing: 4) {
-                    Image(systemName: "location")
+                    Image(systemName: "mappin.and.ellipse")
                         .font(.system(size: 10.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
-                    TextField(
-                        appState.profile.displayCity.isEmpty ? "记录地点（可选）" : appState.profile.displayCity,
-                        text: $draft.customLocation
-                    )
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .frame(maxWidth: 130)
+                    TextField("街巷/景点(选填)", text: $draft.customLocation)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .frame(maxWidth: 110)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
@@ -484,6 +487,8 @@ public struct QuickCaptureView: View {
                     content: contentToSubmit,
                     type: draft.entryType,
                     location: draft.customLocation.isEmpty ? nil : draft.customLocation,
+                    cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
+                    cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
                     attachmentIds: draft.uploadedAttachments.map(\.id),
                     featured: draft.isFeatured,
                     occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)

@@ -14,6 +14,10 @@ public struct QuickLedgerView: View {
     @State private var selectedType: String = "expense"
     @State private var selectedCategory: String = "餐饮"
     @State private var selectedPayment: String = "微信支付"
+    @State private var selectedCityCode: String = ""
+    @State private var selectedCityName: String = ""
+    @State private var occurredAt: Date = Date()
+    @State private var showDatePicker: Bool = false
     @State private var isSubmitting: Bool = false
     @State private var localError: String?
 
@@ -60,7 +64,7 @@ public struct QuickLedgerView: View {
                     }
                 }
 
-                TextField("输入如：42.5 午餐咖啡（自动识别金额与类目）", text: $smartInput)
+                TextField("记一笔账，如：42.5 咖啡…", text: $smartInput)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: 13.5))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -109,7 +113,7 @@ public struct QuickLedgerView: View {
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
 
-                TextField("摘要说明（可选）", text: $titleString)
+                TextField("摘要说明", text: $titleString)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 12))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -169,6 +173,27 @@ public struct QuickLedgerView: View {
                 Spacer()
 
                 Button {
+                    showDatePicker.toggle()
+                    AudioFeedback.shared.playTink()
+                } label: {
+                    Image(systemName: "clock")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(showDatePicker ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        .padding(5)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("补记历史时刻")
+                .help("补记过去发生的账目时刻")
+
+                PaperCityPicker(
+                    selectedCode: $selectedCityCode,
+                    selectedName: $selectedCityName,
+                    placeholder: appState.profile.displayCity.isEmpty ? "属地" : appState.profile.displayCity
+                )
+
+                Button {
                     submitLedger()
                 } label: {
                     HStack(spacing: 4) {
@@ -180,6 +205,15 @@ public struct QuickLedgerView: View {
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(resolvedQuickParsed == nil || isSubmitting)
+            }
+
+            if showDatePicker {
+                HStack(spacing: 6) {
+                    PaperDateTimePicker(selection: $occurredAt, label: "入账时间", showQuickShortcuts: true)
+                    Spacer()
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 2)
             }
 
             if let localError {
@@ -218,6 +252,11 @@ public struct QuickLedgerView: View {
         isSubmitting = true
         localError = nil
 
+        var cityCodeToSubmit: String? = selectedCityCode.isEmpty ? nil : selectedCityCode
+        if cityCodeToSubmit == nil && !smartInput.isEmpty {
+            cityCodeToSubmit = CityDictionary.code(forLocation: smartInput)
+        }
+
         Task { @MainActor in
             do {
                 _ = try await appState.submitQuickLedger(
@@ -225,11 +264,17 @@ public struct QuickLedgerView: View {
                     type: parsed.type,
                     category: parsed.category,
                     title: parsed.title,
-                    paymentMethod: selectedPayment
+                    paymentMethod: selectedPayment,
+                    cityCode: cityCodeToSubmit,
+                    occurredAt: FormatUtils.beijingISOString(from: occurredAt)
                 )
                 smartInput = ""
                 amountString = ""
                 titleString = ""
+                selectedCityCode = ""
+                selectedCityName = ""
+                occurredAt = Date()
+                showDatePicker = false
                 isSubmitting = false
                 onSubmitted?()
             } catch {

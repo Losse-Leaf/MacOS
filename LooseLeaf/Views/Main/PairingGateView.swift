@@ -179,7 +179,7 @@ public struct PairingGateView: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            Text("《散页》遵循「Web 展厅向导装帧」原则。请先在浏览器中访问 Web 展厅设定管理员主密钥与站点基本信息；装帧完成后，在 Web 端「设备管理」生成配对二维码或链接，即可无缝接入本桌面端。")
+            Text("请先在 Web 展厅设定管理员密钥并完成装帧。随后在「设备管理」生成配对二维码或链接即可接入本桌面端。")
                 .font(ArchiveTypography.bodySans(size: 12))
                 .foregroundStyle(ArchivePalette.inkSecondary)
                 .multilineTextAlignment(.center)
@@ -213,7 +213,7 @@ public struct PairingGateView: View {
                 Text("受信任设备配对")
                     .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("在 Web 展厅后台「设备管理」点击「复制配对链接」，粘贴至此即可完成免密配对。")
+                Text("粘贴 Web 展厅后台生成的配对链接或工单：")
                     .font(ArchiveTypography.bodySans(size: 11.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .multilineTextAlignment(.center)

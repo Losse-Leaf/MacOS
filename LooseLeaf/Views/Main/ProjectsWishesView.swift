@@ -910,7 +910,7 @@ public struct NewWishSheet: View {
                 PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
             }
 
-            TextField("心愿名称（如：M3 MacBook Pro、苍山洱海自驾）", text: $title)
+            TextField("心愿名称", text: $title)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
@@ -920,13 +920,13 @@ public struct NewWishSheet: View {
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
             }
 
-            TextField("规格参数或目的地补充（可选）", text: $spec)
+            TextField("规格参数或目的地补充", text: $spec)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("预期预算金额（元，如 18999.00）", text: $budgetYuan)
+            TextField("预期预算金额（元）", text: $budgetYuan)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: 13))
                 .padding(8)
@@ -1192,7 +1192,7 @@ public struct ResolveWishSheet: View {
             }
 
             if createLifeEntry {
-                TextField("圆梦感言手记（如：寻觅良久，终得所愿…）", text: $entryContent)
+                TextField("圆梦感言手记", text: $entryContent)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
@@ -1265,6 +1265,7 @@ public struct NewFootprintSheet: View {
     @State private var cityName: String = ""
     @State private var title: String = ""
     @State private var note: String = ""
+    @State private var visitedDate: Date = Date()
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
@@ -1274,15 +1275,17 @@ public struct NewFootprintSheet: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点击点选行政区划城市…")
+            PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "选择行政区划城市…")
 
-            TextField("旅程标题（如：春日苍山洱海漫游，可选）", text: $title)
+            PaperDateTimePicker(selection: $visitedDate, label: "到访时间", showQuickShortcuts: true)
+
+            TextField("旅程标题", text: $title)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("行迹随笔手记（可选）", text: $note)
+            TextField("行迹随笔手记", text: $note)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
@@ -1321,6 +1324,7 @@ public struct NewFootprintSheet: View {
                     cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? "330100") : cityCode,
                     cityName: cleanCity,
                     title: title.isEmpty ? nil : title,
+                    visitedAt: FormatUtils.beijingISOString(from: visitedDate),
                     note: note.isEmpty ? nil : note
                 )
                 _ = try await APIClient.shared.createFootprint(req)
@@ -1348,6 +1352,7 @@ public struct EditFootprintSheet: View {
     @State private var cityName: String
     @State private var title: String
     @State private var note: String
+    @State private var visitedDate: Date
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
@@ -1359,6 +1364,7 @@ public struct EditFootprintSheet: View {
         _cityName = State(initialValue: footprint.cityName)
         _title = State(initialValue: footprint.title ?? "")
         _note = State(initialValue: footprint.note ?? "")
+        _visitedDate = State(initialValue: FormatUtils.parseFlexDate(footprint.visitedAt) ?? Date())
     }
 
     public var body: some View {
@@ -1368,6 +1374,8 @@ public struct EditFootprintSheet: View {
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
+
+            PaperDateTimePicker(selection: $visitedDate, label: "到访时间", showQuickShortcuts: true)
 
             TextField("旅程标题", text: $title)
                 .textFieldStyle(.plain)
@@ -1414,7 +1422,7 @@ public struct EditFootprintSheet: View {
                     cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? footprint.cityCode) : cityCode,
                     cityName: cleanCity,
                     title: title.isEmpty ? nil : title,
-                    visitedAt: footprint.visitedAt,
+                    visitedAt: FormatUtils.beijingISOString(from: visitedDate),
                     note: note.isEmpty ? nil : note
                 )
                 _ = try await APIClient.shared.updateFootprint(id: footprint.id, req)
@@ -1451,26 +1459,26 @@ public struct NewProjectSheet: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            TextField("项目名称（如：Loose-Leaf macOS 原生客户端）", text: $title)
+            TextField("项目名称", text: $title)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("副标题或一句话定义（可选）", text: $subtitle)
+            TextField("副标题或一句话定义", text: $subtitle)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                TextField("分类（如：开源造物、架构实验）", text: $category)
+                TextField("分类", text: $category)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                TextField("状态（如：持续维护、稳定归档）", text: $status)
+                TextField("状态", text: $status)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
@@ -1483,7 +1491,7 @@ public struct NewProjectSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("GitHub 源码仓库链接（可选）", text: $githubUrl)
+            TextField("GitHub 源码仓库链接", text: $githubUrl)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: 12))
                 .padding(8)
@@ -1760,7 +1768,7 @@ public struct CelestialAtlasCanvasView: View {
                     Text("CELESTIAL VOYAGE TOPOLOGY · 85°E — 125°E / 18°N — 50°N")
                         .font(ArchiveTypography.monoScale(size: 9.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
-                    Text("已点亮 \(clusters.count) 座城市 · 点击星芒打开城市回忆抽屉")
+                    Text("已点亮 \(clusters.count) 座城市")
                         .font(ArchiveTypography.bodySans(size: 11))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                 }
@@ -2114,6 +2122,18 @@ public struct AnnualAlmanacSheet: View {
                         Text("第三幕 · 心愿圆满 (已达成 \(a.wishes.fulfilledCount) / 在愿 \(a.wishes.wantingCount))")
                             .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
 
+                        // 第四幕：浮光掠影 · 四季流转
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("第四幕 · 浮光掠影 · 四季流转")
+                                .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                seasonCard(title: "春生 · 春季篇", entry: a.highlights.spring, tint: ArchivePalette.accentMoss)
+                                seasonCard(title: "夏长 · 夏季篇", entry: a.highlights.summer, tint: ArchivePalette.accentWarm)
+                                seasonCard(title: "秋收 · 秋季篇", entry: a.highlights.autumn, tint: Color(red: 0.83, green: 0.53, blue: 0.02))
+                                seasonCard(title: "冬藏 · 冬季篇", entry: a.highlights.winter, tint: ArchivePalette.inkSecondary)
+                            }
+                        }
+
                         // 第五幕：柴米油盐
                         if a.finances.totalExpense > 0 || a.finances.totalIncome > 0 {
                             VStack(alignment: .leading, spacing: 6) {
@@ -2143,6 +2163,34 @@ public struct AnnualAlmanacSheet: View {
         .task {
             await loadAlmanac()
         }
+    }
+
+    private func seasonCard(title: String, entry: LifeEntry?, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(ArchiveTypography.monoScale(size: 10))
+                .foregroundStyle(tint)
+            if let entry {
+                Text(entry.title.isEmpty ? "无题随笔" : entry.title)
+                    .font(ArchiveTypography.editorialSerif(size: 12, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .lineLimit(1)
+                if !entry.content.isEmpty {
+                    Text(entry.content)
+                        .font(ArchiveTypography.bodySans(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .lineLimit(2)
+                }
+            } else {
+                Text("暂无季候留痕")
+                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
     private func almanacStat(_ label: String, _ value: String) -> some View {

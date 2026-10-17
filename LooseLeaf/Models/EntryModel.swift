@@ -251,6 +251,15 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var parsedDate: FormatUtils.ParsedBeijingDate {
         FormatUtils.parseOccurredDate(occurredAt)
     }
+
+    /// 如果该条目是由 Transaction 合成的伴生条目，解析其关联的真实账目 ID
+    public var associatedTransactionId: Int64? {
+        guard type == "transaction" else { return nil }
+        if id <= -1_000_000 {
+            return Int64(abs(id) - 1_000_000)
+        }
+        return id > 0 ? Int64(id) : nil
+    }
 }
 
 /// 分页查询生活档案列表响应结构

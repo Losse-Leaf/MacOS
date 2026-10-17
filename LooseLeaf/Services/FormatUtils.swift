@@ -306,6 +306,18 @@ public enum FormatUtils {
         return (comps.year ?? 2026, comps.month ?? 10)
     }
 
+    /// 将日期字符串格式化为北京时间点状日期 (如 "2026.10.17")
+    public static func formatDate(_ raw: String?) -> String {
+        guard let raw = raw, !raw.isEmpty else { return "" }
+        return parseOccurredDate(raw).dotDate
+    }
+
+    /// 将日期字符串格式化为北京时间点状时间 (如 "2026.10.17 14:30")
+    public static func formatDateTime(_ raw: String?) -> String {
+        guard let raw = raw, !raw.isEmpty else { return "" }
+        return parseOccurredDate(raw).dotDateTime
+    }
+
     /// 计算两条记录在自然日维度上的间隔天数（用于 >= 14 天岁月留白刻度线）
     public static func daysBetween(_ firstRaw: String?, _ secondRaw: String?) -> Int {
         let d1 = parseFlexDate(firstRaw) ?? Date()

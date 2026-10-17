@@ -294,20 +294,20 @@ public struct CuratorDossierView: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("身份标签", text: $editTitle)
+            TextField("主理人身份", text: $editTitle)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                TextField("当前城市（如：杭州）", text: $editCity)
+                TextField("当前城市", text: $editCity)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                TextField("完整常居地（如：中国 · 杭州）", text: $editLocation)
+                TextField("常居地", text: $editLocation)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)

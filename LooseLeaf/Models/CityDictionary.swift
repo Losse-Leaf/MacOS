@@ -928,4 +928,58 @@ public enum CityDictionary {
         let lat = 50.0 - normY * (50.0 - 18.0)
         return (lon, lat)
     }
+
+    // MARK: - 375 个标准行政区划城市条目与检索支持 (供 CityPicker 统一选点)
+
+    public struct StandardCity: Identifiable, Hashable, Sendable {
+        public var id: String { code }
+        public let code: String
+        public let name: String
+        public let province: String
+
+        public init(code: String, name: String, province: String) {
+            self.code = code
+            self.name = name
+            self.province = province
+        }
+    }
+
+    public static let provincePrefixMap: [String: String] = [
+        "11": "北京", "12": "天津", "13": "河北", "14": "山西", "15": "内蒙古",
+        "21": "辽宁", "22": "吉林", "23": "黑龙江",
+        "31": "上海", "32": "江苏", "33": "浙江", "34": "安徽", "35": "福建", "36": "江西", "37": "山东",
+        "41": "河南", "42": "湖北", "43": "湖南", "44": "广东", "45": "广西", "46": "海南",
+        "50": "重庆", "51": "四川", "52": "贵州", "53": "云南", "54": "西藏",
+        "61": "陕西", "62": "甘肃", "63": "青海", "64": "宁夏", "65": "新疆",
+        "71": "台湾", "81": "香港", "82": "澳门"
+    ]
+
+    public static let standardCities: [StandardCity] = {
+        var map: [String: String] = [:]
+        for (name, code) in nameToCode {
+            if let existing = map[code] {
+                if name.count > existing.count {
+                    map[code] = name
+                }
+            } else {
+                map[code] = name
+            }
+        }
+        return map.keys.sorted().map { code in
+            let name = map[code] ?? code
+            let prefix = String(code.prefix(2))
+            let prov = provincePrefixMap[prefix] ?? "其他"
+            return StandardCity(code: code, name: name, province: prov)
+        }
+    }()
+
+    public static func searchCities(_ query: String) -> [StandardCity] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if q.isEmpty { return standardCities }
+        return standardCities.filter {
+            $0.name.lowercased().contains(q) ||
+            $0.province.lowercased().contains(q) ||
+            $0.code.contains(q)
+        }
+    }
 }

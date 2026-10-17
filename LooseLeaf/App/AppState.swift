@@ -129,7 +129,6 @@ public final class AppState {
     public var activeSection: WorkbenchSection = .stream
     public var selectedCategory: ArchiveCategory = .all
     public var searchQuery: String = ""
-    public var selectedHashtag: String?
     public var highlightedEntry: LifeEntry?
     public var lightboxAttachment: Attachment?
 
@@ -174,7 +173,6 @@ public final class AppState {
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
     @ObservationIgnored private var dataRevision: Int = 0
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
-    @ObservationIgnored private var hashtagMemo: (key: String, value: [(tag: String, count: Int)])?
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
 
     private init() {
@@ -234,7 +232,7 @@ public final class AppState {
     /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤、#标签下钻与模糊搜索）
     /// 带记忆缓存：仅在数据版本或筛选条件变化时重算，渲染路径零重复过滤
     public var filteredStreamEntries: [LifeEntry] {
-        let key = "\(dataRevision)|\(selectedCategory.rawValue)|\(searchQuery)|\(selectedHashtag ?? "")"
+        let key = "\(dataRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
         if let memo = filteredMemo, memo.key == key {
             return memo.value
         }
@@ -251,10 +249,6 @@ public final class AppState {
             source = entries.filter { $0.matches(category: selectedCategory) }
         }
 
-        if let tag = selectedHashtag, !tag.isEmpty {
-            source = source.filter { $0.hashtags.contains(tag) }
-        }
-
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !q.isEmpty {
             source = source.filter { entry in
@@ -265,25 +259,6 @@ public final class AppState {
             }
         }
         return source
-    }
-
-    /// 聚合高频 #标签（带记忆缓存）
-    public var allHashtags: [(tag: String, count: Int)] {
-        let key = "\(dataRevision)"
-        if let memo = hashtagMemo, memo.key == key {
-            return memo.value
-        }
-        var map: [String: Int] = [:]
-        for entry in entries {
-            for tag in entry.hashtags {
-                map[tag, default: 0] += 1
-            }
-        }
-        let value = map
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .map { (tag: $0.key, count: $0.value) }
-        hashtagMemo = (key, value)
-        return value
     }
 
     /// 按北京时间自然日聚合的记录密度（52 周热力图数据源，带记忆缓存）
@@ -574,20 +549,6 @@ public final class AppState {
         await refreshAll(forceFull: true)
     }
 
-    public func verifyWithMasterPasscode(_ passcode: String, hubURL: String) async throws {
-        APIClient.shared.setBaseURL(hubURL)
-        self.hubURLString = APIClient.shared.baseURLString
-        let hostName = Host.current().localizedName ?? "MacBook"
-        let _ = try await APIClient.shared.verifyMasterPasscode(
-            passcode: passcode,
-            deviceName: "\(hostName) · macOS"
-        )
-        self.isPaired = true
-        AudioFeedback.shared.playShutter()
-        showTemporaryBanner("主理人密钥验证通过，本机设备凭证已更新")
-        await refreshAll(forceFull: true)
-    }
-
     public func disconnectDevice() {
         CredentialStore.clearAllCredentials()
         self.isPaired = false
@@ -598,7 +559,6 @@ public final class AppState {
     public func navigateToEntry(id entryId: Int) {
         self.activeSection = .stream
         self.selectedCategory = .all
-        self.selectedHashtag = nil
         self.searchQuery = ""
         self.keyboardFocusedEntryId = entryId
 

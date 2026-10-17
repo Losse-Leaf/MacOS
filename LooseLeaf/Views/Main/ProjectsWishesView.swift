@@ -29,11 +29,18 @@ public struct ProjectsWishesView: View {
     @State private var showDeleteFootprintConfirm: Bool = false
     @State private var footprintViewMode: Int = 0 // 0: 典藏票根, 1: 经纬星野
     @State private var selectedDrawerCity: DrawerCitySelection?
+    @State private var selectedDrawerProvince: DrawerProvinceSelection?
     @State private var showAlmanacSheet: Bool = false
 
     public struct DrawerCitySelection: Identifiable, Equatable {
         public var id: String { code }
         public let code: String
+        public let name: String
+    }
+
+    public struct DrawerProvinceSelection: Identifiable, Equatable {
+        public var id: String { adcode }
+        public let adcode: String
         public let name: String
     }
 
@@ -154,6 +161,11 @@ public struct ProjectsWishesView: View {
         .sheet(item: $selectedDrawerCity) { sel in
             CityMemoryDrawerSheet(cityCode: sel.code, cityName: sel.name) {
                 selectedDrawerCity = nil
+            }
+        }
+        .sheet(item: $selectedDrawerProvince) { sel in
+            ProvinceMemoryDrawerSheet(adcode: sel.adcode, provinceName: sel.name) {
+                selectedDrawerProvince = nil
             }
         }
         .sheet(isPresented: $showAlmanacSheet) {
@@ -347,14 +359,29 @@ public struct ProjectsWishesView: View {
 
                                 Spacer(minLength: 4)
 
-                                HStack {
+                                HStack(spacing: 8) {
                                     if let spent = fp.totalSpent, spent > 0 {
                                         Text("旅途花销 \(FormatUtils.formattedYuan(cents: spent, includeSymbol: true))")
                                             .font(ArchiveTypography.monoScale(size: 10.5))
                                             .foregroundStyle(ArchivePalette.accentWarm)
                                     }
                                     Spacer()
-                                    Text("点击翻阅城市抽屉 →")
+                                    Button {
+                                        let prefix = String(fp.cityCode.prefix(2))
+                                        let provName = CityDictionary.provincePrefixMap[prefix] ?? "属地省份"
+                                        selectedDrawerProvince = DrawerProvinceSelection(adcode: fp.cityCode, name: provName)
+                                    } label: {
+                                        Text("省级回忆")
+                                            .font(ArchiveTypography.bodySans(size: 10))
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 2)
+                                            .background(ArchivePalette.accentWarm.opacity(0.12))
+                                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Text("城市抽屉 →")
                                         .font(ArchiveTypography.monoScale(size: 10))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                 }
@@ -866,6 +893,8 @@ public struct NewWishSheet: View {
     @State private var budgetYuan: String = ""
     @State private var spec: String = ""
     @State private var note: String = ""
+    @State private var cityCode: String = ""
+    @State private var cityName: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
@@ -886,6 +915,10 @@ public struct NewWishSheet: View {
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if kind == "travel" {
+                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
+            }
 
             TextField("规格参数或目的地补充（可选）", text: $spec)
                 .textFieldStyle(.plain)
@@ -939,6 +972,8 @@ public struct NewWishSheet: View {
                     kind: kind,
                     note: note.isEmpty ? nil : note,
                     spec: spec.isEmpty ? nil : spec,
+                    cityCode: cityCode.isEmpty ? nil : cityCode,
+                    cityName: cityName.isEmpty ? nil : cityName,
                     budget: cents
                 )
                 _ = try await APIClient.shared.createWish(req)
@@ -966,6 +1001,8 @@ public struct EditWishSheet: View {
     @State private var budgetYuan: String
     @State private var spec: String
     @State private var note: String
+    @State private var cityCode: String
+    @State private var cityName: String
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
@@ -978,6 +1015,8 @@ public struct EditWishSheet: View {
         _budgetYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
         _spec = State(initialValue: wish.spec ?? "")
         _note = State(initialValue: wish.note ?? "")
+        _cityCode = State(initialValue: wish.cityCode ?? "")
+        _cityName = State(initialValue: wish.cityName ?? "")
     }
 
     public var body: some View {
@@ -997,6 +1036,10 @@ public struct EditWishSheet: View {
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            if kind == "travel" {
+                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
+            }
 
             TextField("规格参数或目的地补充", text: $spec)
                 .textFieldStyle(.plain)
@@ -1050,6 +1093,8 @@ public struct EditWishSheet: View {
                     kind: kind,
                     note: note.isEmpty ? nil : note,
                     spec: spec.isEmpty ? nil : spec,
+                    cityCode: cityCode.isEmpty ? nil : cityCode,
+                    cityName: cityName.isEmpty ? nil : cityName,
                     budget: cents
                 )
                 _ = try await APIClient.shared.updateWish(id: wish.id, req)
@@ -1216,15 +1261,12 @@ public struct NewFootprintSheet: View {
     @Bindable var appState: AppState
     var onDismiss: () -> Void
 
+    @State private var cityCode: String = ""
     @State private var cityName: String = ""
     @State private var title: String = ""
     @State private var note: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
-
-    private var resolvedCode: String {
-        FormatUtils.resolveCityCode(from: cityName) ?? "330100"
-    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1232,23 +1274,7 @@ public struct NewFootprintSheet: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            HStack {
-                TextField("城市中文名称（如：大理市、苏州市、杭州）", text: $cityName)
-                    .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                if !cityName.isEmpty {
-                    Text("代码: \(resolvedCode)")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-            }
+            PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点击点选行政区划城市…")
 
             TextField("旅程标题（如：春日苍山洱海漫游，可选）", text: $title)
                 .textFieldStyle(.plain)
@@ -1292,7 +1318,7 @@ public struct NewFootprintSheet: View {
         Task { @MainActor in
             do {
                 let req = CreateFootprintRequest(
-                    cityCode: resolvedCode,
+                    cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? "330100") : cityCode,
                     cityName: cleanCity,
                     title: title.isEmpty ? nil : title,
                     note: note.isEmpty ? nil : note
@@ -1318,6 +1344,7 @@ public struct EditFootprintSheet: View {
     let footprint: Footprint
     var onDismiss: () -> Void
 
+    @State private var cityCode: String
     @State private var cityName: String
     @State private var title: String
     @State private var note: String
@@ -1328,13 +1355,10 @@ public struct EditFootprintSheet: View {
         self.appState = appState
         self.footprint = footprint
         self.onDismiss = onDismiss
+        _cityCode = State(initialValue: footprint.cityCode)
         _cityName = State(initialValue: footprint.cityName)
         _title = State(initialValue: footprint.title ?? "")
         _note = State(initialValue: footprint.note ?? "")
-    }
-
-    private var resolvedCode: String {
-        FormatUtils.resolveCityCode(from: cityName) ?? footprint.cityCode
     }
 
     public var body: some View {
@@ -1343,17 +1367,7 @@ public struct EditFootprintSheet: View {
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            HStack {
-                TextField("城市名称", text: $cityName)
-                    .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                Text("代码: \(resolvedCode)")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-            }
+            PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
 
             TextField("旅程标题", text: $title)
                 .textFieldStyle(.plain)
@@ -1397,7 +1411,7 @@ public struct EditFootprintSheet: View {
         Task { @MainActor in
             do {
                 let req = CreateFootprintRequest(
-                    cityCode: resolvedCode,
+                    cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? footprint.cityCode) : cityCode,
                     cityName: cleanCity,
                     title: title.isEmpty ? nil : title,
                     visitedAt: footprint.visitedAt,
@@ -1871,6 +1885,145 @@ public struct CityMemoryDrawerSheet: View {
         .task {
             do {
                 drawer = try await APIClient.shared.fetchCityMemoryDrawer(cityCode: cityCode)
+                isLoading = false
+            } catch {
+                errorText = error.localizedDescription
+                isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - 省级山河回忆抽屉弹窗 (ProvinceMemoryDrawerSheet)
+
+@MainActor
+public struct ProvinceMemoryDrawerSheet: View {
+    let adcode: String
+    let provinceName: String
+    var onDismiss: () -> Void
+
+    @State private var drawer: ProvinceMemoryDrawerResponse?
+    @State private var isLoading: Bool = true
+    @State private var errorText: String?
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(provinceName) · 省级山河回忆抽屉")
+                        .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text("行政代码前缀 \(adcode)")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                Spacer()
+                Button("关闭") { onDismiss() }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            if isLoading {
+                ProgressView("正在聚合全省行迹票根与属地手记…")
+                    .frame(maxWidth: .infinity, minHeight: 200)
+            } else if let errorText {
+                Text(errorText)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            } else if let d = drawer {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 20) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("点亮城邑")
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Text("\(d.visitedCities.count) 座城")
+                                    .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.accentWarm)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("总履迹篇幅")
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Text("\(d.footprints.count) 次")
+                                    .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                            }
+                            if d.ledgerSummary.totalSpent > 0 {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("省内花销")
+                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                    Text(FormatUtils.formattedYuan(cents: d.ledgerSummary.totalSpent, includeSymbol: true))
+                                        .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
+                                        .foregroundStyle(ArchivePalette.accentMoss)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                        if !d.visitedCities.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("到访城市分布")
+                                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                HStack(spacing: 6) {
+                                    ForEach(d.visitedCities) { city in
+                                        Text("\(city.cityName) (\(city.visitCount))")
+                                            .font(ArchiveTypography.monoScale(size: 11))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(ArchivePalette.archiveSubtle)
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    }
+                                }
+                            }
+                        }
+
+                        if !d.entries.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("属地散页手记 (\(d.entries.count))")
+                                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                                ForEach(d.entries) { entry in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            Text(entry.title.isEmpty ? "散页随笔" : entry.title)
+                                                .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                            Spacer()
+                                            Text(entry.parsedDate.dotDate)
+                                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                        }
+                                        Text(entry.content)
+                                            .font(ArchiveTypography.bodySans(size: 12))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .lineLimit(3)
+                                    }
+                                    .padding(10)
+                                    .background(ArchivePalette.archiveSubtle)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 380)
+            }
+        }
+        .padding(22)
+        .frame(width: 520)
+        .background(ArchivePalette.archivePaper)
+        .task {
+            do {
+                drawer = try await APIClient.shared.fetchProvinceMemoryDrawer(adcode: adcode)
                 isLoading = false
             } catch {
                 errorText = error.localizedDescription

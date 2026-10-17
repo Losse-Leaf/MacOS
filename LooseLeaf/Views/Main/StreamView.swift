@@ -470,35 +470,7 @@ public struct StreamView: View {
                         }
                     }
 
-                    if let tag = appState.selectedHashtag {
-                        PaperPillButton(title: "#\(tag) ×", isSelected: true) {
-                            appState.selectedHashtag = nil
-                        }
-                    }
-
                     Spacer()
-                }
-
-                if !appState.allHashtags.isEmpty && appState.selectedHashtag == nil {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(appState.allHashtags.prefix(10), id: \.tag) { item in
-                                Button {
-                                    appState.selectedHashtag = item.tag
-                                    AudioFeedback.shared.playTink()
-                                } label: {
-                                    Text("#\(item.tag) (\(item.count))")
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
-                                        .foregroundStyle(ArchivePalette.inkSecondary)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 3)
-                                        .background(ArchivePalette.archiveSubtle)
-                                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
                 }
 
                 // 5. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
@@ -755,28 +727,6 @@ public struct StreamView: View {
                             }
                         }
                         .padding(.top, 4)
-                    }
-
-                    // #标签 列表
-                    let tags = entry.hashtags
-                    if !tags.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(tags, id: \.self) { tag in
-                                Button {
-                                    appState.selectedHashtag = tag
-                                    AudioFeedback.shared.playTink()
-                                } label: {
-                                    Text("#\(tag)")
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(ArchivePalette.accentWarm.opacity(0.08))
-                                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
                     }
                 }
             }
@@ -2090,7 +2040,8 @@ public struct EditEntrySheetView: View {
 
     @State private var editTitle: String
     @State private var editContent: String
-    @State private var editLocation: String
+    @State private var editCityCode: String
+    @State private var editCityName: String
     @State private var editFeatured: Bool
 
     public init(
@@ -2103,7 +2054,8 @@ public struct EditEntrySheetView: View {
         self.onCancel = onCancel
         _editTitle = State(initialValue: entry.title)
         _editContent = State(initialValue: entry.content)
-        _editLocation = State(initialValue: entry.location ?? entry.cityName ?? "")
+        _editCityCode = State(initialValue: entry.cityCode ?? "")
+        _editCityName = State(initialValue: entry.cityName ?? entry.location ?? "")
         _editFeatured = State(initialValue: entry.featured ?? false)
     }
 
@@ -2128,12 +2080,7 @@ public struct EditEntrySheetView: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("地点（如：杭州，自动更新行迹关联）", text: $editLocation)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: 12))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "点击点选属地行政区划城市…")
 
             HStack {
                 Toggle("标记为精选印记", isOn: $editFeatured)
@@ -2148,17 +2095,17 @@ public struct EditEntrySheetView: View {
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                 Button("保存修改 ⌘↩") {
-                    let loc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let resolvedCode = FormatUtils.resolveCityCode(from: loc)
+                    let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let code = editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode
                     let req = UpdateEntryRequest(
                         type: entry.type,
                         title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
                         content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
                         occurredAt: entry.occurredAt,
-                        location: loc.isEmpty ? nil : loc,
+                        location: cleanCity.isEmpty ? nil : cleanCity,
                         featured: editFeatured,
-                        cityCode: resolvedCode,
-                        cityName: loc.isEmpty ? nil : loc
+                        cityCode: code,
+                        cityName: cleanCity.isEmpty ? nil : cleanCity
                     )
                     onSave(req)
                 }

@@ -251,11 +251,6 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var parsedDate: FormatUtils.ParsedBeijingDate {
         FormatUtils.parseOccurredDate(occurredAt)
     }
-
-    /// 提取正文中的 #标签
-    public var hashtags: [String] {
-        FormatUtils.extractHashtags(from: content)
-    }
 }
 
 /// 分页查询生活档案列表响应结构

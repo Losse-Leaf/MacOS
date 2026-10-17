@@ -435,3 +435,157 @@ public struct PaperDateTimePicker: View {
         .buttonStyle(.plain)
     }
 }
+
+/// 纸质拟物行政区划城市选择器 (PaperCityPicker)
+/// 严格遵循主理人规范：地点禁止手动自由输入，统一通过标准化 375 个地级行政区划点选
+public struct PaperCityPicker: View {
+    @Binding public var selectedCode: String
+    @Binding public var selectedName: String
+    public var placeholder: String
+
+    @State private var isPickerPresented: Bool = false
+    @State private var searchKeyword: String = ""
+
+    public init(
+        selectedCode: Binding<String>,
+        selectedName: Binding<String>,
+        placeholder: String = "点击点选行政区划城市…"
+    ) {
+        self._selectedCode = selectedCode
+        self._selectedName = selectedName
+        self.placeholder = placeholder
+    }
+
+    private var displayText: String {
+        if !selectedName.isEmpty {
+            if !selectedCode.isEmpty {
+                let prefix = String(selectedCode.prefix(2))
+                let prov = CityDictionary.provincePrefixMap[prefix] ?? ""
+                let provText = prov.isEmpty || selectedName.contains(prov) ? "" : "\(prov) · "
+                return "\(provText)\(selectedName) (\(selectedCode))"
+            }
+            return selectedName
+        }
+        return placeholder
+    }
+
+    private var isSelected: Bool {
+        !selectedName.isEmpty || !selectedCode.isEmpty
+    }
+
+    public var body: some View {
+        Button {
+            searchKeyword = ""
+            isPickerPresented = true
+            AudioFeedback.shared.playTink()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+
+                Text(displayText)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
+                    .lineLimit(1)
+
+                Spacer()
+
+                if isSelected {
+                    Button {
+                        selectedCode = ""
+                        selectedName = ""
+                        AudioFeedback.shared.playTink()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.3) : ArchivePalette.borderDivider, lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPickerPresented, arrowEdge: .bottom) {
+            cityPopoverContent
+        }
+    }
+
+    private var cityPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("输入城市名、省份或 6 位代码检索…", text: $searchKeyword)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 12))
+            }
+            .padding(7)
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            let filtered = CityDictionary.searchCities(searchKeyword)
+            if filtered.isEmpty {
+                VStack(spacing: 4) {
+                    Text("未检索到匹配的行政区划城市")
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 20)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(filtered) { city in
+                            Button {
+                                selectedCode = city.code
+                                selectedName = city.name
+                                isPickerPresented = false
+                                AudioFeedback.shared.playTink()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(city.name)
+                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        Text(city.province)
+                                            .font(ArchiveTypography.bodySans(size: 10))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    Spacer()
+                                    Text(city.code)
+                                        .font(ArchiveTypography.monoScale(size: 10.5))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(selectedCode == city.code ? ArchivePalette.accentWarm.opacity(0.1) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 240)
+            }
+        }
+        .padding(12)
+        .frame(width: 300)
+        .background(ArchivePalette.archivePaper)
+    }
+}

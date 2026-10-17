@@ -607,6 +607,11 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/footprints/cities/\(cityCode)/drawer")
     }
 
+    /// 获取省级回忆抽屉聚合数据 (GET /api/v1/footprints/provinces/:adcode/drawer)
+    public func fetchProvinceMemoryDrawer(adcode: String) async throws -> ProvinceMemoryDrawerResponse {
+        try await performEnvelopeRequest(path: "/api/v1/footprints/provinces/\(adcode)/drawer")
+    }
+
     /// 获取年度生活年鉴五幕聚合数据 (GET /api/v1/almanac/summary?year=...)
     public func fetchAnnualAlmanac(year: Int? = nil) async throws -> AnnualAlmanacResponse {
         var query: [URLQueryItem] = []

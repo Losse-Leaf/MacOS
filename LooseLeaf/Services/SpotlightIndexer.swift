@@ -40,7 +40,6 @@ enum SpotlightIndexer {
                 attrs.contentDescription = entry.content
                 attrs.contentCreationDate = FormatUtils.parseFlexDate(entry.occurredAt)
                 attrs.city = entry.cityName ?? entry.location
-                attrs.keywords = entry.hashtags
                 return CSSearchableItem(
                     uniqueIdentifier: "looseleaf-entry-\(entry.id)",
                     domainIdentifier: domainIdentifier,

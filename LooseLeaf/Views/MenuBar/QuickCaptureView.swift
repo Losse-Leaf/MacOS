@@ -30,10 +30,6 @@ public struct QuickCaptureView: View {
         self.onClosePopover = onClosePopover
     }
 
-    private var detectedTags: [String] {
-        FormatUtils.extractHashtags(from: appState.quickDraft.contentText)
-    }
-
     public var body: some View {
         @Bindable var draft = appState.quickDraft
         return ZStack {
@@ -199,28 +195,17 @@ public struct QuickCaptureView: View {
                 }
             }
 
-            // 自动识别出的 #标签 与 EXIF 相机印记展示
-            if !detectedTags.isEmpty || !draft.extractedCameraLine.isEmpty {
+            // EXIF 相机印记展示
+            if !draft.extractedCameraLine.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(detectedTags, id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(ArchiveTypography.monoScale(size: 10.5))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                        }
-                        if !draft.extractedCameraLine.isEmpty {
-                            Text(draft.extractedCameraLine)
-                                .font(ArchiveTypography.monoScale(size: 10.5))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                        }
+                        Text(draft.extractedCameraLine)
+                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                     }
                 }
             }

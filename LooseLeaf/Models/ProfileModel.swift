@@ -1081,6 +1081,84 @@ public struct CityMemoryDrawerResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct ProvinceVisitedCity: Codable, Identifiable, Equatable, Sendable {
+    public var id: String { cityCode }
+    public var cityCode: String
+    public var cityName: String
+    public var visitCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case cityCode = "city_code"
+        case cityName = "city_name"
+        case visitCount = "visit_count"
+    }
+
+    public init(cityCode: String, cityName: String, visitCount: Int = 1) {
+        self.cityCode = cityCode
+        self.cityName = cityName
+        self.visitCount = visitCount
+    }
+}
+
+public struct ProvinceMemoryDrawerResponse: Codable, Equatable, Sendable {
+    public var adcode: String
+    public var provinceName: String
+    public var provinceShort: String
+    public var footprints: [Footprint]
+    public var visitedCities: [ProvinceVisitedCity]
+    public var entries: [LifeEntry]
+    public var photos: [Attachment]
+    public var visitStats: CityVisitStats
+    public var ledgerSummary: DrawerLedgerSummary
+
+    enum CodingKeys: String, CodingKey {
+        case adcode
+        case provinceName = "province_name"
+        case provinceShort = "province_short"
+        case footprints
+        case visitedCities = "visited_cities"
+        case entries
+        case photos
+        case visitStats = "visit_stats"
+        case ledgerSummary = "ledger_summary"
+    }
+
+    public init(
+        adcode: String = "",
+        provinceName: String = "",
+        provinceShort: String = "",
+        footprints: [Footprint] = [],
+        visitedCities: [ProvinceVisitedCity] = [],
+        entries: [LifeEntry] = [],
+        photos: [Attachment] = [],
+        visitStats: CityVisitStats = CityVisitStats(),
+        ledgerSummary: DrawerLedgerSummary = DrawerLedgerSummary()
+    ) {
+        self.adcode = adcode
+        self.provinceName = provinceName
+        self.provinceShort = provinceShort
+        self.footprints = footprints
+        self.visitedCities = visitedCities
+        self.entries = entries
+        self.photos = photos
+        self.visitStats = visitStats
+        self.ledgerSummary = ledgerSummary
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        adcode = (try? container.decode(String.self, forKey: .adcode)) ?? ""
+        provinceName = (try? container.decode(String.self, forKey: .provinceName)) ?? ""
+        provinceShort = (try? container.decode(String.self, forKey: .provinceShort)) ?? ""
+        footprints = (try? container.decodeIfPresent([Footprint].self, forKey: .footprints)) ?? []
+        visitedCities = (try? container.decodeIfPresent([ProvinceVisitedCity].self, forKey: .visitedCities)) ?? []
+        entries = (try? container.decodeIfPresent([LifeEntry].self, forKey: .entries)) ?? []
+        photos = (try? container.decodeIfPresent([Attachment].self, forKey: .photos)) ?? []
+        visitStats = (try? container.decode(CityVisitStats.self, forKey: .visitStats)) ?? CityVisitStats()
+        ledgerSummary = (try? container.decode(DrawerLedgerSummary.self, forKey: .ledgerSummary)) ?? DrawerLedgerSummary()
+    }
+}
+
 // MARK: - 年度生活年鉴五幕画卷模型 (GET /api/v1/almanac/summary?year=...)
 
 public struct AlmanacPrologue: Codable, Equatable, Sendable {

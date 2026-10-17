@@ -66,14 +66,6 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(gapDays, 19)
     }
 
-    // MARK: - 4. Hashtag Extraction Tests
-
-    func testHashtagExtractor() {
-        let text = "午后在 #西湖 散步，用胶片记录秋色 #摄影 #杭州 #西湖"
-        let tags = FormatUtils.extractHashtags(from: text)
-        XCTAssertEqual(tags, ["西湖", "摄影", "杭州"])
-    }
-
     // MARK: - 5. Domain Model Codable Contract Tests (RC-132 create_transaction)
 
     func testTransactionAndGearAssetCodableContract() throws {
@@ -125,7 +117,6 @@ final class LooseLeafTests: XCTestCase {
         let envelope = try JSONDecoder().decode(APIEnvelope<LifeEntry>.self, from: rawJSON)
         XCTAssertEqual(envelope.code, 0)
         XCTAssertEqual(envelope.data?.id, 101)
-        XCTAssertEqual(envelope.data?.hashtags, ["胶片", "暗房"])
         XCTAssertEqual(envelope.data?.attachments.first?.width, 3840)
     }
 

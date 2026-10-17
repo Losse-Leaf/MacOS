@@ -316,34 +316,6 @@ public enum FormatUtils {
         return cal.dateComponents([.day], from: start1, to: start2).day ?? 0
     }
 
-    // MARK: - 标签提取 (#标签)
-
-    private static let hashtagRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: "#([\\p{L}\\p{N}_\\-]+)", options: [])
-    }()
-
-    /// 从正文或输入中提取 #标签 列表（静态正则单例，零重复编译）
-    public static func extractHashtags(from text: String) -> [String] {
-        guard let regex = hashtagRegex else {
-            return []
-        }
-        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
-        let matches = regex.matches(in: text, options: [], range: nsRange)
-        var seen = Set<String>()
-        var result: [String] = []
-        for match in matches {
-            if match.numberOfRanges > 1,
-               let range = Range(match.range(at: 1), in: text) {
-                let tag = String(text[range])
-                if !seen.contains(tag) {
-                    seen.insert(tag)
-                    result.append(tag)
-                }
-            }
-        }
-        return result
-    }
-
     // MARK: - 城市名称与行政区划代码智能解析 (CityCodeResolver)
 
     /// 自动从地点字符串中识别对应的 6 位城市代码（如 "杭州 · 西湖" -> "330100"）

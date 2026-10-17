@@ -60,10 +60,6 @@ public enum ArchiveExporter {
             if let loc = entry.location ?? entry.cityName, !loc.isEmpty {
                 meta.append(loc)
             }
-            let tags = entry.hashtags
-            if !tags.isEmpty {
-                meta.append(tags.map { "#\($0)" }.joined(separator: " "))
-            }
             lines.append(meta.joined(separator: " · "))
             lines.append("")
 

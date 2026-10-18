@@ -58,20 +58,16 @@ public final class AudioFeedback {
         playSound(named: "shutter")
     }
 
-    /// 120g 重磅纸张翻动声 + 触控板微反馈（用于：切换分类、打开抽屉、翻阅月份）
+    /// 120g 重磅纸张翻动声（用于：翻阅画卷等特定拟物场景）
+    /// 注意：常规页面切换或标签点击严禁触发触控板 levelChange，避免造成 macOS 物理点击后的二次顿挫与粘滞感
     public func playPaperFlip() {
-        if isHapticsEnabled {
-            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
-        }
         guard isSoundEnabled else { return }
         playSound(named: "paper_flip")
     }
 
-    /// 轻微金属敲击微触感（用于：切换模式、勾选标签、点击数字键）
+    /// 轻微金属微触敲击声（用于：切换模式、勾选标签、点击选项）
+    /// 注意：常规交互不触发硬件触控板震动，保留 Mac 原生触控板物理级清脆手感
     public func playTink() {
-        if isHapticsEnabled {
-            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
-        }
         guard isSoundEnabled else { return }
         playSound(named: "tink")
     }

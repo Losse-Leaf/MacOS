@@ -1459,6 +1459,7 @@ public struct PaperSegmentedControl<T: Hashable>: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.12), value: selection)
             }
         }
         .padding(2.5)

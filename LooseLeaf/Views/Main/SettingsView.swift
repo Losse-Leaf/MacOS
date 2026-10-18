@@ -119,7 +119,8 @@ public struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.15), value: selectedTab)
+            .id(selectedTab)
+            .transition(.opacity)
         }
         .frame(width: 820, height: 580)
         .background(ArchivePalette.archivePaper)
@@ -222,9 +223,8 @@ public struct SettingsView: View {
             HStack(spacing: 3) {
                 ForEach(SettingsTab.allCases) { tab in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            selectedTab = tab
-                        }
+                        guard selectedTab != tab else { return }
+                        selectedTab = tab
                         AudioFeedback.shared.playTink()
                     } label: {
                         HStack(spacing: 5) {
@@ -247,6 +247,7 @@ public struct SettingsView: View {
                         .shadow(color: selectedTab == tab ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
                     }
                     .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.12), value: selectedTab)
                 }
             }
             .padding(3)

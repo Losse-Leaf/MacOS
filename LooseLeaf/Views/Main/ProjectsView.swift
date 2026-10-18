@@ -136,15 +136,17 @@ public struct ProjectsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 PaperPillButton(title: "全部造物 (\(allProjects.count))", isSelected: selectedCategory == "all") {
+                    guard selectedCategory != "all" else { return }
                     selectedCategory = "all"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
 
                 ForEach(categories, id: \.self) { cat in
                     let count = allProjects.filter { $0.category == cat }.count
                     PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedCategory == cat) {
+                        guard selectedCategory != cat else { return }
                         selectedCategory = cat
-                        AudioFeedback.shared.playPaperFlip()
+                        AudioFeedback.shared.playTink()
                     }
                 }
             }

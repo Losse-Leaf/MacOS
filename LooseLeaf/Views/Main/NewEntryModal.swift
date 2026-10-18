@@ -156,18 +156,22 @@ public struct NewEntryModal: View {
                     }
 
                     // 表单主体切换
-                    switch selectedKind {
-                    case .life:
-                        lifeFormView
-                    case .travel:
-                        travelFormView
-                    case .project:
-                        projectFormView
-                    case .wish:
-                        wishFormView
-                    case .transaction:
-                        transactionFormView
+                    Group {
+                        switch selectedKind {
+                        case .life:
+                            lifeFormView
+                        case .travel:
+                            travelFormView
+                        case .project:
+                            projectFormView
+                        case .wish:
+                            wishFormView
+                        case .transaction:
+                            transactionFormView
+                        }
                     }
+                    .id(selectedKind)
+                    .transition(.opacity)
                 }
                 .padding(24)
             }
@@ -197,9 +201,8 @@ public struct NewEntryModal: View {
             HStack(spacing: 3) {
                 ForEach(Kind.allCases) { kind in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            selectedKind = kind
-                        }
+                        guard selectedKind != kind else { return }
+                        selectedKind = kind
                         AudioFeedback.shared.playTink()
                     } label: {
                         HStack(spacing: 5) {
@@ -220,6 +223,7 @@ public struct NewEntryModal: View {
                         .shadow(color: selectedKind == kind ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
                     }
                     .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.12), value: selectedKind)
                 }
             }
             .padding(3)

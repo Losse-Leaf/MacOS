@@ -31,6 +31,8 @@ public struct StreamView: View {
     @State private var inspectingSearchWish: Wish?
     @State private var inspectingSearchProject: Project?
 
+    @State private var visitedSections: Set<WorkbenchSection> = [.stream]
+
     public init(appState: AppState) {
         self.appState = appState
     }
@@ -56,30 +58,18 @@ public struct StreamView: View {
                         topNoticeStrip(text: err, isError: true)
                     }
 
-                    Group {
-                        switch appState.activeSection {
-                        case .stream:
-                            streamTimelineCanvas
-                        case .ledger:
-                            LedgerAssetsView(appState: appState)
-                        case .wishes:
-                            WishlistView(appState: appState)
-                        case .atlas:
-                            TravelAtlasView(appState: appState)
-                        case .projects:
-                            ProjectsView(appState: appState)
-                        case .dossier:
-                            CuratorDossierView(appState: appState)
-                        case .settings:
-                            SettingsView(appState: appState)
-                        case .darkroom:
-                            DarkroomDropZone(appState: appState)
-                        case .creations:
-                            ProjectsWishesView(appState: appState)
+                    ZStack {
+                        ForEach(WorkbenchSection.allCases) { section in
+                            if visitedSections.contains(section) {
+                                sectionContentView(for: section)
+                                    .opacity(appState.activeSection == section ? 1 : 0)
+                                    .allowsHitTesting(appState.activeSection == section)
+                                    .zIndex(appState.activeSection == section ? 1 : 0)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .animation(nil, value: appState.activeSection)
+                    .animation(.easeInOut(duration: 0.12), value: appState.activeSection)
 
                 }
             }
@@ -248,6 +238,38 @@ public struct StreamView: View {
         .task {
             await appState.refreshAll()
         }
+        .onAppear {
+            visitedSections.insert(appState.activeSection)
+        }
+        .onChange(of: appState.activeSection) { _, newSec in
+            visitedSections.insert(newSec)
+        }
+    }
+
+    // MARK: - 主画布内容分发 (保持已访问视图驻留，实现零延迟丝滑切换与滚动位置保持)
+
+    @ViewBuilder
+    private func sectionContentView(for section: WorkbenchSection) -> some View {
+        switch section {
+        case .stream:
+            streamTimelineCanvas
+        case .ledger:
+            LedgerAssetsView(appState: appState)
+        case .wishes:
+            WishlistView(appState: appState)
+        case .atlas:
+            TravelAtlasView(appState: appState)
+        case .projects:
+            ProjectsView(appState: appState)
+        case .dossier:
+            CuratorDossierView(appState: appState)
+        case .settings:
+            SettingsView(appState: appState)
+        case .darkroom:
+            DarkroomDropZone(appState: appState)
+        case .creations:
+            ProjectsWishesView(appState: appState)
+        }
     }
 
     // MARK: - 左侧工作台导航栏
@@ -294,12 +316,12 @@ public struct StreamView: View {
                         section: section,
                         selected: appState.activeSection == section
                     ) {
-                        var transaction = SwiftUI.Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
+                        guard appState.activeSection != section else { return }
+                        visitedSections.insert(section)
+                        withAnimation(.easeInOut(duration: 0.12)) {
                             appState.activeSection = section
                         }
-                        AudioFeedback.shared.playPaperFlip()
+                        AudioFeedback.shared.playTink()
                     }
                 }
             }
@@ -589,8 +611,9 @@ public struct StreamView: View {
                                 title: cat.label,
                                 isSelected: appState.selectedCategory == cat
                             ) {
+                                guard appState.selectedCategory != cat else { return }
                                 appState.selectedCategory = cat
-                                AudioFeedback.shared.playPaperFlip()
+                                AudioFeedback.shared.playTink()
                             }
                         }
                     }

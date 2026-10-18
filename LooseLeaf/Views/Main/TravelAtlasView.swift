@@ -98,14 +98,18 @@ public struct TravelAtlasView: View {
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
-                switch viewMode {
-                case 0:
-                    stampsMatrixSection
-                case 1:
-                    ticketsSection
-                default:
-                    celestialSection
+                Group {
+                    switch viewMode {
+                    case 0:
+                        stampsMatrixSection
+                    case 1:
+                        ticketsSection
+                    default:
+                        celestialSection
+                    }
                 }
+                .id(viewMode)
+                .transition(.opacity)
             }
             .padding(24)
         }
@@ -184,16 +188,19 @@ public struct TravelAtlasView: View {
     private var viewModePillsSection: some View {
         HStack(spacing: 8) {
             PaperPillButton(title: "百宝格印谱", isSelected: viewMode == 0) {
+                guard viewMode != 0 else { return }
                 viewMode = 0
-                AudioFeedback.shared.playPaperFlip()
+                AudioFeedback.shared.playTink()
             }
             PaperPillButton(title: "典藏票根 (\(appState.footprints.count))", isSelected: viewMode == 1) {
+                guard viewMode != 1 else { return }
                 viewMode = 1
-                AudioFeedback.shared.playPaperFlip()
+                AudioFeedback.shared.playTink()
             }
             PaperPillButton(title: "经纬星野", isSelected: viewMode == 2) {
+                guard viewMode != 2 else { return }
                 viewMode = 2
-                AudioFeedback.shared.playPaperFlip()
+                AudioFeedback.shared.playTink()
             }
 
             Spacer()

@@ -208,40 +208,48 @@ public struct WishlistView: View {
             // 维度 Tab
             HStack(spacing: 6) {
                 PaperPillButton(title: "全维度 (\(allWishes.count))", isSelected: selectedKind == "all") {
+                    guard selectedKind != "all" else { return }
                     selectedKind = "all"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 PaperPillButton(title: "好物器物 (\(allWishes.filter { $0.kind == "item" }.count))", isSelected: selectedKind == "item") {
+                    guard selectedKind != "item" else { return }
                     selectedKind = "item"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 PaperPillButton(title: "行旅探索 (\(allWishes.filter { $0.kind == "travel" }.count))", isSelected: selectedKind == "travel") {
+                    guard selectedKind != "travel" else { return }
                     selectedKind = "travel"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 PaperPillButton(title: "阶段进阶 (\(allWishes.filter { $0.kind == "milestone" }.count))", isSelected: selectedKind == "milestone") {
+                    guard selectedKind != "milestone" else { return }
                     selectedKind = "milestone"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
             }
 
             // 状态 Tab
             HStack(spacing: 6) {
                 PaperPillButton(title: "向往中 (\(wantingWishes.count))", isSelected: selectedStatus == "wanting") {
+                    guard selectedStatus != "wanting" else { return }
                     selectedStatus = "wanting"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 PaperPillButton(title: "已圆满 (\(fulfilledWishes.count))", isSelected: selectedStatus == "fulfilled") {
+                    guard selectedStatus != "fulfilled" else { return }
                     selectedStatus = "fulfilled"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 PaperPillButton(title: "已拔草 (\(relinquishedWishes.count))", isSelected: selectedStatus == "relinquished") {
+                    guard selectedStatus != "relinquished" else { return }
                     selectedStatus = "relinquished"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 PaperPillButton(title: "全部 (\(allWishes.count))", isSelected: selectedStatus == "all") {
+                    guard selectedStatus != "all" else { return }
                     selectedStatus = "all"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
             }
         }

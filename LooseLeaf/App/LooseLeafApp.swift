@@ -44,6 +44,16 @@ public struct LooseLeafApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1180, height: 780)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("配置中心…") {
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.activeSection = .settings
+                    }
+                    AudioFeedback.shared.playPaperFlip()
+                }
+                .keyboardShortcut(",", modifiers: [.command])
+            }
+
             CommandGroup(after: .appInfo) {
                 Button("检查新版本…") {
                     Task { @MainActor in

@@ -21,6 +21,16 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         case .about: return "info.circle"
         }
     }
+
+    public var subtitle: String {
+        switch self {
+        case .general: return "纸墨外观、声学与热键"
+        case .devices: return "节点地址、受信任设备"
+        case .backup: return "R2云存、快照与导出"
+        case .categories: return "收支类别与造物字典"
+        case .about: return "版本状态与更新日志"
+        }
+    }
 }
 
 /// 活页集统一配置中心视图 (SettingsView) - Option A 选项卡轻量架构
@@ -90,12 +100,206 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
+        HStack(spacing: 0) {
+            // 左侧设置分类子侧栏 (Master Sidebar)
+            settingsSidebar
+                .frame(width: 220)
+                .background(ArchivePalette.archiveSubtle.opacity(0.4))
+                .overlay(
+                    Rectangle()
+                        .fill(ArchivePalette.borderSubtle.opacity(0.6))
+                        .frame(width: 0.5),
+                    alignment: .trailing
+                )
+
+            // 右侧设置详情主面板 (Detail Content Canvas)
+            settingsDetailContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(ArchivePalette.archivePaper)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ArchivePalette.archivePaper)
+        .sheet(item: $renamingDevice) { dev in
+            renameDeviceSheetView(dev: dev)
+        }
+        .sheet(item: $renamingCategory) { cat in
+            renameCategorySheetView(cat: cat)
+        }
+        .task {
+            if appState.isPaired {
+                await refreshDevicesList()
+                allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                await loadServerBackups()
+                await loadStorageStatusAction()
+            }
+        }
+    }
+
+    // MARK: - 左侧分类子侧栏 (Master Sidebar)
+    private var settingsSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 刊头印记
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape.2.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Text("系统配置")
+                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                }
+                Text("活页系统参数 · 中枢设备 · 灾备字典")
+                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
+
+            // 垂直分类选项列表
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(SettingsTab.allCases) { tab in
+                        Button {
+                            guard selectedTab != tab else { return }
+                            selectedTab = tab
+                            AudioFeedback.shared.playTink()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: tab.iconName)
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(selectedTab == tab ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
+                                    .frame(width: 20)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(tab.rawValue)
+                                        .font(ArchiveTypography.bodySans(size: 12.5, weight: selectedTab == tab ? .semibold : .medium))
+                                        .foregroundStyle(selectedTab == tab ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
+                                    Text(tab.subtitle)
+                                        .font(ArchiveTypography.monoScale(size: 10))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                if selectedTab == tab {
+                                    Circle()
+                                        .fill(ArchivePalette.accentWarm)
+                                        .frame(width: 5, height: 5)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(selectedTab == tab ? ArchivePalette.archivePaper : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(selectedTab == tab ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
+                            )
+                            .shadow(color: selectedTab == tab ? Color.black.opacity(0.03) : Color.clear, radius: 2, y: 1)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 12)
+            }
+
+            Spacer()
+
+            // 底部中枢状态与版本信息
+            VStack(alignment: .leading, spacing: 8) {
+                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .frame(width: 6, height: 6)
+                    Text(appState.isPaired ? "中枢节点在线" : "未配对中枢")
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    Spacer()
+
+                    Text("v\(UpdateChecker.shared.currentVersion)")
+                        .font(ArchiveTypography.monoScale(size: 10))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+
+    // MARK: - 右侧详情主面板 (Detail Canvas)
+    private var settingsDetailContent: some View {
         VStack(spacing: 0) {
-            headerBar
+            // 详情顶栏
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Image(systemName: selectedTab.iconName)
+                            .font(.system(size: 14))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text(selectedTab.rawValue)
+                            .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                    }
+                    Text(selectedTab.subtitle)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                Spacer()
+
+                if appState.activeSection == .settings {
+                    Button {
+                        appState.activeSection = .stream
+                        AudioFeedback.shared.playPaperFlip()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.left")
+                                .font(.system(size: 10.5))
+                            Text("返回手账")
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("返回散页时间流 (⌘1)")
+                } else if appState.showSettingsSheet {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            appState.showSettingsSheet = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 26, height: 26)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.escape, modifiers: [])
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 选项卡主体呈现区
+            // 呈现对应的选项卡内容
             Group {
                 switch selectedTab {
                 case .general:
@@ -114,96 +318,6 @@ public struct SettingsView: View {
             .id(selectedTab)
             .transition(.opacity)
         }
-        .frame(width: 820, height: 580)
-        .background(ArchivePalette.archivePaper)
-        .sheet(item: $renamingDevice) { dev in
-            renameDeviceSheetView(dev: dev)
-        }
-        .sheet(item: $renamingCategory) { cat in
-            renameCategorySheetView(cat: cat)
-        }
-        .task {
-            if appState.isPaired {
-                await refreshDevicesList()
-                allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                await loadServerBackups()
-                await loadStorageStatusAction()
-            }
-        }
-    }
-
-    // MARK: - 顶栏与选项卡切换
-    private var headerBar: some View {
-        HStack(spacing: 0) {
-            Text("配置中心")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .lineLimit(1)
-                .frame(width: 120, alignment: .leading)
-
-            Spacer()
-
-            // 居中分段选项卡胶囊 (绝对单行不折叠)
-            HStack(spacing: 3) {
-                ForEach(SettingsTab.allCases) { tab in
-                    Button {
-                        guard selectedTab != tab else { return }
-                        selectedTab = tab
-                        AudioFeedback.shared.playTink()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: tab.iconName)
-                                .font(.system(size: 10.5, weight: .medium))
-                            Text(tab.rawValue)
-                                .font(ArchiveTypography.bodySans(size: 11.5, weight: selectedTab == tab ? .semibold : .regular))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(selectedTab == tab ? ArchivePalette.archivePaper : Color.clear)
-                        .foregroundStyle(selectedTab == tab ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(selectedTab == tab ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
-                        )
-                        .shadow(color: selectedTab == tab ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
-                    }
-                    .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.12), value: selectedTab)
-                }
-            }
-            .padding(3)
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(ArchivePalette.borderSubtle.opacity(0.7), lineWidth: 0.5)
-            )
-
-            Spacer()
-
-            // 右上角关闭按钮 (支持 Esc 快捷键与点击空白退出)
-            Button {
-                withAnimation(.easeOut(duration: 0.16)) {
-                    appState.showSettingsSheet = false
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .frame(width: 26, height: 26)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.escape, modifiers: [])
-            .help("关闭配置中心 (Esc / 点击外部空白)")
-            .frame(width: 120, alignment: .trailing)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
     }
 
     // MARK: - 1. 偏好设置 Tab

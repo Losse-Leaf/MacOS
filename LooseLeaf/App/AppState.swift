@@ -176,7 +176,14 @@ public final class AppState {
 
     // MARK: - 导航与交互状态
     public var activeSection: WorkbenchSection = .stream
-    public var showSettingsSheet: Bool = false
+    public var showSettingsSheet: Bool = false {
+        didSet {
+            if showSettingsSheet {
+                activeSection = .settings
+                showSettingsSheet = false
+            }
+        }
+    }
     public var showNewEntrySheet: Bool = false
     public var newEntryInitialKind: String? = nil
     public var newEntryInitialProjectId: Int? = nil

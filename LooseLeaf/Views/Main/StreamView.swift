@@ -79,36 +79,6 @@ public struct StreamView: View {
                     appState.lightboxAttachment = nil
                 }
             }
-            if appState.showSettingsSheet {
-                ZStack {
-                    Color.black.opacity(0.38)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                appState.showSettingsSheet = false
-                            }
-                        }
-
-                    SettingsView(appState: appState)
-                        .frame(width: 820, height: 580)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
-                        )
-                        .onTapGesture {
-                            // 吸收卡片内部的点击，防止误触发背景退出
-                        }
-                        .transition(.asymmetric(
-                            insertion: .scale(scale: 0.96).combined(with: .opacity),
-                            removal: .scale(scale: 0.96).combined(with: .opacity)
-                        ))
-                }
-                .zIndex(100)
-            }
 
             // 全局快捷悬浮发布按钮 (Floating Action Button)
             VStack {
@@ -132,7 +102,7 @@ public struct StreamView: View {
                     .help("记一笔 (⌘N)")
                 }
             }
-            .allowsHitTesting(!appState.showSettingsSheet && !appState.showNewEntrySheet && !appState.showSearchModal && !appState.showStatsSheet)
+            .allowsHitTesting(!appState.showNewEntrySheet && !appState.showSearchModal && !appState.showStatsSheet)
 
             if appState.showNewEntrySheet {
                 ZStack {
@@ -459,28 +429,31 @@ public struct StreamView: View {
 
                 // 原生偏好设置/配置中心入口 (⌘,)
                 Button {
-                    appState.showSettingsSheet = true
-                    AudioFeedback.shared.playTink()
+                    guard appState.activeSection != .settings else { return }
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.activeSection = .settings
+                    }
+                    AudioFeedback.shared.playPaperFlip()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "gearshape")
                             .font(.system(size: 12))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .foregroundStyle(appState.activeSection == .settings ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
                         Text("配置中心")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
+                            .font(ArchiveTypography.bodySans(size: 12, weight: appState.activeSection == .settings ? .semibold : .medium))
+                            .foregroundStyle(appState.activeSection == .settings ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
                         Spacer()
                         Text("⌘,")
                             .font(ArchiveTypography.monoScale(size: 10))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(ArchivePalette.archivePaper.opacity(0.6))
+                    .padding(.vertical, 7)
+                    .background(appState.activeSection == .settings ? ArchivePalette.archiveSubtle : ArchivePalette.archivePaper.opacity(0.6))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            .stroke(appState.activeSection == .settings ? ArchivePalette.accentWarm.opacity(0.5) : ArchivePalette.borderSubtle, lineWidth: 0.5)
                     )
                 }
                 .buttonStyle(.plain)

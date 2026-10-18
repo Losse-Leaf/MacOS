@@ -322,6 +322,18 @@ public struct PairingGateView: View {
             HStack {
                 Spacer()
                 Button("完成并重新探测") {
+                    let trimmed = appState.hubURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let url = URL(string: trimmed),
+                          let scheme = url.scheme?.lowercased(),
+                          scheme == "http" || scheme == "https",
+                          url.host?.isEmpty == false else {
+                        errorMessage = "中枢地址格式无效，请填写 http:// 或 https:// 开头的完整地址"
+                        return
+                    }
+                    // 必须真正落盘：此前只改了内存字段，"重新探测"仍然打旧地址
+                    APIClient.shared.setBaseURL(trimmed)
+                    appState.hubURLString = APIClient.shared.baseURLString
+                    errorMessage = nil
                     showHubConfig = false
                     Task { @MainActor in
                         await probeHub()

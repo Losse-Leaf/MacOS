@@ -48,7 +48,9 @@ public struct StreamView: View {
 
                 // 右侧主画布区
                 VStack(spacing: 0) {
-                    if let banner = appState.statusBanner {
+                    if let warning = appState.localDataWarning {
+                        topNoticeStrip(text: warning, isError: true)
+                    } else if let banner = appState.statusBanner {
                         topNoticeStrip(text: banner, isError: false)
                     } else if let err = appState.errorBanner {
                         topNoticeStrip(text: err, isError: true)
@@ -100,6 +102,7 @@ public struct StreamView: View {
                     .buttonStyle(.plain)
                     .padding(24)
                     .help("记一笔 (⌘N)")
+                    .accessibilityLabel("新建散页")
                 }
             }
             .allowsHitTesting(!appState.showNewEntrySheet && !appState.showSearchModal && !appState.showStatsSheet)
@@ -266,9 +269,6 @@ public struct StreamView: View {
         .sheet(item: $inspectingSearchProject) { project in
             searchProjectDetailSheet(project: project)
         }
-        .task {
-            await appState.refreshAll()
-        }
         .onAppear {
             visitedSections.insert(appState.activeSection)
         }
@@ -298,8 +298,6 @@ public struct StreamView: View {
             SettingsView(appState: appState)
         case .darkroom:
             DarkroomDropZone(appState: appState)
-        case .creations:
-            ProjectsWishesView(appState: appState)
         }
     }
 
@@ -392,6 +390,28 @@ public struct StreamView: View {
             }
             .padding(.horizontal, 10)
 
+            // 辅助工具：银盐暗房不属于六大主内容板块，独立分组避免挤占主叙事
+            VStack(alignment: .leading, spacing: 4) {
+                Text("辅助工具")
+                    .font(ArchiveTypography.monoScale(size: 9.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+
+                WorkbenchNavRow(
+                    section: .darkroom,
+                    selected: appState.activeSection == .darkroom
+                ) {
+                    guard appState.activeSection != .darkroom else { return }
+                    visitedSections.insert(.darkroom)
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.activeSection = .darkroom
+                    }
+                    AudioFeedback.shared.playTink()
+                }
+            }
+            .padding(.horizontal, 10)
+
             Spacer()
 
             // 底部配置中心入口与系统状态
@@ -429,7 +449,6 @@ public struct StreamView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(",", modifiers: [.command])
 
                 // 中枢就绪状态与快捷记账提示
                 HStack(spacing: 5) {
@@ -623,6 +642,7 @@ public struct StreamView: View {
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         .paperElevation(1)
                         .help("全量同步中枢档案 (⌘R)")
+                        .accessibilityLabel("同步全部档案")
 
                         Button {
                             appState.showNewEntrySheet = true
@@ -642,7 +662,6 @@ public struct StreamView: View {
                         }
                         .buttonStyle(.plain)
                         .paperElevation(1)
-                        .keyboardShortcut("n", modifiers: [.command])
                     }
                 }
                 .padding(.bottom, 6)
@@ -683,18 +702,15 @@ public struct StreamView: View {
                 }
 
                 // 5. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
-                let list = appState.filteredStreamEntries
-                if list.isEmpty {
+                let rows = appState.streamRows
+                if rows.isEmpty {
                     emptyStreamPlaceholder
                 } else {
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(Array(list.enumerated()), id: \.element.id) { index, entry in
-                            if index > 0 {
-                                let prev = list[index - 1]
-                                let gapDays = FormatUtils.daysBetween(prev.occurredAt, entry.occurredAt)
-                                if gapDays >= 14 {
-                                    TemporalGapDivider(days: gapDays)
-                                }
+                        ForEach(rows) { row in
+                            let entry = row.entry
+                            if row.gapDays >= 14 {
+                                TemporalGapDivider(days: row.gapDays)
                             }
                             TimelineEntryCardView(
                                 entry: entry,
@@ -850,6 +866,7 @@ public struct StreamView: View {
                                         }
                                         .buttonStyle(.plain)
                                         .help("编辑账目")
+                                        .accessibilityLabel("编辑账目")
 
                                         Button {
                                             onDeleteTransaction(tx)
@@ -863,6 +880,7 @@ public struct StreamView: View {
                                         }
                                         .buttonStyle(.plain)
                                         .help("删除账目")
+                                        .accessibilityLabel("删除账目")
                                     }
                                 } else {
                                     Button {
@@ -877,6 +895,7 @@ public struct StreamView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .help(entry.featured == true ? "取消精选" : "设为精选")
+                                        .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
 
                                     Button {
                                         onEditEntry()
@@ -890,6 +909,7 @@ public struct StreamView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .help("编辑手稿")
+                                        .accessibilityLabel("编辑手稿")
 
                                     Button {
                                         onDeleteEntry()
@@ -903,6 +923,7 @@ public struct StreamView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .help("删除手稿")
+                                        .accessibilityLabel("删除手稿")
                                 }
                             }
 
@@ -918,6 +939,7 @@ public struct StreamView: View {
                             }
                             .buttonStyle(.plain)
                             .help("查看手稿完整详情")
+                                .accessibilityLabel("查看手稿完整详情")
                         }
                         .animation(.easeInOut(duration: 0.15), value: isHovering)
                     }
@@ -928,7 +950,7 @@ public struct StreamView: View {
                             .foregroundStyle(ArchivePalette.inkPrimary)
                     }
 
-                    Text(LocalizedStringKey(entry.content))
+                    Text(entry.content)
                         .font(ArchiveTypography.bodySans(size: 13.5))
                         .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.92))
                         .lineSpacing(5)
@@ -1163,6 +1185,7 @@ public struct StreamView: View {
             Button("关闭") {
                 appState.statusBanner = nil
                 appState.errorBanner = nil
+                appState.localDataWarning = nil
             }
             .font(ArchiveTypography.bodySans(size: 11))
             .buttonStyle(.plain)

@@ -63,19 +63,36 @@ public actor APIClient {
         while cleaned.hasSuffix("/") {
             cleaned.removeLast()
         }
+        let previous = UserDefaults.standard.string(forKey: Self.hubURLDefaultsKey) ?? ""
         UserDefaults.standard.set(cleaned, forKey: Self.hubURLDefaultsKey)
+        if !previous.isEmpty, previous != cleaned {
+            // 换中枢后旧设备令牌对新节点无效；继续携带只会让配对/探针请求 401
+            CredentialStore.deleteToken()
+        }
     }
 
-    /// 将后端返回的相对媒体路径 (如 /media/...) 补全为可访问的完整 URL
+    /// 将后端返回的相对媒体路径 (如 /media/...) 补全为可访问的完整 URL。
+    /// 文件名可能含空格/中文/#，必须做路径转义，否则 URL(string:) 直接返回 nil（图片静默不显示）。
     public nonisolated func resolveMediaURL(_ rawURL: String) -> URL? {
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            return URL(string: trimmed)
+            if let url = URL(string: trimmed) { return url }
+            let allowed = CharacterSet.urlFragmentAllowed.union(CharacterSet(charactersIn: "%"))
+            return URL(string: trimmed.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
         }
         let prefix = baseURLString
         let path = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
-        return URL(string: "\(prefix)\(path)")
+        let allowed = CharacterSet.urlPathAllowed.union(CharacterSet(charactersIn: "?&=%+"))
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+        return URL(string: "\(prefix)\(encoded)")
+    }
+
+    /// 单个路径段转义（id / 城市码 / 备份文件名）
+    private nonisolated func escapePathComponent(_ raw: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/?#")
+        return raw.addingPercentEncoding(withAllowedCharacters: allowed) ?? raw
     }
 
     // MARK: - 通用请求构建与执行
@@ -86,7 +103,8 @@ public actor APIClient {
         queryItems: [URLQueryItem] = [],
         bodyData: Data? = nil,
         contentType: String = "application/json",
-        useETag: Bool = false
+        useETag: Bool = false,
+        timeout: TimeInterval = 30
     ) throws -> (URLRequest, String) {
         let base = baseURLString
         let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
@@ -103,7 +121,7 @@ public actor APIClient {
         let cacheKey = url.absoluteString
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
 
         if let bodyData {
             request.httpBody = bodyData
@@ -120,6 +138,22 @@ public actor APIClient {
         }
 
         return (request, cacheKey)
+    }
+
+    /// 仅对幂等 GET 做一次轻量重试；POST/PUT/DELETE 绝不自动重放
+    private func dataWithRetry(for request: URLRequest, attempts: Int) async throws -> (Data, URLResponse) {
+        var lastError: Error?
+        for attempt in 0..<max(1, attempts) {
+            do {
+                return try await session.data(for: request)
+            } catch {
+                lastError = error
+                if attempt < attempts - 1 {
+                    try? await Task.sleep(for: .milliseconds(350))
+                }
+            }
+        }
+        throw APIError.networkFailure(lastError?.localizedDescription ?? "网络请求失败")
     }
 
     private func performEnvelopeRequest<T: Decodable>(
@@ -147,7 +181,7 @@ public actor APIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await dataWithRetry(for: request, attempts: method == "GET" ? 2 : 1)
         } catch {
             throw APIError.networkFailure(error.localizedDescription)
         }
@@ -225,8 +259,13 @@ public actor APIClient {
             method: "POST",
             body: payload
         )
-        CredentialStore.saveToken(resp.deviceToken)
-        CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName)
+        guard CredentialStore.saveToken(resp.deviceToken),
+              CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName) else {
+            throw APIError.serverError(
+                code: 0,
+                message: "无法写入本机凭据档案（磁盘权限或空间异常），配对未生效，请检查后重试"
+            )
+        }
         if let hub = resp.hubUrl, !hub.isEmpty {
             setBaseURL(hub)
         }
@@ -251,8 +290,13 @@ public actor APIClient {
             method: "POST",
             body: payload
         )
-        CredentialStore.saveToken(resp.token)
-        CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName)
+        guard CredentialStore.saveToken(resp.token),
+              CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName) else {
+            throw APIError.serverError(
+                code: 0,
+                message: "无法写入本机凭据档案（磁盘权限或空间异常），授权未生效，请检查后重试"
+            )
+        }
         return resp
     }
 
@@ -283,7 +327,7 @@ public actor APIClient {
     /// 吊销受信任设备 (DELETE /api/v1/auth/devices/:id)
     public func revokeDevice(id: String) async throws {
         let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/auth/devices/\(id)",
+            path: "/api/v1/auth/devices/\(escapePathComponent(id))",
             method: "DELETE"
         )
     }
@@ -302,7 +346,7 @@ public actor APIClient {
             let device_model: String?
         }
         return try await performEnvelopeRequest(
-            path: "/api/v1/auth/devices/\(id)",
+            path: "/api/v1/auth/devices/\(escapePathComponent(id))",
             method: "PUT",
             body: Payload(name: name, platform: platform, device_model: deviceModel)
         )
@@ -326,19 +370,52 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/stats")
     }
 
+    /// 分类字典响应有两种历史形态（`{items:[...]}` 与裸数组）。
+    /// 首次探测后记住形态，之后只发一个请求；此处不再用 `try?` 把网络错误吞成空数组。
+    private enum CategoriesResponseShape {
+        case wrapped
+        case plainArray
+    }
+    private var categoriesShape: CategoriesResponseShape?
+
     public func fetchCategories(scope: String? = nil) async throws -> [CategoryOption] {
         var items: [URLQueryItem] = []
         if let scope, !scope.isEmpty {
             items.append(URLQueryItem(name: "scope", value: scope))
         }
-        if let resp: CategoryResetResponse = try? await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items),
-           let list = resp.items {
-            return list
+
+        if let shape = categoriesShape {
+            switch shape {
+            case .wrapped:
+                let response: CategoryResetResponse = try await performEnvelopeRequest(
+                    path: "/api/v1/categories",
+                    queryItems: items
+                )
+                return response.items ?? []
+            case .plainArray:
+                return try await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items)
+            }
         }
-        if let direct: [CategoryOption] = try? await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items) {
-            return direct
+
+        do {
+            let response: CategoryResetResponse = try await performEnvelopeRequest(
+                path: "/api/v1/categories",
+                queryItems: items
+            )
+            categoriesShape = .wrapped
+            return response.items ?? []
+        } catch let error as APIError {
+            // 只有"解码形态不匹配"才值得换一种再试；网络/鉴权错误直接上抛
+            if case .decodingFailure = error {
+                let plain: [CategoryOption] = try await performEnvelopeRequest(
+                    path: "/api/v1/categories",
+                    queryItems: items
+                )
+                categoriesShape = .plainArray
+                return plain
+            }
+            throw error
         }
-        return []
     }
 
     public func addCategoryOption(scope: String, name: String) async throws -> CategoryOption {
@@ -537,12 +614,12 @@ public actor APIClient {
     }
 
     public func sellGearAsset(id: String, _ req: SellGearRequest) async throws -> GearItem {
-        try await performEnvelopeRequest(path: "/api/v1/assets/gear/\(id)/sell", method: "POST", body: req)
+        try await performEnvelopeRequest(path: "/api/v1/assets/gear/\(escapePathComponent(id))/sell", method: "POST", body: req)
     }
 
     public func deleteGearAsset(id: String) async throws {
         let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/assets/gear/\(id)",
+            path: "/api/v1/assets/gear/\(escapePathComponent(id))",
             method: "DELETE"
         )
     }
@@ -655,12 +732,12 @@ public actor APIClient {
 
     /// 获取单座城市回忆抽屉四重聚合数据 (GET /api/v1/footprints/cities/:city_code/drawer)
     public func fetchCityMemoryDrawer(cityCode: String) async throws -> CityMemoryDrawerResponse {
-        try await performEnvelopeRequest(path: "/api/v1/footprints/cities/\(cityCode)/drawer")
+        try await performEnvelopeRequest(path: "/api/v1/footprints/cities/\(escapePathComponent(cityCode))/drawer")
     }
 
     /// 获取省级回忆抽屉聚合数据 (GET /api/v1/footprints/provinces/:adcode/drawer)
     public func fetchProvinceMemoryDrawer(adcode: String) async throws -> ProvinceMemoryDrawerResponse {
-        try await performEnvelopeRequest(path: "/api/v1/footprints/provinces/\(adcode)/drawer")
+        try await performEnvelopeRequest(path: "/api/v1/footprints/provinces/\(escapePathComponent(adcode))/drawer")
     }
 
     /// 获取年度生活年鉴五幕聚合数据 (GET /api/v1/almanac/summary?year=...)
@@ -712,7 +789,8 @@ public actor APIClient {
             path: "/api/v1/files/upload",
             method: "POST",
             bodyData: body,
-            contentType: "multipart/form-data; boundary=\(boundary)"
+            contentType: "multipart/form-data; boundary=\(boundary)",
+            timeout: 180
         )
 
         let (data, response) = try await session.data(for: request)
@@ -750,7 +828,7 @@ public actor APIClient {
     }
 
     public func deleteServerBackup(filename: String) async throws -> [ServerBackupItem] {
-        try await performEnvelopeRequest(path: "/api/v1/system/backup/\(filename)", method: "DELETE")
+        try await performEnvelopeRequest(path: "/api/v1/system/backup/\(escapePathComponent(filename))", method: "DELETE")
     }
 
     public func restoreServerBackup(filename: String) async throws {
@@ -766,8 +844,9 @@ public actor APIClient {
 
     public func downloadServerBackup(filename: String) async throws -> (Data, String) {
         let (request, _) = try buildRequest(
-            path: "/api/v1/system/backup/download/\(filename)",
-            method: "GET"
+            path: "/api/v1/system/backup/download/\(escapePathComponent(filename))",
+            method: "GET",
+            timeout: 180
         )
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {

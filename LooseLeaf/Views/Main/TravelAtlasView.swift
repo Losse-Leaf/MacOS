@@ -16,8 +16,8 @@ public struct TravelAtlasView: View {
 
     @State private var showNewFootprintSheet: Bool = false
     @State private var editingFootprint: Footprint?
-    @State private var selectedDrawerCity: ProjectsWishesView.DrawerCitySelection?
-    @State private var selectedDrawerProvince: ProjectsWishesView.DrawerProvinceSelection?
+    @State private var selectedDrawerCity: DrawerCitySelection?
+    @State private var selectedDrawerProvince: DrawerProvinceSelection?
     @State private var errorMessage: String?
 
     public init(appState: AppState) {
@@ -223,6 +223,7 @@ public struct TravelAtlasView: View {
             }
 
             let displayRegions = selectedRegion == "all" ? Self.regions : Self.regions.filter { $0.name == selectedRegion }
+            let byProvince = footprintsByProvince
 
             ForEach(displayRegions, id: \.name) { reg in
                 VStack(alignment: .leading, spacing: 10) {
@@ -232,9 +233,9 @@ public struct TravelAtlasView: View {
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                         ForEach(reg.provinces, id: \.adcode) { prov in
-                            let isLit = appState.footprints.contains { $0.cityCode.hasPrefix(String(prov.adcode.prefix(2))) }
-                            if sealFilter == "all" || isLit {
-                                provinceStampCell(prov: prov, isLit: isLit)
+                            let provinceFootprints = byProvince[String(prov.adcode.prefix(2))] ?? []
+                            if sealFilter == "all" || !provinceFootprints.isEmpty {
+                                provinceStampCell(prov: prov, footprints: provinceFootprints)
                             }
                         }
                     }
@@ -244,8 +245,21 @@ public struct TravelAtlasView: View {
         }
     }
 
-    private func provinceStampCell(prov: (name: String, short: String, adcode: String), isLit: Bool) -> some View {
-        let provFps = appState.footprints.filter { $0.cityCode.hasPrefix(String(prov.adcode.prefix(2))) }
+    /// 省前缀 → 该省足迹。一次分组替代每格 `contains`/`filter` 的 O(省数 × 记录数) 扫描。
+    private var footprintsByProvince: [String: [Footprint]] {
+        var map: [String: [Footprint]] = [:]
+        map.reserveCapacity(34)
+        for fp in appState.footprints {
+            let prefix = String(fp.cityCode.prefix(2))
+            guard !prefix.isEmpty else { continue }
+            map[prefix, default: []].append(fp)
+        }
+        return map
+    }
+
+    private func provinceStampCell(prov: (name: String, short: String, adcode: String), footprints: [Footprint]) -> some View {
+        let isLit = !footprints.isEmpty
+        let litCount = footprints.count
         return HStack(spacing: 10) {
             // 朱砂方印
             ZStack {
@@ -265,7 +279,7 @@ public struct TravelAtlasView: View {
                 Text(prov.name)
                     .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                Text(isLit ? "已钤印 \(provFps.count) 程" : "待踏访")
+                Text(isLit ? "已钤印 \(litCount) 程" : "待踏访")
                     .font(ArchiveTypography.monoScale(size: 10))
                     .foregroundStyle(isLit ? ArchivePalette.accentMoss : ArchivePalette.inkMuted)
             }
@@ -289,7 +303,7 @@ public struct TravelAtlasView: View {
         .onTapGesture {
             if isLit {
                 AudioFeedback.shared.playPaperFlip()
-                selectedDrawerProvince = ProjectsWishesView.DrawerProvinceSelection(adcode: prov.adcode, name: prov.name)
+                selectedDrawerProvince = DrawerProvinceSelection(adcode: prov.adcode, name: prov.name)
             }
         }
         .paperHover()
@@ -392,7 +406,7 @@ public struct TravelAtlasView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             AudioFeedback.shared.playPaperFlip()
-                            selectedDrawerCity = ProjectsWishesView.DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
+                            selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
                         }
                         .paperHover()
                     }
@@ -405,7 +419,7 @@ public struct TravelAtlasView: View {
     private var celestialSection: some View {
         CelestialAtlasCanvasView(footprints: appState.footprints) { code, name in
             AudioFeedback.shared.playPaperFlip()
-            selectedDrawerCity = ProjectsWishesView.DrawerCitySelection(code: code, name: name)
+            selectedDrawerCity = DrawerCitySelection(code: code, name: name)
         }
     }
 

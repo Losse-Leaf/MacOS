@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// 岁月留白刻度切线 (Temporal Gap Separator)
 /// 遵循 docs/ecosystem.md §4.1.3：当相邻记录跨度 >= 14 天时自动插入留白标注
@@ -1030,9 +1031,11 @@ public struct PaperCityPicker: View {
         !selectedName.isEmpty || !selectedCode.isEmpty
     }
 
+    /// 省名列表只计算一次（此前每次 body 求值都重建 Set + 排序）
+    private static let allProvincesCache: [String] = Array(Set(CityDictionary.provincePrefixMap.values)).sorted()
+
     private var allProvinces: [String] {
-        let values = Array(Set(CityDictionary.provincePrefixMap.values)).sorted()
-        return values
+        Self.allProvincesCache
     }
 
     public var body: some View {
@@ -1043,58 +1046,63 @@ public struct PaperCityPicker: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            Button {
+            // 外层不再用 Button 包裹：内部「清除」若嵌在 Button 里会同时触发打开弹层（双动作）
+            HStack(spacing: 5) {
+                Image(systemName: "map")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+
+                Text(displayText)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
+                    .lineLimit(1)
+
+                if isFullWidth {
+                    Spacer(minLength: 4)
+                }
+
+                if isSelected {
+                    Button {
+                        selectedCode = ""
+                        selectedName = ""
+                        AudioFeedback.shared.playTink()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除已选城市")
+                }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
                 searchKeyword = ""
                 if let firstProv = allProvinces.first, activeProvince.isEmpty {
                     activeProvince = firstProv
                 }
-                // 尝试静默请求原生定位
-                LocationManager.shared.requestAuthorizationAndFetch()
+                // 已授权时静默刷新定位；未授权不在打开弹层的瞬间突然弹权限框
+                if LocationManager.shared.isAuthorized {
+                    LocationManager.shared.fetchCurrentLocation()
+                }
                 isPickerPresented = true
                 AudioFeedback.shared.playTink()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "map")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-
-                    Text(displayText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
-                        .lineLimit(1)
-
-                    if isFullWidth {
-                        Spacer(minLength: 4)
-                    }
-
-                    if isSelected {
-                        Button {
-                            selectedCode = ""
-                            selectedName = ""
-                            AudioFeedback.shared.playTink()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 7))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, isFullWidth ? 7 : 4.5)
-                .frame(maxWidth: isFullWidth ? .infinity : nil)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.4) : ArchivePalette.borderDivider, lineWidth: 0.5)
-                )
             }
-            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("选择省市，当前为 \(displayText)")
+            .padding(.horizontal, 8)
+            .padding(.vertical, isFullWidth ? 7 : 4.5)
+            .frame(maxWidth: isFullWidth ? .infinity : nil)
+            .background(ArchivePalette.archivePaper)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.4) : ArchivePalette.borderDivider, lineWidth: 0.5)
+            )
             .popover(isPresented: $isPickerPresented, arrowEdge: .bottom) {
                 cityPopoverContent
             }
@@ -1133,6 +1141,34 @@ public struct PaperCityPicker: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .background(ArchivePalette.accentWarm.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            } else {
+                // 未定位成功时才提供显式入口：把权限申请收敛到用户主动点击，避免开弹层即弹系统框
+                Button {
+                    let status = locMgr.authorizationStatus
+                    if status == .denied || status == .restricted {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } else {
+                        locMgr.requestAuthorizationAndFetch()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "location")
+                            .font(.system(size: 10))
+                        Text(locMgr.authorizationStatus == .denied || locMgr.authorizationStatus == .restricted
+                             ? "定位权限已关闭 · 去系统设置开启"
+                             : "使用当前定位")
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                        Spacer()
+                    }
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
                 .buttonStyle(.plain)
@@ -1265,7 +1301,7 @@ public struct PaperCityPicker: View {
 // MARK: - 纸本拟物下拉单选器 (PaperSelect) 与 分段选择器 (PaperSegmentedControl)
 
 /// 纸本选项定义 (严格对标 Web 端 PaperSelectOption)
-public struct PaperSelectOption<T: Hashable>: Identifiable, Equatable, Sendable {
+public struct PaperSelectOption<T: Hashable & Sendable>: Identifiable, Equatable, Sendable {
     public let value: T
     public let label: String
     public let sublabel: String?
@@ -1284,7 +1320,7 @@ public struct PaperSelectOption<T: Hashable>: Identifiable, Equatable, Sendable 
 /// 纸本拟物下拉单选器 (PaperSelect)
 /// 严格 1:1 对标 Web 端 PaperSelect.vue，彻底杜绝系统 Aqua 液态玻璃原生菜单
 /// 包含边框拟物、展开旋转 Chevron、纸本浮层、点选 Checkmark 标定、Tink 触觉音效
-public struct PaperSelect<T: Hashable>: View {
+public struct PaperSelect<T: Hashable & Sendable>: View {
     @Binding public var selection: T
     public var options: [PaperSelectOption<T>]
     public var placeholder: String
@@ -1573,3 +1609,32 @@ public extension ToggleStyle where Self == PaperSwitchToggleStyle {
     static var paperSwitch: PaperSwitchToggleStyle { PaperSwitchToggleStyle() }
 }
 
+
+// MARK: - 纸张物理微投影（原在 Models/ArchiveTokens.swift，属于视图层）
+
+/// 纸张物理微投影修饰符（取代死板 0.5pt 灰色硬边框）
+public struct PaperElevationModifier: ViewModifier {
+    public var level: Int
+
+    public func body(content: Content) -> some View {
+        switch level {
+        case 1:
+            content
+                .shadow(color: Color.black.opacity(0.025), radius: 1, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(0.035), radius: 6, x: 0, y: 2)
+        case 2:
+            content
+                .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 2)
+                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+        default:
+            content
+        }
+    }
+}
+
+public extension View {
+    /// 纸张物理轻微投影
+    func paperElevation(_ level: Int = 1) -> some View {
+        modifier(PaperElevationModifier(level: level))
+    }
+}

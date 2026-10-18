@@ -37,8 +37,7 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     case projects = "projects"   // 项目 (projects)
     case dossier = "dossier"     // 主理人 (about)
     case settings = "settings"   // 配置中心 (settings)
-    case darkroom = "darkroom"   // 辅助：暗房相纸
-    case creations = "creations" // 兼容历史
+    case darkroom = "darkroom"   // 辅助：银盐暗房
 
     public var id: String { rawValue }
 
@@ -57,7 +56,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .dossier: return "主理人"
         case .settings: return "配置中心"
         case .darkroom: return "银盐暗房"
-        case .creations: return "造物与心愿"
         }
     }
 
@@ -71,7 +69,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .dossier: return "person.text.rectangle"
         case .settings: return "gearshape"
         case .darkroom: return "camera.aperture"
-        case .creations: return "sparkles.rectangle.stack"
         }
     }
 }
@@ -176,14 +173,6 @@ public final class AppState {
 
     // MARK: - 导航与交互状态
     public var activeSection: WorkbenchSection = .stream
-    public var showSettingsSheet: Bool = false {
-        didSet {
-            if showSettingsSheet {
-                activeSection = .settings
-                showSettingsSheet = false
-            }
-        }
-    }
     public var showNewEntrySheet: Bool = false
     public var newEntryInitialKind: String? = nil
     public var newEntryInitialProjectId: Int? = nil
@@ -243,6 +232,8 @@ public final class AppState {
     public var isFlushingOutbox: Bool = false
     public var statusBanner: String?
     public var errorBanner: String?
+    /// 本地档案完整性问题（快照解码失败等），优先级高于普通网络错误，需用户手动关闭
+    public var localDataWarning: String?
 
     public var appearanceMode: AppearanceMode {
         didSet {
@@ -267,6 +258,7 @@ public final class AppState {
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
     @ObservationIgnored private var dataRevision: Int = 0
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
+    @ObservationIgnored private var streamRowsMemo: (key: String, value: [StreamRow])?
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
 
     private init() {
@@ -280,6 +272,11 @@ public final class AppState {
         self.isOnline = SyncManager.shared.isOnline
         self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
         applySnapshot(SyncManager.shared.currentSnapshot())
+
+        // 本地快照解码失败时必须在首屏明确告警，绝不能让用户以为"数据只是变少了"
+        if let failure = SyncManager.lastLoadFailureMessage {
+            self.localDataWarning = failure
+        }
 
         SyncManager.shared.onNetworkStatusChanged = { [weak self] online in
             self?.isOnline = online
@@ -355,6 +352,32 @@ public final class AppState {
         return source
     }
 
+    /// 时间流行模型：条目 + 与上一条的自然日间隔（用于 14 天留白切线）
+    public struct StreamRow: Identifiable, Sendable {
+        public let entry: LifeEntry
+        public let gapDays: Int
+        public var id: Int { entry.id }
+    }
+
+    /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
+    public var streamRows: [StreamRow] {
+        let key = "\(dataRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
+        if let memo = streamRowsMemo, memo.key == key {
+            return memo.value
+        }
+        let list = filteredStreamEntries
+        var rows: [StreamRow] = []
+        rows.reserveCapacity(list.count)
+        for (index, entry) in list.enumerated() {
+            let gap = index == 0
+                ? 0
+                : FormatUtils.daysBetween(list[index - 1].occurredAt, entry.occurredAt)
+            rows.append(StreamRow(entry: entry, gapDays: gap))
+        }
+        streamRowsMemo = (key, rows)
+        return rows
+    }
+
     /// 全库跨模块网络搜索（当已配对时发起，支持足迹、心愿与造物项目联动检索）
     public func performGlobalSearch(query: String) async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -380,7 +403,9 @@ public final class AppState {
         }
         var counts: [String: Int] = [:]
         for entry in entries {
-            counts[entry.parsedDate.dateKey, default: 0] += 1
+            let parsed = entry.parsedDate
+            guard parsed.isValid else { continue }
+            counts[parsed.dateKey, default: 0] += 1
         }
         entryCountsMemo = (key, counts)
         return counts
@@ -389,6 +414,8 @@ public final class AppState {
     // MARK: - 远端全量与增量拉取
 
     public func refreshAll(forceFull: Bool = false) async {
+        // 启动期主窗口与子视图可能各触发一次；并发执行只会重复请求并互相冲刷快照
+        guard !isLoading else { return }
         isLoading = true
         errorBanner = nil
         defer { isLoading = false }
@@ -444,24 +471,11 @@ public final class AppState {
         // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
         let cursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
         do {
-            var currentPage = 1
-            let pageSize = 100
-            var allFetched: [LifeEntry] = []
-
-            while true {
-                let resp = try await APIClient.shared.fetchEntries(
-                    page: currentPage,
-                    pageSize: pageSize,
-                    since: cursor,
-                    useETag: !forceFull && cursor == nil && currentPage == 1
-                )
-                allFetched.append(contentsOf: resp.entries)
-                if resp.entries.count < pageSize || allFetched.count >= resp.total {
-                    break
-                }
-                currentPage += 1
-            }
-
+            let allFetched = try await Pagination.fetchAllEntries(
+                since: cursor,
+                pageSize: 100,
+                useETagOnFirstPage: !forceFull && cursor == nil
+            )
             SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified: 本地缓存已是最新
@@ -482,24 +496,11 @@ public final class AppState {
         let cursor = (forceFull || snap.transactions.isEmpty) ? nil : snap.lastTransactionsSyncCursor
 
         do {
-            var allTxs: [Transaction] = []
-            let batchLimit = 500
-            var currentOffset = 0
-
-            while true {
-                let txs = try await APIClient.shared.fetchTransactions(
-                    since: cursor,
-                    limit: batchLimit,
-                    offset: currentOffset,
-                    useETag: !forceFull && cursor == nil && currentOffset == 0
-                )
-                allTxs.append(contentsOf: txs)
-                if txs.count < batchLimit {
-                    break
-                }
-                currentOffset += txs.count
-            }
-
+            let allTxs = try await Pagination.fetchAllTransactions(
+                since: cursor,
+                batchLimit: 500,
+                useETagOnFirstBatch: !forceFull && cursor == nil
+            )
             SyncManager.shared.mergeTransactions(allTxs, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified
@@ -524,17 +525,8 @@ public final class AppState {
         if let projs = try? await APIClient.shared.fetchProjects() {
             self.projects = projs
         }
-        var allWishes: [Wish] = []
-        var wishPage = 1
-        while true {
-            guard let wishResp = try? await APIClient.shared.fetchWishes(page: wishPage, pageSize: 100) else { break }
-            allWishes.append(contentsOf: wishResp.wishes)
-            if wishResp.wishes.count < 100 || allWishes.count >= wishResp.total {
-                break
-            }
-            wishPage += 1
-        }
-        if !allWishes.isEmpty {
+        // 只有"确实成功拉到数据"才覆盖；空数组是合法结果（删掉最后一枚心愿也必须生效）
+        if let allWishes = try? await Pagination.fetchAllWishes() {
             self.wishes = allWishes
         }
         if let fps = try? await APIClient.shared.fetchFootprints() {
@@ -735,7 +727,7 @@ public final class AppState {
     public func showTemporaryBanner(_ text: String) {
         self.statusBanner = text
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_200_000_000)
+            try? await Task.sleep(for: .seconds(3.2))
             if self.statusBanner == text {
                 self.statusBanner = nil
             }

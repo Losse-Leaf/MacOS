@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CryptoKit
 
 /// 胶片暗房装裱边框组件 (.film-frame)
 /// 严格遵循 docs/ecosystem.md §4.1.2 规范：
@@ -168,7 +169,7 @@ public struct FilmFrameView: View {
 }
 
 /// 相纸画廊专用双级缓存池 (Memory NSCache + Disk MediaCache)
-/// 遵循 Local-First 架构：已查看相纸自动落盘，支持离线 0ms 本地显影
+/// 遵循 Local-First 架构：已查看相纸自动落盘，支持离线即刻本地显影
 public enum PaperImageCache {
     private static let memoryCache: NSCache<NSURL, NSImage> = {
         let c = NSCache<NSURL, NSImage>()
@@ -179,50 +180,82 @@ public enum PaperImageCache {
 
     private static let diskQueue = DispatchQueue(label: "com.looseleaf.media.diskcache", qos: .utility)
 
+    /// 磁盘缓存硬上限；超出后按最后访问时间淘汰最旧文件
+    private static let maxDiskBytes: Int64 = 300 * 1024 * 1024
+    private static let diskLimitLock = NSLock()
+    nonisolated(unsafe) private static var lastPruneAt: Date = .distantPast
+
+    /// 测试注入点：覆盖磁盘缓存目录，避免测试写入用户真实 MediaCache
+    nonisolated(unsafe) static var overrideDirectory: URL?
+
     public static var diskCacheDirectory: URL {
-        let dir = SyncManager.sharedStorageDirectory.appendingPathComponent("MediaCache", isDirectory: true)
+        let dir: URL
+        if let overrideDirectory {
+            dir = overrideDirectory
+        } else {
+            dir = SyncManager.sharedStorageDirectory.appendingPathComponent("MediaCache", isDirectory: true)
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 
+    /// 稳定缓存键：SHA256(URL) 截断。
+    /// 不能用 Swift `Hasher`——它每进程随机加盐，重启后 key 全变，磁盘缓存永不命中且旧文件永久堆积。
     private static func cacheKey(for url: URL) -> String {
-        let raw = url.absoluteString
-        var hasher = Hasher()
-        hasher.combine(raw)
-        let hash = abs(hasher.finalize())
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
         let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-        return "cache_\(hash).\(ext)"
+        return "cache_\(hex.prefix(32)).\(ext)"
     }
 
     private static func diskFileURL(for url: URL) -> URL {
         diskCacheDirectory.appendingPathComponent(cacheKey(for: url))
     }
 
-    public static func image(for url: URL) -> NSImage? {
-        // 1. 内存一级命中
-        if let memoryHit = memoryCache.object(forKey: url as NSURL) {
-            return memoryHit
-        }
-
-        // 2. 磁盘二级命中 (0ms 离线即刻读盘)
-        let diskPath = diskFileURL(for: url)
-        if FileManager.default.fileExists(atPath: diskPath.path),
-           let diskData = try? Data(contentsOf: diskPath),
-           let diskImage = NSImage(data: diskData) {
-            if let rep = diskImage.representations.first as? NSBitmapImageRep {
-                diskImage.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
-            }
-            memoryCache.setObject(diskImage, forKey: url as NSURL, cost: diskData.count)
-            return diskImage
-        }
-
-        return nil
+    /// 仅查内存（可在 View init 中安全调用，不触发磁盘 I/O）
+    public static func memoryImage(for url: URL) -> NSImage? {
+        memoryCache.object(forKey: url as NSURL)
     }
 
-    public static func setImage(_ image: NSImage, rawData: Data? = nil, for url: URL, cost: Int = 0) {
+    /// 同步两级命中：仅供详情灯箱、导出、复制等允许阻塞的路径使用
+    public static func image(for url: URL) -> NSImage? {
+        if let memoryHit = memoryImage(for: url) {
+            return memoryHit
+        }
+        return loadFromDisk(url)
+    }
+
+    /// 异步两级命中：列表卡片路径专用，磁盘读取与解码全部离开主线程
+    public static func loadImage(for url: URL) async -> NSImage? {
+        if let memoryHit = memoryImage(for: url) {
+            return memoryHit
+        }
+        return await withCheckedContinuation { continuation in
+            diskQueue.async {
+                continuation.resume(returning: loadFromDisk(url))
+            }
+        }
+    }
+
+    private static func loadFromDisk(_ url: URL) -> NSImage? {
+        let diskPath = diskFileURL(for: url)
+        guard let diskData = try? Data(contentsOf: diskPath),
+              let diskImage = NSImage(data: diskData) else {
+            return nil
+        }
+        normalizePixelSize(diskImage)
+        memoryCache.setObject(diskImage, forKey: url as NSURL, cost: diskData.count)
+        return diskImage
+    }
+
+    private static func normalizePixelSize(_ image: NSImage) {
         if let rep = image.representations.first as? NSBitmapImageRep {
             image.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
         }
+    }
+
+    public static func setImage(_ image: NSImage, rawData: Data? = nil, for url: URL, cost: Int = 0) {
+        normalizePixelSize(image)
         memoryCache.setObject(image, forKey: url as NSURL, cost: cost)
 
         // 异步写入磁盘缓存，避免主线程 I/O 阻塞
@@ -235,6 +268,44 @@ public enum PaperImageCache {
                       let jpeg = rep.representation(using: .jpeg, properties: [:]) {
                 try? jpeg.write(to: diskURL, options: .atomic)
             }
+            pruneDiskCacheIfNeeded()
+        }
+    }
+
+    /// 超限淘汰：按修改时间从旧到新删除，直到回落至上限的 80%。最多每分钟执行一次。
+    private static func pruneDiskCacheIfNeeded() {
+        diskLimitLock.lock()
+        let now = Date()
+        if now.timeIntervalSince(lastPruneAt) < 60 {
+            diskLimitLock.unlock()
+            return
+        }
+        lastPruneAt = now
+        diskLimitLock.unlock()
+
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: diskCacheDirectory,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        var entries: [(url: URL, size: Int64, modified: Date)] = []
+        var total: Int64 = 0
+        for file in files {
+            guard let values = try? file.resourceValues(forKeys: Set(keys)),
+                  let size = values.fileSize else { continue }
+            let modified = values.contentModificationDate ?? .distantPast
+            total += Int64(size)
+            entries.append((file, Int64(size), modified))
+        }
+        guard total > maxDiskBytes else { return }
+
+        let target = Int64(Double(maxDiskBytes) * 0.8)
+        for entry in entries.sorted(by: { $0.modified < $1.modified }) {
+            guard total > target else { break }
+            try? FileManager.default.removeItem(at: entry.url)
+            total -= entry.size
         }
     }
 }
@@ -251,7 +322,8 @@ public struct CachedFilmImageView: View {
     public init(url: URL, maxHeight: CGFloat) {
         self.url = url
         self.maxHeight = maxHeight
-        _loadedImage = State(initialValue: PaperImageCache.image(for: url))
+        // 只做内存命中（零 I/O）；磁盘解码交给 .task 在后台完成
+        _loadedImage = State(initialValue: PaperImageCache.memoryImage(for: url))
     }
 
     public var body: some View {
@@ -291,8 +363,13 @@ public struct CachedFilmImageView: View {
     }
 
     private func loadImage() async {
-        if let cached = PaperImageCache.image(for: url) {
+        if let cached = PaperImageCache.memoryImage(for: url) {
             self.loadedImage = cached
+            return
+        }
+        // 磁盘命中在后台队列完成，不再阻塞首帧
+        if let diskHit = await PaperImageCache.loadImage(for: url) {
+            self.loadedImage = diskHit
             return
         }
         guard !isLoading else { return }
@@ -308,11 +385,7 @@ public struct CachedFilmImageView: View {
                 self.hasFailed = true
             }
         } catch {
-            if let diskHit = PaperImageCache.image(for: url) {
-                self.loadedImage = diskHit
-            } else {
-                self.hasFailed = true
-            }
+            self.hasFailed = true
         }
     }
 }

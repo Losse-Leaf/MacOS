@@ -3,9 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>zh_CN</string>
+    <string>zh-Hans</string>
     <key>CFBundleDisplayName</key>
     <string>活页集 Loose-Leaf</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>活页集 Loose-Leaf · 个人生活档案馆</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.lifestyle</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -22,6 +26,10 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>用于在记录散页时识别当前所在城市并自动填入地点。坐标仅在本机用于省市反查，不会上传。</string>
+    <key>NSLocationUsageDescription</key>
+    <string>用于在记录散页时识别当前所在城市并自动填入地点。坐标仅在本机用于省市反查，不会上传。</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <!-- 允许连接本地网络中的 http:// 数据中枢（局域网 IP）；远程部署建议改用 HTTPS -->

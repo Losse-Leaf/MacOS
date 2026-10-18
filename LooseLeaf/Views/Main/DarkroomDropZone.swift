@@ -203,7 +203,6 @@ public struct DarkroomDropZone: View {
                         }
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .keyboardShortcut("v", modifiers: [.command])
 
                     Button {
                         selectPhotoFromFinder()
@@ -320,6 +319,7 @@ public struct DarkroomDropZone: View {
                                         .background(Circle().fill(Color.white))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("移除这张底片")
                                 .offset(x: 3, y: -3)
                             }
 
@@ -493,14 +493,16 @@ public struct DarkroomDropZone: View {
     // MARK: - 银盐底片回廊 (Film Negatives Gallery)
 
     private var filmGallerySection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // 只遍历一次 entries × attachments：此前在标题/空态/网格里各算一遍
+        let photos = filteredGalleryPhotos
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text("银盐底片回廊")
                             .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("(\(filteredGalleryPhotos.count) 张)")
+                        Text("(\(photos.count) 张)")
                             .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
@@ -524,7 +526,7 @@ public struct DarkroomDropZone: View {
                 }
             }
 
-            if filteredGalleryPhotos.isEmpty {
+            if photos.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "photo.stack")
                         .font(.system(size: 32, weight: .light))
@@ -542,7 +544,7 @@ public struct DarkroomDropZone: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 16)], spacing: 16) {
-                    ForEach(filteredGalleryPhotos) { item in
+                    ForEach(photos) { item in
                         GalleryPhotoCard(item: item) {
                             selectedLightboxPhoto = item
                             AudioFeedback.shared.playPaperFlip()
@@ -911,7 +913,11 @@ public struct DarkroomDropZone: View {
                     appState.showTemporaryBanner("已装裱并归档 \(attachmentIds.count) 张相纸至散页手记")
                     appState.activeSection = .stream
                 } else {
-                    // 单张装裱当前选中的底片
+                    // 单张装裱当前选中的底片（索引可能在上传期间被外部删除，必须校验）
+                    guard items.indices.contains(selectedIndex) else {
+                        self.isUploading = false
+                        return
+                    }
                     let item = items[selectedIndex]
                     let att = try await R2DirectUploader.shared.uploadProcessedPhoto(item.photo) { prog in
                         Task { @MainActor in

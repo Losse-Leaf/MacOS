@@ -27,7 +27,7 @@ jobs:
           fi
 
       - name: Build Debug Target
-        run: swift build
+        run: swift build -Xswiftc -warnings-as-errors
 
       - name: Run Unit Tests
         run: swift test --verbose

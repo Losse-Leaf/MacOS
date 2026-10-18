@@ -146,8 +146,11 @@ public final class R2DirectUploader: NSObject, Sendable {
     }
 }
 
-private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate {
     private let handler: @Sendable (Double) -> Void
+    private let lock = NSLock()
+    private var lastFraction: Double = -1
+    private var lastEmittedAt: Date = .distantPast
 
     init(handler: @escaping @Sendable (Double) -> Void) {
         self.handler = handler
@@ -162,6 +165,21 @@ private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, Se
     ) {
         guard totalBytesExpectedToSend > 0 else { return }
         let ratio = min(1.0, max(0.0, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
+
+        // URLSession 的回调频率可达每帧数次；这里在源头节流，避免为每个字节块派发一个 MainActor Task
+        lock.lock()
+        let now = Date()
+        let shouldEmit = ratio >= 1.0
+            || lastFraction < 0
+            || ratio - lastFraction >= 0.02
+            || now.timeIntervalSince(lastEmittedAt) >= 0.12
+        if shouldEmit {
+            lastFraction = ratio
+            lastEmittedAt = now
+        }
+        lock.unlock()
+
+        guard shouldEmit else { return }
         handler(ratio)
     }
 }

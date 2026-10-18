@@ -16,36 +16,62 @@ public enum FormatUtils {
         return cal
     }()
 
-    // MARK: - 解析器缓存（高频调用，复用实例 + 加锁保证线程安全）
+    // MARK: - 解析器缓存（每线程一份，彻底消除全局锁串行化）
 
-    private static let formatLock = NSLock()
+    /// DateFormatter / NumberFormatter 都不是线程安全的，但共享一把全局锁会让
+    /// 列表滚动（主线程）与后台解码/排序互相排队。这里改为每线程缓存一份实例：
+    /// 线程数很少（主线程 + URLSession/磁盘队列），内存代价可忽略，热路径零锁竞争。
+    private final class FormatterBag {
+        let isoFraction: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f
+        }()
 
-    private static let isoFractionFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+        let isoStandard: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime]
+            return f
+        }()
 
-    private static let isoStandardFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
+        let flexDate: DateFormatter = {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = FormatUtils.beijingTimeZone
+            return df
+        }()
 
-    private static let flexDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = beijingTimeZone
-        return df
-    }()
+        let beijingISO: DateFormatter = {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = FormatUtils.beijingTimeZone
+            df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'+08:00'"
+            return df
+        }()
 
-    private static let beijingISOFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = beijingTimeZone
-        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'+08:00'"
-        return df
-    }()
+        let yuan: NumberFormatter = {
+            let formatter = NumberFormatter()
+            formatter.locale = Locale(identifier: "zh_CN")
+            formatter.numberStyle = .decimal
+            formatter.minimumFractionDigits = 2
+            formatter.maximumFractionDigits = 2
+            formatter.groupingSeparator = ","
+            formatter.usesGroupingSeparator = true
+            return formatter
+        }()
+    }
+
+    private static let formatterKey = "com.looseleaf.formatutils.formatters"
+
+    private static var formatters: FormatterBag {
+        let dictionary = Thread.current.threadDictionary
+        if let existing = dictionary[formatterKey] as? FormatterBag {
+            return existing
+        }
+        let bag = FormatterBag()
+        dictionary[formatterKey] = bag
+        return bag
+    }
 
     private static let flexLayouts = [
         "yyyy-MM-dd'T'HH:mm:ss",
@@ -61,26 +87,14 @@ public enum FormatUtils {
 
     // MARK: - 货币分币转换与格式化 (Cents Standard)
 
-    private static let yuanFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        return formatter
-    }()
-
     /// 将以“分”为单位的 Int64 金额格式化为标准元字符串 (如 4250 -> "42.50" 或 "¥ 42.50")
     public static func formattedYuan(cents: Int64, includeSymbol: Bool = false) -> String {
-        formatLock.lock()
-        defer { formatLock.unlock() }
         let isNegative = cents < 0
-        let absCents = abs(cents)
+        // Int64.min 取绝对值会溢出 trap；这是极端值，钳到 Int64.max 只差 1 分，远好于崩溃
+        let absCents = cents == Int64.min ? Int64.max : abs(cents)
         let decimalYuan = Decimal(absCents) / Decimal(100)
         let number = NSDecimalNumber(decimal: decimalYuan)
-        let formatted = yuanFormatter.string(from: number) ?? String(format: "%lld.%02lld", absCents / 100, absCents % 100)
+        let formatted = formatters.yuan.string(from: number) ?? String(format: "%lld.%02lld", absCents / 100, absCents % 100)
         let sign = isNegative ? "-" : ""
         if includeSymbol {
             return "\(sign)¥ \(formatted)"
@@ -228,6 +242,20 @@ public enum FormatUtils {
         public let dotDate: String   // "YYYY.MM.DD"
         public let dotDateTime: String // "YYYY.MM.DD HH:mm"
         public let date: Date
+        /// 原始时间串是否可解析。false 时展示"时间未知"，且不参与热力图/间隔计算。
+        public let isValid: Bool
+
+        public static let unknown = ParsedBeijingDate(
+            year: "----",
+            month: "--",
+            day: "--",
+            time: "--:--",
+            dateKey: "",
+            dotDate: "未知日期",
+            dotDateTime: "时间未知",
+            date: .distantPast,
+            isValid: false
+        )
     }
 
     /// 弹性解析后端或本地输入的多种时间格式，无时区后缀一律按北京时间 (UTC+8) 解释
@@ -236,30 +264,31 @@ public enum FormatUtils {
             return nil
         }
 
-        formatLock.lock()
-        defer { formatLock.unlock() }
-
         // 1. 带时区偏移的标准 ISO8601 / RFC3339
-        if let d = isoFractionFormatter.date(from: raw) {
+        if let d = formatters.isoFraction.date(from: raw) {
             return d
         }
-        if let d = isoStandardFormatter.date(from: raw) {
+        if let d = formatters.isoStandard.date(from: raw) {
             return d
         }
 
         // 2. 不带时区后缀的弹性格式，统一按北京时间 UTC+8 解释
+        let flex = formatters.flexDate
         for layout in flexLayouts {
-            flexDateFormatter.dateFormat = layout
-            if let d = flexDateFormatter.date(from: raw) {
+            flex.dateFormat = layout
+            if let d = flex.date(from: raw) {
                 return d
             }
         }
         return nil
     }
 
-    /// 统一解析 occurred_at 并返回北京时间各维度出版物格式
+    /// 统一解析 occurred_at 并返回北京时间各维度出版物格式。
+    /// 解析失败时返回 `unknown`（而不是伪装成"现在"），避免坏数据污染热力图与排序。
     public static func parseOccurredDate(_ raw: String?) -> ParsedBeijingDate {
-        let date = parseFlexDate(raw) ?? Date()
+        guard let date = parseFlexDate(raw) else {
+            return .unknown
+        }
         return formatBeijingDate(date)
     }
 
@@ -284,15 +313,14 @@ public enum FormatUtils {
             dateKey: dateKey,
             dotDate: dotDate,
             dotDateTime: dotDateTime,
-            date: date
+            date: date,
+            isValid: true
         )
     }
 
     /// 生成带 +08:00 偏移的标准北京时间 ISO8601 字符串
     public static func beijingISOString(from date: Date = Date()) -> String {
-        formatLock.lock()
-        defer { formatLock.unlock() }
-        return beijingISOFormatter.string(from: date)
+        formatters.beijingISO.string(from: date)
     }
 
     /// 生成北京时间 YYYY-MM-DD 字符串
@@ -319,9 +347,11 @@ public enum FormatUtils {
     }
 
     /// 计算两条记录在自然日维度上的间隔天数（用于 >= 14 天岁月留白刻度线）
+    /// 任一端时间不可解析时返回 0，调用方据此不渲染留白切线。
     public static func daysBetween(_ firstRaw: String?, _ secondRaw: String?) -> Int {
-        let d1 = parseFlexDate(firstRaw) ?? Date()
-        let d2 = parseFlexDate(secondRaw) ?? Date()
+        guard let d1 = parseFlexDate(firstRaw), let d2 = parseFlexDate(secondRaw) else {
+            return 0
+        }
         let cal = beijingCalendar
         let start1 = cal.startOfDay(for: min(d1, d2))
         let start2 = cal.startOfDay(for: max(d1, d2))

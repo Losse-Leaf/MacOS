@@ -9,7 +9,7 @@ import os
 public final class SyncManager {
     public static let shared = SyncManager()
 
-    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "sync")
+    nonisolated private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "sync")
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.looseleaf.archive.network.monitor")
@@ -21,6 +21,7 @@ public final class SyncManager {
     public var onNetworkStatusChanged: ((Bool) -> Void)?
 
     private var snapshot: LocalArchiveSnapshot
+    private var pendingWrite: DispatchWorkItem?
 
     private init() {
         self.snapshot = Self.loadFromDisk() ?? LocalArchiveSnapshot()
@@ -58,10 +59,32 @@ public final class SyncManager {
         sharedStorageDirectory.appendingPathComponent("archive_snapshot_v1.json")
     }
 
+    /// 最近一次本地快照加载失败的原因（供启动期提示，nil 表示加载正常或文件不存在）
+    nonisolated(unsafe) public private(set) static var lastLoadFailureMessage: String?
+
     public nonisolated static func loadFromDisk() -> LocalArchiveSnapshot? {
         let url = snapshotFileURL
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(LocalArchiveSnapshot.self, from: data)
+        guard let data = try? Data(contentsOf: url) else {
+            lastLoadFailureMessage = nil
+            return nil
+        }
+        do {
+            lastLoadFailureMessage = nil
+            return try JSONDecoder().decode(LocalArchiveSnapshot.self, from: data)
+        } catch {
+            // 解码失败绝不静默重建：先把原文件隔离备份，否则随后任何一次 saveSnapshot
+            // 都会用空快照原子覆盖掉用户仅存的一份本地档案。
+            let stamp = ISO8601DateFormatter().string(from: Date())
+                .replacingOccurrences(of: ":", with: "-")
+            let backupURL = url.deletingLastPathComponent()
+                .appendingPathComponent("archive_snapshot_v1.corrupt-\(stamp).json")
+            let moved = (try? FileManager.default.moveItem(at: url, to: backupURL)) != nil
+            lastLoadFailureMessage = moved
+                ? "本地快照无法解析，已隔离备份为 \(backupURL.lastPathComponent)，本次以空档案启动，请勿继续录入以免混淆。"
+                : "本地快照无法解析且备份失败，请立即手动备份 \(url.path) 后再启动。"
+            Self.logger.error("Snapshot decode failed: \(error.localizedDescription, privacy: .public); backup moved: \(moved)")
+            return nil
+        }
     }
 
     public func currentSnapshot() -> LocalArchiveSnapshot {
@@ -90,13 +113,30 @@ public final class SyncManager {
         self.snapshot = copy
         // 立即通知 UI 响应刷新，保证 0ms 上屏
         onSnapshotUpdated?(copy)
+        scheduleDiskWrite(copy)
+    }
 
-        // 串行队列异步序列化与原子落盘，既消除主线程磁盘 I/O 阻塞，又杜绝并发落盘乱序覆盖
+    /// 合并 0.35 秒内的连续保存：一次全量刷新会触发 5 次 save，没必要写 5 次盘。
+    private func scheduleDiskWrite(_ copy: LocalArchiveSnapshot) {
+        pendingWrite?.cancel()
         let fileURL = Self.snapshotFileURL
-        diskWriteQueue.async {
+        let item = DispatchWorkItem {
             if let data = try? JSONEncoder().encode(copy) {
                 try? data.write(to: fileURL, options: .atomic)
             }
+        }
+        pendingWrite = item
+        diskWriteQueue.asyncAfter(deadline: .now() + 0.35, execute: item)
+    }
+
+    /// 退出前同步落盘，确保防抖窗口内的最后一次修改不丢失
+    public func flushSnapshotToDiskIfNeeded() {
+        pendingWrite?.cancel()
+        pendingWrite = nil
+        let copy = snapshot
+        let fileURL = Self.snapshotFileURL
+        if let data = try? JSONEncoder().encode(copy) {
+            try? data.write(to: fileURL, options: .atomic)
         }
     }
 
@@ -308,9 +348,10 @@ public final class SyncManager {
         if !isDelta {
             let pendingLocal = current.filter { ($0.syncStatus ?? "synced") != "synced" }
             let validRemote = incoming.filter { ($0.deletedAt ?? "").isEmpty }
-            return pendingLocal + validRemote
+            return sortedEntries(pendingLocal + validRemote)
         }
-        var map = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        // 本地快照可能因分页重叠/历史遗留出现重复 id，必须容错而不是 trap
+        var map = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         for entry in incoming {
             if let deleted = entry.deletedAt, !deleted.isEmpty {
                 map.removeValue(forKey: entry.id)
@@ -320,8 +361,13 @@ public final class SyncManager {
                 map[entry.id] = syncedEntry
             }
         }
-        // Schwartzian 变换：排序前一次性提取时间戳 (O(N))，彻底消除比较器内部 20000+ 次重复 DateFormatter 解析风暴
-        let itemsWithDate: [(entry: LifeEntry, date: Date)] = map.values.map {
+        return sortedEntries(Array(map.values))
+    }
+
+    /// 时间流统一排序（全量与增量共用）：北京时间倒序，同刻按服务端 id 倒序。
+    /// 排序前一次性提取时间戳 (O(N))，避免比较器内部重复 DateFormatter 解析。
+    nonisolated static func sortedEntries(_ entries: [LifeEntry]) -> [LifeEntry] {
+        let itemsWithDate: [(entry: LifeEntry, date: Date)] = entries.map {
             ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
         }
         return itemsWithDate.sorted {
@@ -344,9 +390,9 @@ public final class SyncManager {
         if !isDelta {
             let pendingLocal = current.filter { ($0.syncStatus ?? "synced") != "synced" }
             let validRemote = incoming.filter { ($0.deletedAt ?? "").isEmpty }
-            return pendingLocal + validRemote
+            return sortedTransactions(pendingLocal + validRemote)
         }
-        var map = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        var map = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         for tx in incoming {
             if let deleted = tx.deletedAt, !deleted.isEmpty {
                 map.removeValue(forKey: tx.id)
@@ -356,7 +402,12 @@ public final class SyncManager {
                 map[tx.id] = syncedTx
             }
         }
-        let itemsWithDate: [(tx: Transaction, date: Date)] = map.values.map {
+        return sortedTransactions(Array(map.values))
+    }
+
+    /// 账目统一排序：语义与 `sortedEntries` 一致。
+    nonisolated static func sortedTransactions(_ transactions: [Transaction]) -> [Transaction] {
+        let itemsWithDate: [(tx: Transaction, date: Date)] = transactions.map {
             ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
         }
         return itemsWithDate.sorted {

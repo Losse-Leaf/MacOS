@@ -391,19 +391,16 @@ final class LooseLeafTests: XCTestCase {
         guard let url = URL(string: "http://localhost:8088/api/v1/entries?page=1&page_size=100") else { return }
         guard let (data, response) = try? await URLSession.shared.data(from: url),
               let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            print("Backend not reachable or returned non-200")
-            return
+            // 这是可选的本地联调用例：后端不可达时必须显式跳过，不能"打印一句就绿"
+            throw XCTSkip("本地后端未启动，跳过真实数据联调")
         }
         do {
             let env = try JSONDecoder().decode(APIEnvelope<EntriesListResponse>.self, from: data)
-            print("DECODED ENTRIES COUNT: \(env.data?.entries.count ?? -1)")
 
             var snapshot = LocalArchiveSnapshot()
             snapshot.entries = env.data?.entries ?? []
             let encoded = try JSONEncoder().encode(snapshot)
-            print("SNAPSHOT ENCODED SUCCESS: \(encoded.count) bytes")
             let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: encoded)
-            print("SNAPSHOT DECODED SUCCESS: \(decoded.entries.count) entries")
             XCTAssertEqual(decoded.entries.count, env.data?.entries.count ?? 0)
         } catch {
             XCTFail("Decoding failed: \(error)")
@@ -453,24 +450,39 @@ final class LooseLeafTests: XCTestCase {
 
     @MainActor
     func testSpotlightNavigationStateTransition() {
-        let entry = LifeEntry(id: 777, title: "聚焦测试", content: "通过聚焦搜索直达", occurredAt: "2026-10-15 12:00:00")
-        AppState.shared.entries = [entry]
-        AppState.shared.activeSection = .ledger
-        AppState.shared.selectedCategory = .transaction
+        let state = AppState.shared
+        // 快照并还原全局单例，避免用例之间互相污染
+        let savedEntries = state.entries
+        let savedSection = state.activeSection
+        let savedCategory = state.selectedCategory
+        let savedFocused = state.keyboardFocusedEntryId
+        let savedHighlighted = state.highlightedEntry
+        defer {
+            state.entries = savedEntries
+            state.activeSection = savedSection
+            state.selectedCategory = savedCategory
+            state.keyboardFocusedEntryId = savedFocused
+            state.highlightedEntry = savedHighlighted
+        }
 
-        AppState.shared.navigateToEntry(id: 777)
-        XCTAssertEqual(AppState.shared.activeSection, .stream)
-        XCTAssertEqual(AppState.shared.selectedCategory, .all)
-        XCTAssertEqual(AppState.shared.keyboardFocusedEntryId, 777)
-        XCTAssertEqual(AppState.shared.highlightedEntry?.id, 777)
+        let entry = LifeEntry(id: 777, title: "聚焦测试", content: "通过聚焦搜索直达", occurredAt: "2026-10-15 12:00:00")
+        state.entries = [entry]
+        state.activeSection = .ledger
+        state.selectedCategory = .transaction
+
+        state.navigateToEntry(id: 777)
+        XCTAssertEqual(state.activeSection, .stream)
+        XCTAssertEqual(state.selectedCategory, .all)
+        XCTAssertEqual(state.keyboardFocusedEntryId, 777)
+        XCTAssertEqual(state.highlightedEntry?.id, 777)
     }
 
     @MainActor
-    func testUpdateCheckerClipboardCommand() {
-        UpdateChecker.shared.copyInstallCommandToClipboard()
-        let clip = NSPasteboard.general.string(forType: .string) ?? ""
-        XCTAssertTrue(clip.contains("raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh"))
-        XCTAssertTrue(clip.contains("/bin/bash -c"))
+    func testInstallCommandConstant() {
+        // 只断言常量，不去写系统剪贴板（避免测试污染用户环境）
+        let command = UpdateChecker.installCommand
+        XCTAssertTrue(command.contains("raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh"))
+        XCTAssertTrue(command.contains("/bin/bash -c"))
     }
 
     @MainActor
@@ -495,6 +507,14 @@ final class LooseLeafTests: XCTestCase {
     // MARK: - 19. Two-Tier Disk Image Cache & International Coordinates Tests
 
     func testPaperImageCacheTwoTierDiskCache() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("looseleaf-media-\(UUID().uuidString)", isDirectory: true)
+        PaperImageCache.overrideDirectory = tempDir
+        defer {
+            PaperImageCache.overrideDirectory = nil
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
         let testURL = URL(string: "https://example.com/media/sample_photo_test.jpg")!
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -554,4 +574,48 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(item.formattedSize, "5.00 MB")
         XCTAssertFalse(item.formattedDate.isEmpty)
     }
+
+    // MARK: - 20. 2026-10-18 审计回归用例
+
+    func testMergedEntriesFullBranchIsSorted() {
+        let older = LifeEntry(id: 1, title: "older", content: "", occurredAt: "2026-10-01 10:00:00")
+        let newer = LifeEntry(id: 2, title: "newer", content: "", occurredAt: "2026-10-05 10:00:00")
+        let merged = SyncManager.mergedEntries(current: [], incoming: [older, newer], isDelta: false)
+        XCTAssertEqual(merged.map(\.id), [2, 1], "全量分支也必须按北京时间倒序")
+    }
+
+    func testMergedEntriesToleratesDuplicateIDs() {
+        let first = LifeEntry(id: 7, title: "a", content: "", occurredAt: "2026-10-01 10:00:00")
+        let second = LifeEntry(id: 7, title: "b", content: "", occurredAt: "2026-10-02 10:00:00")
+        // 旧实现用 Dictionary(uniqueKeysWithValues:) 会直接 trap
+        let merged = SyncManager.mergedEntries(current: [first, second], incoming: [], isDelta: true)
+        XCTAssertEqual(merged.count, 1)
+    }
+
+    func testCSVNeutralizesFormulaInjection() {
+        let tx = Transaction(
+            id: 1,
+            amount: 100,
+            category: "餐饮",
+            title: "=SUM(A1:A2)",
+            note: "@cmd",
+            occurredAt: "2026-10-14T09:30:00+08:00"
+        )
+        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
+        XCTAssertTrue(csv.contains("'=SUM(A1:A2)"), "以 = 开头的字段必须被中和")
+        XCTAssertTrue(csv.contains("'@cmd"), "以 @ 开头的字段必须被中和")
+    }
+
+    func testSemverPrereleaseComparison() {
+        XCTAssertTrue(UpdateChecker.isVersion("1.5.7-beta.1", greaterThan: "1.5.6"))
+        XCTAssertFalse(UpdateChecker.isVersion("1.5.7-beta.1", greaterThan: "1.5.7"))
+    }
+
+    func testInvalidOccurredDateIsUnknown() {
+        let parsed = FormatUtils.parseOccurredDate("not-a-date")
+        XCTAssertFalse(parsed.isValid)
+        XCTAssertEqual(parsed.dotDateTime, "时间未知")
+        XCTAssertEqual(FormatUtils.daysBetween("not-a-date", "2026-10-01 10:00:00"), 0)
+    }
+
 }

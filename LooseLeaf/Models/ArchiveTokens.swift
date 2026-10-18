@@ -15,7 +15,8 @@ public enum ArchiveResourceBundle {
 /// 自然大地色盘语义令牌绑定 (Earthy Palette Semantic Tokens)
 /// 严格遵循 docs/ecosystem.md §4.2 强制约定：
 /// 原生端不得在代码中直接书写十六进制色值，统一通过语义名引用 Assets.xcassets
-/// 注：本文件位于 Models 层（供 Widget 扩展共享编译），禁止在此引入 AppKit 视图类型。
+/// 注：本文件位于 Models 层（供 Widget 扩展共享编译），只允许 SwiftUI 色彩/字体令牌与
+/// AppKit 的 NSFont 探测，不要放任何 View / ViewModifier。
 public enum ArchivePalette {
     public static var archivePaper: Color { Color("ArchivePaper", bundle: ArchiveResourceBundle.bundle) }
     public static var archiveSubtle: Color { Color("ArchiveSubtle", bundle: ArchiveResourceBundle.bundle) }
@@ -87,31 +88,4 @@ public enum ArchiveRadius {
     public static let sm: CGFloat = 6   // 胶囊、按钮、输入框、微控件
     public static let md: CGFloat = 10  // 标准日记卡片、面板
     public static let lg: CGFloat = 14  // 模态弹窗、主工作区
-}
-
-/// 纸张物理微投影修饰符（取代死板 0.5pt 灰色硬边框）
-public struct PaperElevationModifier: ViewModifier {
-    public var level: Int
-
-    public func body(content: Content) -> some View {
-        switch level {
-        case 1:
-            content
-                .shadow(color: Color.black.opacity(0.025), radius: 1, x: 0, y: 1)
-                .shadow(color: Color.black.opacity(0.035), radius: 6, x: 0, y: 2)
-        case 2:
-            content
-                .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 2)
-                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
-        default:
-            content
-        }
-    }
-}
-
-public extension View {
-    /// 纸张物理轻微投影
-    func paperElevation(_ level: Int = 1) -> some View {
-        modifier(PaperElevationModifier(level: level))
-    }
 }

@@ -34,6 +34,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        // 防抖窗口内的最后一次修改必须落盘
+        SyncManager.shared.flushSnapshotToDiskIfNeeded()
         if let hotKeyRef {
             UnregisterEventHotKey(hotKeyRef)
         }
@@ -67,12 +69,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            for window in sender.windows where window.identifier?.rawValue == "main" || window.canBecomeMain {
-                window.isMovableByWindowBackground = true
-                window.makeKeyAndOrderFront(nil)
-                sender.activate(ignoringOtherApps: true)
-                return true
-            }
+            // 优先唤回主工作台窗口，避免把浮动捕捉面板当成主窗口
+            let mainWindow = sender.windows.first { $0.identifier?.rawValue == "main" }
+                ?? sender.windows.first { $0.canBecomeMain }
+            mainWindow?.isMovableByWindowBackground = true
+            mainWindow?.makeKeyAndOrderFront(nil)
             sender.activate(ignoringOtherApps: true)
         }
         return true

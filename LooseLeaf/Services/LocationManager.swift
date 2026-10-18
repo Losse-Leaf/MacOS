@@ -27,7 +27,13 @@ public final class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
-    /// 请求定位权限并尝试触发单次定位
+    /// 当前是否已获得定位授权（直接向系统查询，避免使用 init 时的过期快照）
+    public var isAuthorized: Bool {
+        let status = manager.authorizationStatus
+        return status == .authorizedAlways || status == .authorized
+    }
+
+    /// 请求定位权限并尝试触发单次定位（仅在用户显式点击「定位」时调用）
     public func requestAuthorizationAndFetch() {
         let status = manager.authorizationStatus
         self.authorizationStatus = status

@@ -157,12 +157,5 @@ public struct LooseLeafApp: App {
             }
         }
         .menuBarExtraStyle(.window)
-
-        // 3. 系统偏好设置窗口 (⌘,)
-        Settings {
-            SettingsView(appState: appState)
-                .frame(minWidth: 680, minHeight: 540)
-                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
-        }
     }
 }

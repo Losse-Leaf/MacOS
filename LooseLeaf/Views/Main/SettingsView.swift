@@ -1830,7 +1830,7 @@ public struct SettingsView: View {
             let myDeviceId = CredentialStore.getDeviceId()
             if let selfDev = list.first(where: { $0.deviceId == myDeviceId }), selfDev.platform.lowercased() != "macos" {
                 Task {
-                    try? await APIClient.shared.updateDeviceName(
+                    _ = try? await APIClient.shared.updateDeviceName(
                         id: selfDev.deviceId,
                         name: selfDev.name,
                         platform: "macos",
@@ -2030,6 +2030,11 @@ public struct SettingsView: View {
         }
         if accessKey.isEmpty {
             storageError = "请填写 Access Key ID"
+            return
+        }
+        if storageSecretAccessKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           storageStatus?.hasSecretKey == true {
+            storageError = "连通性测试需要重新输入 Secret Access Key（已保存的密钥不会回传；保存配置时可留空保持不变）"
             return
         }
 

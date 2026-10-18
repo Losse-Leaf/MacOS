@@ -147,115 +147,24 @@ public enum ArchiveExporter {
         return try? encoder.encode(payload)
     }
 
-    /// 循环分页拉取远端全量数据（遵循后端单页上限 pageSize <= 100 约束）并导出指定格式
-    public static func fetchAllRemoteAndExport(
-        format: ExportFormat,
-        fallbackSnapshot: LocalArchiveSnapshot,
-        fallbackProjects: [Project] = [],
-        fallbackWishes: [Wish] = [],
-        fallbackFootprints: [Footprint] = []
-    ) async -> Data? {
-        var exportSnapshot = fallbackSnapshot
-        var exportProjects = fallbackProjects
-        var exportWishes = fallbackWishes
-        var exportFootprints = fallbackFootprints
-
-        // 1. 分页拉取全量散页记录 (严格单页 pageSize = 100，绝不超过 100)
-        if format == .markdown || format == .json {
-            let pageSize = 100
-            var page = 1
-            var allEntries: [LifeEntry] = []
-            var fetchSucceeded = false
-            while true {
-                guard let resp = try? await APIClient.shared.fetchEntries(
-                    page: page,
-                    pageSize: pageSize,
-                    useETag: false
-                ) else {
-                    break
-                }
-                fetchSucceeded = true
-                allEntries.append(contentsOf: resp.entries)
-                if resp.entries.count < pageSize || allEntries.count >= resp.total {
-                    break
-                }
-                page += 1
-            }
-            if fetchSucceeded && !allEntries.isEmpty {
-                exportSnapshot.entries = allEntries
-            }
-        }
-
-        // 2. 分批拉取全量账目流水
-        if format == .csv || format == .json {
-            let batchLimit = 500
-            var offset = 0
-            var allTxs: [Transaction] = []
-            var txSucceeded = false
-            while true {
-                guard let batch = try? await APIClient.shared.fetchTransactions(
-                    limit: batchLimit,
-                    offset: offset,
-                    useETag: false
-                ) else {
-                    break
-                }
-                txSucceeded = true
-                allTxs.append(contentsOf: batch)
-                if batch.count < batchLimit {
-                    break
-                }
-                offset += batch.count
-            }
-            if txSucceeded && !allTxs.isEmpty {
-                exportSnapshot.transactions = allTxs
-            }
-        }
-
-        // 3. 若为全量 JSON 备份，补齐造物、心愿单（分页 pageSize = 100）与行迹
-        if format == .json {
-            if let remoteProjects = try? await APIClient.shared.fetchProjects() {
-                exportProjects = remoteProjects
-            }
-            var wishPage = 1
-            let wishPageSize = 100
-            var allWishes: [Wish] = []
-            while true {
-                guard let wishResp = try? await APIClient.shared.fetchWishes(page: wishPage, pageSize: wishPageSize) else {
-                    break
-                }
-                allWishes.append(contentsOf: wishResp.wishes)
-                if wishResp.wishes.count < wishPageSize || allWishes.count >= wishResp.total {
-                    break
-                }
-                wishPage += 1
-            }
-            if !allWishes.isEmpty {
-                exportWishes = allWishes
-            }
-            if let remoteFootprints = try? await APIClient.shared.fetchFootprints() {
-                exportFootprints = remoteFootprints
-            }
-        }
-
-        switch format {
-        case .markdown:
-            return makeMarkdown(entries: exportSnapshot.entries).data(using: .utf8)
-        case .csv:
-            return makeTransactionsCSV(transactions: exportSnapshot.transactions).data(using: .utf8)
-        case .json:
-            return makeFullArchiveJSON(
-                snapshot: exportSnapshot,
-                projects: exportProjects,
-                wishes: exportWishes,
-                footprints: exportFootprints
-            )
-        }
-    }
-
     private static func escapeCSVField(_ raw: String) -> String {
-        let cleaned = raw.replacingOccurrences(of: "\r\n", with: " ").replacingOccurrences(of: "\n", with: " ")
-        if cleaned.contains(",") || cleaned.contains("\"") {
+        var cleaned = raw
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+
+        // 阻断 Excel / Numbers 公式注入：= + @ 与制表符开头一律前置单引号；
+        // 负号只在「后面不是合法数字」时处理，避免把 -12.50 变成文本。
+        let startsDangerously = cleaned.hasPrefix("=")
+            || cleaned.hasPrefix("+")
+            || cleaned.hasPrefix("@")
+            || cleaned.hasPrefix("\t")
+        let minusWithoutNumber = cleaned.hasPrefix("-") && Double(cleaned) == nil
+        if startsDangerously || minusWithoutNumber {
+            cleaned = "'" + cleaned
+        }
+
+        if cleaned.contains(",") || cleaned.contains("\"") || cleaned.contains(" ") {
             let escaped = cleaned.replacingOccurrences(of: "\"", with: "\"\"")
             return "\"\(escaped)\""
         }

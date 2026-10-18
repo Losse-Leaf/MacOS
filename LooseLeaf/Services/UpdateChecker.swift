@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Observation
+import CryptoKit
 import os
 
 /// 桌面端原生 GitHub Releases 自动检测与一键热更引擎
@@ -14,7 +15,7 @@ public final class UpdateChecker {
     public static let shared = UpdateChecker()
     public static let repo = "Losse-Leaf/MacOS"
 
-    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "updater")
+    nonisolated private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "updater")
 
     public var isChecking: Bool = false
     public var hasChecked: Bool = false
@@ -29,6 +30,8 @@ public final class UpdateChecker {
         public let body: String
         public let downloadURL: URL
         public let publishedAt: String
+        /// GitHub Release 提供的 "sha256:..." 资产摘要；缺失时为 nil
+        public let expectedDigest: String?
     }
 
     private static let ignoredVersionKey = "ignoredUpdateVersion"
@@ -97,7 +100,8 @@ public final class UpdateChecker {
                         versionName: cleanRemoteTag,
                         body: (json["body"] as? String) ?? "",
                         downloadURL: downloadURL,
-                        publishedAt: (json["published_at"] as? String) ?? ""
+                        publishedAt: (json["published_at"] as? String) ?? "",
+                        expectedDigest: asset["digest"] as? String
                     )
                 }
                 self.hasChecked = true
@@ -125,11 +129,13 @@ public final class UpdateChecker {
         }
     }
 
+    /// 终端一键安装/更新命令（唯一事实源，同时供按钮复制与测试断言使用）
+    public static let installCommand = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh)""#
+
     /// 复制终端全自动一键安装更新命令至剪贴板（全自动安装并放行 Gatekeeper，免终端输入配置）
     public func copyInstallCommandToClipboard() {
-        let cmd = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Losse-Leaf/MacOS/main/install.sh)""#
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(cmd, forType: .string)
+        NSPasteboard.general.setString(Self.installCommand, forType: .string)
         AudioFeedback.shared.playTink()
         AppState.shared.showTemporaryBanner("已复制终端安装命令，打开 Mac「终端」粘贴回车即可一键全自动升级")
     }
@@ -159,6 +165,9 @@ public final class UpdateChecker {
             try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
             let zipPath = workDir.appendingPathComponent("update.zip")
             try FileManager.default.moveItem(at: tempDownloadedURL, to: zipPath)
+
+            // 2.1 校验下载包完整性（GitHub Release 资产自带 sha256 digest）
+            try Self.verifyDigest(of: zipPath, expected: update.expectedDigest)
 
             // 3. 解压产物
             updateProgress = 0.70
@@ -195,6 +204,14 @@ public final class UpdateChecker {
             var targetAppURL = Bundle.main.bundleURL
             if !targetAppURL.path.hasSuffix(".app") || targetAppURL.path.contains("/build/") || targetAppURL.path.contains("/DerivedData/") {
                 targetAppURL = URL(fileURLWithPath: "/Applications/LooseLeaf.app")
+            }
+            let installDirectory = targetAppURL.deletingLastPathComponent()
+            guard FileManager.default.isWritableFile(atPath: installDirectory.path) else {
+                throw NSError(
+                    domain: "UpdateError",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "对 \(installDirectory.path) 没有写入权限，请使用「复制终端一键更新」完成升级"]
+                )
             }
 
             // 7. 生成独立于当前主进程生命周期的守护替换脚本 (脱离会话组，安全等待主进程 PID 退出)
@@ -260,10 +277,10 @@ public final class UpdateChecker {
         }
     }
 
-    /// 语义化版本号比较器（v1.2.1 > v1.2.0）
+    /// 语义化版本号比较器（v1.2.1 > v1.2.0，容忍 1.5.7-beta.1 这类预发布标签）
     public nonisolated static func isVersion(_ v1: String, greaterThan v2: String) -> Bool {
-        let p1 = v1.split(separator: ".").compactMap { Int($0) }
-        let p2 = v2.split(separator: ".").compactMap { Int($0) }
+        let p1 = numericParts(v1)
+        let p2 = numericParts(v2)
         let maxCount = max(p1.count, p2.count)
         for i in 0..<maxCount {
             let n1 = i < p1.count ? p1[i] : 0
@@ -272,5 +289,42 @@ public final class UpdateChecker {
             if n1 < n2 { return false }
         }
         return false
+    }
+
+    /// "v1.5.7-beta.1" -> [1, 5, 7]；先剥离 v 前缀与预发布/构建元数据，再逐段取数字。
+    private nonisolated static func numericParts(_ raw: String) -> [Int] {
+        var core = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if core.hasPrefix("v") || core.hasPrefix("V") {
+            core.removeFirst()
+        }
+        // SemVer：1.5.7-beta.1 的优先级低于 1.5.7，比较时只取核心版本号
+        if let dash = core.firstIndex(of: "-") {
+            core = String(core[..<dash])
+        }
+        if let plus = core.firstIndex(of: "+") {
+            core = String(core[..<plus])
+        }
+        return core.split(separator: ".").map { component in
+            let digits = component.prefix { $0.isNumber }
+            return Int(digits) ?? 0
+        }
+    }
+
+    /// 用 GitHub Release 提供的 sha256 摘要校验下载包；未提供摘要时只记录日志（兼容旧发布）。
+    private nonisolated static func verifyDigest(of fileURL: URL, expected: String?) throws {
+        guard let expected, expected.lowercased().hasPrefix("sha256:") else {
+            logger.notice("Release asset has no sha256 digest; skipping integrity check")
+            return
+        }
+        let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let wanted = String(expected.dropFirst("sha256:".count)).lowercased()
+        guard actual == wanted else {
+            throw NSError(
+                domain: "UpdateError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "更新包校验失败（SHA256 不匹配），已中止安装"]
+            )
+        }
     }
 }

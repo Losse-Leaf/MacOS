@@ -104,6 +104,33 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         self.syncStatus = syncStatus
     }
 
+    /// 容错解码：单条脏数据不应让整个账目列表解码失败（与 LifeEntry 策略一致）
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(Int.self, forKey: .id)) ?? 0
+        amount = (try? c.decode(Int64.self, forKey: .amount)) ?? 0
+        type = (try? c.decode(String.self, forKey: .type)) ?? "expense"
+        category = (try? c.decode(String.self, forKey: .category)) ?? ""
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        note = try? c.decodeIfPresent(String.self, forKey: .note)
+        paymentMethod = try? c.decodeIfPresent(String.self, forKey: .paymentMethod)
+        wishId = try? c.decodeIfPresent(Int.self, forKey: .wishId)
+        footprintId = try? c.decodeIfPresent(Int.self, forKey: .footprintId)
+        cityCode = try? c.decodeIfPresent(String.self, forKey: .cityCode)
+        occurredAt = (try? c.decode(String.self, forKey: .occurredAt)) ?? ""
+        isInstallment = try? c.decodeIfPresent(Bool.self, forKey: .isInstallment)
+        installmentChannelCode = try? c.decodeIfPresent(String.self, forKey: .installmentChannelCode)
+        installmentTotalAmount = try? c.decodeIfPresent(Int64.self, forKey: .installmentTotalAmount)
+        installmentMonths = try? c.decodeIfPresent(Int.self, forKey: .installmentMonths)
+        installmentMonthlyPay = try? c.decodeIfPresent(Int64.self, forKey: .installmentMonthlyPay)
+        installmentRemainMonths = try? c.decodeIfPresent(Int.self, forKey: .installmentRemainMonths)
+        repaymentDay = try? c.decodeIfPresent(Int.self, forKey: .repaymentDay)
+        deletedAt = try? c.decodeIfPresent(String.self, forKey: .deletedAt)
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try? c.decodeIfPresent(String.self, forKey: .updatedAt)
+        syncStatus = (try? c.decodeIfPresent(String.self, forKey: .syncStatus)) ?? "synced"
+    }
+
     /// 格式化展示金额 (元)
     public var formattedAmount: String {
         FormatUtils.formattedYuan(cents: amount, includeSymbol: true)

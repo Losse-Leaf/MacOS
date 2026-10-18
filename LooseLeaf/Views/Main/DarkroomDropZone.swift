@@ -41,7 +41,6 @@ public struct DarkroomDropZone: View {
 
     @State private var entryTitle: String = ""
     @State private var entryContent: String = ""
-    @State private var entryLocation: String = ""
     @State private var entryCityCode: String = ""
     @State private var entryCityName: String = ""
     @State private var entryOccurredAt: Date = Date()
@@ -410,25 +409,13 @@ public struct DarkroomDropZone: View {
 
             PaperDateTimePicker(selection: $entryOccurredAt, label: "记录时间", showQuickShortcuts: true)
 
-            HStack(spacing: 8) {
-                PaperCityPicker(
-                    selectedCode: $entryCityCode,
-                    selectedName: $entryCityName,
-                    placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
-                )
-
-                TextField("具体拍摄地点", text: $entryLocation)
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: 12))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .padding(8)
-                    .background(ArchivePalette.archivePaper)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                    )
-            }
+            PaperCityPicker(
+                selectedCode: $entryCityCode,
+                selectedName: $entryCityName,
+                placeholder: appState.profile.displayCity.isEmpty ? "点选拍摄城市…" : appState.profile.displayCity,
+                label: "拍摄城市",
+                isFullWidth: true
+            )
 
             ZStack(alignment: .topLeading) {
                 if entryContent.isEmpty {
@@ -912,7 +899,7 @@ public struct DarkroomDropZone: View {
                         title: entryTitle,
                         content: bodyText,
                         type: entryType,
-                        location: entryLocation.isEmpty ? nil : entryLocation,
+                        location: entryCityName.isEmpty ? nil : entryCityName,
                         cityCode: entryCityCode.isEmpty ? nil : entryCityCode,
                         cityName: entryCityName.isEmpty ? nil : entryCityName,
                         attachmentIds: attachmentIds,
@@ -944,7 +931,7 @@ public struct DarkroomDropZone: View {
                         title: entryTitle,
                         content: bodyText,
                         type: entryType,
-                        location: entryLocation.isEmpty ? nil : entryLocation,
+                        location: entryCityName.isEmpty ? nil : entryCityName,
                         cityCode: entryCityCode.isEmpty ? nil : entryCityCode,
                         cityName: entryCityName.isEmpty ? nil : entryCityName,
                         attachmentIds: [att.id],
@@ -974,7 +961,6 @@ public struct DarkroomDropZone: View {
         selectedIndex = 0
         entryTitle = ""
         entryContent = ""
-        entryLocation = ""
         entryCityCode = ""
         entryCityName = ""
         entryOccurredAt = Date()

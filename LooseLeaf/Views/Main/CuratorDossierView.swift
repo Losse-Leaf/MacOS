@@ -13,7 +13,9 @@ public struct CuratorDossierView: View {
     @State private var editName: String = ""
     @State private var editTitle: String = ""
     @State private var editCity: String = ""
+    @State private var editCityCode: String = ""
     @State private var editLocation: String = ""
+    @State private var editLocationCode: String = ""
     @State private var editMotto: String = ""
     @State private var editBio: String = ""
     @State private var editManifesto: String = ""
@@ -77,7 +79,9 @@ public struct CuratorDossierView: View {
                                 editName = prof.name
                                 editTitle = prof.title
                                 editCity = prof.currentCity
+                                editCityCode = CityDictionary.code(forLocation: prof.currentCity) ?? ""
                                 editLocation = prof.location
+                                editLocationCode = CityDictionary.code(forLocation: prof.location) ?? ""
                                 editMotto = prof.motto
                                 editBio = prof.bio
                                 editManifesto = prof.manifesto
@@ -468,17 +472,21 @@ public struct CuratorDossierView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                TextField("当前城市", text: $editCity)
-                    .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                PaperCityPicker(
+                    selectedCode: $editCityCode,
+                    selectedName: $editCity,
+                    placeholder: "点选当前城市…",
+                    label: "当前城市",
+                    isFullWidth: true
+                )
 
-                TextField("常居城市", text: $editLocation)
-                    .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                PaperCityPicker(
+                    selectedCode: $editLocationCode,
+                    selectedName: $editLocation,
+                    placeholder: "点选常居城市…",
+                    label: "常居城市",
+                    isFullWidth: true
+                )
             }
 
             TextField("近况题记", text: $editMotto)

@@ -992,6 +992,8 @@ public struct PaperCityPicker: View {
     @Binding public var selectedCode: String
     @Binding public var selectedName: String
     public var placeholder: String
+    public var label: String?
+    public var isFullWidth: Bool
 
     @State private var isPickerPresented: Bool = false
     @State private var searchKeyword: String = ""
@@ -1000,11 +1002,15 @@ public struct PaperCityPicker: View {
     public init(
         selectedCode: Binding<String>,
         selectedName: Binding<String>,
-        placeholder: String = "选择省市…"
+        placeholder: String = "选择省市…",
+        label: String? = nil,
+        isFullWidth: Bool = false
     ) {
         self._selectedCode = selectedCode
         self._selectedName = selectedName
         self.placeholder = placeholder
+        self.label = label
+        self.isFullWidth = isFullWidth
     }
 
     private var displayText: String {
@@ -1030,55 +1036,68 @@ public struct PaperCityPicker: View {
     }
 
     public var body: some View {
-        Button {
-            searchKeyword = ""
-            if let firstProv = allProvinces.first, activeProvince.isEmpty {
-                activeProvince = firstProv
-            }
-            // 尝试静默请求原生定位
-            LocationManager.shared.requestAuthorizationAndFetch()
-            isPickerPresented = true
-            AudioFeedback.shared.playTink()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "map")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-
-                Text(displayText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
-                    .lineLimit(1)
-
-                if isSelected {
-                    Button {
-                        selectedCode = ""
-                        selectedName = ""
-                        AudioFeedback.shared.playTink()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7))
+        VStack(alignment: .leading, spacing: 4) {
+            if let label {
+                Text(label)
+                    .font(ArchiveTypography.monoScale(size: 10.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4.5)
-            .background(ArchivePalette.archivePaper)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.4) : ArchivePalette.borderDivider, lineWidth: 0.5)
-            )
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isPickerPresented, arrowEdge: .bottom) {
-            cityPopoverContent
+
+            Button {
+                searchKeyword = ""
+                if let firstProv = allProvinces.first, activeProvince.isEmpty {
+                    activeProvince = firstProv
+                }
+                // 尝试静默请求原生定位
+                LocationManager.shared.requestAuthorizationAndFetch()
+                isPickerPresented = true
+                AudioFeedback.shared.playTink()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "map")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+
+                    Text(displayText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
+                        .lineLimit(1)
+
+                    if isFullWidth {
+                        Spacer(minLength: 4)
+                    }
+
+                    if isSelected {
+                        Button {
+                            selectedCode = ""
+                            selectedName = ""
+                            AudioFeedback.shared.playTink()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, isFullWidth ? 7 : 4.5)
+                .frame(maxWidth: isFullWidth ? .infinity : nil)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.4) : ArchivePalette.borderDivider, lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $isPickerPresented, arrowEdge: .bottom) {
+                cityPopoverContent
+            }
         }
     }
 

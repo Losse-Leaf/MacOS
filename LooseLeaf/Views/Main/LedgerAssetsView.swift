@@ -41,10 +41,6 @@ public struct LedgerAssetsView: View {
     @State private var showCreditChannelsSheet: Bool = false
     @State private var editingTransaction: Transaction?
     @State private var sellingGear: GearItem?
-    @State private var txToDelete: Transaction?
-    @State private var showDeleteTxConfirm: Bool = false
-    @State private var gearToDelete: GearItem?
-    @State private var showDeleteGearConfirm: Bool = false
     @State private var initialBalanceYuanInput: String = ""
     @State private var errorNotice: String?
 
@@ -154,34 +150,6 @@ public struct LedgerAssetsView: View {
         }
         .sheet(item: $sellingGear) { gear in
             sellGearSheetView(gear)
-        }
-        .confirmationDialog(
-            "确认删除该笔流水账目？",
-            isPresented: $showDeleteTxConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除账目", role: .destructive) {
-                if let target = txToDelete {
-                    deleteTransaction(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。")
-        }
-        .confirmationDialog(
-            "确认删除该件随身器材资产？",
-            isPresented: $showDeleteGearConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除器材", role: .destructive) {
-                if let target = gearToDelete {
-                    deleteGear(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后该项设备将从固资货架中移除。")
         }
     }
 
@@ -530,12 +498,12 @@ public struct LedgerAssetsView: View {
 
                         // 联动固资与分期复选
                         Toggle("建入固资大盘", isOn: $formLinkGear)
-                            .toggleStyle(.checkbox)
+                            .toggleStyle(.paperCheckbox)
                             .font(ArchiveTypography.bodySans(size: 11.5))
 
                         if formType == "expense" {
                             Toggle("分期付款", isOn: $formIsInstallment)
-                                .toggleStyle(.checkbox)
+                                .toggleStyle(.paperCheckbox)
                                 .font(ArchiveTypography.bodySans(size: 11.5))
                         }
                     }
@@ -775,8 +743,14 @@ public struct LedgerAssetsView: View {
                 }
 
                 Button {
-                    gearToDelete = gear
-                    showDeleteGearConfirm = true
+                    appState.askConfirm(
+                        title: "确认删除该件随身器材资产？",
+                        message: "删除后该项设备将从固资货架中移除。",
+                        confirmText: "删除器材",
+                        danger: true
+                    ) {
+                        deleteGear(gear)
+                    }
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 10.5))
@@ -947,8 +921,14 @@ public struct LedgerAssetsView: View {
 
                 if tx.id > 0 {
                     Button {
-                        txToDelete = tx
-                        showDeleteTxConfirm = true
+                        appState.askConfirm(
+                            title: "确认删除该笔流水账目？",
+                            message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
+                            confirmText: "删除账目",
+                            danger: true
+                        ) {
+                            deleteTransaction(tx)
+                        }
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 11.5))
@@ -970,7 +950,7 @@ public struct LedgerAssetsView: View {
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             editingTransaction = tx
-            AudioFeedback.shared.playPaperFlip()
+            AudioFeedback.shared.playTink()
         }
         .contextMenu {
             Button {
@@ -980,8 +960,14 @@ public struct LedgerAssetsView: View {
             }
             if tx.id > 0 {
                 Button(role: .destructive) {
-                    txToDelete = tx
-                    showDeleteTxConfirm = true
+                    appState.askConfirm(
+                        title: "确认删除该笔流水账目？",
+                        message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
+                        confirmText: "删除账目",
+                        danger: true
+                    ) {
+                        deleteTransaction(tx)
+                    }
                 } label: {
                     Label("删除该笔账目", systemImage: "trash")
                 }
@@ -1397,7 +1383,7 @@ public struct AddGearSheet: View {
             }
 
             Toggle("伴生记录一笔支出流水", isOn: $createTransaction)
-                .toggleStyle(.checkbox)
+                .toggleStyle(.paperCheckbox)
                 .font(ArchiveTypography.bodySans(size: 12))
 
             TextField("手记", text: $note)

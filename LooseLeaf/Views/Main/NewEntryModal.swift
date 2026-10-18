@@ -326,7 +326,7 @@ public struct NewEntryModal: View {
                 PaperDatePicker(selection: $occurredAt, enableTime: true, label: "发生时刻")
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
                 Toggle("精选散页", isOn: $isFeatured)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 11.5))
             }
 
@@ -586,11 +586,11 @@ public struct NewEntryModal: View {
             // 扩展选项：信贷分期与同步固定资产
             HStack(spacing: 16) {
                 Toggle("信贷分期", isOn: $isInstallment)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 12))
 
                 Toggle("同步为随身/桌面固资", isOn: $syncToGear)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 12))
             }
 

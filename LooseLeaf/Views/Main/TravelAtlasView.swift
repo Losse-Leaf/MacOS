@@ -16,8 +16,6 @@ public struct TravelAtlasView: View {
 
     @State private var showNewFootprintSheet: Bool = false
     @State private var editingFootprint: Footprint?
-    @State private var footprintToDelete: Footprint?
-    @State private var showDeleteConfirm: Bool = false
     @State private var selectedDrawerCity: ProjectsWishesView.DrawerCitySelection?
     @State private var selectedDrawerProvince: ProjectsWishesView.DrawerProvinceSelection?
     @State private var errorMessage: String?
@@ -133,20 +131,6 @@ public struct TravelAtlasView: View {
                 selectedDrawerProvince = nil
             }
         }
-        .confirmationDialog(
-            "确认删除该座城市足迹票根？",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除足迹票根", role: .destructive) {
-                if let target = footprintToDelete {
-                    deleteFootprint(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将移除该次漫游记录，关联游记散页不受影响。")
-        }
     }
 
     // MARK: - 1. 标头
@@ -171,7 +155,7 @@ public struct TravelAtlasView: View {
 
             Button {
                 showNewFootprintSheet = true
-                AudioFeedback.shared.playPaperFlip()
+                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "location.fill.viewfinder")
@@ -225,13 +209,15 @@ public struct TravelAtlasView: View {
             // 大区筛选 Tab
             HStack(spacing: 6) {
                 PaperPillButton(title: "全境", isSelected: selectedRegion == "all") {
+                    guard selectedRegion != "all" else { return }
                     selectedRegion = "all"
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 }
                 ForEach(Self.regions, id: \.name) { reg in
                     PaperPillButton(title: reg.name, isSelected: selectedRegion == reg.name) {
+                        guard selectedRegion != reg.name else { return }
                         selectedRegion = reg.name
-                        AudioFeedback.shared.playPaperFlip()
+                        AudioFeedback.shared.playTink()
                     }
                 }
             }
@@ -358,8 +344,14 @@ public struct TravelAtlasView: View {
                                     .buttonStyle(.plain)
 
                                     Button {
-                                        footprintToDelete = fp
-                                        showDeleteConfirm = true
+                                        appState.askConfirm(
+                                            title: "确认删除该座城市足迹票根？",
+                                            message: "删除后将移除该次漫游记录，关联游记散页不受影响。",
+                                            confirmText: "删除足迹票根",
+                                            danger: true
+                                        ) {
+                                            deleteFootprint(fp)
+                                        }
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.system(size: 10.5))

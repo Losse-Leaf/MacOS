@@ -16,8 +16,6 @@ public struct WishlistView: View {
     @State private var showNewWishSheet: Bool = false
     @State private var editingWish: Wish?
     @State private var resolvingWish: Wish?
-    @State private var wishToDelete: Wish?
-    @State private var showDeleteConfirm: Bool = false
     @State private var errorMessage: String?
 
     public init(appState: AppState) {
@@ -98,20 +96,6 @@ public struct WishlistView: View {
                 resolvingWish = nil
             }
         }
-        .confirmationDialog(
-            "确认删除该心愿？",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除心愿", role: .destructive) {
-                if let target = wishToDelete {
-                    deleteWish(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后该心愿将永久移除，此操作不可恢复。")
-        }
     }
 
     // MARK: - 1. 标头
@@ -131,7 +115,7 @@ public struct WishlistView: View {
 
                 Button {
                     showNewWishSheet = true
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus")
@@ -268,8 +252,14 @@ public struct WishlistView: View {
                         editingWish = wish
                     },
                     onDelete: {
-                        wishToDelete = wish
-                        showDeleteConfirm = true
+                        appState.askConfirm(
+                            title: "确认删除该心愿？",
+                            message: "删除后该心愿将永久移除，此操作不可恢复。",
+                            confirmText: "删除心愿",
+                            danger: true
+                        ) {
+                            deleteWish(wish)
+                        }
                     }
                 )
             }

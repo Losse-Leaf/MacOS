@@ -42,9 +42,6 @@ public struct SettingsView: View {
     // 设备重命名与吊销状态
     @State private var renamingDevice: TrustedDevice?
     @State private var newDeviceNameInput: String = ""
-    @State private var showRevokeConfirm: Bool = false
-    @State private var deviceToRevoke: TrustedDevice?
-    @State private var showUnpairSelfConfirm: Bool = false
 
     // 分类字典管理状态
     @State private var selectedCategoryScope: String = "expense"
@@ -61,10 +58,6 @@ public struct SettingsView: View {
     @State private var isCreatingServerBackup: Bool = false
     @State private var backupActionFeedback: String?
     @State private var backupActionError: String?
-    @State private var backupToRestore: ServerBackupItem?
-    @State private var showRestoreServerBackupConfirm: Bool = false
-    @State private var backupToDelete: ServerBackupItem?
-    @State private var showDeleteServerBackupConfirm: Bool = false
 
     // 对象存储与中枢灾备管理 (对标 Web StorageBackupModal.vue)
     @State private var backupSubTab: String = "backup" // "backup", "storage", "export"
@@ -79,7 +72,6 @@ public struct SettingsView: View {
 
     @State private var storageProviderType: String = "r2" // "r2" or "s3"
     @State private var showSecretKey: Bool = false
-    @State private var showResetStorageConfirm: Bool = false
     @State private var storageAccountId: String = ""
     @State private var storageBucketName: String = ""
     @State private var storageEndpoint: String = ""
@@ -129,74 +121,6 @@ public struct SettingsView: View {
         }
         .sheet(item: $renamingCategory) { cat in
             renameCategorySheetView(cat: cat)
-        }
-        .confirmationDialog(
-            "确认吊销该设备的接入授权？",
-            isPresented: $showRevokeConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("吊销设备凭证", role: .destructive) {
-                if let dev = deviceToRevoke {
-                    revokeDeviceAction(dev)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("吊销后该伴生设备将无法继续同步或读取中枢生活档案。")
-        }
-        .confirmationDialog(
-            "确认解除本机配对？",
-            isPresented: $showUnpairSelfConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("解除配对并退出", role: .destructive) {
-                Task { @MainActor in
-                    await appState.disconnectDevice()
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("解除配对将清空保存在本机钥匙串的受保护凭据，需重新扫码配对才能接入中枢。")
-        }
-        .confirmationDialog(
-            "确认回滚还原整库？",
-            isPresented: $showRestoreServerBackupConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("确认回滚覆盖", role: .destructive) {
-                if let target = backupToRestore {
-                    restoreServerBackupAction(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("将从快照「\(backupToRestore?.filename ?? "")」恢复中枢数据库与媒体文件，现有未同步数据将被该快照覆盖。")
-        }
-        .confirmationDialog(
-            "确认从中枢删除该备份快照？",
-            isPresented: $showDeleteServerBackupConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除快照", role: .destructive) {
-                if let target = backupToDelete {
-                    deleteServerBackupAction(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将从中枢永久移除该备份文件，无法再回滚至此时间节点。")
-        }
-        .confirmationDialog(
-            "切换为本地磁盘存储",
-            isPresented: $showResetStorageConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("确认恢复本地存储", role: .destructive) {
-                resetStorageAction()
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("确定要关闭云端对象存储并恢复为本地磁盘存储模式吗？新上传的文件将直接保存在服务端本地磁盘 (/media)。")
         }
         .task {
             if appState.isPaired {
@@ -347,7 +271,7 @@ public struct SettingsView: View {
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                             Toggle("", isOn: $appState.soundEnabled)
-                                .tint(ArchivePalette.accentWarm)
+                                .toggleStyle(.paperSwitch)
                                 .labelsHidden()
                         }
                         .padding(12)
@@ -372,7 +296,7 @@ public struct SettingsView: View {
                             Spacer()
 
                             Toggle("", isOn: $appState.hapticsEnabled)
-                                .tint(ArchivePalette.accentWarm)
+                                .toggleStyle(.paperSwitch)
                                 .labelsHidden()
                         }
                         .padding(12)
@@ -578,7 +502,16 @@ public struct SettingsView: View {
                         }
 
                         Button("解除本机配对") {
-                            showUnpairSelfConfirm = true
+                            appState.askConfirm(
+                                title: "确认解除本机配对？",
+                                message: "解除配对将清空保存在本机钥匙串的受保护凭据，需重新扫码配对才能接入中枢。",
+                                confirmText: "解除配对并退出",
+                                danger: true
+                            ) {
+                                Task { @MainActor in
+                                    await appState.disconnectDevice()
+                                }
+                            }
                         }
                         .font(ArchiveTypography.bodySans(size: 11))
                         .foregroundStyle(ArchivePalette.accentWarm)
@@ -639,8 +572,14 @@ public struct SettingsView: View {
                                     .buttonStyle(.plain)
 
                                     Button("吊销授权") {
-                                        deviceToRevoke = dev
-                                        showRevokeConfirm = true
+                                        appState.askConfirm(
+                                            title: "确认吊销该设备的接入授权？",
+                                            message: "吊销后该伴生设备将无法继续同步或读取中枢生活档案。",
+                                            confirmText: "吊销设备凭证",
+                                            danger: true
+                                        ) {
+                                            revokeDeviceAction(dev)
+                                        }
                                     }
                                     .font(ArchiveTypography.bodySans(size: 11))
                                     .foregroundStyle(ArchivePalette.accentWarm)
@@ -930,8 +869,14 @@ public struct SettingsView: View {
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                             Button {
-                                backupToRestore = backup
-                                showRestoreServerBackupConfirm = true
+                                appState.askConfirm(
+                                    title: "确认回滚还原整库？",
+                                    message: "将从快照「\(backup.filename)」恢复中枢数据库与媒体文件，现有未同步数据将被该快照覆盖。",
+                                    confirmText: "确认回滚覆盖",
+                                    danger: true
+                                ) {
+                                    restoreServerBackupAction(backup)
+                                }
                             } label: {
                                 HStack(spacing: 3) {
                                     Image(systemName: "arrow.counterclockwise")
@@ -944,8 +889,14 @@ public struct SettingsView: View {
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                             Button {
-                                backupToDelete = backup
-                                showDeleteServerBackupConfirm = true
+                                appState.askConfirm(
+                                    title: "确认从中枢删除该备份快照？",
+                                    message: "删除后将从中枢永久移除该备份文件，无法再回滚至此时间节点。",
+                                    confirmText: "删除快照",
+                                    danger: true
+                                ) {
+                                    deleteServerBackupAction(backup)
+                                }
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.system(size: 10))
@@ -1194,7 +1145,14 @@ public struct SettingsView: View {
                 HStack {
                     if storageStatus?.configured == true {
                         Button {
-                            showResetStorageConfirm = true
+                            appState.askConfirm(
+                                title: "切换为本地磁盘存储",
+                                message: "确定要关闭云端对象存储并恢复为本地磁盘存储模式吗？新上传的文件将直接保存在服务端本地磁盘 (/media)。",
+                                confirmText: "确认恢复本地存储",
+                                danger: true
+                            ) {
+                                resetStorageAction()
+                            }
                         } label: {
                             HStack(spacing: 4) {
                                 if isResettingStorage {

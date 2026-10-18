@@ -21,11 +21,7 @@ public struct StreamView: View {
 
     // 管理模式：编辑与删除状态
     @State private var editingEntry: LifeEntry?
-    @State private var entryToDelete: LifeEntry?
-    @State private var showDeleteConfirm: Bool = false
     @State private var editingTransaction: Transaction?
-    @State private var txToDelete: Transaction?
-    @State private var showDeleteTxConfirm: Bool = false
     // 全局检索关联发现弹窗
     @State private var inspectingSearchFootprint: Footprint?
     @State private var inspectingSearchWish: Wish?
@@ -121,7 +117,7 @@ public struct StreamView: View {
                     Spacer()
                     Button {
                         appState.showNewEntrySheet = true
-                        AudioFeedback.shared.playPaperFlip()
+                        AudioFeedback.shared.playTink()
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .semibold))
@@ -136,7 +132,7 @@ public struct StreamView: View {
                     .help("记一笔 (⌘N)")
                 }
             }
-            .allowsHitTesting(!appState.showSettingsSheet && !appState.showNewEntrySheet)
+            .allowsHitTesting(!appState.showSettingsSheet && !appState.showNewEntrySheet && !appState.showSearchModal && !appState.showStatsSheet)
 
             if appState.showNewEntrySheet {
                 ZStack {
@@ -180,6 +176,99 @@ public struct StreamView: View {
                 }
                 .zIndex(110)
             }
+
+            // 全局聚光灯档案检索 (⌘K Spotlight)
+            if appState.showSearchModal {
+                ZStack {
+                    Color.black.opacity(0.38)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                appState.showSearchModal = false
+                            }
+                        }
+
+                    GlobalSearchModalView(
+                        appState: appState,
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                appState.showSearchModal = false
+                            }
+                        },
+                        onSelectEntry: { entry in
+                            appState.highlightedEntry = entry
+                        },
+                        onSelectFootprint: { fp in
+                            inspectingSearchFootprint = fp
+                        },
+                        onSelectWish: { wish in
+                            inspectingSearchWish = wish
+                        },
+                        onSelectProject: { proj in
+                            inspectingSearchProject = proj
+                        }
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                    )
+                    .onTapGesture {
+                        // 吸收点击
+                    }
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.96).combined(with: .opacity),
+                        removal: .scale(scale: 0.96).combined(with: .opacity)
+                    ))
+                }
+                .zIndex(120)
+            }
+
+            // 生活刻度统计弹窗 (⌘⌥S)
+            if appState.showStatsSheet {
+                ZStack {
+                    Color.black.opacity(0.38)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                appState.showStatsSheet = false
+                            }
+                        }
+
+                    StatsModalView(appState: appState) {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            appState.showStatsSheet = false
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                    )
+                    .onTapGesture {
+                        // 吸收点击
+                    }
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.96).combined(with: .opacity),
+                        removal: .scale(scale: 0.96).combined(with: .opacity)
+                    ))
+                }
+                .zIndex(115)
+            }
+
+            // 全局统一纸本确认 / 警示弹窗 (对标 Web ConfirmDialog.vue)
+            if let req = appState.activeConfirmDialog {
+                PaperConfirmDialogView(request: req) {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        appState.activeConfirmDialog = nil
+                    }
+                }
+                .zIndex(130)
+            }
         }
 
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
@@ -206,34 +295,6 @@ public struct StreamView: View {
         }
         .sheet(item: $inspectingSearchProject) { project in
             searchProjectDetailSheet(project: project)
-        }
-        .confirmationDialog(
-            "确认删除该条生活手稿？",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除手稿", role: .destructive) {
-                if let target = entryToDelete {
-                    deleteEntryAction(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。")
-        }
-        .confirmationDialog(
-            "确认删除该笔流水账目？",
-            isPresented: $showDeleteTxConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除账目", role: .destructive) {
-                if let target = txToDelete {
-                    deleteTransactionAction(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。")
         }
         .task {
             await appState.refreshAll()
@@ -309,6 +370,40 @@ public struct StreamView: View {
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
+            // 全局档案检索快捷按钮 (⌘K)
+            Button {
+                appState.showSearchModal = true
+                AudioFeedback.shared.playTink()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text("全局档案检索…")
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Spacer()
+                    Text("⌘K")
+                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1.5)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(ArchivePalette.archiveSubtle.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 2)
+
             // 导航菜单项
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(WorkbenchSection.sidebarSections) { section in
@@ -333,10 +428,39 @@ public struct StreamView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
 
+                // 生活刻度统计入口 (⌘⌥S)
+                Button {
+                    appState.showStatsSheet = true
+                    AudioFeedback.shared.playTink()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chart.bar")
+                            .font(.system(size: 12))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                        Text("生活统计")
+                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Spacer()
+                        Text("⌘⌥S")
+                            .font(ArchiveTypography.monoScale(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(ArchivePalette.archivePaper.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("s", modifiers: [.command, .option])
+
                 // 原生偏好设置/配置中心入口 (⌘,)
                 Button {
                     appState.showSettingsSheet = true
-                    AudioFeedback.shared.playPaperFlip()
+                    AudioFeedback.shared.playTink()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "gearshape")
@@ -571,7 +695,7 @@ public struct StreamView: View {
 
                         Button {
                             appState.showNewEntrySheet = true
-                            AudioFeedback.shared.playPaperFlip()
+                            AudioFeedback.shared.playTink()
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "square.and.pencil")
@@ -645,11 +769,29 @@ public struct StreamView: View {
                                 entry: entry,
                                 appState: appState,
                                 onEditEntry: { editingEntry = entry },
-                                onDeleteEntry: { entryToDelete = entry; showDeleteConfirm = true },
+                                onDeleteEntry: {
+                                    appState.askConfirm(
+                                        title: "确认删除该条生活手稿？",
+                                        message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
+                                        confirmText: "删除手稿",
+                                        danger: true
+                                    ) {
+                                        deleteEntryAction(entry)
+                                    }
+                                },
                                 onEditTransaction: { tx in editingTransaction = tx },
-                                onDeleteTransaction: { tx in txToDelete = tx; showDeleteTxConfirm = true },
+                                onDeleteTransaction: { tx in
+                                    appState.askConfirm(
+                                        title: "确认删除该笔流水账目？",
+                                        message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
+                                        confirmText: "删除账目",
+                                        danger: true
+                                    ) {
+                                        deleteTransactionAction(tx)
+                                    }
+                                },
                                 onToggleFeatured: { toggleFeatured(entry) },
-                                onOpenDetail: { appState.highlightedEntry = entry; AudioFeedback.shared.playPaperFlip() }
+                                onOpenDetail: { appState.highlightedEntry = entry; AudioFeedback.shared.playTink() }
                             )
                             .id(entry.id)
                         }
@@ -874,7 +1016,7 @@ public struct StreamView: View {
                                             maxHeight: 220
                                         ) {
                                             appState.lightboxAttachment = att
-                                            AudioFeedback.shared.playPaperFlip()
+                                            AudioFeedback.shared.playTink()
                                         }
                                         .frame(width: 260)
                                     }
@@ -1359,19 +1501,42 @@ public struct StreamView: View {
                             .buttonStyle(.plain)
 
                             Button("删除账目") {
-                                txToDelete = tx
-                                showDeleteTxConfirm = true
+                                appState.askConfirm(
+                                    title: "确认删除该笔流水账目？",
+                                    message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
+                                    confirmText: "删除账目",
+                                    danger: true
+                                ) {
+                                    deleteTransactionAction(tx)
+                                    appState.highlightedEntry = nil
+                                }
                             }
                             .font(ArchiveTypography.bodySans(size: 12))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .buttonStyle(.plain)
                         }
                     } else {
+                        Button("编辑手稿") {
+                            let target = entry
+                            appState.highlightedEntry = nil
+                            editingEntry = target
+                        }
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .buttonStyle(.plain)
+
                         Button("删除记录") {
-                            Task { @MainActor in
-                                try? await APIClient.shared.deleteEntry(id: entry.id)
-                                await appState.loadEntries(forceFull: true)
-                                appState.highlightedEntry = nil
+                            appState.askConfirm(
+                                title: "确认删除该条生活手稿？",
+                                message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
+                                confirmText: "删除手稿",
+                                danger: true
+                            ) {
+                                Task { @MainActor in
+                                    try? await APIClient.shared.deleteEntry(id: entry.id)
+                                    await appState.loadEntries(forceFull: true)
+                                    appState.highlightedEntry = nil
+                                }
                             }
                         }
                         .font(ArchiveTypography.bodySans(size: 12))
@@ -1438,6 +1603,28 @@ public struct StreamView: View {
                 }
                 .padding(.vertical, 6)
             } else {
+                HStack(spacing: 8) {
+                    if let city = entry.cityName ?? entry.location, !city.isEmpty {
+                        HStack(spacing: 3) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .font(.system(size: 10))
+                            Text(city)
+                                .font(ArchiveTypography.monoScale(size: 11))
+                        }
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+
+                    if entry.featured == true {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bookmark.fill")
+                                .font(.system(size: 10))
+                            Text("精选典藏")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                        }
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+                }
+
                 if !entry.title.isEmpty {
                     Text(entry.title)
                         .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
@@ -1445,18 +1632,42 @@ public struct StreamView: View {
                 }
 
                 ScrollView {
-                    Text(LocalizedStringKey(entry.content))
-                        .font(ArchiveTypography.bodySans(size: 14))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                        .lineSpacing(5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(LocalizedStringKey(entry.content))
+                            .font(ArchiveTypography.bodySans(size: 14))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                            .lineSpacing(5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+
+                        if !entry.attachments.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(entry.attachments) { att in
+                                        if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                            FilmFrameView(
+                                                imageURL: url,
+                                                caption: entry.title.isEmpty ? att.originalFilename : entry.title,
+                                                metaText: entry.parsedDate.dotDate,
+                                                maxHeight: 200
+                                            ) {
+                                                appState.lightboxAttachment = att
+                                                AudioFeedback.shared.playTink()
+                                            }
+                                            .frame(width: 240)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
                 }
-                .frame(minHeight: 160, maxHeight: 340)
+                .frame(minHeight: 160, maxHeight: 420)
             }
         }
         .padding(24)
-        .frame(width: 520)
+        .frame(width: 540)
         .background(ArchivePalette.archivePaper)
     }
 
@@ -2207,8 +2418,8 @@ public struct EditEntrySheetView: View {
 
             HStack {
                 Toggle("标记为精选印记", isOn: $editFeatured)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 12))
-                    .tint(ArchivePalette.accentWarm)
 
                 Spacer()
 

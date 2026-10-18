@@ -114,6 +114,36 @@ public final class QuickCaptureDraft {
     }
 }
 
+/// 全局纸本确认与警示对话框请求 (对标 Web useConfirm.ts / ConfirmDialog.vue)
+public struct ConfirmDialogRequest: Identifiable {
+    public let id = UUID()
+    public var title: String
+    public var message: String
+    public var confirmText: String
+    public var cancelText: String
+    public var danger: Bool
+    public var onConfirm: () -> Void
+    public var onCancel: (() -> Void)?
+
+    public init(
+        title: String = "请确认",
+        message: String,
+        confirmText: String = "确认",
+        cancelText: String = "取消",
+        danger: Bool = true,
+        onConfirm: @escaping () -> Void,
+        onCancel: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.message = message
+        self.confirmText = confirmText
+        self.cancelText = cancelText
+        self.danger = danger
+        self.onConfirm = onConfirm
+        self.onCancel = onCancel
+    }
+}
+
 /// 全局响应式状态中心 (@Observable)
 /// 遵循本地优先 (Local-First) 毫秒级上屏 + 后台异步增量同步架构
 @Observable
@@ -154,12 +184,40 @@ public final class AppState {
     public var newEntryInitialCityName: String? = nil
     public var showAlmanacSheet: Bool = false
     public var showStatsSheet: Bool = false
+    public var showSearchModal: Bool = false
     public var selectedCategory: ArchiveCategory = .all
     public var searchQuery: String = ""
     public var globalSearchResult: GlobalSearchResponse?
     public var isGlobalSearching: Bool = false
     public var highlightedEntry: LifeEntry?
     public var lightboxAttachment: Attachment?
+    public var activeConfirmDialog: ConfirmDialogRequest? = nil
+
+    /// 统一纸墨风格确认弹窗交互 (替代系统原生 confirmationDialog / alert)
+    public func askConfirm(
+        title: String = "请确认",
+        message: String,
+        confirmText: String = "确认",
+        cancelText: String = "取消",
+        danger: Bool = true,
+        onConfirm: @escaping () -> Void,
+        onCancel: (() -> Void)? = nil
+    ) {
+        activeConfirmDialog = ConfirmDialogRequest(
+            title: title,
+            message: message,
+            confirmText: confirmText,
+            cancelText: cancelText,
+            danger: danger,
+            onConfirm: onConfirm,
+            onCancel: onCancel
+        )
+    }
+
+    public func dismissConfirm() {
+        activeConfirmDialog?.onCancel?()
+        activeConfirmDialog = nil
+    }
 
     /// 键盘流（⌘↑ / ⌘↓）当前聚焦的时间流条目 ID
     public var keyboardFocusedEntryId: Int?

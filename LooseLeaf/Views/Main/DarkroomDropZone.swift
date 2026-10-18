@@ -380,7 +380,7 @@ public struct DarkroomDropZone: View {
             // 多图合并选项
             if items.count > 1 {
                 Toggle("将全部 \(items.count) 张底片合并归档入同一篇散页手记", isOn: $batchIntoSingleEntry)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 11.5))
                     .foregroundStyle(ArchivePalette.inkPrimary)
             }

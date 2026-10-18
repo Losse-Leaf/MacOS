@@ -19,14 +19,10 @@ public struct ProjectsWishesView: View {
     @State private var showNewWishSheet: Bool = false
     @State private var resolvingWish: Wish?
     @State private var editingWish: Wish?
-    @State private var wishToDelete: Wish?
-    @State private var showDeleteWishConfirm: Bool = false
 
     // 足迹票根与星野状态
     @State private var showNewFootprintSheet: Bool = false
     @State private var editingFootprint: Footprint?
-    @State private var footprintToDelete: Footprint?
-    @State private var showDeleteFootprintConfirm: Bool = false
     @State private var footprintViewMode: Int = 0 // 0: 典藏票根, 1: 经纬星野
     @State private var selectedDrawerCity: DrawerCitySelection?
     @State private var selectedDrawerProvince: DrawerProvinceSelection?
@@ -47,8 +43,6 @@ public struct ProjectsWishesView: View {
     // 造物项目状态
     @State private var showNewProjectSheet: Bool = false
     @State private var editingProject: Project?
-    @State private var projectToDelete: Project?
-    @State private var showDeleteProjectConfirm: Bool = false
 
     @State private var errorNotice: String?
 
@@ -180,48 +174,6 @@ public struct ProjectsWishesView: View {
                 showAlmanacSheet = false
             }
         }
-        .confirmationDialog(
-            "确认删除该项心愿印记？",
-            isPresented: $showDeleteWishConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除心愿", role: .destructive) {
-                if let target = wishToDelete {
-                    deleteWish(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将从向往风物清单中移除。")
-        }
-        .confirmationDialog(
-            "确认删除该座城市足迹票根？",
-            isPresented: $showDeleteFootprintConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除票根", role: .destructive) {
-                if let target = footprintToDelete {
-                    deleteFootprint(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将从行迹印信盒中移除。")
-        }
-        .confirmationDialog(
-            "确认删除该项手艺造物项目？",
-            isPresented: $showDeleteProjectConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除项目", role: .destructive) {
-                if let target = projectToDelete {
-                    deleteProject(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将从造物货架中移除。")
-        }
     }
 
     // MARK: - 1. 三维心愿单展厅
@@ -258,8 +210,14 @@ public struct ProjectsWishesView: View {
                                 editingWish = wish
                             },
                             onDelete: {
-                                wishToDelete = wish
-                                showDeleteWishConfirm = true
+                                appState.askConfirm(
+                                    title: "确认删除该项心愿印记？",
+                                    message: "删除后将从向往风物清单中移除。",
+                                    confirmText: "删除心愿",
+                                    danger: true
+                                ) {
+                                    deleteWish(wish)
+                                }
                             }
                         )
                     }
@@ -349,8 +307,14 @@ public struct ProjectsWishesView: View {
                                     .buttonStyle(.plain)
 
                                     Button {
-                                        footprintToDelete = fp
-                                        showDeleteFootprintConfirm = true
+                                        appState.askConfirm(
+                                            title: "确认删除该座城市足迹票根？",
+                                            message: "删除后将从行迹印信盒中移除。",
+                                            confirmText: "删除票根",
+                                            danger: true
+                                        ) {
+                                            deleteFootprint(fp)
+                                        }
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.system(size: 10.5))
@@ -446,8 +410,14 @@ public struct ProjectsWishesView: View {
                                 editingProject = proj
                             },
                             onDelete: {
-                                projectToDelete = proj
-                                showDeleteProjectConfirm = true
+                                appState.askConfirm(
+                                    title: "确认删除该项手艺造物项目？",
+                                    message: "删除后将从造物货架中移除。",
+                                    confirmText: "删除项目",
+                                    danger: true
+                                ) {
+                                    deleteProject(proj)
+                                }
                             }
                         )
                     }
@@ -1204,23 +1174,23 @@ public struct ResolveWishSheet: View {
             // 联动联动伴生复选
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 12))
 
                 if wish.kind == "item" {
                     Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.paperCheckbox)
                         .font(ArchiveTypography.bodySans(size: 12))
                 }
 
                 if wish.kind == "travel" {
                     Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.paperCheckbox)
                         .font(ArchiveTypography.bodySans(size: 12))
                 }
 
                 Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 12))
             }
 

@@ -9,8 +9,6 @@ public struct CuratorDossierView: View {
     @State private var showEditProfileSheet: Bool = false
     @State private var showAddGearSheet: Bool = false
     @State private var sellingGear: GearItem?
-    @State private var gearToDelete: GearItem?
-    @State private var showDeleteGearConfirm: Bool = false
     @State private var dossierError: String?
     @State private var editName: String = ""
     @State private var editTitle: String = ""
@@ -354,8 +352,14 @@ public struct CuratorDossierView: View {
                                         }
 
                                         Button {
-                                            gearToDelete = gear
-                                            showDeleteGearConfirm = true
+                                            appState.askConfirm(
+                                                title: "确认删除该件随身器材资产？",
+                                                message: "删除后该项设备将从固资货架中移除。",
+                                                confirmText: "删除器材",
+                                                danger: true
+                                            ) {
+                                                deleteGear(gear)
+                                            }
                                         } label: {
                                             Image(systemName: "trash")
                                                 .font(.system(size: 10.5))
@@ -401,21 +405,6 @@ public struct CuratorDossierView: View {
             AnnualAlmanacSheet {
                 appState.showAlmanacSheet = false
             }
-        }
-
-        .confirmationDialog(
-            "确认删除该件随身器材资产？",
-            isPresented: $showDeleteGearConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除器材", role: .destructive) {
-                if let target = gearToDelete {
-                    deleteGear(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后该项设备将从固资货架中移除。")
         }
     }
 

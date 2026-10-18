@@ -53,6 +53,18 @@ public struct LooseLeafApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
+                Button("记一笔…") {
+                    appState.showNewEntrySheet = true
+                    AudioFeedback.shared.playTink()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+
+                Button("全局搜索档案…") {
+                    appState.showSearchModal = true
+                    AudioFeedback.shared.playTink()
+                }
+                .keyboardShortcut("k", modifiers: [.command])
+
                 Button("呼出极速闪念与记账悬浮窗") {
                     appDelegate.toggleQuickCapturePanel()
                 }
@@ -62,15 +74,22 @@ public struct LooseLeafApp: App {
             CommandMenu("活页工作台") {
                 ForEach(Array(WorkbenchSection.sidebarSections.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
-                        var transaction = SwiftUI.Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
+                        guard appState.activeSection != section else { return }
+                        withAnimation(.easeInOut(duration: 0.12)) {
                             appState.activeSection = section
                         }
-                        AudioFeedback.shared.playPaperFlip()
+                        AudioFeedback.shared.playTink()
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
                 }
+
+                Divider()
+
+                Button("生活刻度统计…") {
+                    appState.showStatsSheet = true
+                    AudioFeedback.shared.playTink()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
 
                 Divider()
 

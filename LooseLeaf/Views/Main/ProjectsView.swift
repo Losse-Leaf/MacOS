@@ -15,8 +15,6 @@ public struct ProjectsView: View {
 
     @State private var showNewProjectSheet: Bool = false
     @State private var editingProject: Project?
-    @State private var projectToDelete: Project?
-    @State private var showDeleteConfirm: Bool = false
     @State private var errorMessage: String?
 
     public init(appState: AppState) {
@@ -80,20 +78,6 @@ public struct ProjectsView: View {
                 editingProject = nil
             }
         }
-        .confirmationDialog(
-            "确认删除该造物项目？",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("删除项目", role: .destructive) {
-                if let target = projectToDelete {
-                    deleteProject(target)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后将移除该项目档案，关联的历史进展散页不会被删除。")
-        }
     }
 
     // MARK: - 1. 标头
@@ -118,7 +102,7 @@ public struct ProjectsView: View {
 
             Button {
                 showNewProjectSheet = true
-                AudioFeedback.shared.playPaperFlip()
+                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "hammer")
@@ -176,8 +160,14 @@ public struct ProjectsView: View {
                             editingProject = proj
                         },
                         onDelete: {
-                            projectToDelete = proj
-                            showDeleteConfirm = true
+                            appState.askConfirm(
+                                title: "确认删除该造物项目？",
+                                message: "删除后将移除该项目档案，关联的历史进展散页不会被删除。",
+                                confirmText: "删除项目",
+                                danger: true
+                            ) {
+                                deleteProject(proj)
+                            }
                         }
                     )
 

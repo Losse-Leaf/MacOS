@@ -91,6 +91,9 @@ public struct NewEntryModal: View {
     // 心愿专有
     @State private var wishKind: String = "item" // item, travel, milestone
     @State private var wishBudgetYuan: String = ""
+    @State private var wishSpec: String = ""
+    @State private var wishCityCode: String = ""
+    @State private var wishCityName: String = ""
     @State private var wishTargetDate: Date = Date()
 
     // 账目专有
@@ -98,6 +101,7 @@ public struct NewEntryModal: View {
     @State private var txAmountYuan: String = ""
     @State private var txCategory: String = "餐饮"
     @State private var txPaymentMethod: String = "微信支付"
+    @State private var selectedWishId: Int?
     @State private var isInstallment: Bool = false
     @State private var installmentChannel: String = "huabei"
     @State private var installmentMonths: Int = 12
@@ -306,28 +310,16 @@ public struct NewEntryModal: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            TextEditor(text: $content)
+            TextField("记下这一刻的思绪、见闻或生活琐记…", text: $content, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: 13))
-                .lineSpacing(4)
-                .frame(minHeight: 120)
-                .padding(8)
+                .lineLimit(5...10)
+                .padding(10)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    Group {
-                        if content.isEmpty {
-                            Text("记下这一刻的思绪、见闻或生活琐记…")
-                                .font(ArchiveTypography.bodySans(size: 13))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(12)
-                                .allowsHitTesting(false)
-                        }
-                    },
-                    alignment: .topLeading
-                )
 
             HStack(spacing: 12) {
-                PaperDatePicker(selection: $occurredAt, label: "发生时刻")
+                PaperDatePicker(selection: $occurredAt, enableTime: true, label: "发生时刻")
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
                 Toggle("精选散页", isOn: $isFeatured)
                     .toggleStyle(.checkbox)
@@ -345,19 +337,16 @@ public struct NewEntryModal: View {
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
 
                 if !appState.footprints.isEmpty {
-                    Picker("关联既有足迹票根", selection: $selectedFootprintId) {
-                        Text("新建独立漫游").tag(nil as Int?)
-                        ForEach(appState.footprints) { fp in
-                            Text("\(fp.cityName) · \(fp.title ?? "行旅")").tag(fp.id as Int?)
-                        }
+                    let fpOptions: [PaperSelectOption<Int?>] = [PaperSelectOption(value: nil, label: "新建独立漫游")] + appState.footprints.map { fp in
+                        PaperSelectOption(value: fp.id, label: "\(fp.cityName) · \(fp.title ?? "行旅")")
                     }
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    PaperSelect(selection: $selectedFootprintId, options: fpOptions, label: "关联足迹")
                 }
             }
 
             HStack(spacing: 12) {
-                PaperDatePicker(selection: $occurredAt, label: "启程/抵达时刻")
-                PaperDatePicker(selection: $departedAt, label: "离开时刻")
+                PaperDatePicker(selection: $occurredAt, enableTime: true, label: "启程/抵达时刻")
+                PaperDatePicker(selection: $departedAt, enableTime: true, label: "离开时刻")
             }
 
             TextField("旅途标题（例：西湖暮色寻茶记）", text: $title)
@@ -367,11 +356,11 @@ public struct NewEntryModal: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            TextEditor(text: $content)
+            TextField("记下旅途行迹、见闻感受与山川光影…", text: $content, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: 13))
-                .lineSpacing(4)
-                .frame(minHeight: 120)
-                .padding(8)
+                .lineLimit(5...10)
+                .padding(10)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
@@ -382,11 +371,13 @@ public struct NewEntryModal: View {
     // MARK: - 3. 造物表单
     private var projectFormView: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("造物形态", selection: $projectMode) {
-                Text("追加进展手记").tag("entry")
-                Text("立项新造物").tag("new")
-            }
-            .pickerStyle(.segmented)
+            PaperSegmentedControl(
+                selection: $projectMode,
+                items: [
+                    PaperSegmentItem("entry", title: "追加进展手记", icon: "pencil.line"),
+                    PaperSegmentItem("new", title: "立项新造物", icon: "plus.circle")
+                ]
+            )
 
             if projectMode == "new" {
                 TextField("造物项目名称（例：Loose-Leaf macOS 客户端）", text: $newProjectTitle)
@@ -397,18 +388,14 @@ public struct NewEntryModal: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 HStack(spacing: 12) {
-                    Picker("项目类别", selection: $newProjectCategory) {
-                        ForEach(appState.projectCategories, id: \.self) { cat in
-                            Text(cat).tag(cat)
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    let catOptions = appState.projectCategories.map { PaperSelectOption(value: $0, label: $0) }
+                    PaperSelect(selection: $newProjectCategory, options: catOptions, label: "项目类别")
 
-                    Picker("当前状态", selection: $newProjectStatus) {
-                        Text("进行中 (Active)").tag("Active")
-                        Text("已完结 (Archived)").tag("Archived")
-                    }
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    let statusOptions = [
+                        PaperSelectOption(value: "Active", label: "进行中 (Active)"),
+                        PaperSelectOption(value: "Archived", label: "已完结 (Archived)")
+                    ]
+                    PaperSelect(selection: $newProjectStatus, options: statusOptions, label: "当前状态")
                 }
 
                 TextField("一句话副标（例：轻量原生架构）", text: $newProjectSubtitle)
@@ -425,36 +412,23 @@ public struct NewEntryModal: View {
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                TextEditor(text: $newProjectDesc)
+                TextField("项目简介与核心设计思想…", text: $newProjectDesc, axis: .vertical)
+                    .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 12.5))
-                    .frame(height: 80)
+                    .lineLimit(3...6)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        Group {
-                            if newProjectDesc.isEmpty {
-                                Text("项目简介与核心设计思想…")
-                                    .font(ArchiveTypography.bodySans(size: 12))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .padding(12)
-                                    .allowsHitTesting(false)
-                            }
-                        },
-                        alignment: .topLeading
-                    )
             } else {
                 if appState.projects.isEmpty {
                     Text("当前尚无进行中的造物项目，请切换至「立项新造物」完成初始立项。")
                         .font(ArchiveTypography.bodySans(size: 12))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 } else {
-                    Picker("选择归属项目", selection: $selectedProjectId) {
-                        ForEach(appState.projects) { proj in
-                            Text("\(proj.title) (\(proj.category ?? "未分类"))").tag(proj.id as Int?)
-                        }
+                    let projOptions: [PaperSelectOption<Int?>] = appState.projects.map { proj in
+                        PaperSelectOption(value: proj.id as Int?, label: proj.title, sublabel: proj.category ?? "未分类")
                     }
-                    .font(ArchiveTypography.bodySans(size: 12.5))
+                    PaperSelect(selection: $selectedProjectId, options: projOptions, placeholder: "选择归属造物项目…", label: "归属造物")
 
                     TextField("手记主题（例：完成 1:1 架构对齐）", text: $title)
                         .textFieldStyle(.plain)
@@ -463,16 +437,16 @@ public struct NewEntryModal: View {
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                    TextEditor(text: $content)
+                    TextField("记录造物阶段性进展与攻坚思考…", text: $content, axis: .vertical)
+                        .textFieldStyle(.plain)
                         .font(ArchiveTypography.bodySans(size: 13))
-                        .lineSpacing(4)
-                        .frame(minHeight: 120)
-                        .padding(8)
+                        .lineLimit(5...10)
+                        .padding(10)
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
 
                     HStack(spacing: 12) {
-                        PaperDatePicker(selection: $occurredAt, label: "进展时刻")
+                        PaperDatePicker(selection: $occurredAt, enableTime: true, label: "进展时刻")
                         PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
                     }
 
@@ -485,19 +459,36 @@ public struct NewEntryModal: View {
     // MARK: - 4. 心愿表单
     private var wishFormView: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Picker("心愿维度", selection: $wishKind) {
-                Text("好物器物").tag("item")
-                Text("行旅探索").tag("travel")
-                Text("阶段里程碑").tag("milestone")
-            }
-            .pickerStyle(.segmented)
+            PaperSegmentedControl(
+                selection: $wishKind,
+                items: [
+                    PaperSegmentItem("item", title: "好物器物", icon: "bag"),
+                    PaperSegmentItem("travel", title: "行旅探索", icon: "airplane"),
+                    PaperSegmentItem("milestone", title: "阶段里程碑", icon: "flag.checkered")
+                ]
+            )
 
-            TextField("心愿名称（例：Leica M11 银色旁轴相机）", text: $title)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
-                .padding(10)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            TextField(
+                wishKind == "travel" ? "旅程目的地或漫游愿景（例：京都秋日赏枫 / 环勃朗峰徒步）" :
+                (wishKind == "milestone" ? "里程碑名称（例：跑完人生第一场半马 / 独立发布首个产品）" : "心愿好物名称（例：Leica M11 银色旁轴相机）"),
+                text: $title
+            )
+            .textFieldStyle(.plain)
+            .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
+            .padding(10)
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if wishKind == "item" {
+                TextField("规格型号或意向（例：黑色银顶 / 35mm F1.4 / 国行现货）", text: $wishSpec)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 12.5))
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else if wishKind == "travel" {
+                PaperCityPicker(selectedCode: $wishCityCode, selectedName: $wishCityName, placeholder: "点选目的地省市…")
+            }
 
             HStack(spacing: 12) {
                 HStack(spacing: 4) {
@@ -515,25 +506,13 @@ public struct NewEntryModal: View {
                 PaperDatePicker(selection: $wishTargetDate, label: "期望达成时期")
             }
 
-            TextEditor(text: $content)
+            TextField("为何心向往之？记下这份期冀背后的缘由、契机与初心…", text: $content, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: 13))
-                .lineSpacing(4)
-                .frame(minHeight: 100)
-                .padding(8)
+                .lineLimit(4...7)
+                .padding(10)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    Group {
-                        if content.isEmpty {
-                            Text("为何心向往之？记下这份期冀背后的缘由与契机…")
-                                .font(ArchiveTypography.bodySans(size: 12.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(12)
-                                .allowsHitTesting(false)
-                        }
-                    },
-                    alignment: .topLeading
-                )
 
             mediaAttachmentsSection
         }
@@ -543,12 +522,14 @@ public struct NewEntryModal: View {
     private var transactionFormView: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Picker("类型", selection: $txType) {
-                    Text("支出").tag("expense")
-                    Text("收入").tag("income")
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 140)
+                PaperSegmentedControl(
+                    selection: $txType,
+                    items: [
+                        PaperSegmentItem("expense", title: "支出", icon: "arrow.down.forward"),
+                        PaperSegmentItem("income", title: "收入", icon: "arrow.up.forward")
+                    ]
+                )
+                .frame(width: 160)
 
                 HStack(spacing: 4) {
                     Text("金额：¥")
@@ -564,22 +545,31 @@ public struct NewEntryModal: View {
             }
 
             HStack(spacing: 12) {
-                Picker("分类", selection: $txCategory) {
-                    let cats = txType == "income" ? appState.incomeCategories : appState.expenseCategories
-                    ForEach(cats, id: \.self) { c in
-                        Text(c).tag(c)
-                    }
-                }
-                .font(ArchiveTypography.bodySans(size: 12))
+                let cats = txType == "income" ? appState.incomeCategories : appState.expenseCategories
+                let catOptions = cats.map { PaperSelectOption(value: $0, label: $0) }
+                PaperSelect(selection: $txCategory, options: catOptions, label: "分类")
 
-                Picker("支付方式", selection: $txPaymentMethod) {
-                    ForEach(appState.paymentMethods, id: \.self) { p in
-                        Text(p).tag(p)
-                    }
-                }
-                .font(ArchiveTypography.bodySans(size: 12))
+                let payOptions = appState.paymentMethods.map { PaperSelectOption(value: $0, label: $0) }
+                PaperSelect(selection: $txPaymentMethod, options: payOptions, label: "支付方式")
 
-                PaperDatePicker(selection: $occurredAt, label: "发生时间")
+                PaperDatePicker(selection: $occurredAt, enableTime: true, label: "发生时间")
+            }
+
+            // 关联心愿或足迹票根 (选填)
+            HStack(spacing: 12) {
+                if !appState.wishes.isEmpty {
+                    let wishOptions: [PaperSelectOption<Int?>] = [PaperSelectOption(value: nil, label: "不关联心愿")] + appState.wishes.map { w in
+                        PaperSelectOption(value: w.id as Int?, label: w.title, badge: w.status == "fulfilled" ? "已圆满" : nil)
+                    }
+                    PaperSelect(selection: $selectedWishId, options: wishOptions, label: "圆满心愿")
+                }
+
+                if !appState.footprints.isEmpty {
+                    let fpOptions: [PaperSelectOption<Int?>] = [PaperSelectOption(value: nil, label: "不关联足迹")] + appState.footprints.map { f in
+                        PaperSelectOption(value: f.id as Int?, label: "\(f.cityName) · \(f.title ?? "行旅")")
+                    }
+                    PaperSelect(selection: $selectedFootprintId, options: fpOptions, label: "旅途花销")
+                }
             }
 
             TextField("备注（例：工作日咖啡与烘焙）", text: $content)
@@ -602,20 +592,11 @@ public struct NewEntryModal: View {
 
             if isInstallment {
                 HStack(spacing: 12) {
-                    Picker("渠道", selection: $installmentChannel) {
-                        ForEach(appState.creditChannels) { ch in
-                            Text(ch.name).tag(ch.code)
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    let channelOptions = appState.creditChannels.map { PaperSelectOption(value: $0.code, label: $0.name) }
+                    PaperSelect(selection: $installmentChannel, options: channelOptions, label: "渠道")
 
-                    Picker("期数", selection: $installmentMonths) {
-                        Text("3 期").tag(3)
-                        Text("6 期").tag(6)
-                        Text("12 期").tag(12)
-                        Text("24 期").tag(24)
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    let monthOptions = [3, 6, 12, 24].map { PaperSelectOption(value: $0, label: "\($0) 期") }
+                    PaperSelect(selection: $installmentMonths, options: monthOptions, label: "期数")
                 }
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle.opacity(0.6))
@@ -624,12 +605,8 @@ public struct NewEntryModal: View {
 
             if syncToGear {
                 HStack(spacing: 12) {
-                    Picker("固资分类", selection: $gearCategory) {
-                        ForEach(appState.gearCategories, id: \.self) { g in
-                            Text(g).tag(g)
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    let gearCatOptions = appState.gearCategories.map { PaperSelectOption(value: $0, label: $0) }
+                    PaperSelect(selection: $gearCategory, options: gearCatOptions, label: "固资分类")
 
                     TextField("规格参数（例：M3 Max / 64G）", text: $gearSpec)
                         .textFieldStyle(.plain)
@@ -836,13 +813,17 @@ public struct NewEntryModal: View {
             throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "心愿名称不能为空"])
         }
         let budgetCents = FormatUtils.parseYuanToCents(wishBudgetYuan) ?? 0
+        let finalSpec = wishKind == "item" ? (wishSpec.isEmpty ? nil : wishSpec) : nil
+        let finalCityCode = wishKind == "travel" ? (wishCityCode.isEmpty ? nil : wishCityCode) : nil
+        let finalCityName = wishKind == "travel" ? (wishCityName.isEmpty ? nil : wishCityName) : nil
+
         let req = CreateWishRequest(
-            title: title,
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             kind: wishKind,
             note: content.isEmpty ? nil : content,
-            spec: nil,
-            cityCode: cityCode.isEmpty ? nil : cityCode,
-            cityName: cityName.isEmpty ? nil : cityName,
+            spec: finalSpec,
+            cityCode: finalCityCode,
+            cityName: finalCityName,
             budget: budgetCents,
             targetDate: FormatUtils.beijingDateString(from: wishTargetDate),
             attachmentIds: attachments.map(\.id)
@@ -854,6 +835,9 @@ public struct NewEntryModal: View {
         guard let cents = FormatUtils.parseYuanToCents(txAmountYuan), cents > 0 else {
             throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "请输入有效金额"])
         }
+        let isExp = txType == "expense"
+        let installmentPay: Int64? = (isExp && isInstallment && installmentMonths > 0) ? (cents / Int64(installmentMonths)) : nil
+
         let req = CreateTransactionRequest(
             amount: cents,
             type: txType,
@@ -861,11 +845,20 @@ public struct NewEntryModal: View {
             title: content.isEmpty ? txCategory : content,
             note: content.isEmpty ? nil : content,
             paymentMethod: txPaymentMethod,
-            wishId: nil,
-            footprintId: nil,
+            wishId: selectedWishId,
+            footprintId: selectedFootprintId,
             cityCode: cityCode.isEmpty ? nil : cityCode,
             occurredAt: FormatUtils.beijingISOString(from: occurredAt),
-            isInstallment: isInstallment
+            isInstallment: isExp && isInstallment,
+            installmentChannelCode: (isExp && isInstallment) ? installmentChannel : nil,
+            installmentTotalAmount: (isExp && isInstallment) ? cents : nil,
+            installmentMonths: (isExp && isInstallment) ? installmentMonths : nil,
+            installmentMonthlyPay: installmentPay,
+            installmentRemainMonths: (isExp && isInstallment) ? installmentMonths : nil,
+            repaymentDay: (isExp && isInstallment) ? customRepaymentDay : nil,
+            linkGearAsset: isExp && syncToGear,
+            gearCategory: (isExp && syncToGear) ? gearCategory : nil,
+            gearSpec: (isExp && syncToGear) ? (gearSpec.isEmpty ? nil : gearSpec) : nil
         )
         _ = try await APIClient.shared.createTransaction(req)
     }

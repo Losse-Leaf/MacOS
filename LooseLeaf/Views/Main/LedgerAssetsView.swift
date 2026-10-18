@@ -317,7 +317,7 @@ public struct LedgerAssetsView: View {
                     .accessibilityLabel("上一月")
                     .help("查看上一月收支")
 
-                    Text("\(sum.year) 年 \(sum.month) 月 · 收支类目光谱")
+                    Text(verbatim: "\(sum.year) 年 \(sum.month) 月 · 收支类目光谱")
                         .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
@@ -568,21 +568,11 @@ public struct LedgerAssetsView: View {
                     // 固资扩展信息
                     if formLinkGear {
                         HStack(spacing: 8) {
-                            HStack(spacing: 6) {
-                                Text("固资分类：")
-                                    .font(ArchiveTypography.bodySans(size: 11.5))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                Picker("", selection: $formGearCategory) {
-                                    ForEach(appState.gearCategories, id: \.self) { cat in
-                                        Text(cat).tag(cat)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                            }
-                            .padding(.horizontal, 6)
-                            .frame(height: 28)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            PaperSelect(
+                                selection: $formGearCategory,
+                                options: appState.gearCategories.map { PaperSelectOption(value: $0, label: $0) },
+                                label: "固资分类："
+                            )
 
                             TextField("规格参数", text: $formGearSpec)
                                 .textFieldStyle(.plain)
@@ -644,18 +634,11 @@ public struct LedgerAssetsView: View {
                                     .frame(height: 16)
                                     .overlay(ArchivePalette.borderSubtle)
 
-                                HStack(spacing: 6) {
-                                    Text("每月还款日：")
-                                        .font(ArchiveTypography.bodySans(size: 11.5))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                    Picker("", selection: $formRepaymentDay) {
-                                        ForEach(1...31, id: \.self) { day in
-                                            Text("每月 \(day) 日").tag(day)
-                                        }
-                                    }
-                                    .labelsHidden()
-                                    .frame(width: 95)
-                                }
+                                PaperSelect(
+                                    selection: $formRepaymentDay,
+                                    options: (1...31).map { PaperSelectOption(value: $0, label: "每月 \($0) 日") },
+                                    label: "每月还款日："
+                                )
 
                                 Spacer()
 
@@ -1393,21 +1376,11 @@ public struct AddGearSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Text("器物分类：")
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Picker("", selection: $category) {
-                        ForEach(appState.gearCategories, id: \.self) { cat in
-                            Text(cat).tag(cat)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-                .padding(.horizontal, 8)
-                .frame(height: 32)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                PaperSelect(
+                    selection: $category,
+                    options: appState.gearCategories.map { PaperSelectOption(value: $0, label: $0) },
+                    label: "器物分类："
+                )
 
                 HStack(spacing: 4) {
                     Text("¥")
@@ -1627,13 +1600,11 @@ public struct CreditChannelsManagerSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 4))
                                     .frame(width: 120)
 
-                                Picker("还款日", selection: $editRepaymentDay) {
-                                    ForEach(1...31, id: \.self) { day in
-                                        Text("每月 \(day) 日").tag(day)
-                                    }
-                                }
-                                .labelsHidden()
-                                .frame(width: 95)
+                                PaperSelect(
+                                    selection: $editRepaymentDay,
+                                    options: (1...31).map { PaperSelectOption(value: $0, label: "每月 \($0) 日") },
+                                    label: "还款日："
+                                )
 
                                 Spacer()
 
@@ -1734,13 +1705,11 @@ public struct CreditChannelsManagerSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                         .frame(width: 110)
 
-                    Picker("", selection: $newRepaymentDay) {
-                        ForEach(1...31, id: \.self) { day in
-                            Text("每月 \(day) 日").tag(day)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 95)
+                    PaperSelect(
+                        selection: $newRepaymentDay,
+                        options: (1...31).map { PaperSelectOption(value: $0, label: "每月 \($0) 日") },
+                        label: "还款日："
+                    )
 
                     Button("添加渠道") {
                         createChannel()

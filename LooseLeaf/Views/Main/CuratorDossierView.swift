@@ -23,6 +23,7 @@ public struct CuratorDossierView: View {
     @State private var isUploadingAvatar: Bool = false
     @State private var avatarPreviewImage: NSImage?
     @State private var selectedGearCategory: String = "all"
+    @State private var selectedHeatmapDate: String? = nil
 
     public init(appState: AppState) {
         self.appState = appState
@@ -157,8 +158,92 @@ public struct CuratorDossierView: View {
                     LifeActivityHeatmapView(
                         entryCounts: appState.entryCountsByDate,
                         totalCount: appState.entries.count,
-                        weeksCount: 52
+                        weeksCount: 52,
+                        selectedDate: $selectedHeatmapDate
                     )
+
+                    // 点击具体日期后展开当日手记速览抽屉 (严格 1:1 对标 Web 端 AboutView.vue)
+                    if let dateKey = selectedHeatmapDate {
+                        let selectedDateEntries = appState.entries.filter {
+                            FormatUtils.parseOccurredDate($0.occurredAt).dateKey == dateKey
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Divider().overlay(ArchivePalette.borderSubtle)
+
+                            HStack {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                    Text("\(dateKey) 当日记录 (\(selectedDateEntries.count) 条)")
+                                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    selectedHeatmapDate = nil
+                                    AudioFeedback.shared.playTink()
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 9, weight: .bold))
+                                        Text("关闭速览")
+                                            .font(ArchiveTypography.bodySans(size: 11))
+                                    }
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            if selectedDateEntries.isEmpty {
+                                Text("该日未留下公开或私密手记。")
+                                    .font(ArchiveTypography.editorialSerif(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .padding(.vertical, 6)
+                            } else {
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                    ForEach(selectedDateEntries) { item in
+                                        Button {
+                                            appState.highlightedEntry = item
+                                            AudioFeedback.shared.playPaperFlip()
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                HStack {
+                                                    Text(item.title.isEmpty ? "无题散页" : item.title)
+                                                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                                        .lineLimit(1)
+                                                    Spacer()
+                                                    Text(FormatUtils.parseOccurredDate(item.occurredAt).time)
+                                                        .font(ArchiveTypography.monoScale(size: 10))
+                                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                                }
+
+                                                if !item.content.isEmpty {
+                                                    Text(item.content)
+                                                        .font(ArchiveTypography.bodySans(size: 11))
+                                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+                                            .padding(10)
+                                            .background(ArchivePalette.archivePaper)
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
                 }
                 .padding(18)
                 .background(ArchivePalette.archiveSubtle)

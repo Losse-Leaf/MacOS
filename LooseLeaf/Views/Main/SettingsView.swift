@@ -1149,17 +1149,15 @@ public struct SettingsView: View {
                                 .font(ArchiveTypography.bodySans(size: 11))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
 
-                            Picker("", selection: $storagePresignSeconds) {
-                                Text("15 分钟 (高安全)").tag(900)
-                                Text("30 分钟 (推荐)").tag(1800)
-                                Text("1 小时").tag(3600)
-                                Text("6 小时").tag(21600)
-                                Text("24 小时").tag(86400)
-                                Text("7 天 (最长上限)").tag(604800)
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .padding(.vertical, 2)
+                            let presignOptions: [PaperSelectOption<Int>] = [
+                                PaperSelectOption(value: 900, label: "15 分钟 (高安全)"),
+                                PaperSelectOption(value: 1800, label: "30 分钟 (推荐)"),
+                                PaperSelectOption(value: 3600, label: "1 小时"),
+                                PaperSelectOption(value: 21600, label: "6 小时"),
+                                PaperSelectOption(value: 86400, label: "24 小时"),
+                                PaperSelectOption(value: 604800, label: "7 天 (最长上限)")
+                            ]
+                            PaperSelect(selection: $storagePresignSeconds, options: presignOptions)
                         }
                     }
                 }
@@ -1521,7 +1519,7 @@ public struct SettingsView: View {
                 Text("Loose-Leaf · 活页集")
                     .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("版本 1.5.0 (Build 15) · 原生 Apple Silicon")
+                Text("版本 1.5.1 (Build 16) · 原生 Apple Silicon")
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }

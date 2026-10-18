@@ -33,6 +33,7 @@ public struct LifeActivityHeatmapView: View {
     public let entryCounts: [String: Int]
     public let totalCount: Int
     public var weeksCount: Int
+    @Binding public var selectedDate: String?
 
     private struct DayCell: Identifiable {
         let id: String
@@ -42,10 +43,16 @@ public struct LifeActivityHeatmapView: View {
 
     private let precomputedWeeks: [[DayCell]]
 
-    public init(entryCounts: [String: Int], totalCount: Int, weeksCount: Int = 52) {
+    public init(
+        entryCounts: [String: Int],
+        totalCount: Int,
+        weeksCount: Int = 52,
+        selectedDate: Binding<String?> = .constant(nil)
+    ) {
         self.entryCounts = entryCounts
         self.totalCount = totalCount
         self.weeksCount = weeksCount
+        self._selectedDate = selectedDate
 
         let cal = FormatUtils.beijingCalendar
         let today = cal.startOfDay(for: Date())
@@ -126,14 +133,25 @@ public struct LifeActivityHeatmapView: View {
                                 VStack(spacing: 3) {
                                     ForEach(precomputedWeeks[weekIdx]) { cell in
                                         let count = entryCounts[cell.dateKey, default: 0]
-                                        RoundedRectangle(cornerRadius: 1.5)
-                                            .fill(cellColor(for: count))
-                                            .frame(width: 9, height: 9)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 1.5)
-                                                    .stroke(cell.isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
-                                            )
-                                            .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇手稿留痕")
+                                        let isSelected = selectedDate == cell.dateKey
+                                        Button {
+                                            if selectedDate == cell.dateKey {
+                                                selectedDate = nil
+                                            } else {
+                                                selectedDate = cell.dateKey
+                                            }
+                                            AudioFeedback.shared.playTink()
+                                        } label: {
+                                            RoundedRectangle(cornerRadius: 1.5)
+                                                .fill(cellColor(for: count))
+                                                .frame(width: 9, height: 9)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 1.5)
+                                                        .stroke(isSelected ? ArchivePalette.accentWarm : (cell.isToday ? ArchivePalette.accentWarm.opacity(0.7) : Color.clear), lineWidth: isSelected ? 1.5 : 1)
+                                                )
+                                                .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇手稿留痕")
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
                             }
@@ -278,17 +296,21 @@ public struct PaperPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// 散页古典纸墨风独立日期选择器 (PaperDatePicker)
-/// 严格杜绝 Emoji，采用 SF Symbols 矢量图标与纸墨主题月历，支持快捷时空锚点与整月网格点选
+/// 散页古典纸墨风独立日期与时刻选择器 (PaperDatePicker)
+/// 严格杜绝 Emoji 与系统原生 Aqua 控件，采用 SF Symbols 矢量图标与纸墨主题月历
+/// 支持双级翻页 (<< < YYYY年MM月 > >>，Text(verbatim:) 根绝 2,026 分节逗号)
+/// 支持一体化时刻微调刻度 (enableTime: 晨/午/暮/夜 预设与时分步进)
 public struct PaperDatePicker: View {
     @Binding public var selection: Date
+    public var enableTime: Bool
     public var label: String?
 
     @State private var isPopoverPresented: Bool = false
     @State private var displayMonthDate: Date = Date()
 
-    public init(selection: Binding<Date>, label: String? = nil) {
+    public init(selection: Binding<Date>, enableTime: Bool = false, label: String? = nil) {
         self._selection = selection
+        self.enableTime = enableTime
         self.label = label
     }
 
@@ -303,18 +325,26 @@ public struct PaperDatePicker: View {
     }
 
     private var dateLabelText: String {
-        let comps = cal.dateComponents([.year, .month, .day], from: selection)
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: selection)
         let y = comps.year ?? 2026
         let m = comps.month ?? 1
         let d = comps.day ?? 1
+        let hh = String(format: "%02d", comps.hour ?? 0)
+        let mm = String(format: "%02d", comps.minute ?? 0)
 
+        let baseDate: String
         if isToday {
-            return "\(m)月\(d)日 · 今天"
+            baseDate = "\(m)月\(d)日 · 今天"
         } else if isYesterday {
-            return "\(m)月\(d)日 · 昨天"
+            baseDate = "\(m)月\(d)日 · 昨天"
         } else {
-            return "\(y).\(String(format: "%02d", m)).\(String(format: "%02d", d))"
+            baseDate = "\(y).\(String(format: "%02d", m)).\(String(format: "%02d", d))"
         }
+
+        if enableTime {
+            return "\(baseDate) \(hh):\(mm)"
+        }
+        return baseDate
     }
 
     public var body: some View {
@@ -331,7 +361,7 @@ public struct PaperDatePicker: View {
                 AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "calendar")
+                    Image(systemName: enableTime ? "clock" : "calendar")
                         .font(.system(size: 11))
                         .foregroundStyle(isToday ? ArchivePalette.inkSecondary : ArchivePalette.accentWarm)
 
@@ -365,7 +395,7 @@ public struct PaperDatePicker: View {
         VStack(alignment: .leading, spacing: 12) {
             // 顶部快捷时空锚点
             HStack(spacing: 6) {
-                shortcutDatePill("今天") {
+                shortcutDatePill(enableTime ? "此刻" : "今天") {
                     updateSelectionDate(to: Date())
                 }
                 shortcutDatePill("昨天") {
@@ -379,14 +409,14 @@ public struct PaperDatePicker: View {
                     }
                 }
                 Spacer()
-                Text("纸本历法")
+                Text(enableTime ? "纸本历法与时刻" : "纸本历法")
                     .font(ArchiveTypography.editorialSerif(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 年月双级翻页栏 (<< < YYYY年MM月 > >>，对齐 PaperDatePicker.vue)
+            // 年月双级翻页栏 (<< < YYYY年MM月 > >>，Text(verbatim:) 根绝 2,026 逗号 Bug)
             HStack(spacing: 3) {
                 Button {
                     if let prevYear = cal.date(byAdding: .year, value: -1, to: displayMonthDate) {
@@ -419,7 +449,7 @@ public struct PaperDatePicker: View {
                 Spacer()
 
                 let comps = cal.dateComponents([.year, .month], from: displayMonthDate)
-                Text("\(comps.year ?? 2026) 年 \(String(format: "%02d", comps.month ?? 1)) 月")
+                Text(verbatim: "\(comps.year ?? 2026) 年 \(String(format: "%02d", comps.month ?? 1)) 月")
                     .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
@@ -476,7 +506,9 @@ public struct PaperDatePicker: View {
                         Button {
                             updateSelectionDate(to: dayDate)
                             AudioFeedback.shared.playTink()
-                            isPopoverPresented = false
+                            if !enableTime {
+                                isPopoverPresented = false
+                            }
                         } label: {
                             Text("\(dayNum)")
                                 .font(ArchiveTypography.monoScale(size: 11, weight: isSelected ? .bold : .regular))
@@ -499,6 +531,96 @@ public struct PaperDatePicker: View {
                 }
             }
 
+            // 时刻刻度盘 (严格对标 Web 端 PaperDatePicker.vue)
+            if enableTime {
+                Divider().overlay(ArchivePalette.borderSubtle)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        HStack(spacing: 5) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 11))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Text("时刻刻度")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+
+                        Spacer()
+
+                        // 时分微调器
+                        HStack(spacing: 4) {
+                            let currentHour = cal.component(.hour, from: selection)
+                            let currentMin = cal.component(.minute, from: selection)
+
+                            HStack(spacing: 2) {
+                                Button("-") { adjustHour(-1) }
+                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .padding(.horizontal, 4)
+                                    .buttonStyle(.plain)
+                                Text(String(format: "%02d", currentHour))
+                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                Button("+") { adjustHour(1) }
+                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .padding(.horizontal, 4)
+                                    .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 2)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                            Text(":")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+
+                            HStack(spacing: 2) {
+                                Button("-") { adjustMinute(-5) }
+                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .padding(.horizontal, 4)
+                                    .buttonStyle(.plain)
+                                Text(String(format: "%02d", currentMin))
+                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                Button("+") { adjustMinute(5) }
+                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .padding(.horizontal, 4)
+                                    .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 2)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                    }
+
+                    // 4 个快捷时刻标签 (晨 09:00, 午 12:30, 暮 18:00, 夜 22:00)
+                    HStack(spacing: 4) {
+                        ForEach([("晨 09:00", 9, 0), ("午 12:30", 12, 30), ("暮 18:00", 18, 0), ("夜 22:00", 22, 0)], id: \.0) { item in
+                            Button {
+                                setTime(hour: item.1, minute: item.2)
+                            } label: {
+                                Text(item.0)
+                                    .font(ArchiveTypography.monoScale(size: 9.5))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 3)
+                                    .background(ArchivePalette.archiveSubtle)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
             Divider().overlay(ArchivePalette.borderSubtle)
 
             HStack {
@@ -516,7 +638,7 @@ public struct PaperDatePicker: View {
             }
         }
         .padding(14)
-        .frame(width: 250)
+        .frame(width: enableTime ? 275 : 250)
         .background(ArchivePalette.archivePaper)
     }
 
@@ -524,7 +646,9 @@ public struct PaperDatePicker: View {
         Button {
             action()
             AudioFeedback.shared.playTink()
-            isPopoverPresented = false
+            if !enableTime {
+                isPopoverPresented = false
+            }
         } label: {
             Text(text)
                 .font(ArchiveTypography.bodySans(size: 10.5))
@@ -545,6 +669,31 @@ public struct PaperDatePicker: View {
         origComps.day = targetComps.day
         if let merged = cal.date(from: origComps) {
             selection = merged
+        }
+    }
+
+    private func adjustHour(_ delta: Int) {
+        if let newD = cal.date(byAdding: .hour, value: delta, to: selection) {
+            selection = newD
+            AudioFeedback.shared.playTink()
+        }
+    }
+
+    private func adjustMinute(_ delta: Int) {
+        if let newD = cal.date(byAdding: .minute, value: delta, to: selection) {
+            selection = newD
+            AudioFeedback.shared.playTink()
+        }
+    }
+
+    private func setTime(hour: Int, minute: Int) {
+        var comps = cal.dateComponents([.year, .month, .day], from: selection)
+        comps.hour = hour
+        comps.minute = minute
+        comps.second = 0
+        if let newD = cal.date(from: comps) {
+            selection = newD
+            AudioFeedback.shared.playTink()
         }
     }
 
@@ -833,10 +982,7 @@ public struct PaperDateTimePicker: View {
     }
 
     public var body: some View {
-        HStack(spacing: 6) {
-            PaperDatePicker(selection: $selection, label: label)
-            PaperTimePicker(selection: $selection)
-        }
+        PaperDatePicker(selection: $selection, enableTime: true, label: label)
     }
 }
 
@@ -1096,3 +1242,232 @@ public struct PaperCityPicker: View {
         .background(ArchivePalette.archivePaper)
     }
 }
+
+// MARK: - 纸本拟物下拉单选器 (PaperSelect) 与 分段选择器 (PaperSegmentedControl)
+
+/// 纸本选项定义 (严格对标 Web 端 PaperSelectOption)
+public struct PaperSelectOption<T: Hashable>: Identifiable, Equatable, Sendable {
+    public let value: T
+    public let label: String
+    public let sublabel: String?
+    public let badge: String?
+
+    public var id: T { value }
+
+    public init(value: T, label: String, sublabel: String? = nil, badge: String? = nil) {
+        self.value = value
+        self.label = label
+        self.sublabel = sublabel
+        self.badge = badge
+    }
+}
+
+/// 纸本拟物下拉单选器 (PaperSelect)
+/// 严格 1:1 对标 Web 端 PaperSelect.vue，彻底杜绝系统 Aqua 液态玻璃原生菜单
+/// 包含边框拟物、展开旋转 Chevron、纸本浮层、点选 Checkmark 标定、Tink 触觉音效
+public struct PaperSelect<T: Hashable>: View {
+    @Binding public var selection: T
+    public var options: [PaperSelectOption<T>]
+    public var placeholder: String
+    public var label: String?
+    public var disabled: Bool
+
+    @State private var isOpen: Bool = false
+
+    public init(
+        selection: Binding<T>,
+        options: [PaperSelectOption<T>],
+        placeholder: String = "请选择…",
+        label: String? = nil,
+        disabled: Bool = false
+    ) {
+        self._selection = selection
+        self.options = options
+        self.placeholder = placeholder
+        self.label = label
+        self.disabled = disabled
+    }
+
+    private var selectedOption: PaperSelectOption<T>? {
+        options.first { $0.value == selection }
+    }
+
+    public var body: some View {
+        HStack(spacing: 6) {
+            if let label, !label.isEmpty {
+                Text(label)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            Button {
+                guard !disabled else { return }
+                isOpen.toggle()
+                AudioFeedback.shared.playTink()
+            } label: {
+                HStack(spacing: 5) {
+                    if let selectedOption {
+                        Text(selectedOption.label)
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                            .lineLimit(1)
+                    } else {
+                        Text(placeholder)
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7.5, weight: .semibold))
+                        .foregroundStyle(isOpen ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                        .animation(.easeInOut(duration: 0.18), value: isOpen)
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5.5)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isOpen ? ArchivePalette.inkPrimary : ArchivePalette.borderSubtle, lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(disabled)
+            .opacity(disabled ? 0.5 : 1.0)
+            .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if options.isEmpty {
+                        Text("暂无可选项")
+                            .font(ArchiveTypography.editorialSerif(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 10)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 1) {
+                                ForEach(options) { opt in
+                                    let isSelected = opt.value == selection
+                                    Button {
+                                        selection = opt.value
+                                        isOpen = false
+                                        AudioFeedback.shared.playTink()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Text(opt.label)
+                                                .font(ArchiveTypography.bodySans(size: 11.5, weight: isSelected ? .medium : .regular))
+                                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                                .lineLimit(1)
+
+                                            if let sub = opt.sublabel, !sub.isEmpty {
+                                                Text(sub)
+                                                    .font(ArchiveTypography.monoScale(size: 10))
+                                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                                    .lineLimit(1)
+                                            }
+
+                                            Spacer()
+
+                                            if let badge = opt.badge, !badge.isEmpty {
+                                                Text(badge)
+                                                    .font(ArchiveTypography.monoScale(size: 9))
+                                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 1)
+                                                    .background(ArchivePalette.archiveSubtle)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 2))
+                                            }
+
+                                            if isSelected {
+                                                Image(systemName: "checkmark")
+                                                    .font(.system(size: 8.5, weight: .bold))
+                                                    .foregroundStyle(ArchivePalette.accentWarm)
+                                            }
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(isSelected ? ArchivePalette.archiveSubtle : Color.clear)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 220)
+                    }
+                }
+                .padding(6)
+                .frame(minWidth: 140, maxWidth: 260)
+                .background(ArchivePalette.archivePaper)
+            }
+        }
+    }
+}
+
+/// 纸本分段切换器 (PaperSegmentedControl)
+/// 彻底替代系统的 .pickerStyle(.segmented)，提供纯粹纸墨灰阶反白与触感反馈
+public struct PaperSegmentItem<T: Hashable>: Identifiable, Equatable {
+    public let value: T
+    public let title: String
+    public let icon: String?
+
+    public var id: T { value }
+
+    public init(_ value: T, title: String, icon: String? = nil) {
+        self.value = value
+        self.title = title
+        self.icon = icon
+    }
+}
+
+public struct PaperSegmentedControl<T: Hashable>: View {
+    @Binding public var selection: T
+    public var items: [PaperSegmentItem<T>]
+
+    public init(selection: Binding<T>, items: [PaperSegmentItem<T>]) {
+        self._selection = selection
+        self.items = items
+    }
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            ForEach(items) { item in
+                let isSelected = item.value == selection
+                Button {
+                    guard item.value != selection else { return }
+                    selection = item.value
+                    AudioFeedback.shared.playTink()
+                } label: {
+                    HStack(spacing: 4) {
+                        if let icon = item.icon {
+                            Image(systemName: icon)
+                                .font(.system(size: 10.5))
+                        }
+                        Text(item.title)
+                            .font(ArchiveTypography.bodySans(size: 11.5, weight: isSelected ? .medium : .regular))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(isSelected ? ArchivePalette.archivePaper : ArchivePalette.inkSecondary)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3.5)
+                            .fill(isSelected ? ArchivePalette.inkPrimary : Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2.5)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .overlay(
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
+    }
+}
+

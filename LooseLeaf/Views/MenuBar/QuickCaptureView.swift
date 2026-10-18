@@ -163,31 +163,20 @@ public struct QuickCaptureView: View {
                 )
 
             // 正文 Markdown 输入框
-            ZStack(alignment: .topLeading) {
-                if draft.contentText.isEmpty {
-                    Text("写下此刻闪念，按 ⌘ + Return 即刻归档…")
-                        .font(ArchiveTypography.bodySans(size: 12.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 9)
-                        .allowsHitTesting(false)
-                }
-
-                TextEditor(text: $draft.contentText)
-                    .font(ArchiveTypography.bodySans(size: 12.5))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.hidden)
-                    .focused($isContentFocused)
-                    .padding(5)
-                    .frame(minHeight: 88, maxHeight: 140)
-            }
-            .background(ArchivePalette.archivePaper)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-            )
+            // 正文 Markdown 输入框 (采用垂直 TextField 彻底根治中文拼音预输入与占位文字重叠 BUG)
+            TextField("写下此刻闪念，按 ⌘ + Return 即刻归档…", text: $draft.contentText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.bodySans(size: 12.5))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(4...7)
+                .focused($isContentFocused)
+                .padding(9)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                )
             .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { providers in
                 if DropLoader.readImageFromPasteboard() != nil {
                     pasteImageFromPasteboard()
@@ -222,24 +211,7 @@ public struct QuickCaptureView: View {
                     placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
                 )
 
-                HStack(spacing: 4) {
-                    Image(systemName: "mappin.and.ellipse")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    TextField("街巷/景点(选填)", text: $draft.customLocation)
-                        .textFieldStyle(.plain)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                        .frame(maxWidth: 110)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                )
+
 
                 Button {
                     draft.showBackdatePicker.toggle()

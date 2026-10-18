@@ -314,7 +314,14 @@ public actor APIClient {
         if let scope, !scope.isEmpty {
             items.append(URLQueryItem(name: "scope", value: scope))
         }
-        return try await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items)
+        if let resp: CategoryResetResponse = try? await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items),
+           let list = resp.items {
+            return list
+        }
+        if let direct: [CategoryOption] = try? await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items) {
+            return direct
+        }
+        return []
     }
 
     public func addCategoryOption(scope: String, name: String) async throws -> CategoryOption {
@@ -714,4 +721,85 @@ public actor APIClient {
             url: res.url
         )
     }
+
+    // MARK: - 9. 数据中枢全量快照备份与回滚 (System Backups)
+
+    public func fetchServerBackups() async throws -> [ServerBackupItem] {
+        try await performEnvelopeRequest(path: "/api/v1/system/backup/list")
+    }
+
+    public func createServerBackupNow() async throws -> ServerBackupItem {
+        try await performEnvelopeRequest(path: "/api/v1/system/backup/now", method: "POST")
+    }
+
+    public func deleteServerBackup(filename: String) async throws -> [ServerBackupItem] {
+        try await performEnvelopeRequest(path: "/api/v1/system/backup/\(filename)", method: "DELETE")
+    }
+
+    public func restoreServerBackup(filename: String) async throws {
+        struct RestoreReq: Encodable {
+            let filename: String
+        }
+        let _: RestoreBackupResponse = try await performEnvelopeRequest(
+            path: "/api/v1/system/backup/restore",
+            method: "POST",
+            body: RestoreReq(filename: filename)
+        )
+    }
+
+    public func downloadServerBackup(filename: String) async throws -> (Data, String) {
+        let (request, _) = try buildRequest(
+            path: "/api/v1/system/backup/download/\(filename)",
+            method: "GET"
+        )
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.networkFailure("下载响应无效")
+        }
+        if http.statusCode == 401 {
+            NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
+            throw APIError.unauthorized("下载备份需要设备授权凭据")
+        }
+        guard http.statusCode == 200 else {
+            throw APIError.serverError(code: http.statusCode, message: "下载备份失败 (HTTP \(http.statusCode))")
+        }
+        return (data, filename)
+    }
+
+    // MARK: - 10. 中枢云端对象存储与灾备管理 (Storage Management)
+
+    public func fetchStorageStatus() async throws -> StorageStatus {
+        try await performEnvelopeRequest(path: "/api/v1/storage/status")
+    }
+
+    public func testStorageConfig(_ payload: StorageConfigPayload) async throws -> StorageTestResponse {
+        try await performEnvelopeRequest(
+            path: "/api/v1/storage/test",
+            method: "POST",
+            body: payload
+        )
+    }
+
+    public func updateStorageConfig(_ payload: StorageConfigPayload) async throws -> StorageStatus {
+        try await performEnvelopeRequest(
+            path: "/api/v1/storage/config",
+            method: "PUT",
+            body: payload
+        )
+    }
+
+    public func resetStorageConfig() async throws -> StorageStatus {
+        try await performEnvelopeRequest(
+            path: "/api/v1/storage/config",
+            method: "DELETE"
+        )
+    }
+
+    public func migrateStorageMedia() async throws -> StorageMigrateResponse {
+        try await performEnvelopeRequest(
+            path: "/api/v1/storage/migrate",
+            method: "POST"
+        )
+    }
 }
+

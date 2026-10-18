@@ -7,6 +7,7 @@ public struct CuratorDossierView: View {
     @Bindable var appState: AppState
 
     @State private var showEditProfileSheet: Bool = false
+    @State private var showAddGearSheet: Bool = false
     @State private var sellingGear: GearItem?
     @State private var gearToDelete: GearItem?
     @State private var showDeleteGearConfirm: Bool = false
@@ -21,6 +22,7 @@ public struct CuratorDossierView: View {
     @State private var newAvatarKey: String?
     @State private var isUploadingAvatar: Bool = false
     @State private var avatarPreviewImage: NSImage?
+    @State private var selectedGearCategory: String = "all"
 
     public init(appState: AppState) {
         self.appState = appState
@@ -124,23 +126,103 @@ public struct CuratorDossierView: View {
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
 
-                // 2. 随身器物图鉴 (EDC Gear)
+                // 2. 生活刻度 · 编年时间热力图与年度卷宗
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("随身器物与桌面装备图鉴 (\(prof.edcGear.count))")
-                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    HStack {
+                        HStack(spacing: 8) {
+                            Text("生活刻度 · 时间热力图")
+                                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                            Text("（累计在册 \(appState.entries.count) 篇记录）")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
 
-                    if prof.edcGear.isEmpty {
-                        Text("尚无随身器物记录。在资产中枢中添置设备后将自动同步展示。")
-                            .font(ArchiveTypography.bodySans(size: 12.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(24)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(ArchivePalette.archiveSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Spacer()
+
+                        Button {
+                            appState.showAlmanacSheet = true
+                            AudioFeedback.shared.playPaperFlip()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "book.closed")
+                                    .font(.system(size: 11))
+                                Text("年度生活年鉴画卷")
+                                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    }
+
+                    LifeActivityHeatmapView(
+                        entryCounts: appState.entryCountsByDate,
+                        totalCount: appState.entries.count,
+                        weeksCount: 52
+                    )
+                }
+                .padding(18)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                )
+
+                // 3. 随身器物图鉴 (EDC Gear)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .center) {
+                        Text("随身器物与桌面装备图鉴 (\(prof.edcGear.count))")
+                            .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+
+                        Spacer()
+
+                        Button {
+                            showAddGearSheet = true
+                            AudioFeedback.shared.playPaperFlip()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("添置随身设备")
+                                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    }
+
+                    // 分类筛选胶囊
+                    let gearCats = Set(prof.edcGear.map { $0.category })
+                    if gearCats.count > 1 {
+                        HStack(spacing: 6) {
+                            PaperPillButton(title: "全部 (\(prof.edcGear.count))", isSelected: selectedGearCategory == "all") {
+                                selectedGearCategory = "all"
+                            }
+                            ForEach(Array(gearCats).sorted(), id: \.self) { cat in
+                                let count = prof.edcGear.filter { $0.category == cat }.count
+                                PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedGearCategory == cat) {
+                                    selectedGearCategory = cat
+                                }
+                            }
+                        }
+                    }
+
+                    let displayedGear = selectedGearCategory == "all" ? prof.edcGear : prof.edcGear.filter { $0.category == selectedGearCategory }
+
+                    if displayedGear.isEmpty {
+                        VStack(spacing: 8) {
+                            Text("尚无该分类随身器物记录，点击上方「添置随身设备」录入您的相机、镜头或 EDC 装备。")
+                                .font(ArchiveTypography.bodySans(size: 12.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     } else {
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                            ForEach(prof.edcGear) { gear in
+                            ForEach(displayedGear) { gear in
+
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack {
                                         Text(gear.category)
@@ -225,6 +307,17 @@ public struct CuratorDossierView: View {
                 }
             }
         }
+        .sheet(isPresented: $showAddGearSheet) {
+            AddGearSheet(appState: appState) {
+                showAddGearSheet = false
+            }
+        }
+        .sheet(isPresented: $appState.showAlmanacSheet) {
+            AnnualAlmanacSheet {
+                appState.showAlmanacSheet = false
+            }
+        }
+
         .confirmationDialog(
             "确认删除该件随身器材资产？",
             isPresented: $showDeleteGearConfirm,

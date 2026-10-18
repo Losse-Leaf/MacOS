@@ -17,6 +17,7 @@ public final class UpdateChecker {
     private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "updater")
 
     public var isChecking: Bool = false
+    public var hasChecked: Bool = false
     public var isUpdating: Bool = false
     public var updateProgress: Double = 0.0
     public var availableUpdate: ReleaseInfo?
@@ -77,10 +78,14 @@ public final class UpdateChecker {
                         downloadURL: downloadURL,
                         publishedAt: (json["published_at"] as? String) ?? ""
                     )
-                    Self.logger.info("Found newer version: \(cleanRemoteTag, privacy: .public)")
                 }
-            } else if isUserInitiated {
-                AppState.shared.showTemporaryBanner("当前已是最新版本 (v\(currentVersion))")
+                self.hasChecked = true
+            } else {
+                self.availableUpdate = nil
+                self.hasChecked = true
+                if isUserInitiated {
+                    AppState.shared.showTemporaryBanner("当前已是最新版本 (v\(currentVersion))")
+                }
             }
         } catch {
             if isUserInitiated {

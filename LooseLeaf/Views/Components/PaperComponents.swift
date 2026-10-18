@@ -65,8 +65,6 @@ public struct LifeActivityHeatmapView: View {
         self.precomputedWeeks = weeks
     }
 
-    @State private var isExpanded: Bool = false
-
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -83,48 +81,86 @@ public struct LifeActivityHeatmapView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 Spacer()
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        isExpanded.toggle()
-                    }
-                    AudioFeedback.shared.playPaperFlip()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(isExpanded ? "收起星野" : "展开刻度网格")
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 8))
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3.5)
-                    .background(ArchivePalette.archiveSubtle.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                }
-                .buttonStyle(.plain)
             }
 
-            if isExpanded {
-                HStack(alignment: .top, spacing: 3) {
-                    ForEach(precomputedWeeks.indices, id: \.self) { weekIdx in
-                        VStack(spacing: 3) {
-                            ForEach(precomputedWeeks[weekIdx]) { cell in
-                                let count = entryCounts[cell.dateKey, default: 0]
-                                RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(cellColor(for: count))
-                                    .frame(width: 9, height: 9)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 1.5)
-                                            .stroke(cell.isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
-                                    )
-                                    .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇记录")
+            VStack(alignment: .leading, spacing: 6) {
+                // 1. 月份标尺
+                HStack(spacing: 0) {
+                    Text("")
+                        .frame(width: 28) // 留给左侧星期标尺的对齐空间
+                    ForEach(Array(stride(from: 0, to: precomputedWeeks.count, by: 8)), id: \.self) { idx in
+                        if let firstDay = precomputedWeeks[idx].first {
+                            let parts = firstDay.dateKey.split(separator: "-")
+                            if parts.count >= 2, let m = Int(parts[1]) {
+                                Text("\(m)月")
+                                    .font(ArchiveTypography.monoScale(size: 9.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
                 }
+                .padding(.horizontal, 4)
+
+                // 2. 星期标尺与 52 周热力图矩阵
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(spacing: 6) {
+                        Text("周一")
+                            .font(ArchiveTypography.bodySans(size: 8.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .frame(height: 9)
+                        Text("周四")
+                            .font(ArchiveTypography.bodySans(size: 8.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .frame(height: 9)
+                        Text("周日")
+                            .font(ArchiveTypography.bodySans(size: 8.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .frame(height: 9)
+                    }
+                    .padding(.top, 2)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 3) {
+                            ForEach(precomputedWeeks.indices, id: \.self) { weekIdx in
+                                VStack(spacing: 3) {
+                                    ForEach(precomputedWeeks[weekIdx]) { cell in
+                                        let count = entryCounts[cell.dateKey, default: 0]
+                                        RoundedRectangle(cornerRadius: 1.5)
+                                            .fill(cellColor(for: count))
+                                            .frame(width: 9, height: 9)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 1.5)
+                                                    .stroke(cell.isToday ? ArchivePalette.accentWarm : Color.clear, lineWidth: 1)
+                                            )
+                                            .help("\(cell.dateKey.replacingOccurrences(of: "-", with: ".")) · \(count) 篇手稿留痕")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. 底部纸墨色阶图例
+                HStack(spacing: 6) {
+                    Spacer()
+                    Text("岁月留白")
+                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                    ForEach(0...4, id: \.self) { lvl in
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(cellColor(for: lvl))
+                            .frame(width: 8, height: 8)
+                    }
+
+                    Text("笔墨丰盛")
+                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
                 .padding(.top, 4)
             }
+            .padding(.top, 2)
         }
         .padding(12)
         .background(ArchivePalette.archivePaper)
@@ -350,8 +386,22 @@ public struct PaperDatePicker: View {
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 月历翻页栏
-            HStack {
+            // 年月双级翻页栏 (<< < YYYY年MM月 > >>，对齐 PaperDatePicker.vue)
+            HStack(spacing: 3) {
+                Button {
+                    if let prevYear = cal.date(byAdding: .year, value: -1, to: displayMonthDate) {
+                        displayMonthDate = prevYear
+                        AudioFeedback.shared.playTink()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left.2")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .padding(4)
+                }
+                .buttonStyle(.plain)
+                .help("上一年")
+
                 Button {
                     if let prevMonth = cal.date(byAdding: .month, value: -1, to: displayMonthDate) {
                         displayMonthDate = prevMonth
@@ -359,16 +409,17 @@ public struct PaperDatePicker: View {
                     }
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(4)
                 }
                 .buttonStyle(.plain)
+                .help("上一月")
 
                 Spacer()
 
                 let comps = cal.dateComponents([.year, .month], from: displayMonthDate)
-                Text("\(comps.year ?? 2026) 年 \(comps.month ?? 1) 月")
+                Text("\(comps.year ?? 2026) 年 \(String(format: "%02d", comps.month ?? 1)) 月")
                     .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
@@ -381,11 +432,26 @@ public struct PaperDatePicker: View {
                     }
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(4)
                 }
                 .buttonStyle(.plain)
+                .help("下一月")
+
+                Button {
+                    if let nextYear = cal.date(byAdding: .year, value: 1, to: displayMonthDate) {
+                        displayMonthDate = nextYear
+                        AudioFeedback.shared.playTink()
+                    }
+                } label: {
+                    Image(systemName: "chevron.right.2")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .padding(4)
+                }
+                .buttonStyle(.plain)
+                .help("下一年")
             }
 
             // 星期标尺
@@ -564,11 +630,16 @@ public struct PaperTimePicker: View {
     }
 
     private var timePopoverView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("精准时刻 (分)")
-                    .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
+                HStack(spacing: 5) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Text("时刻刻度")
+                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                }
 
                 Spacer()
 
@@ -593,68 +664,100 @@ public struct PaperTimePicker: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3))
             }
 
-            // 快捷加减分钟
-            HStack(spacing: 6) {
-                stepMinuteButton(delta: -15, label: "-15分")
-                stepMinuteButton(delta: -5, label: "-5分")
-                stepMinuteButton(delta: 5, label: "+5分")
-                stepMinuteButton(delta: 15, label: "+15分")
-            }
-
-            Divider().overlay(ArchivePalette.borderSubtle)
-
-            // 小时与分钟直接微调
-            HStack(spacing: 12) {
-                VStack(spacing: 4) {
-                    Text("时")
-                        .font(ArchiveTypography.bodySans(size: 10))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Picker("", selection: Binding(
-                        get: { cal.component(.hour, from: selection) },
-                        set: { newHour in
-                            var comps = cal.dateComponents([.year, .month, .day, .minute, .second], from: selection)
-                            comps.hour = newHour
-                            if let d = cal.date(from: comps) { selection = d }
-                        }
-                    )) {
-                        ForEach(0..<24, id: \.self) { h in
-                            Text(String(format: "%02d", h)).tag(h)
-                        }
+            // 自定步进微调器（- HH + 与 - MM +）彻底替换系统原生 Picker 菜单
+            HStack(spacing: 8) {
+                // 小时调节
+                HStack(spacing: 0) {
+                    Button {
+                        adjustHour(-1)
+                    } label: {
+                        Text("-")
+                            .font(ArchiveTypography.monoScale(size: 12, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 24, height: 26)
+                            .contentShape(Rectangle())
                     }
-                    .labelsHidden()
-                    .frame(width: 58)
+                    .buttonStyle(.plain)
+
+                    Text(String(format: "%02d", cal.component(.hour, from: selection)))
+                        .font(ArchiveTypography.monoScale(size: 13, weight: .bold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .frame(width: 28, height: 26)
+                        .background(ArchivePalette.archivePaper)
+
+                    Button {
+                        adjustHour(1)
+                    } label: {
+                        Text("+")
+                            .font(ArchiveTypography.monoScale(size: 12, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 24, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.6))
 
                 Text(":")
                     .font(ArchiveTypography.monoScale(size: 14, weight: .bold))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .padding(.top, 14)
+                    .foregroundStyle(ArchivePalette.inkMuted)
 
-                VStack(spacing: 4) {
-                    Text("分")
-                        .font(ArchiveTypography.bodySans(size: 10))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Picker("", selection: Binding(
-                        get: { cal.component(.minute, from: selection) },
-                        set: { newMinute in
-                            var comps = cal.dateComponents([.year, .month, .day, .hour, .second], from: selection)
-                            comps.minute = newMinute
-                            if let d = cal.date(from: comps) { selection = d }
-                        }
-                    )) {
-                        ForEach(0..<60, id: \.self) { m in
-                            Text(String(format: "%02d", m)).tag(m)
-                        }
+                // 分钟调节 (5分钟步进)
+                HStack(spacing: 0) {
+                    Button {
+                        adjustMinute(-5)
+                    } label: {
+                        Text("-")
+                            .font(ArchiveTypography.monoScale(size: 12, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 24, height: 26)
+                            .contentShape(Rectangle())
                     }
-                    .labelsHidden()
-                    .frame(width: 58)
+                    .buttonStyle(.plain)
+
+                    Text(String(format: "%02d", cal.component(.minute, from: selection)))
+                        .font(ArchiveTypography.monoScale(size: 13, weight: .bold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .frame(width: 28, height: 26)
+                        .background(ArchivePalette.archivePaper)
+
+                    Button {
+                        adjustMinute(5)
+                    } label: {
+                        Text("+")
+                            .font(ArchiveTypography.monoScale(size: 12, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 24, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.6))
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 4)
 
+            // 四大经典快捷时刻纸签 (对齐 PaperDatePicker.vue)
+            HStack(spacing: 5) {
+                timePresetPill("晨 09:00", hour: 9, minute: 0)
+                timePresetPill("午 12:30", hour: 12, minute: 30)
+                timePresetPill("暮 18:00", hour: 18, minute: 0)
+                timePresetPill("夜 22:00", hour: 22, minute: 0)
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
             HStack {
+                Text("时刻：\(timeString)")
+                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+
                 Spacer()
+
                 Button("完成") {
                     isPopoverPresented = false
                     AudioFeedback.shared.playTink()
@@ -662,25 +765,51 @@ public struct PaperTimePicker: View {
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             }
         }
-        .padding(12)
-        .frame(width: 200)
+        .padding(14)
+        .frame(width: 240)
         .background(ArchivePalette.archivePaper)
     }
 
-    private func stepMinuteButton(delta: Int, label: String) -> some View {
+    private func adjustHour(_ delta: Int) {
+        var hour = cal.component(.hour, from: selection) + delta
+        hour = (hour % 24 + 24) % 24
+        var comps = cal.dateComponents([.year, .month, .day, .minute, .second], from: selection)
+        comps.hour = hour
+        if let d = cal.date(from: comps) {
+            selection = d
+            AudioFeedback.shared.playTink()
+        }
+    }
+
+    private func adjustMinute(_ delta: Int) {
+        var minute = cal.component(.minute, from: selection) + delta
+        minute = (minute % 60 + 60) % 60
+        var comps = cal.dateComponents([.year, .month, .day, .hour, .second], from: selection)
+        comps.minute = minute
+        if let d = cal.date(from: comps) {
+            selection = d
+            AudioFeedback.shared.playTink()
+        }
+    }
+
+    private func timePresetPill(_ label: String, hour: Int, minute: Int) -> some View {
         Button {
-            if let updated = cal.date(byAdding: .minute, value: delta, to: selection) {
-                selection = updated
+            var comps = cal.dateComponents([.year, .month, .day, .second], from: selection)
+            comps.hour = hour
+            comps.minute = minute
+            if let d = cal.date(from: comps) {
+                selection = d
                 AudioFeedback.shared.playTink()
             }
         } label: {
             Text(label)
-                .font(ArchiveTypography.monoScale(size: 10))
+                .font(ArchiveTypography.monoScale(size: 9.5))
                 .foregroundStyle(ArchivePalette.inkSecondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
     }

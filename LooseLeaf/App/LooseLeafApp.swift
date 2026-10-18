@@ -60,7 +60,7 @@ public struct LooseLeafApp: App {
             }
 
             CommandMenu("活页工作台") {
-                ForEach(Array(WorkbenchSection.allCases.enumerated()), id: \.element.id) { index, section in
+                ForEach(Array(WorkbenchSection.sidebarSections.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
                         var transaction = SwiftUI.Transaction()
                         transaction.disablesAnimations = true

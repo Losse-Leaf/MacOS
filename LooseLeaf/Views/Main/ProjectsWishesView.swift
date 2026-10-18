@@ -71,16 +71,32 @@ public struct ProjectsWishesView: View {
 
                     Spacer()
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            ForEach(SubTab.allCases, id: \.rawValue) { tab in
+                                PaperPillButton(
+                                    title: tab.rawValue,
+                                    isSelected: selectedTab == tab
+                                ) {
+                                    selectedTab = tab
+                                    AudioFeedback.shared.playPaperFlip()
+                                }
+                            }
+                        }
+
+                        Rectangle()
+                            .fill(ArchivePalette.borderSubtle)
+                            .frame(width: 1, height: 16)
+
                         Button {
                             showAlmanacSheet = true
                             AudioFeedback.shared.playPaperFlip()
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 5) {
                                 Image(systemName: "book.closed")
                                     .font(.system(size: 11))
-                                Text("年度年鉴")
-                                    .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                                Text("年度年鉴画卷")
+                                    .font(ArchiveTypography.editorialSerif(size: 12, weight: .medium))
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
@@ -93,16 +109,7 @@ public struct ProjectsWishesView: View {
                             )
                         }
                         .buttonStyle(.plain)
-
-                        ForEach(SubTab.allCases, id: \.rawValue) { tab in
-                            PaperPillButton(
-                                title: tab.rawValue,
-                                isSelected: selectedTab == tab
-                            ) {
-                                selectedTab = tab
-                                AudioFeedback.shared.playPaperFlip()
-                            }
-                        }
+                        .help("装订并查阅年度心愿与足迹年鉴画卷")
                     }
                 }
 
@@ -933,11 +940,24 @@ public struct NewWishSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("心愿初衷手记", text: $note)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+            ZStack(alignment: .topLeading) {
+                if note.isEmpty {
+                    Text("写下心愿初衷与手记…")
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $note)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
+                    .padding(4)
+                    .frame(minHeight: 64, maxHeight: 90)
+            }
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
 
             if let errorText {
                 Text(errorText)
@@ -1054,11 +1074,24 @@ public struct EditWishSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("初衷手记", text: $note)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+            ZStack(alignment: .topLeading) {
+                if note.isEmpty {
+                    Text("写下心愿初衷与手记…")
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $note)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
+                    .padding(4)
+                    .frame(minHeight: 64, maxHeight: 90)
+            }
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
 
             if let errorText {
                 Text(errorText)

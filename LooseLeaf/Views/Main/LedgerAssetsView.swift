@@ -130,11 +130,11 @@ public struct LedgerAssetsView: View {
                 // 双模记账控制台
                 dualModeComposerCard
 
-                // 随身器物固资货架
-                gearAssetsSection
-
-                // 账目流水明细
+                // 账目流水明细 (记账后直接沉浸检视流水)
                 transactionsListSection
+
+                // 随身器物固资货架 (长期固资大盘)
+                gearAssetsSection
             }
             .padding(24)
         }
@@ -511,7 +511,7 @@ public struct LedgerAssetsView: View {
                         }
                     }
 
-                    // 支付方式
+                    // 支付方式与属性标记行
                     HStack(spacing: 8) {
                         Text("支付：")
                             .font(ArchiveTypography.bodySans(size: 11.5))
@@ -528,35 +528,6 @@ public struct LedgerAssetsView: View {
 
                         Spacer()
 
-                        // 发生时刻
-                        PaperDateTimePicker(selection: $formOccurredAt, label: "时间：", showQuickShortcuts: true)
-
-                        // 属地城市
-                        HStack(spacing: 4) {
-                            Text("城市：")
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-
-                            PaperCityPicker(
-                                selectedCode: $formCityCode,
-                                selectedName: $formCityName,
-                                placeholder: appState.profile.displayCity.isEmpty ? "选填城市" : appState.profile.displayCity
-                            )
-
-                            if !formCityCode.isEmpty {
-                                Button {
-                                    formCityCode = ""
-                                    formCityName = ""
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                                .help("清除选中的属地城市")
-                            }
-                        }
-
                         // 联动固资与分期复选
                         Toggle("建入固资大盘", isOn: $formLinkGear)
                             .toggleStyle(.checkbox)
@@ -569,15 +540,49 @@ public struct LedgerAssetsView: View {
                         }
                     }
 
+                    // 时空要素行 (独立日期、独立时刻与省市点选，告别挤压折行)
+                    HStack(spacing: 10) {
+                        Text("时空：")
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                        PaperDatePicker(selection: $formOccurredAt)
+
+                        PaperTimePicker(selection: $formOccurredAt)
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            Text("省市：")
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+
+                            PaperCityPicker(
+                                selectedCode: $formCityCode,
+                                selectedName: $formCityName,
+                                placeholder: appState.profile.displayCity.isEmpty ? "选择省市" : appState.profile.displayCity
+                            )
+                        }
+                    }
+
                     // 固资扩展信息
                     if formLinkGear {
                         HStack(spacing: 8) {
-                            TextField("固资分类", text: $formGearCategory)
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.bodySans(size: 12))
-                                .padding(6)
-                                .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            HStack(spacing: 6) {
+                                Text("固资分类：")
+                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Picker("", selection: $formGearCategory) {
+                                    ForEach(appState.gearCategories, id: \.self) { cat in
+                                        Text(cat).tag(cat)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            }
+                            .padding(.horizontal, 6)
+                            .frame(height: 28)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
 
                             TextField("规格参数", text: $formGearSpec)
                                 .textFieldStyle(.plain)
@@ -680,7 +685,7 @@ public struct LedgerAssetsView: View {
                             .background(ArchivePalette.archivePaper)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                        Button("一键精准入账") {
+                        Button("完成记账并入账") {
                             submitVisualForm()
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
@@ -812,10 +817,13 @@ public struct LedgerAssetsView: View {
 
     private var transactionsListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // 标题与时间跨度行
             HStack {
                 Text("流水账目明细 (\(filteredTransactions.count) 笔)")
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
+
+                Spacer()
 
                 HStack(spacing: 4) {
                     PaperPillButton(
@@ -833,23 +841,22 @@ public struct LedgerAssetsView: View {
                         AudioFeedback.shared.playTink()
                     }
                 }
-                .padding(.leading, 6)
+            }
 
-                Spacer()
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部") {
-                            selectedCategoryFilter = "全部"
-                        }
-                        let allCategories = appState.expenseCategories + appState.incomeCategories.filter { !appState.expenseCategories.contains($0) }
-                        ForEach(allCategories, id: \.self) { cat in
-                            PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat) {
-                                selectedCategoryFilter = cat
-                            }
+            // 类目滚动筛选行 (自成一行，全宽平滑滚动，杜绝截断)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部") {
+                        selectedCategoryFilter = "全部"
+                    }
+                    let allCategories = appState.expenseCategories + appState.incomeCategories.filter { !appState.expenseCategories.contains($0) }
+                    ForEach(allCategories, id: \.self) { cat in
+                        PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat) {
+                            selectedCategoryFilter = cat
                         }
                     }
                 }
+                .padding(.vertical, 2)
             }
 
             if let errorNotice {
@@ -1386,18 +1393,34 @@ public struct AddGearSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                TextField("器物分类", text: $category)
-                    .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                HStack(spacing: 6) {
+                    Text("器物分类：")
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Picker("", selection: $category) {
+                        ForEach(appState.gearCategories, id: \.self) { cat in
+                            Text(cat).tag(cat)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 32)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                TextField("购入金额", text: $priceYuan)
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.monoScale(size: 13))
-                    .padding(8)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                HStack(spacing: 4) {
+                    Text("¥")
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .bold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    TextField("购入金额", text: $priceYuan)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.monoScale(size: 13))
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 32)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
             Toggle("伴生记录一笔支出流水", isOn: $createTransaction)

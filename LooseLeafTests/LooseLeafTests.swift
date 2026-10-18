@@ -537,4 +537,21 @@ final class LooseLeafTests: XCTestCase {
             AudioFeedback.shared.playPaperFlip()
         }
     }
+
+    func testServerBackupItemDecodingAndFormatting() throws {
+        let json = """
+        {
+            "filename": "looseleaf-backup-20261018-120000.zip",
+            "size": 5242880,
+            "created_at": "2026-10-18T12:00:00+08:00",
+            "storage_type": "r2"
+        }
+        """.data(using: .utf8)!
+
+        let item = try JSONDecoder().decode(ServerBackupItem.self, from: json)
+        XCTAssertEqual(item.id, "looseleaf-backup-20261018-120000.zip")
+        XCTAssertEqual(item.storageTypeBadge, "Cloudflare R2")
+        XCTAssertEqual(item.formattedSize, "5.00 MB")
+        XCTAssertFalse(item.formattedDate.isEmpty)
+    }
 }

@@ -13,15 +13,17 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
     case travel = "travel"
     case project = "project"
     case wish = "wish"
+    case transaction = "transaction"
 
     public var id: String { rawValue }
 
     public var label: String {
         switch self {
-        case .life: return "日常随笔"
-        case .travel: return "山川游历"
-        case .project: return "造物日志"
-        case .wish: return "心愿印记"
+        case .life: return "日常"
+        case .travel: return "游历"
+        case .project: return "造物"
+        case .wish: return "心愿"
+        case .transaction: return "账目"
         }
     }
 
@@ -31,6 +33,7 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .travel: return "safari"
         case .project: return "hammer"
         case .wish: return "sparkles"
+        case .transaction: return "creditcard"
         }
     }
 }

@@ -177,6 +177,7 @@ public struct QuickCaptureView: View {
                     .font(ArchiveTypography.bodySans(size: 12.5))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                     .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
                     .focused($isContentFocused)
                     .padding(5)
                     .frame(minHeight: 88, maxHeight: 140)

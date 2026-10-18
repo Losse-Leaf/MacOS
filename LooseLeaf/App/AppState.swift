@@ -28,36 +28,50 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 桌面端主窗口侧栏导航模块
+/// 桌面端主窗口侧栏导航模块 (对标 Web HeaderNav 6 大平级主视图)
 public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
-    case stream = "stream"
-    case darkroom = "darkroom"
-    case ledger = "ledger"
-    case creations = "creations"
-    case dossier = "dossier"
-    case settings = "settings"
+    case stream = "stream"       // 时间流 (home)
+    case ledger = "ledger"       // 资产 (transactions)
+    case wishes = "wishes"       // 心愿 (wishes)
+    case atlas = "atlas"         // 足迹 (atlas)
+    case projects = "projects"   // 项目 (projects)
+    case dossier = "dossier"     // 主理人 (about)
+    case settings = "settings"   // 配置中心 (settings)
+    case darkroom = "darkroom"   // 辅助：暗房相纸
+    case creations = "creations" // 兼容历史
 
     public var id: String { rawValue }
 
+    /// 侧边栏纯粹呈现 Web 6 大核心生活内容板块
+    public static var sidebarSections: [WorkbenchSection] {
+        [.stream, .ledger, .wishes, .atlas, .projects, .dossier]
+    }
+
     public var title: String {
         switch self {
-        case .stream: return "时间流与刻度"
-        case .darkroom: return "拖拽暗房冲印"
-        case .ledger: return "柴米油盐与资产"
-        case .creations: return "造物、心愿与行迹"
-        case .dossier: return "主理人手记与器物"
-        case .settings: return "设备配对与偏好"
+        case .stream: return "时间流"
+        case .ledger: return "资产"
+        case .wishes: return "心愿"
+        case .atlas: return "足迹"
+        case .projects: return "项目"
+        case .dossier: return "主理人"
+        case .settings: return "配置中心"
+        case .darkroom: return "银盐暗房"
+        case .creations: return "造物与心愿"
         }
     }
 
     public var icon: String {
         switch self {
         case .stream: return "book.pages"
-        case .darkroom: return "camera.aperture"
         case .ledger: return "chart.bar.doc.horizontal"
-        case .creations: return "sparkles.rectangle.stack"
+        case .wishes: return "sparkles"
+        case .atlas: return "map"
+        case .projects: return "hammer"
         case .dossier: return "person.text.rectangle"
-        case .settings: return "key.radiowaves.forward"
+        case .settings: return "gearshape"
+        case .darkroom: return "camera.aperture"
+        case .creations: return "sparkles.rectangle.stack"
         }
     }
 }
@@ -124,14 +138,22 @@ public final class AppState {
     public var onThisDayEntries: [LifeEntry] = []
 
     // MARK: - 动态分类字典 (由 /api/v1/categories 下发驱动)
-    public var expenseCategories: [String] = ["餐饮", "交通", "购物", "数码器材", "娱乐", "住房", "学习", "医疗", "其他"]
-    public var incomeCategories: [String] = ["薪资", "奖金", "二手回血", "稿费与创作", "投资收益", "其他收入"]
-    public var gearCategories: [String] = ["数码主力", "影像器材", "桌面外设", "声学设备", "随行好物"]
-    public var projectCategories: [String] = ["软件与数字造物", "手工与器物", "文字与出版", "生活实验"]
-    public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金"]
+    public var expenseCategories: [String] = ["餐饮", "交通", "购物", "数码器材", "娱乐", "学习", "住房", "医疗", "旅行度假", "其他"]
+    public var incomeCategories: [String] = ["工资收入", "二手回血", "稿酬设计", "投资理财", "礼金红包", "退款报销", "其他收入"]
+    public var gearCategories: [String] = ["数码器材", "影像与暗房", "工作台与算力", "手冲咖啡工坊", "夜骑巡航", "纸笔与日常", "生活好物"]
+    public var projectCategories: [String] = ["开源项目", "独立开发", "硬件改造", "设计作品", "写作出版"]
+    public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金", "其他"]
 
     // MARK: - 导航与交互状态
     public var activeSection: WorkbenchSection = .stream
+    public var showSettingsSheet: Bool = false
+    public var showNewEntrySheet: Bool = false
+    public var newEntryInitialKind: String? = nil
+    public var newEntryInitialProjectId: Int? = nil
+    public var newEntryInitialCityCode: String? = nil
+    public var newEntryInitialCityName: String? = nil
+    public var showAlmanacSheet: Bool = false
+    public var showStatsSheet: Bool = false
     public var selectedCategory: ArchiveCategory = .all
     public var searchQuery: String = ""
     public var globalSearchResult: GlobalSearchResponse?

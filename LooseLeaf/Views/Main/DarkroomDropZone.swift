@@ -2,13 +2,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
 
-/// 拖拽暗房相纸冲印工作台组件 (DarkroomDropZone)
-/// 严格遵循 docs/macos.md §3.3 规范：
-/// 1. 支持从 Finder 直接拖拽 .jpg, .jpeg, .png, .heic, .webp, .cr2, .nef, .arw, .dng 等底片
-/// 2. 支持多底片集合装裱 (Darkroom Film Strip) 与多相纸合并为单篇生活手记
-/// 3. 端侧 ImageIO 提取 EXIF 相机型号、镜头焦段、光圈、快门与 ISO 参数
-/// 4. 自动执行最长边 3840px (4K) 缩放与 85% 质量压制
-/// 5. 预签名直传 R2 存储桶并伴生写入散页时间流
+/// 银盐底片回廊与相纸冲印装裱工作台 (DarkroomDropZone)
+/// 严格遵循 docs/macos.md §3.3 与体验重构规范：
+/// 1. 彻底解决“图文割裂与荒漠感”：上方为相纸冲印显影台，下方为“银盐底片回廊（画廊）”，全量展现时光手账装裱底片与大图灯箱
+/// 2. 支持从 Finder 拖拽常见相片与单反 RAW 原片，或按 ⌘V 粘贴截图冲印
+/// 3. 支持底片卷多张合并归档或单张装裱入册
+/// 4. 端侧 ImageIO 提取 EXIF 相机型号、焦段、光圈、快门与 ISO 参数
+/// 5. 自动执行 4K 缩放与 85% 质量压制，预签名直传 R2 伴生写入生活时间流
 @MainActor
 public struct DarkroomDropZone: View {
     @Bindable var appState: AppState
@@ -24,6 +24,16 @@ public struct DarkroomDropZone: View {
         }
     }
 
+    public struct GalleryPhotoItem: Identifiable, Equatable {
+        public let id: String
+        public let attachment: Attachment
+        public let parentEntry: LifeEntry
+
+        public static func == (lhs: GalleryPhotoItem, rhs: GalleryPhotoItem) -> Bool {
+            lhs.id == rhs.id
+        }
+    }
+
     @State private var items: [DarkroomPhotoItem] = []
     @State private var selectedIndex: Int = 0
     @State private var batchIntoSingleEntry: Bool = true
@@ -32,6 +42,8 @@ public struct DarkroomDropZone: View {
     @State private var entryTitle: String = ""
     @State private var entryContent: String = ""
     @State private var entryLocation: String = ""
+    @State private var entryCityCode: String = ""
+    @State private var entryCityName: String = ""
     @State private var entryOccurredAt: Date = Date()
     @State private var entryType: EntryType = .life
     @State private var isFeatured: Bool = true
@@ -40,6 +52,9 @@ public struct DarkroomDropZone: View {
     @State private var isUploading: Bool = false
     @State private var uploadProgress: Double = 0.0
     @State private var errorMessage: String?
+
+    @State private var galleryCategoryFilter: ArchiveCategory = .all
+    @State private var selectedLightboxPhoto: GalleryPhotoItem? = nil
 
     public init(appState: AppState) {
         self.appState = appState
@@ -51,63 +66,57 @@ public struct DarkroomDropZone: View {
         return items[idx]
     }
 
+    private var allGalleryPhotos: [GalleryPhotoItem] {
+        var list: [GalleryPhotoItem] = []
+        for entry in appState.entries {
+            for att in entry.attachments {
+                list.append(GalleryPhotoItem(id: "\(entry.id)-\(att.id)", attachment: att, parentEntry: entry))
+            }
+        }
+        return list
+    }
+
+    private var filteredGalleryPhotos: [GalleryPhotoItem] {
+        let all = allGalleryPhotos
+        if galleryCategoryFilter == .all {
+            return all
+        }
+        return all.filter { item in
+            switch galleryCategoryFilter {
+            case .daily: return item.parentEntry.type == "life"
+            case .travel: return item.parentEntry.type == "travel"
+            case .project: return item.parentEntry.type == "project"
+            case .wish: return item.parentEntry.type == "wish"
+            default: return true
+            }
+        }
+    }
+
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // 1. 页眉说明
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("银盐暗房 · 胶片冲印与相纸装裱")
-                            .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("拖入摄影原片或日常照片，自动识别器材参数，支持底片卷多张合并或单张装裱入册")
-                            .font(ArchiveTypography.bodySans(size: 12.5))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                    }
-                    Spacer()
+            VStack(alignment: .leading, spacing: 22) {
+                // 1. 页眉说明与快速操作
+                headerBar
 
-                    if !items.isEmpty {
-                        Text("底片卷 \(items.count) 张")
-                            .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(ArchivePalette.accentWarm.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                    }
+                // 2. 冲印装裱显影区
+                if items.isEmpty {
+                    compactDropBanner
+                } else {
+                    HStack(alignment: .top, spacing: 20) {
+                        dropCanvasArea
+                            .frame(maxWidth: .infinity)
 
-                    Button {
-                        pastePhotoFromClipboard()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "doc.on.clipboard")
-                            Text("粘贴剪贴板图片 (⌘V)")
+                        if let current = currentItem {
+                            exifAndPublishInspector(current: current)
+                                .frame(width: 320)
                         }
                     }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .keyboardShortcut("v", modifiers: [.command])
-
-                    Button {
-                        selectPhotoFromFinder()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "photo.badge.plus")
-                            Text("选择相片…")
-                        }
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 }
 
-                // 2. 核心拖拽暗房框与相纸装裱预览
-                HStack(alignment: .top, spacing: 20) {
-                    dropCanvasArea
-                        .frame(maxWidth: .infinity)
+                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
 
-                    if let current = currentItem {
-                        exifAndPublishInspector(current: current)
-                            .frame(width: 320)
-                    }
-                }
+                // 3. 银盐底片回廊与相册 (Film Negatives Gallery)
+                filmGallerySection
             }
             .padding(24)
             .onChange(of: selectedIndex) { _, newIndex in
@@ -118,9 +127,109 @@ public struct DarkroomDropZone: View {
                 }
             }
         }
+        .sheet(item: $selectedLightboxPhoto) { item in
+            FilmLightboxModal(item: item) {
+                selectedLightboxPhoto = nil
+            } onJumpToEntry: { entry in
+                selectedLightboxPhoto = nil
+                appState.highlightedEntry = entry
+                appState.activeSection = .stream
+            }
+        }
     }
 
-    // MARK: - 拖拽画布与相纸装裱框
+    // MARK: - 刊头栏
+
+    private var headerBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("银盐暗房 · 胶片回廊与相纸装裱")
+                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Text("拖入摄影原片或日常相纸，自动识别器材曝光参数并装裱入册")
+                    .font(ArchiveTypography.bodySans(size: 12.5))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+            }
+            Spacer()
+
+            if !items.isEmpty {
+                Text("待装裱 \(items.count) 张")
+                    .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(ArchivePalette.accentWarm.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+        }
+    }
+
+    // MARK: - 吸顶紧凑拖拽装裱条 (当无待冲印图片时展示，消除大荒漠)
+
+    private var compactDropBanner: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(ArchivePalette.archiveSubtle)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.borderDivider,
+                            style: StrokeStyle(lineWidth: isDragTargeted ? 1.5 : 0.8, dash: [6, 4])
+                        )
+                )
+
+            HStack(spacing: 16) {
+                Image(systemName: isProcessing ? "camera.metering.multispot" : "photo.badge.plus")
+                    .font(.system(size: 26, weight: .light))
+                    .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isProcessing ? "正在装裱底片…" : "将照片拖拽至此处显影，或按 ⌘V 粘贴")
+                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text("自动提取相机型号、镜头焦段与曝光 EXIF")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button {
+                        pastePhotoFromClipboard()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.clipboard")
+                            Text("粘贴剪贴板 (⌘V)")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .keyboardShortcut("v", modifiers: [.command])
+
+                    Button {
+                        selectPhotoFromFinder()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                            Text("选择相片…")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                }
+            }
+            .padding(16)
+        }
+        .frame(minHeight: 76)
+        .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
+            handleImageDrop(providers: providers)
+            return true
+        }
+        .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { _ in
+            pastePhotoFromClipboard()
+        }
+    }
+
+    // MARK: - 待冲印画布与底片胶卷盒
 
     private var dropCanvasArea: some View {
         VStack(spacing: 12) {
@@ -159,21 +268,6 @@ public struct DarkroomDropZone: View {
                         }
                     }
                     .padding(20)
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: isProcessing ? "camera.metering.multispot" : "photo.on.rectangle.angled")
-                            .font(.system(size: 36, weight: .light))
-                            .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-
-                        Text(isProcessing ? "正在装裱底片…" : "将照片拖拽至此处装裱显影")
-                            .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-
-                        Text("支持常见相片与单反原片，按 ⌘V 粘贴截图")
-                            .font(ArchiveTypography.monoScale(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .padding(48)
                 }
             }
             .frame(minHeight: 380)
@@ -185,7 +279,6 @@ public struct DarkroomDropZone: View {
                 pastePhotoFromClipboard()
             }
 
-            // 3. 底片胶卷卷栏 (Film Strip / Darkroom Contact Sheet)
             if items.count > 1 {
                 filmStripBar
             }
@@ -317,20 +410,25 @@ public struct DarkroomDropZone: View {
 
             PaperDateTimePicker(selection: $entryOccurredAt, label: "记录时间", showQuickShortcuts: true)
 
-            TextField(
-                appState.profile.displayCity.isEmpty ? "拍摄地点" : appState.profile.displayCity,
-                text: $entryLocation
-            )
-            .textFieldStyle(.plain)
-            .font(ArchiveTypography.bodySans(size: 12))
-            .foregroundStyle(ArchivePalette.inkPrimary)
-            .padding(8)
-            .background(ArchivePalette.archivePaper)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-            )
+            HStack(spacing: 8) {
+                PaperCityPicker(
+                    selectedCode: $entryCityCode,
+                    selectedName: $entryCityName,
+                    placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
+                )
+
+                TextField("具体拍摄地点", text: $entryLocation)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .padding(8)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
+            }
 
             ZStack(alignment: .topLeading) {
                 if entryContent.isEmpty {
@@ -344,6 +442,7 @@ public struct DarkroomDropZone: View {
                     .font(ArchiveTypography.bodySans(size: 12))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                     .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
                     .padding(4)
                     .frame(height: 90)
             }
@@ -401,6 +500,277 @@ public struct DarkroomDropZone: View {
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(2)
             Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - 银盐底片回廊 (Film Negatives Gallery)
+
+    private var filmGallerySection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("银盐底片回廊")
+                            .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Text("(\(filteredGalleryPhotos.count) 张)")
+                            .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    Text("收录生活时间流中所有装裱相纸底片，点击可放大检视或溯源手稿")
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    ForEach(ArchiveCategory.allCases.filter { $0 != .transaction }) { cat in
+                        PaperPillButton(
+                            title: cat.label,
+                            isSelected: galleryCategoryFilter == cat
+                        ) {
+                            galleryCategoryFilter = cat
+                            AudioFeedback.shared.playPaperFlip()
+                        }
+                    }
+                }
+            }
+
+            if filteredGalleryPhotos.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "photo.stack")
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text("尚无底片相纸记录")
+                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Text("在上方拖入照片冲印，或在撰写散页时添加相片，底片将自动珍藏于此回廊中。")
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .padding(40)
+                .frame(maxWidth: .infinity)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 16)], spacing: 16) {
+                    ForEach(filteredGalleryPhotos) { item in
+                        GalleryPhotoCard(item: item) {
+                            selectedLightboxPhoto = item
+                            AudioFeedback.shared.playPaperFlip()
+                        } onJumpToEntry: {
+                            appState.highlightedEntry = item.parentEntry
+                            appState.activeSection = .stream
+                            AudioFeedback.shared.playPaperFlip()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 单张底片卡片 (GalleryPhotoCard)
+
+    private struct GalleryPhotoCard: View {
+        let item: GalleryPhotoItem
+        var onTap: () -> Void
+        var onJumpToEntry: () -> Void
+
+        @State private var isHovering: Bool = false
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topTrailing) {
+                    if let url = APIClient.shared.resolveMediaURL(item.attachment.url) {
+                        CachedFilmImageView(url: url, maxHeight: 180)
+                            .frame(height: 180)
+                            .frame(maxWidth: .infinity)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    } else {
+                        Rectangle()
+                            .fill(ArchivePalette.archiveSubtle)
+                            .frame(height: 180)
+                    }
+
+                    if isHovering {
+                        Button {
+                            onJumpToEntry()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.up.right.square")
+                                Text("溯源手稿")
+                            }
+                            .font(ArchiveTypography.monoScale(size: 10, weight: .medium))
+                            .foregroundStyle(ArchivePalette.archivePaper)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(ArchivePalette.inkPrimary.opacity(0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .transition(.opacity)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.parentEntry.title.isEmpty ? item.attachment.originalFilename : item.parentEntry.title)
+                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        Text(FormatUtils.parseOccurredDate(item.parentEntry.occurredAt).dotDate)
+                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                        if let city = item.parentEntry.cityName ?? item.parentEntry.location, !city.isEmpty {
+                            Text("·")
+                                .font(ArchiveTypography.monoScale(size: 10))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                            Text(city)
+                                .font(ArchiveTypography.bodySans(size: 10.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if let w = item.attachment.width, let h = item.attachment.height {
+                            Text("\(w)×\(h)")
+                                .font(ArchiveTypography.monoScale(size: 10))
+                                .foregroundStyle(ArchivePalette.inkMuted.opacity(0.8))
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .padding(10)
+            .background(ArchivePalette.archivePaper)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(isHovering ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHovering ? 1.0 : 0.5)
+            )
+            .shadow(color: ArchivePalette.inkPrimary.opacity(isHovering ? 0.08 : 0.02), radius: isHovering ? 8 : 2, x: 0, y: isHovering ? 4 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onTap()
+            }
+            .onHover { h in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHovering = h
+                }
+            }
+        }
+    }
+
+    // MARK: - 大图底片灯箱弹窗 (FilmLightboxModal)
+
+    private struct FilmLightboxModal: View {
+        let item: GalleryPhotoItem
+        var onDismiss: () -> Void
+        var onJumpToEntry: (LifeEntry) -> Void
+
+        var body: some View {
+            VStack(spacing: 16) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.parentEntry.title.isEmpty ? item.attachment.originalFilename : item.parentEntry.title)
+                            .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        HStack(spacing: 8) {
+                            Text(FormatUtils.parseOccurredDate(item.parentEntry.occurredAt).dotDateTime)
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                            if let loc = item.parentEntry.location ?? item.parentEntry.cityName, !loc.isEmpty {
+                                Text("·")
+                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Text(loc)
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Button {
+                        onJumpToEntry(item.parentEntry)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.right.circle")
+                            Text("跳转至手稿手账")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 26, height: 26)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if let url = APIClient.shared.resolveMediaURL(item.attachment.url) {
+                    FilmFrameView(
+                        imageURL: url,
+                        caption: item.parentEntry.title.isEmpty ? nil : item.parentEntry.title,
+                        metaText: "\(item.attachment.originalFilename) · \(item.attachment.width ?? 0)×\(item.attachment.height ?? 0)px",
+                        maxHeight: 520
+                    )
+                }
+
+                HStack {
+                    Text("文件大小: \(formatBytes(item.attachment.size))")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                    Spacer()
+
+                    if let url = APIClient.shared.resolveMediaURL(item.attachment.url) {
+                        Button {
+                            openInPreview(url: url)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "macwindow.on.rectangle")
+                                Text("在系统「预览」中查看")
+                            }
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    }
+                }
+            }
+            .padding(20)
+            .frame(minWidth: 540, maxWidth: 780)
+            .background(ArchivePalette.archivePaper)
+        }
+
+        private func formatBytes(_ bytes: Int64) -> String {
+            let kb = Double(bytes) / 1024.0
+            if kb < 1024.0 { return String(format: "%.0f KB", kb) }
+            return String(format: "%.2f MB", kb / 1024.0)
+        }
+
+        private func openInPreview(url: URL) {
+            Task { @MainActor in
+                if let (data, _) = try? await URLSession.shared.data(from: url) {
+                    let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                    try? data.write(to: tempPath, options: .atomic)
+                    NSWorkspace.shared.open(tempPath)
+                }
+            }
         }
     }
 
@@ -543,6 +913,8 @@ public struct DarkroomDropZone: View {
                         content: bodyText,
                         type: entryType,
                         location: entryLocation.isEmpty ? nil : entryLocation,
+                        cityCode: entryCityCode.isEmpty ? nil : entryCityCode,
+                        cityName: entryCityName.isEmpty ? nil : entryCityName,
                         attachmentIds: attachmentIds,
                         featured: isFeatured,
                         occurredAt: FormatUtils.beijingISOString(from: entryOccurredAt)
@@ -573,6 +945,8 @@ public struct DarkroomDropZone: View {
                         content: bodyText,
                         type: entryType,
                         location: entryLocation.isEmpty ? nil : entryLocation,
+                        cityCode: entryCityCode.isEmpty ? nil : entryCityCode,
+                        cityName: entryCityName.isEmpty ? nil : entryCityName,
                         attachmentIds: [att.id],
                         featured: isFeatured,
                         occurredAt: FormatUtils.beijingISOString(from: entryOccurredAt)
@@ -601,6 +975,8 @@ public struct DarkroomDropZone: View {
         entryTitle = ""
         entryContent = ""
         entryLocation = ""
+        entryCityCode = ""
+        entryCityName = ""
         entryOccurredAt = Date()
         isUploading = false
         uploadProgress = 0.0

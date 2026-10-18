@@ -16,7 +16,8 @@ public struct StreamView: View {
     @State private var composeType: EntryType = .life
     @State private var composeTitle: String = ""
     @State private var composeContent: String = ""
-    @State private var composeLocation: String = ""
+    @State private var composeCityCode: String = ""
+    @State private var composeCityName: String = ""
     @State private var composeFeatured: Bool = false
     @State private var composeOccurredAt: Date = Date()
     @State private var composeAttachments: [Attachment] = []
@@ -25,12 +26,10 @@ public struct StreamView: View {
     @State private var isComposeDragTargeted: Bool = false
     @State private var composeExtractedCameraLine: String = ""
 
-    // 行内速写卡片状态 (Inline Quick Composer)
-    @State private var isQuickComposerExpanded: Bool = false
+    // 行内速写中枢状态 (Inline Quick Composer · 五形态全对齐 Web)
     @State private var quickType: EntryType = .life
     @State private var quickTitle: String = ""
     @State private var quickContent: String = ""
-    @State private var quickLocation: String = ""
     @State private var quickCityCode: String = ""
     @State private var quickCityName: String = ""
     @State private var quickFeatured: Bool = false
@@ -39,6 +38,22 @@ public struct StreamView: View {
     @State private var quickExtractedCameraLine: String = ""
     @State private var isQuickUploading: Bool = false
     @State private var isQuickDragTargeted: Bool = false
+
+    // 心愿 (Wish) 专有字段 (对齐 Web WishFormModal)
+    @State private var quickWishKind: String = "item" // item (好物), travel (旅程), milestone (里程碑)
+    @State private var quickWishSpec: String = ""
+    @State private var quickWishBudgetYuan: String = ""
+    @State private var quickWishTargetDate: Date = Date()
+
+    // 账目 (Transaction) 专有字段 (对齐 Web NewEntryModal)
+    @State private var quickTxType: String = "expense" // expense, income
+    @State private var quickTxAmountYuan: String = ""
+    @State private var quickTxCategory: String = "餐饮"
+    @State private var quickTxPaymentMethod: String = "微信支付"
+
+    // 游历与造物关联
+    @State private var quickSelectedProjectId: Int? = nil
+    @State private var quickSelectedFootprintId: Int? = nil
 
     // 键盘流与检索状态
     @State private var keyboardScrollPosition: Int?
@@ -77,9 +92,6 @@ public struct StreamView: View {
 
                 // 右侧主画布区
                 VStack(spacing: 0) {
-                    if let update = UpdateChecker.shared.availableUpdate {
-                        updateAvailableStrip(update: update)
-                    }
                     if let banner = appState.statusBanner {
                         topNoticeStrip(text: banner, isError: false)
                     } else if let err = appState.errorBanner {
@@ -90,20 +102,27 @@ public struct StreamView: View {
                         switch appState.activeSection {
                         case .stream:
                             streamTimelineCanvas
-                        case .darkroom:
-                            DarkroomDropZone(appState: appState)
                         case .ledger:
                             LedgerAssetsView(appState: appState)
-                        case .creations:
-                            ProjectsWishesView(appState: appState)
+                        case .wishes:
+                            WishlistView(appState: appState)
+                        case .atlas:
+                            TravelAtlasView(appState: appState)
+                        case .projects:
+                            ProjectsView(appState: appState)
                         case .dossier:
                             CuratorDossierView(appState: appState)
                         case .settings:
                             SettingsView(appState: appState)
+                        case .darkroom:
+                            DarkroomDropZone(appState: appState)
+                        case .creations:
+                            ProjectsWishesView(appState: appState)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .animation(nil, value: appState.activeSection)
+
                 }
             }
 
@@ -116,7 +135,105 @@ public struct StreamView: View {
                     appState.lightboxAttachment = nil
                 }
             }
+            if appState.showSettingsSheet {
+                ZStack {
+                    Color.black.opacity(0.38)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                appState.showSettingsSheet = false
+                            }
+                        }
+
+                    SettingsView(appState: appState)
+                        .frame(width: 820, height: 580)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                        )
+                        .onTapGesture {
+                            // 吸收卡片内部的点击，防止误触发背景退出
+                        }
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.96).combined(with: .opacity),
+                            removal: .scale(scale: 0.96).combined(with: .opacity)
+                        ))
+                }
+                .zIndex(100)
+            }
+
+            // 全局快捷悬浮发布按钮 (Floating Action Button)
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        appState.showNewEntrySheet = true
+                        AudioFeedback.shared.playPaperFlip()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.archivePaper)
+                            .frame(width: 44, height: 44)
+                            .background(ArchivePalette.inkPrimary)
+                            .clipShape(Circle())
+                            .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(24)
+                    .help("记一笔 (⌘N)")
+                }
+            }
+            .allowsHitTesting(!appState.showSettingsSheet && !appState.showNewEntrySheet)
+
+            if appState.showNewEntrySheet {
+                ZStack {
+                    Color.black.opacity(0.38)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                appState.showNewEntrySheet = false
+                            }
+                        }
+
+                    NewEntryModal(
+                        appState: appState,
+                        initialKind: appState.newEntryInitialKind,
+                        initialProjectId: appState.newEntryInitialProjectId,
+                        initialCityCode: appState.newEntryInitialCityCode,
+                        initialCityName: appState.newEntryInitialCityName
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            appState.showNewEntrySheet = false
+                            appState.newEntryInitialKind = nil
+                            appState.newEntryInitialProjectId = nil
+                            appState.newEntryInitialCityCode = nil
+                            appState.newEntryInitialCityName = nil
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                    )
+                    .onTapGesture {
+                        // 吸收点击
+                    }
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.96).combined(with: .opacity),
+                        removal: .scale(scale: 0.96).combined(with: .opacity)
+                    ))
+                }
+                .zIndex(110)
+            }
         }
+
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         .sheet(isPresented: $showComposeSheet) {
             composeNewEntrySheet
@@ -216,7 +333,7 @@ public struct StreamView: View {
 
             // 导航菜单项
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(WorkbenchSection.allCases) { section in
+                ForEach(WorkbenchSection.sidebarSections) { section in
                     WorkbenchNavRow(
                         section: section,
                         selected: appState.activeSection == section
@@ -234,21 +351,40 @@ public struct StreamView: View {
 
             Spacer()
 
-            // 底部藏书票与中枢状态微标 (Ex-Libris Seal)
-            VStack(alignment: .leading, spacing: 6) {
+            // 底部配置中心入口与系统状态
+            VStack(alignment: .leading, spacing: 8) {
                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-                    .padding(.bottom, 4)
 
-                HStack(spacing: 6) {
-                    Text("\(max(appState.stats.totalEntries, appState.entries.count)) 散页")
-                    Text("·")
-                    Text("\(appState.stats.totalPhotos) 底片")
-                    Text("·")
-                    Text("\(max(appState.stats.totalProjects, appState.projects.count)) 造物")
+                // 原生偏好设置/配置中心入口 (⌘,)
+                Button {
+                    appState.showSettingsSheet = true
+                    AudioFeedback.shared.playPaperFlip()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 12))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                        Text("配置中心")
+                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Spacer()
+                        Text("⌘,")
+                            .font(ArchiveTypography.monoScale(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(ArchivePalette.archivePaper.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
                 }
-                .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
-                .foregroundStyle(ArchivePalette.inkSecondary)
+                .buttonStyle(.plain)
+                .keyboardShortcut(",", modifiers: [.command])
 
+                // 中枢就绪状态与快捷记账提示
                 HStack(spacing: 5) {
                     Circle()
                         .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
@@ -259,19 +395,18 @@ public struct StreamView: View {
 
                     Spacer()
 
-                    if !appState.outboxItems.isEmpty {
-                        Text("\(appState.outboxItems.count) 待发")
-                            .font(ArchiveTypography.monoScale(size: 10, weight: .semibold))
+                    HStack(spacing: 3) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 8))
                             .foregroundStyle(ArchivePalette.accentWarm)
-                    } else {
-                        Text(appState.globalHotkeyLabel)
-                            .font(ArchiveTypography.monoScale(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted.opacity(0.8))
+                        Text("快速记 ⇧⌘L")
                     }
+                    .font(ArchiveTypography.monoScale(size: 9.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
         }
         .background(ArchivePalette.archivePaper.opacity(0.65))
     }
@@ -337,81 +472,95 @@ public struct StreamView: View {
     private var streamTimelineCanvas: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // 1. 顶部引言与工具栏 (32pt 统一高度与水平对齐)
-                HStack(alignment: .center, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("生活档案与时光手账")
-                            .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        if !appState.profile.motto.isEmpty {
-                            Text(appState.profile.motto)
-                                .font(ArchiveTypography.editorialSerif(size: 12.5))
-                                .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.8))
+                // 1. 刊头诗意排版 (严格对标 Web HomeView.vue 刊头)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            let rawName = appState.siteConfig.siteName.split(separator: "·").first?.trimmingCharacters(in: .whitespaces) ?? "散页"
+                            Text(rawName.isEmpty ? "散页" : rawName)
+                                .font(ArchiveTypography.editorialSerif(size: 26, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+
+                            let sub = appState.siteConfig.siteSubtitle ?? ""
+                            let subtitle = sub.isEmpty ? "日常 · 资产 · 心愿 · 行迹 · 造物" : sub
+                            Text(subtitle)
+                                .font(ArchiveTypography.monoScale(size: 12))
+                                .foregroundStyle(ArchivePalette.inkMuted)
                         }
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            if !appState.profile.displayCity.isEmpty {
+                                Text("\(appState.profile.displayCity) ·")
+                            }
+                            Text(FormatUtils.beijingDateString())
+                        }
+                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
                     }
 
-                    Spacer()
+                    if !appState.profile.motto.isEmpty {
+                        Text("“\(appState.profile.motto)”")
+                            .font(ArchiveTypography.editorialSerif(size: 13))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .italic()
+                            .padding(.top, 1)
+                    }
 
-                    // 即时模糊搜索框 (32pt 统一高度，⌘F 自动聚焦与宽度弹性展开)
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                        TextField("搜索… (⌘F)", text: $localSearchText)
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.bodySans(size: 12))
-                            .focused($isSearchFocused)
-                            .frame(width: isSearchFocused ? 240 : 180)
-                            .animation(.easeOut(duration: 0.16), value: isSearchFocused)
-                            .onChange(of: localSearchText) { _, newVal in
-                                if newVal.isEmpty {
+                    // 检索与操作胶囊工具条
+                    HStack(spacing: 8) {
+                        // 模糊搜索框 (⌘F)
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 11))
+                                .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                            TextField("即时搜索散页与票根… (⌘F)", text: $localSearchText)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.bodySans(size: 12))
+                                .focused($isSearchFocused)
+                                .frame(width: isSearchFocused ? 260 : 200)
+                                .animation(.easeOut(duration: 0.16), value: isSearchFocused)
+                                .onChange(of: localSearchText) { _, newVal in
+                                    if newVal.isEmpty {
+                                        appState.searchQuery = ""
+                                        appState.globalSearchResult = nil
+                                    }
+                                }
+                                .task(id: localSearchText) {
+                                    guard !localSearchText.isEmpty else { return }
+                                    do {
+                                        try await Task.sleep(nanoseconds: 180_000_000)
+                                        appState.searchQuery = localSearchText
+                                        await appState.performGlobalSearch(query: localSearchText)
+                                    } catch {}
+                                }
+                            if appState.isGlobalSearching {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .padding(.trailing, 2)
+                            }
+                            if !localSearchText.isEmpty {
+                                Button {
+                                    localSearchText = ""
                                     appState.searchQuery = ""
                                     appState.globalSearchResult = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .task(id: localSearchText) {
-                                guard !localSearchText.isEmpty else { return }
-                                do {
-                                    try await Task.sleep(nanoseconds: 180_000_000)
-                                    appState.searchQuery = localSearchText
-                                    await appState.performGlobalSearch(query: localSearchText)
-                                } catch {}
-                            }
-                        if appState.isGlobalSearching {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .padding(.trailing, 2)
                         }
-                        if !localSearchText.isEmpty {
-                            Button {
-                                localSearchText = ""
-                                appState.searchQuery = ""
-                                appState.globalSearchResult = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("清除搜索")
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 32)
-                    .background(ArchivePalette.archivePaper)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                    .paperElevation(1)
-                    .background(
-                        Button("") {
-                            isSearchFocused = true
-                        }
-                        .keyboardShortcut("f", modifiers: [.command])
-                        .opacity(0)
-                        .allowsHitTesting(false)
-                    )
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                        .paperElevation(1)
 
-                    // 右侧精细操作胶囊组 (32pt 统一高度)
-                    HStack(spacing: 6) {
+                        Spacer()
+
                         Button {
                             exportMarkdown()
                         } label: {
@@ -424,7 +573,6 @@ public struct StreamView: View {
                         .background(ArchivePalette.archivePaper)
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         .paperElevation(1)
-                        .accessibilityLabel("导出当前视图为 Markdown")
                         .help("导出当前视图为 Markdown")
 
                         Button {
@@ -441,16 +589,16 @@ public struct StreamView: View {
                         .background(ArchivePalette.archivePaper)
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         .paperElevation(1)
-                        .accessibilityLabel("同步最新档案")
                         .help("全量同步中枢档案 (⌘R)")
 
                         Button {
-                            showComposeSheet = true
+                            appState.showNewEntrySheet = true
+                            AudioFeedback.shared.playPaperFlip()
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "square.and.pencil")
                                     .font(.system(size: 11))
-                                Text("撰写散页")
+                                Text("记一笔")
                                     .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
                             }
                             .padding(.horizontal, 12)
@@ -464,20 +612,18 @@ public struct StreamView: View {
                         .keyboardShortcut("n", modifiers: [.command])
                     }
                 }
+                .padding(.bottom, 6)
 
-                // 2. 顶部行内即时手稿速写卡片 (Inline Quick Composer)
-                inlineQuickComposerCard
+                Divider().overlay(ArchivePalette.borderSubtle)
 
+                // 2. 那年今日 · 岁月回响旧信笺 (复刻 Web 四角切线与朱砂印)
                 if !appState.onThisDayEntries.isEmpty {
                     onThisDayBannerCard
                 }
 
-                // 3. GitHub 风格 52 周生活刻度热力图
-                LifeActivityHeatmapView(
-                    entryCounts: appState.entryCountsByDate,
-                    totalCount: appState.entries.count,
-                    weeksCount: 52
-                )
+                // 3. 迷你山河印谱概览
+                miniAtlasWidgetCard
+
 
                 // 4. 四维母体分类切换栏与 #标签 筛选
                 HStack(spacing: 6) {
@@ -996,15 +1142,13 @@ public struct StreamView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             HStack(spacing: 8) {
-                TextField(
-                    appState.profile.displayCity.isEmpty ? "所处地点" : appState.profile.displayCity,
-                    text: $composeLocation
+                PaperCityPicker(
+                    selectedCode: $composeCityCode,
+                    selectedName: $composeCityName,
+                    placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
                 )
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: 12))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                Spacer()
 
                 PaperDateTimePicker(selection: $composeOccurredAt, label: nil)
             }
@@ -1012,6 +1156,7 @@ public struct StreamView: View {
             TextEditor(text: $composeContent)
                 .font(ArchiveTypography.bodySans(size: 13))
                 .scrollContentBackground(.hidden)
+                .scrollIndicators(.hidden)
                 .padding(6)
                 .frame(height: 130)
                 .background(ArchivePalette.archiveSubtle)
@@ -1129,9 +1274,8 @@ public struct StreamView: View {
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                 Button("落墨归档 ⌘↩") {
-                    let loc = composeLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let resolvedCode = FormatUtils.resolveCityCode(from: loc)
-                    let finalLoc = loc.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : loc
+                    let finalLoc = composeCityName.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : composeCityName
+                    let resolvedCode = composeCityCode.isEmpty ? FormatUtils.resolveCityCode(from: finalLoc ?? "") : composeCityCode
                     var bodyText = composeContent.trimmingCharacters(in: .whitespacesAndNewlines)
                     if bodyText.isEmpty && !composeAttachments.isEmpty {
                         bodyText = composeExtractedCameraLine.isEmpty ? "散页生活手稿印记" : composeExtractedCameraLine
@@ -1157,7 +1301,8 @@ public struct StreamView: View {
                         AudioFeedback.shared.playShutter()
                         composeTitle = ""
                         composeContent = ""
-                        composeLocation = ""
+                        composeCityCode = ""
+                        composeCityName = ""
                         composeFeatured = false
                         composeOccurredAt = Date()
                         composeAttachments.removeAll()
@@ -1176,52 +1321,52 @@ public struct StreamView: View {
         .background(ArchivePalette.archivePaper)
     }
 
-    // MARK: - 那年今日 · 岁月回响折叠横幅
+    // MARK: - 那年今日 · 岁月回响旧信笺 (复刻 Web 四角切线与朱砂印)
     private var onThisDayBannerCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    Text("那年今日 · 岁月回响 (\(appState.onThisDayEntries.count))")
-                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
-                Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isOnThisDayExpanded.toggle()
-                    }
-                } label: {
-                    Image(systemName: isOnThisDayExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
-                .buttonStyle(.plain)
-            }
+        ZStack {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    HStack(spacing: 8) {
+                        Text("岁月回响")
+                            .font(ArchiveTypography.monoScale(size: 10, weight: .bold))
+                            .foregroundStyle(ArchivePalette.archivePaper)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(ArchivePalette.accentWarm)
+                            .clipShape(RoundedRectangle(cornerRadius: 2))
 
-            if isOnThisDayExpanded {
+                        Text("那年今日 · ON THIS DAY")
+                            .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+
+                    Spacer()
+
+                    Text("往年今日 \(appState.onThisDayEntries.count) 篇在册印记")
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
                 Divider().overlay(ArchivePalette.accentWarm.opacity(0.3))
 
-                VStack(spacing: 8) {
-                    ForEach(appState.onThisDayEntries) { entry in
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(appState.onThisDayEntries.prefix(4)) { entry in
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(entry.title.isEmpty ? "无题手稿" : entry.title)
-                                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                                Text(entry.title.isEmpty ? (entry.content.isEmpty ? "无题散页" : entry.content) : entry.title)
+                                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
-                                if !entry.content.isEmpty {
-                                    Text(entry.content)
-                                        .font(ArchiveTypography.bodySans(size: 11.5))
-                                        .foregroundStyle(ArchivePalette.inkSecondary)
-                                        .lineLimit(1)
-                                }
+                                    .lineLimit(1)
+
+                                Text(entry.content)
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                                    .lineLimit(1)
                             }
                             Spacer()
                             Text(entry.parsedDate.dotDate)
-                                .font(ArchiveTypography.monoScale(size: 11))
-                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                .foregroundStyle(ArchivePalette.accentWarm)
                         }
                         .padding(8)
                         .background(ArchivePalette.archivePaper)
@@ -1234,241 +1379,459 @@ public struct StreamView: View {
                     }
                 }
             }
+            .padding(14)
+            .background(ArchivePalette.accentWarm.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.8)
+            )
+
+            // 四角复古裁切基准线 ⌜ ⌝ ⌞ ⌟
+            VStack {
+                HStack {
+                    Text("⌜").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                    Spacer()
+                    Text("⌝").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                }
+                Spacer()
+                HStack {
+                    Text("⌞").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                    Spacer()
+                    Text("⌟").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                }
+            }
+            .padding(4)
+            .allowsHitTesting(false)
         }
-        .padding(14)
-        .background(ArchivePalette.accentWarm.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.8)
-        )
     }
 
-    // MARK: - 行内速写卡片与管理动作 (Inline Quick Composer & Management)
+    // MARK: - 3. 迷你山河印谱概览 (MiniAtlasWidget)
+    @ViewBuilder
+    private var miniAtlasWidgetCard: some View {
+        let litCities = Array(Set(appState.footprints.map { $0.cityName }))
+        if !litCities.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "map")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text("山川印谱概览 · 已踏访 \(litCities.count) 座城邑 (\(appState.footprints.count) 次履迹)")
+                            .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                    }
 
-    private var inlineQuickComposerCard: some View {
-        Group {
-            if !isQuickComposerExpanded {
-                HStack(spacing: 10) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 12))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    Text("写下此刻生活手稿与灵感碎念…")
-                        .font(ArchiveTypography.bodySans(size: 13))
-                        .foregroundStyle(ArchivePalette.inkMuted)
                     Spacer()
-                    HStack(spacing: 4) {
-                        Text("展开速写")
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9))
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(ArchivePalette.accentWarm.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 40)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
-                .paperElevation(1)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        isQuickComposerExpanded = true
-                    }
-                    AudioFeedback.shared.playPaperFlip()
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        HStack(spacing: 5) {
-                            ForEach(EntryType.allCases) { kind in
-                                PaperPillButton(
-                                    title: kind.label,
-                                    icon: kind.symbolName,
-                                    isSelected: quickType == kind
-                                ) {
-                                    quickType = kind
-                                }
-                            }
+
+                    Button {
+                        appState.activeSection = .atlas
+                        AudioFeedback.shared.playPaperFlip()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("翻阅全谱与票根")
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9))
                         }
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+                    .buttonStyle(.plain)
+                }
 
-                        Spacer()
-
-                        Toggle("精选", isOn: $quickFeatured)
-                            .toggleStyle(.checkbox)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-
+                // 最近踏足城市标签流
+                HStack(spacing: 6) {
+                    ForEach(appState.footprints.prefix(6)) { fp in
                         Button {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                isQuickComposerExpanded = false
-                            }
+                            appState.activeSection = .atlas
                             AudioFeedback.shared.playPaperFlip()
                         } label: {
                             HStack(spacing: 3) {
-                                Text("收起")
-                                Image(systemName: "chevron.up")
+                                Image(systemName: "location.fill")
                                     .font(.system(size: 8))
+                                    .foregroundStyle(ArchivePalette.accentWarm)
+                                Text(fp.cityName)
+                                    .font(ArchiveTypography.monoScale(size: 10.5))
                             }
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(ArchivePalette.archiveSubtle.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                            .padding(.vertical, 3)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
                         }
                         .buttonStyle(.plain)
-                        .help("收起速写卡片")
+                    }
+                }
+            }
+            .padding(12)
+            .background(ArchivePalette.archiveSubtle.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+            )
+        }
+    }
+
+
+    // MARK: - 行内速写中枢 (Inline Quick Composer · 五形态全对齐 Web)
+
+    private var inlineQuickComposerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 顶栏：形态切换器与精选印记
+            HStack {
+                HStack(spacing: 5) {
+                    ForEach(EntryType.allCases) { kind in
+                        PaperPillButton(
+                            title: kind.label,
+                            icon: kind.symbolName,
+                            isSelected: quickType == kind
+                        ) {
+                            quickType = kind
+                            AudioFeedback.shared.playTink()
+                        }
+                    }
+                }
+
+                Spacer()
+
+                if quickType == .life || quickType == .travel {
+                    Toggle("精选", isOn: $quickFeatured)
+                        .toggleStyle(.checkbox)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+            }
+
+            // 根据形态动态提供专属表单域 (对齐 Web 端 NewEntryModal & WishFormModal)
+            if quickType == .wish {
+                // 心愿形态专属
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text("心愿形态：")
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                        ForEach([("item", "好物心愿", "bag"), ("travel", "远方旅程", "airplane"), ("milestone", "人生里程碑", "flag.checkered")], id: \.0) { item in
+                            PaperPillButton(
+                                title: item.1,
+                                icon: item.2,
+                                isSelected: quickWishKind == item.0
+                            ) {
+                                quickWishKind = item.0
+                                AudioFeedback.shared.playTink()
+                            }
+                        }
                     }
 
-                    // 沉浸无界标题行（无内外嵌套框）
-                    TextField("标题", text: $quickTitle)
+                    TextField(
+                        quickWishKind == "travel" ? "旅程目的地或漫游心愿 (如：冰岛环岛 / 京都赏枫)" : (quickWishKind == "milestone" ? "里程碑心愿 (如：跑下人生首场全马 / 掌握 Rust)" : "心愿好物名称 (如：徕卡 M11-P / 机械键盘)"),
+                        text: $quickTitle
+                    )
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.editorialSerif(size: 15.5, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .padding(.vertical, 2)
+
+                    HStack(spacing: 8) {
+                        if quickWishKind == "item" {
+                            TextField("规格型号 (例如：黑色 / 50mm F1.4)", text: $quickWishSpec)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.bodySans(size: 12))
+                                .padding(.horizontal, 8)
+                                .frame(height: 28)
+                                .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                        }
+
+                        HStack(spacing: 4) {
+                            Text("¥")
+                                .font(ArchiveTypography.monoScale(size: 11, weight: .bold))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            TextField("预算金额 (选填)", text: $quickWishBudgetYuan)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.monoScale(size: 12))
+                        }
+                        .padding(.horizontal, 8)
+                        .frame(height: 28)
+                        .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                        PaperDatePicker(selection: $quickWishTargetDate, label: "期望达成")
+                    }
+                }
+            } else if quickType == .transaction {
+                // 账目形态专属
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Picker("", selection: $quickTxType) {
+                            Text("支出").tag("expense")
+                            Text("收入").tag("income")
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 100)
+
+                        HStack(spacing: 4) {
+                            Text("¥")
+                                .font(ArchiveTypography.monoScale(size: 12, weight: .bold))
+                                .foregroundStyle(quickTxType == "expense" ? ArchivePalette.accentWarm : ArchivePalette.accentMoss)
+                            TextField("金额 (例如 42.50)", text: $quickTxAmountYuan)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.monoScale(size: 13, weight: .semibold))
+                        }
+                        .padding(.horizontal, 8)
+                        .frame(height: 28)
+                        .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                        Picker("分类", selection: $quickTxCategory) {
+                            let cats = quickTxType == "expense" ? appState.expenseCategories : appState.incomeCategories
+                            ForEach(cats, id: \.self) { cat in
+                                Text(cat).tag(cat)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Picker("支付", selection: $quickTxPaymentMethod) {
+                            ForEach(appState.paymentMethods, id: \.self) { method in
+                                Text(method).tag(method)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    TextField("商户名称或手账说明 (选填)", text: $quickTitle)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.editorialSerif(size: 14.5))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .padding(.vertical, 2)
+                }
+            } else {
+                // 日常 / 游历 / 造物
+                VStack(alignment: .leading, spacing: 6) {
+                    if quickType == .project && !appState.projects.isEmpty {
+                        HStack(spacing: 6) {
+                            Text("归属造物：")
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                            Picker("", selection: $quickSelectedProjectId) {
+                                Text("独立造物手记").tag(nil as Int?)
+                                ForEach(appState.projects) { p in
+                                    Text(p.title).tag(p.id as Int?)
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                    }
+
+                    TextField(quickType == .travel ? "游历主题或漫游散记" : (quickType == .project ? "造物手记标题" : "标题 (选填)"), text: $quickTitle)
                         .textFieldStyle(.plain)
                         .font(ArchiveTypography.editorialSerif(size: 16.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .padding(.vertical, 2)
+                }
+            }
 
-                    Rectangle()
-                        .fill(ArchivePalette.borderSubtle.opacity(0.6))
-                        .frame(height: 0.5)
+            Rectangle()
+                .fill(ArchivePalette.borderSubtle.opacity(0.6))
+                .frame(height: 0.5)
 
-                    // 沉浸无界正文（如真纸落墨，无灰色内嵌框）
-                    ZStack(alignment: .topLeading) {
-                        if quickContent.isEmpty {
-                            Text("记下此刻…… (⌘↩ 归档)")
-                                .font(ArchiveTypography.bodySans(size: 13.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(.top, 2)
-                                .allowsHitTesting(false)
-                        }
+            // 正文：采用原生 TextField(axis: .vertical)，彻底修复输入法 Marked Text 候选词重叠
+            TextField(
+                quickType == .wish ? "心愿缘由与期许向往…… (⌘↩ 归档)" : (quickType == .transaction ? "记账手记或消费场景…… (⌘↩ 归档)" : (quickType == .travel ? "山川行迹与漫游记忆…… (⌘↩ 归档)" : "记下此刻…… (⌘↩ 归档)")),
+                text: $quickContent,
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .font(ArchiveTypography.bodySans(size: 13.5))
+            .foregroundStyle(ArchivePalette.inkPrimary)
+            .lineLimit(3...8)
 
-                        TextEditor(text: $quickContent)
-                            .font(ArchiveTypography.bodySans(size: 13.5))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                            .scrollContentBackground(.hidden)
-                            .lineSpacing(4)
-                            .frame(minHeight: 72, maxHeight: 130)
-                    }
-
-                    // 附带相片缩略条
-                    if !quickAttachments.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(quickAttachments) { att in
-                                    HStack(spacing: 4) {
-                                        if let url = APIClient.shared.resolveMediaURL(att.url) {
-                                            CachedFilmImageView(url: url, maxHeight: 20)
-                                                .frame(width: 20, height: 20)
-                                                .clipShape(RoundedRectangle(cornerRadius: 2))
-                                        }
-                                        Text(att.originalFilename)
-                                            .font(ArchiveTypography.monoScale(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                            .lineLimit(1)
-                                            .frame(maxWidth: 85)
-                                        Button {
-                                            quickAttachments.removeAll { $0.id == att.id }
-                                        } label: {
-                                            Image(systemName: "xmark")
-                                                .font(.system(size: 8, weight: .bold))
-                                                .foregroundStyle(ArchivePalette.inkMuted)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(ArchivePalette.archiveSubtle.opacity(0.6))
-                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                                }
-                            }
-                        }
-                    }
-
-                    // 底栏所有控件严格 30pt 等高与水平对齐
-                    HStack(spacing: 8) {
-                        PaperCityPicker(
-                            selectedCode: $quickCityCode,
-                            selectedName: $quickCityName,
-                            placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
-                        )
-
-                        HStack(spacing: 5) {
-                            Image(systemName: "mappin.and.ellipse")
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                            TextField("具体地点", text: $quickLocation)
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.bodySans(size: 12))
-                                .frame(maxWidth: 110)
-                        }
-                        .padding(.horizontal, 8)
-                        .frame(height: 30)
-                        .background(ArchivePalette.archiveSubtle.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-
-                        PaperDateTimePicker(selection: $quickOccurredAt, showQuickShortcuts: false)
-
-                        Button {
-                            selectPhotosForQuick()
-                        } label: {
+            // 附带相片缩略条
+            if !quickAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(quickAttachments) { att in
                             HStack(spacing: 4) {
-                                Image(systemName: "photo.badge.plus")
-                                    .font(.system(size: 11))
-                                if !quickAttachments.isEmpty {
-                                    Text("\(quickAttachments.count)")
-                                        .font(ArchiveTypography.monoScale(size: 10.5, weight: .semibold))
+                                if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                    CachedFilmImageView(url: url, maxHeight: 20)
+                                        .frame(width: 20, height: 20)
+                                        .clipShape(RoundedRectangle(cornerRadius: 2))
                                 }
+                                Text(att.originalFilename)
+                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: 85)
+                                Button {
+                                    quickAttachments.removeAll { $0.id == att.id }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .foregroundStyle(quickAttachments.isEmpty ? ArchivePalette.inkSecondary : ArchivePalette.accentMoss)
-                            .padding(.horizontal, 8)
-                            .frame(height: 30)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
                             .background(ArchivePalette.archiveSubtle.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         }
-                        .buttonStyle(.plain)
-                        .help("添加相纸底片照片…")
-
-                        if isQuickUploading {
-                            ProgressView().controlSize(.small)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            submitInlineQuickEntry()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "paperplane")
-                                    .font(.system(size: 11))
-                                Text("落墨归档 ⌘↩")
-                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            }
-                            .padding(.horizontal, 14)
-                            .frame(height: 30)
-                            .foregroundStyle(ArchivePalette.archivePaper)
-                            .background(ArchivePalette.inkPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                        }
-                        .buttonStyle(.plain)
-                        .paperElevation(1)
-                        .keyboardShortcut(.return, modifiers: [.command])
-                        .disabled((quickContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && quickAttachments.isEmpty) || isQuickUploading)
                     }
                 }
-                .padding(16)
-                .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
-                .paperElevation(1)
             }
+
+            // 底栏控件严格 30pt 等高与水平对齐 (纯城市选择，彻底移除具体地点)
+            HStack(spacing: 8) {
+                PaperCityPicker(
+                    selectedCode: $quickCityCode,
+                    selectedName: $quickCityName,
+                    placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
+                )
+
+                PaperDateTimePicker(selection: $quickOccurredAt, showQuickShortcuts: false)
+
+                Button {
+                    selectPhotosForQuick()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "photo.badge.plus")
+                            .font(.system(size: 11))
+                        if !quickAttachments.isEmpty {
+                            Text("\(quickAttachments.count)")
+                                .font(ArchiveTypography.monoScale(size: 10.5, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(quickAttachments.isEmpty ? ArchivePalette.inkSecondary : ArchivePalette.accentMoss)
+                    .padding(.horizontal, 8)
+                    .frame(height: 30)
+                    .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                }
+                .buttonStyle(.plain)
+                .help("添加相纸底片照片…")
+
+                if isQuickUploading {
+                    ProgressView().controlSize(.small)
+                }
+
+                Spacer()
+
+                Button {
+                    submitInlineQuickEntry()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "paperplane")
+                            .font(.system(size: 11))
+                        Text(quickType == .wish ? "许下心愿 ⌘↩" : (quickType == .transaction ? "记下一笔 ⌘↩" : "落墨归档 ⌘↩"))
+                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 30)
+                    .foregroundStyle(ArchivePalette.archivePaper)
+                    .background(ArchivePalette.inkPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                }
+                .buttonStyle(.plain)
+                .paperElevation(1)
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(isQuickSubmitDisabled)
+            }
+        }
+        .padding(16)
+        .background(ArchivePalette.archivePaper)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+        .paperElevation(1)
+    }
+
+    private var isQuickSubmitDisabled: Bool {
+        if isQuickUploading { return true }
+        if quickType == .wish {
+            return quickTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        } else if quickType == .transaction {
+            let amt = Double(quickTxAmountYuan.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            return amt <= 0
+        } else {
+            return (quickContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && quickAttachments.isEmpty)
         }
     }
 
     private func submitInlineQuickEntry() {
+        let titleText = quickTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         var content = quickContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedCity = quickCityName.isEmpty ? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity) : quickCityName
+        let resolvedCode = quickCityCode.isEmpty ? FormatUtils.resolveCityCode(from: resolvedCity ?? "") : quickCityCode
+        let attIds = quickAttachments.map(\.id)
+
+        // 1. 提交心愿 (Wish)
+        if quickType == .wish {
+            guard !titleText.isEmpty else { return }
+            let budgetYuan = Double(quickWishBudgetYuan.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            let budgetCents = Int64(budgetYuan * 100)
+
+            Task { @MainActor in
+                let req = CreateWishRequest(
+                    title: titleText,
+                    kind: quickWishKind,
+                    note: content.isEmpty ? nil : content,
+                    spec: quickWishKind == "item" && !quickWishSpec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? quickWishSpec.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+                    cityCode: quickWishKind == "travel" ? resolvedCode : nil,
+                    cityName: quickWishKind == "travel" ? resolvedCity : nil,
+                    budget: budgetCents,
+                    targetDate: FormatUtils.beijingDateString(from: quickWishTargetDate),
+                    attachmentIds: attIds
+                )
+                _ = try? await APIClient.shared.createWish(req)
+                AudioFeedback.shared.playShutter()
+                quickTitle = ""
+                quickContent = ""
+                quickWishSpec = ""
+                quickWishBudgetYuan = ""
+                quickCityCode = ""
+                quickCityName = ""
+                quickAttachments.removeAll()
+                quickExtractedCameraLine = ""
+                await appState.loadConfigAndProfile()
+            }
+            return
+        }
+
+        // 2. 提交账目 (Transaction)
+        if quickType == .transaction {
+            let amtYuan = Double(quickTxAmountYuan.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            guard amtYuan > 0 else { return }
+            let amountInCents = Int64(amtYuan * 100)
+
+            Task { @MainActor in
+                let req = CreateTransactionRequest(
+                    amount: amountInCents,
+                    type: quickTxType,
+                    category: quickTxCategory,
+                    title: titleText.isEmpty ? quickTxCategory : titleText,
+                    note: content.isEmpty ? nil : content,
+                    paymentMethod: quickTxPaymentMethod,
+                    cityCode: resolvedCode,
+                    occurredAt: FormatUtils.beijingISOString(from: quickOccurredAt)
+                )
+                _ = try? await APIClient.shared.createTransaction(req)
+                AudioFeedback.shared.playShutter()
+                quickTitle = ""
+                quickContent = ""
+                quickTxAmountYuan = ""
+                quickCityCode = ""
+                quickCityName = ""
+                quickAttachments.removeAll()
+                quickExtractedCameraLine = ""
+                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadConfigAndProfile()
+            }
+            return
+        }
+
+        // 3. 提交生活散页 / 游历 / 造物
         if content.isEmpty && !quickAttachments.isEmpty {
             content = quickExtractedCameraLine.isEmpty ? "散页生活相纸印记" : quickExtractedCameraLine
         }
@@ -1478,45 +1841,32 @@ public struct StreamView: View {
             content += "\n\n> \(quickExtractedCameraLine)"
         }
 
-        let location = quickLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-        var resolvedCode = quickCityCode.isEmpty ? nil : quickCityCode
-        var resolvedCity = quickCityName.isEmpty ? nil : quickCityName
-        if resolvedCode == nil && !location.isEmpty {
-            resolvedCode = FormatUtils.resolveCityCode(from: location)
-        }
-        if resolvedCity == nil, let code = resolvedCode {
-            resolvedCity = CityDictionary.standardCities.first(where: { $0.code == code })?.name
-        }
-        let finalLoc = location.isEmpty ? (resolvedCity ?? (appState.profile.displayCity.isEmpty ? nil : appState.profile.displayCity)) : location
-        let attIds = quickAttachments.map(\.id)
         let contentToSubmit = content
 
         Task { @MainActor in
             let req = CreateEntryRequest(
                 type: quickType.rawValue,
-                title: quickTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                title: titleText,
                 content: contentToSubmit,
                 occurredAt: FormatUtils.beijingISOString(from: quickOccurredAt),
-                location: finalLoc,
+                location: resolvedCity,
                 featured: quickFeatured,
                 cityCode: resolvedCode,
                 cityName: resolvedCity,
+                projectId: quickType == .project ? quickSelectedProjectId : nil,
                 attachmentIds: attIds
             )
             _ = try? await SyncManager.shared.submitEntry(req)
             AudioFeedback.shared.playShutter()
             quickTitle = ""
             quickContent = ""
-            quickLocation = ""
             quickCityCode = ""
             quickCityName = ""
             quickFeatured = false
             quickOccurredAt = Date()
             quickAttachments.removeAll()
             quickExtractedCameraLine = ""
-            withAnimation(.easeInOut(duration: 0.18)) {
-                isQuickComposerExpanded = false
-            }
+            quickSelectedProjectId = nil
             await appState.loadConfigAndProfile()
         }
     }
@@ -2494,6 +2844,7 @@ public struct EditEntrySheetView: View {
             TextEditor(text: $editContent)
                 .font(ArchiveTypography.bodySans(size: 13))
                 .scrollContentBackground(.hidden)
+                .scrollIndicators(.hidden)
                 .padding(6)
                 .frame(minHeight: 140)
                 .background(ArchivePalette.archiveSubtle)

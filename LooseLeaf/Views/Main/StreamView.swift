@@ -609,20 +609,6 @@ public struct StreamView: View {
                         Spacer()
 
                         Button {
-                            exportMarkdown()
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                .frame(width: 32, height: 32)
-                        }
-                        .buttonStyle(.plain)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                        .paperElevation(1)
-                        .help("导出当前视图为 Markdown")
-
-                        Button {
                             Task { @MainActor in
                                 await appState.refreshAll(forceFull: true)
                             }
@@ -1349,24 +1335,6 @@ public struct StreamView: View {
 
 
 
-
-    /// 导出当前筛选视图为 Markdown 档案（NSSavePanel 落盘）
-    private func exportMarkdown() {
-        let entries = appState.filteredStreamEntries
-        guard !entries.isEmpty else { return }
-        let markdown = ArchiveExporter.makeMarkdown(entries: entries)
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = "looseleaf-export-\(FormatUtils.beijingDateString()).md"
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try markdown.write(to: url, atomically: true, encoding: .utf8)
-                AudioFeedback.shared.playShutter()
-            } catch {
-                appState.errorBanner = "导出失败：\(error.localizedDescription)"
-            }
-        }
-    }
 
     private func toggleFeatured(_ entry: LifeEntry) {
         guard entry.id > 0 else { return }

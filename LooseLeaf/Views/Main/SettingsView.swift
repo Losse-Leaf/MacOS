@@ -60,8 +60,6 @@ public struct SettingsView: View {
     @State private var allCategoriesList: [CategoryOption] = []
     @State private var renamingCategory: CategoryOption?
     @State private var renameCategoryInput: String = ""
-    @State private var isExportingArchive: Bool = false
-
     // 中枢系统级备份状态
     @State private var serverBackups: [ServerBackupItem] = []
     @State private var isLoadingServerBackups: Bool = false
@@ -69,8 +67,8 @@ public struct SettingsView: View {
     @State private var backupActionFeedback: String?
     @State private var backupActionError: String?
 
-    // 对象存储与中枢灾备管理 (对标 Web StorageBackupModal.vue)
-    @State private var backupSubTab: String = "backup" // "backup", "storage", "export"
+    // 对象存储与中枢灾备管理 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
+    @State private var backupSubTab: String = "backup" // "backup", "storage"
     @State private var storageStatus: StorageStatus?
     @State private var isLoadingStorageStatus: Bool = false
     @State private var isTestingStorage: Bool = false
@@ -781,7 +779,7 @@ public struct SettingsView: View {
     // MARK: - 3. 存储与灾备 Tab
     private var backupTabContent: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // 次级选项卡切换胶囊 (对标 Web StorageBackupModal.vue)
+            // 次级选项卡切换胶囊 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
             HStack(spacing: 8) {
                 PaperPillButton(
                     title: "全量快照与灾备 (\(serverBackups.count)/7)",
@@ -799,14 +797,6 @@ public struct SettingsView: View {
                     AudioFeedback.shared.playTink()
                 }
 
-                PaperPillButton(
-                    title: "文稿与数据导出",
-                    isSelected: backupSubTab == "export"
-                ) {
-                    backupSubTab = "export"
-                    AudioFeedback.shared.playTink()
-                }
-
                 Spacer()
             }
             .padding(.bottom, 2)
@@ -816,8 +806,6 @@ public struct SettingsView: View {
                 serverBackupSubView
             case "storage":
                 objectStorageSubView
-            case "export":
-                exportDataSubView
             default:
                 serverBackupSubView
             }
@@ -1300,99 +1288,6 @@ public struct SettingsView: View {
             .padding(14)
             .background(ArchivePalette.archiveSubtle)
             .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-    }
-
-    private var exportDataSubView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("单次多格式全量文稿导出")
-                .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            Text("Loose-Leaf 支持完全自主掌控数据。导出文件可脱离任何中枢与网络，以标准纯文本格式长期封存或在任意 Markdown 编辑器与表格应用中打开。")
-                .font(ArchiveTypography.bodySans(size: 11.5))
-                .foregroundStyle(ArchivePalette.inkSecondary)
-                .lineSpacing(3)
-
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 16))
-                        .foregroundStyle(ArchivePalette.accentMoss)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Markdown 日记卷宗 (.md)")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("包含所有日记手账正文、天气、城市、标签及配图元数据。")
-                            .font(ArchiveTypography.bodySans(size: 10.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-
-                    Spacer()
-
-                    Button("导出 Markdown") { exportArchive(format: .markdown) }
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                        .disabled(isExportingArchive)
-                }
-                .padding(12)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                HStack(spacing: 12) {
-                    Image(systemName: "tablecells")
-                        .font(.system(size: 16))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("CSV 资产流水账目 (.csv)")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("与 Numbers / Excel 完全兼容，方便财务分析与图表统计。")
-                            .font(ArchiveTypography.bodySans(size: 10.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-
-                    Spacer()
-
-                    Button("导出 CSV 账目") { exportArchive(format: .csv) }
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                        .disabled(isExportingArchive)
-                }
-                .padding(12)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                HStack(spacing: 12) {
-                    Image(systemName: "curlybraces")
-                        .font(.system(size: 16))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("全量结构化 JSON 归档 (.json)")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("完整包含散页、账目、造物项目、心愿清单及足迹等全部原始字段。")
-                            .font(ArchiveTypography.bodySans(size: 10.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-
-                    Spacer()
-
-                    Button("导出 JSON 全量") { exportArchive(format: .json) }
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                        .disabled(isExportingArchive)
-                }
-                .padding(12)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
         }
     }
 
@@ -2073,42 +1968,6 @@ public struct SettingsView: View {
                 await loadServerBackups()
             } catch {
                 backupActionError = "回滚还原失败: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func exportArchive(format: ArchiveExporter.ExportFormat) {
-        let panel = NSSavePanel()
-        switch format {
-        case .markdown:
-            panel.allowedContentTypes = [.plainText]
-            panel.nameFieldStringValue = "looseleaf-export-\(FormatUtils.beijingDateString()).md"
-        case .csv:
-            panel.allowedContentTypes = [.commaSeparatedText]
-            panel.nameFieldStringValue = "looseleaf-transactions-\(FormatUtils.beijingDateString()).csv"
-        case .json:
-            panel.allowedContentTypes = [.json]
-            panel.nameFieldStringValue = "looseleaf-backup-\(FormatUtils.beijingDateString()).json"
-        }
-
-        if panel.runModal() == .OK, let targetURL = panel.url {
-            isExportingArchive = true
-            Task { @MainActor in
-                let data = await ArchiveExporter.fetchAllRemoteAndExport(
-                    format: format,
-                    fallbackSnapshot: SyncManager.shared.currentSnapshot(),
-                    fallbackProjects: appState.projects,
-                    fallbackWishes: appState.wishes,
-                    fallbackFootprints: appState.footprints
-                )
-                if let data {
-                    try? data.write(to: targetURL, options: .atomic)
-                    AudioFeedback.shared.playShutter()
-                    appState.showTemporaryBanner("档案导出成功")
-                } else {
-                    appState.errorBanner = "导出生成失败"
-                }
-                isExportingArchive = false
             }
         }
     }

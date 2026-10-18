@@ -262,15 +262,21 @@ public struct ConfirmPairingResponse: Codable, Sendable {
 public struct VerifyPasscodeRequest: Codable, Sendable {
     public var passcode: String
     public var deviceName: String
+    public var platform: String
+    public var deviceModel: String
 
     enum CodingKeys: String, CodingKey {
         case passcode
         case deviceName = "device_name"
+        case platform
+        case deviceModel = "device_model"
     }
 
-    public init(passcode: String, deviceName: String) {
+    public init(passcode: String, deviceName: String, platform: String = "macos", deviceModel: String = "Mac") {
         self.passcode = passcode
         self.deviceName = deviceName
+        self.platform = platform
+        self.deviceModel = deviceModel
     }
 }
 

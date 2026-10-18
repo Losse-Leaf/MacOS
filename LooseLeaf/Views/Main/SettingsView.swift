@@ -1930,6 +1930,24 @@ public struct SettingsView: View {
     private func refreshDevicesList() async {
         if let list = try? await APIClient.shared.fetchTrustedDevices() {
             appState.trustedDevices = list
+
+            // 自愈机制：若当前 Mac 客户端在历史版本中被后端误登记为 "web"，自动修正为 "macos"
+            let myDeviceId = CredentialStore.getDeviceId()
+            if let selfDev = list.first(where: { $0.deviceId == myDeviceId }), selfDev.platform.lowercased() != "macos" {
+                Task {
+                    try? await APIClient.shared.updateDeviceName(
+                        id: selfDev.deviceId,
+                        name: selfDev.name,
+                        platform: "macos",
+                        deviceModel: "Mac"
+                    )
+                    if let updated = try? await APIClient.shared.fetchTrustedDevices() {
+                        await MainActor.run {
+                            appState.trustedDevices = updated
+                        }
+                    }
+                }
+            }
         }
     }
 

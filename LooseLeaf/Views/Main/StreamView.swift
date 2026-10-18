@@ -398,34 +398,6 @@ public struct StreamView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
 
-                // 生活刻度统计入口 (⌘⌥S)
-                Button {
-                    appState.showStatsSheet = true
-                    AudioFeedback.shared.playTink()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "chart.bar")
-                            .font(.system(size: 12))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                        Text("生活统计")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Spacer()
-                        Text("⌘⌥S")
-                            .font(ArchiveTypography.monoScale(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(ArchivePalette.archivePaper.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                    )
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut("s", modifiers: [.command, .option])
 
                 // 原生偏好设置/配置中心入口 (⌘,)
                 Button {

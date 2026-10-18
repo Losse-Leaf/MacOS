@@ -75,6 +75,19 @@ public struct CuratorDossierView: View {
 
                             Spacer()
 
+                            Button {
+                                appState.showStatsSheet = true
+                                AudioFeedback.shared.playTink()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "chart.bar")
+                                        .font(.system(size: 11))
+                                    Text("生活统计")
+                                }
+                            }
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .help("查看生活统计卡片 (⌘⌥S)")
+
                             Button("修订档案") {
                                 editName = prof.name
                                 editTitle = prof.title

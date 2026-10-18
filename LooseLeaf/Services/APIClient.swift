@@ -234,8 +234,18 @@ public actor APIClient {
     }
 
     /// 输入管理员密钥直接授权并签发设备令牌 (POST /api/v1/auth/verify)
-    public func verifyMasterPasscode(passcode: String, deviceName: String) async throws -> VerifyPasscodeResponse {
-        let payload = VerifyPasscodeRequest(passcode: passcode, deviceName: deviceName)
+    public func verifyMasterPasscode(
+        passcode: String,
+        deviceName: String,
+        platform: String = "macos",
+        deviceModel: String = "Mac"
+    ) async throws -> VerifyPasscodeResponse {
+        let payload = VerifyPasscodeRequest(
+            passcode: passcode,
+            deviceName: deviceName,
+            platform: platform,
+            deviceModel: deviceModel
+        )
         let resp: VerifyPasscodeResponse = try await performEnvelopeRequest(
             path: "/api/v1/auth/verify",
             method: "POST",
@@ -278,16 +288,23 @@ public actor APIClient {
         )
     }
 
-    /// 修改已授信设备的备注名称 (PUT /api/v1/auth/devices/:id)
+    /// 修改已授信设备的备注名称及平台属性 (PUT /api/v1/auth/devices/:id)
     @discardableResult
-    public func updateDeviceName(id: String, name: String) async throws -> TrustedDevice {
+    public func updateDeviceName(
+        id: String,
+        name: String? = nil,
+        platform: String? = nil,
+        deviceModel: String? = nil
+    ) async throws -> TrustedDevice {
         struct Payload: Codable, Sendable {
-            let name: String
+            let name: String?
+            let platform: String?
+            let device_model: String?
         }
         return try await performEnvelopeRequest(
             path: "/api/v1/auth/devices/\(id)",
             method: "PUT",
-            body: Payload(name: name)
+            body: Payload(name: name, platform: platform, device_model: deviceModel)
         )
     }
 

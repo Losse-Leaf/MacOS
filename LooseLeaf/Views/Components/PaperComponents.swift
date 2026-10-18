@@ -242,35 +242,47 @@ public struct PaperPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// 散页古典纸墨风时间选择器 (PaperDateTimePicker)
-/// 彻底替代系统原生丑陋灰块控件，提供打字机等宽时间戳胶囊与快捷时空锚点
-public struct PaperDateTimePicker: View {
+/// 散页古典纸墨风独立日期选择器 (PaperDatePicker)
+/// 严格杜绝 Emoji，采用 SF Symbols 矢量图标与纸墨主题月历，支持快捷时空锚点与整月网格点选
+public struct PaperDatePicker: View {
     @Binding public var selection: Date
     public var label: String?
-    public var showQuickShortcuts: Bool
 
     @State private var isPopoverPresented: Bool = false
+    @State private var displayMonthDate: Date = Date()
 
-    public init(
-        selection: Binding<Date>,
-        label: String? = nil,
-        showQuickShortcuts: Bool = true
-    ) {
+    public init(selection: Binding<Date>, label: String? = nil) {
         self._selection = selection
         self.label = label
-        self.showQuickShortcuts = showQuickShortcuts
     }
 
-    private var parsed: FormatUtils.ParsedBeijingDate {
-        FormatUtils.formatBeijingDate(selection)
-    }
+    private var cal: Calendar { FormatUtils.beijingCalendar }
 
     private var isToday: Bool {
-        FormatUtils.beijingCalendar.isDateInToday(selection)
+        cal.isDateInToday(selection)
+    }
+
+    private var isYesterday: Bool {
+        cal.isDateInYesterday(selection)
+    }
+
+    private var dateLabelText: String {
+        let comps = cal.dateComponents([.year, .month, .day], from: selection)
+        let y = comps.year ?? 2026
+        let m = comps.month ?? 1
+        let d = comps.day ?? 1
+
+        if isToday {
+            return "\(m)月\(d)日 · 今天"
+        } else if isYesterday {
+            return "\(m)月\(d)日 · 昨天"
+        } else {
+            return "\(y).\(String(format: "%02d", m)).\(String(format: "%02d", d))"
+        }
     }
 
     public var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if let label, !label.isEmpty {
                 Text(label)
                     .font(ArchiveTypography.bodySans(size: 11.5))
@@ -278,20 +290,23 @@ public struct PaperDateTimePicker: View {
             }
 
             Button {
+                displayMonthDate = selection
                 isPopoverPresented.toggle()
                 AudioFeedback.shared.playTink()
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar.badge.clock")
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar")
                         .font(.system(size: 11))
-                        .foregroundStyle(isToday ? ArchivePalette.inkMuted : ArchivePalette.accentWarm)
+                        .foregroundStyle(isToday ? ArchivePalette.inkSecondary : ArchivePalette.accentWarm)
 
-                    Text(parsed.dotDateTime)
+                    Text(dateLabelText)
                         .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
+                        .lineLimit(1)
+                        .fixedSize()
 
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 8))
+                        .font(.system(size: 7))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 .padding(.horizontal, 8)
@@ -300,114 +315,134 @@ public struct PaperDateTimePicker: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .stroke(isToday ? ArchivePalette.borderSubtle : ArchivePalette.accentWarm.opacity(0.6), lineWidth: 0.5)
+                        .stroke(isToday ? ArchivePalette.borderSubtle : ArchivePalette.accentWarm.opacity(0.5), lineWidth: 0.5)
                 )
             }
             .buttonStyle(.plain)
             .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
-                pickerPopoverContent
-            }
-
-            if !isToday {
-                Text("回溯补记")
-                    .font(ArchiveTypography.monoScale(size: 10))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(ArchivePalette.accentWarm.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-            }
-
-            if showQuickShortcuts {
-                HStack(spacing: 4) {
-                    Button("此刻") {
-                        selection = Date()
-                        AudioFeedback.shared.playTink()
-                    }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2.5)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                    Button("昨日") {
-                        if let yesterday = FormatUtils.beijingCalendar.date(byAdding: .day, value: -1, to: Date()) {
-                            selection = yesterday
-                            AudioFeedback.shared.playTink()
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2.5)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
+                datePopoverView
             }
         }
     }
 
-    private var pickerPopoverContent: some View {
+    private var datePopoverView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("时间刻度印记")
-                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
+            // 顶部快捷时空锚点
+            HStack(spacing: 6) {
+                shortcutDatePill("今天") {
+                    updateSelectionDate(to: Date())
+                }
+                shortcutDatePill("昨天") {
+                    if let d = cal.date(byAdding: .day, value: -1, to: Date()) {
+                        updateSelectionDate(to: d)
+                    }
+                }
+                shortcutDatePill("前天") {
+                    if let d = cal.date(byAdding: .day, value: -2, to: Date()) {
+                        updateSelectionDate(to: d)
+                    }
+                }
                 Spacer()
-                Text("北京时间 (UTC+8)")
-                    .font(ArchiveTypography.monoScale(size: 10))
+                Text("纸本历法")
+                    .font(ArchiveTypography.editorialSerif(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            // 快捷时间胶囊
-            HStack(spacing: 6) {
-                shortcutPill("现在此时") {
-                    selection = Date()
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            // 月历翻页栏
+            HStack {
+                Button {
+                    if let prevMonth = cal.date(byAdding: .month, value: -1, to: displayMonthDate) {
+                        displayMonthDate = prevMonth
+                        AudioFeedback.shared.playTink()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .padding(4)
                 }
-                shortcutPill("今日 09:00") {
-                    let cal = FormatUtils.beijingCalendar
-                    var comps = cal.dateComponents([.year, .month, .day], from: Date())
-                    comps.hour = 9
-                    comps.minute = 0
-                    if let d = cal.date(from: comps) { selection = d }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                let comps = cal.dateComponents([.year, .month], from: displayMonthDate)
+                Text("\(comps.year ?? 2026) 年 \(comps.month ?? 1) 月")
+                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                Spacer()
+
+                Button {
+                    if let nextMonth = cal.date(byAdding: .month, value: 1, to: displayMonthDate) {
+                        displayMonthDate = nextMonth
+                        AudioFeedback.shared.playTink()
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .padding(4)
                 }
-                shortcutPill("今日 14:00") {
-                    let cal = FormatUtils.beijingCalendar
-                    var comps = cal.dateComponents([.year, .month, .day], from: Date())
-                    comps.hour = 14
-                    comps.minute = 0
-                    if let d = cal.date(from: comps) { selection = d }
+                .buttonStyle(.plain)
+            }
+
+            // 星期标尺
+            HStack(spacing: 0) {
+                ForEach(["日", "一", "二", "三", "四", "五", "六"], id: \.self) { weekDay in
+                    Text(weekDay)
+                        .font(ArchiveTypography.bodySans(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .frame(maxWidth: .infinity)
                 }
-                shortcutPill("昨日此时") {
-                    if let d = FormatUtils.beijingCalendar.date(byAdding: .day, value: -1, to: Date()) {
-                        selection = d
+            }
+
+            // 当月天数网格
+            let daysInMonth = generateDaysInMonth(for: displayMonthDate)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 4) {
+                ForEach(daysInMonth, id: \.self) { dayItem in
+                    if let dayDate = dayItem {
+                        let isSelected = cal.isDate(dayDate, inSameDayAs: selection)
+                        let isTodayDate = cal.isDateInToday(dayDate)
+                        let dayNum = cal.component(.day, from: dayDate)
+
+                        Button {
+                            updateSelectionDate(to: dayDate)
+                            AudioFeedback.shared.playTink()
+                            isPopoverPresented = false
+                        } label: {
+                            Text("\(dayNum)")
+                                .font(ArchiveTypography.monoScale(size: 11, weight: isSelected ? .bold : .regular))
+                                .foregroundStyle(isSelected ? ArchivePalette.archivePaper : (isTodayDate ? ArchivePalette.accentWarm : ArchivePalette.inkPrimary))
+                                .frame(width: 26, height: 26)
+                                .background(
+                                    Circle()
+                                        .fill(isSelected ? ArchivePalette.inkPrimary : (isTodayDate ? ArchivePalette.accentWarm.opacity(0.12) : Color.clear))
+                                )
+                                .overlay(
+                                    Circle()
+                                        .stroke(isTodayDate && !isSelected ? ArchivePalette.accentWarm.opacity(0.4) : Color.clear, lineWidth: 0.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear
+                            .frame(width: 26, height: 26)
                     }
                 }
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            DatePicker(
-                "",
-                selection: $selection,
-                displayedComponents: [.date, .hourAndMinute]
-            )
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .environment(\.timeZone, FormatUtils.beijingTimeZone)
-            .tint(ArchivePalette.accentWarm)
-
             HStack {
-                Text(parsed.dotDateTime)
-                    .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                Text("所选：\(dateLabelText)")
+                    .font(ArchiveTypography.monoScale(size: 10.5))
                     .foregroundStyle(ArchivePalette.accentWarm)
 
                 Spacer()
 
-                Button("完成") {
+                Button("确定") {
                     isPopoverPresented = false
                     AudioFeedback.shared.playTink()
                 }
@@ -415,14 +450,15 @@ public struct PaperDateTimePicker: View {
             }
         }
         .padding(14)
-        .frame(width: 290)
+        .frame(width: 250)
         .background(ArchivePalette.archivePaper)
     }
 
-    private func shortcutPill(_ text: String, action: @escaping () -> Void) -> some View {
+    private func shortcutDatePill(_ text: String, action: @escaping () -> Void) -> some View {
         Button {
             action()
             AudioFeedback.shared.playTink()
+            isPopoverPresented = false
         } label: {
             Text(text)
                 .font(ArchiveTypography.bodySans(size: 10.5))
@@ -434,10 +470,249 @@ public struct PaperDateTimePicker: View {
         }
         .buttonStyle(.plain)
     }
+
+    private func updateSelectionDate(to newDate: Date) {
+        var origComps = cal.dateComponents([.hour, .minute, .second], from: selection)
+        let targetComps = cal.dateComponents([.year, .month, .day], from: newDate)
+        origComps.year = targetComps.year
+        origComps.month = targetComps.month
+        origComps.day = targetComps.day
+        if let merged = cal.date(from: origComps) {
+            selection = merged
+        }
+    }
+
+    private func generateDaysInMonth(for date: Date) -> [Date?] {
+        guard let range = cal.range(of: .day, in: .month, for: date),
+              let firstDayOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: date)) else {
+            return []
+        }
+        let firstWeekday = cal.component(.weekday, from: firstDayOfMonth) - 1 // 0 (Sunday) to 6
+        var days: [Date?] = Array(repeating: nil, count: firstWeekday)
+        for day in range {
+            if let d = cal.date(byAdding: .day, value: day - 1, to: firstDayOfMonth) {
+                days.append(d)
+            }
+        }
+        return days
+    }
 }
 
-/// 纸质拟物行政区划城市选择器 (PaperCityPicker)
-/// 严格遵循主理人规范：地点禁止手动自由输入，统一通过标准化 375 个地级行政区划点选
+/// 散页古典打字机独立时间微调器 (PaperTimePicker)
+/// 严格杜绝 Emoji，采用等宽数字展示精确到分钟的时刻，固定宽度永不折行
+public struct PaperTimePicker: View {
+    @Binding public var selection: Date
+    public var label: String?
+
+    @State private var isPopoverPresented: Bool = false
+
+    public init(selection: Binding<Date>, label: String? = nil) {
+        self._selection = selection
+        self.label = label
+    }
+
+    private var cal: Calendar { FormatUtils.beijingCalendar }
+
+    private var timeString: String {
+        let hour = cal.component(.hour, from: selection)
+        let minute = cal.component(.minute, from: selection)
+        return String(format: "%02d:%02d", hour, minute)
+    }
+
+    public var body: some View {
+        HStack(spacing: 5) {
+            if let label, !label.isEmpty {
+                Text(label)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
+            Button {
+                isPopoverPresented.toggle()
+                AudioFeedback.shared.playTink()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    Text(timeString)
+                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                        .lineLimit(1)
+                        .fixedSize()
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4.5)
+                .frame(width: 78)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
+                timePopoverView
+            }
+        }
+    }
+
+    private var timePopoverView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("精准时刻 (分)")
+                    .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+
+                Spacer()
+
+                Button("设为此刻") {
+                    let now = Date()
+                    let nowComps = cal.dateComponents([.hour, .minute, .second], from: now)
+                    var curComps = cal.dateComponents([.year, .month, .day], from: selection)
+                    curComps.hour = nowComps.hour
+                    curComps.minute = nowComps.minute
+                    curComps.second = nowComps.second
+                    if let updated = cal.date(from: curComps) {
+                        selection = updated
+                    }
+                    AudioFeedback.shared.playTink()
+                }
+                .font(ArchiveTypography.bodySans(size: 10.5))
+                .buttonStyle(.plain)
+                .foregroundStyle(ArchivePalette.accentWarm)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2.5)
+                .background(ArchivePalette.accentWarm.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+
+            // 快捷加减分钟
+            HStack(spacing: 6) {
+                stepMinuteButton(delta: -15, label: "-15分")
+                stepMinuteButton(delta: -5, label: "-5分")
+                stepMinuteButton(delta: 5, label: "+5分")
+                stepMinuteButton(delta: 15, label: "+15分")
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            // 小时与分钟直接微调
+            HStack(spacing: 12) {
+                VStack(spacing: 4) {
+                    Text("时")
+                        .font(ArchiveTypography.bodySans(size: 10))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Picker("", selection: Binding(
+                        get: { cal.component(.hour, from: selection) },
+                        set: { newHour in
+                            var comps = cal.dateComponents([.year, .month, .day, .minute, .second], from: selection)
+                            comps.hour = newHour
+                            if let d = cal.date(from: comps) { selection = d }
+                        }
+                    )) {
+                        ForEach(0..<24, id: \.self) { h in
+                            Text(String(format: "%02d", h)).tag(h)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 58)
+                }
+
+                Text(":")
+                    .font(ArchiveTypography.monoScale(size: 14, weight: .bold))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.top, 14)
+
+                VStack(spacing: 4) {
+                    Text("分")
+                        .font(ArchiveTypography.bodySans(size: 10))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Picker("", selection: Binding(
+                        get: { cal.component(.minute, from: selection) },
+                        set: { newMinute in
+                            var comps = cal.dateComponents([.year, .month, .day, .hour, .second], from: selection)
+                            comps.minute = newMinute
+                            if let d = cal.date(from: comps) { selection = d }
+                        }
+                    )) {
+                        ForEach(0..<60, id: \.self) { m in
+                            Text(String(format: "%02d", m)).tag(m)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 58)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 4)
+
+            HStack {
+                Spacer()
+                Button("完成") {
+                    isPopoverPresented = false
+                    AudioFeedback.shared.playTink()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            }
+        }
+        .padding(12)
+        .frame(width: 200)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func stepMinuteButton(delta: Int, label: String) -> some View {
+        Button {
+            if let updated = cal.date(byAdding: .minute, value: delta, to: selection) {
+                selection = updated
+                AudioFeedback.shared.playTink()
+            }
+        } label: {
+            Text(label)
+                .font(ArchiveTypography.monoScale(size: 10))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// 兼容包装器：散页时空组合选择器 (PaperDateTimePicker)
+/// 内部自动组合独立的 PaperDatePicker 与 PaperTimePicker，杜绝空间压缩折行
+public struct PaperDateTimePicker: View {
+    @Binding public var selection: Date
+    public var label: String?
+    public var showQuickShortcuts: Bool
+
+    public init(
+        selection: Binding<Date>,
+        label: String? = nil,
+        showQuickShortcuts: Bool = true
+    ) {
+        self._selection = selection
+        self.label = label
+        self.showQuickShortcuts = showQuickShortcuts
+    }
+
+    public var body: some View {
+        HStack(spacing: 6) {
+            PaperDatePicker(selection: $selection, label: label)
+            PaperTimePicker(selection: $selection)
+        }
+    }
+}
+
+/// 纸质拟物省市行政区划点选器 (PaperCityPicker)
+/// 严格遵循要求：地点只选省市、拒绝复杂打字、杜绝 Emoji、支持 macOS 原生定位一键秒选
 public struct PaperCityPicker: View {
     @Binding public var selectedCode: String
     @Binding public var selectedName: String
@@ -445,11 +720,12 @@ public struct PaperCityPicker: View {
 
     @State private var isPickerPresented: Bool = false
     @State private var searchKeyword: String = ""
+    @State private var activeProvince: String = "北京"
 
     public init(
         selectedCode: Binding<String>,
         selectedName: Binding<String>,
-        placeholder: String = "选择行政区划城市…"
+        placeholder: String = "选择省市…"
     ) {
         self._selectedCode = selectedCode
         self._selectedName = selectedName
@@ -462,7 +738,7 @@ public struct PaperCityPicker: View {
                 let prefix = String(selectedCode.prefix(2))
                 let prov = CityDictionary.provincePrefixMap[prefix] ?? ""
                 let provText = prov.isEmpty || selectedName.contains(prov) ? "" : "\(prov) · "
-                return "\(provText)\(selectedName) (\(selectedCode))"
+                return "\(provText)\(selectedName)"
             }
             return selectedName
         }
@@ -473,23 +749,31 @@ public struct PaperCityPicker: View {
         !selectedName.isEmpty || !selectedCode.isEmpty
     }
 
+    private var allProvinces: [String] {
+        let values = Array(Set(CityDictionary.provincePrefixMap.values)).sorted()
+        return values
+    }
+
     public var body: some View {
         Button {
             searchKeyword = ""
+            if let firstProv = allProvinces.first, activeProvince.isEmpty {
+                activeProvince = firstProv
+            }
+            // 尝试静默请求原生定位
+            LocationManager.shared.requestAuthorizationAndFetch()
             isPickerPresented = true
             AudioFeedback.shared.playTink()
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "mappin.and.ellipse")
-                    .font(.system(size: 11))
+            HStack(spacing: 5) {
+                Image(systemName: "map")
+                    .font(.system(size: 10.5))
                     .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
 
                 Text(displayText)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: 11.5))
                     .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
                     .lineLimit(1)
-
-                Spacer()
 
                 if isSelected {
                     Button {
@@ -498,23 +782,23 @@ public struct PaperCityPicker: View {
                         AudioFeedback.shared.playTink()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                     .buttonStyle(.plain)
                 }
 
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(ArchivePalette.archiveSubtle)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4.5)
+            .background(ArchivePalette.archivePaper)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.3) : ArchivePalette.borderDivider, lineWidth: 0.5)
+                    .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.4) : ArchivePalette.borderDivider, lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -524,68 +808,162 @@ public struct PaperCityPicker: View {
     }
 
     private var cityPopoverContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            // 1. 顶部当前定位秒选卡片
+            let locMgr = LocationManager.shared
+            if !locMgr.currentCity.isEmpty {
+                Button {
+                    let resolvedName = locMgr.currentCity
+                    if let code = CityDictionary.code(forLocation: resolvedName) {
+                        selectedCode = code
+                        selectedName = resolvedName
+                    } else {
+                        selectedName = resolvedName
+                    }
+                    isPickerPresented = false
+                    AudioFeedback.shared.playTink()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text("当前定位：\(locMgr.lastResolvedLocationName)")
+                            .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("点击选用")
+                            .font(ArchiveTypography.bodySans(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(ArchivePalette.accentWarm.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 2. 搜索框
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
+                    .font(.system(size: 10))
                     .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("输入城市名、省份或 6 位代码检索…", text: $searchKeyword)
+                TextField("检索省份或地级市…", text: $searchKeyword)
                     .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: 11.5))
             }
-            .padding(7)
+            .padding(6)
             .background(ArchivePalette.archiveSubtle)
             .clipShape(RoundedRectangle(cornerRadius: 4))
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            let filtered = CityDictionary.searchCities(searchKeyword)
-            if filtered.isEmpty {
-                VStack(spacing: 4) {
-                    Text("未检索到匹配的行政区划城市")
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+            // 3. 内容展示：搜索模式 vs 两级省市点选模式
+            if !searchKeyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let filtered = CityDictionary.searchCities(searchKeyword)
+                if filtered.isEmpty {
+                    Text("未检索到匹配的省市")
+                        .font(ArchiveTypography.bodySans(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 20)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(filtered) { city in
-                            Button {
-                                selectedCode = city.code
-                                selectedName = city.name
-                                isPickerPresented = false
-                                AudioFeedback.shared.playTink()
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(city.name)
-                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 20)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            ForEach(filtered) { city in
+                                Button {
+                                    selectedCode = city.code
+                                    selectedName = city.name
+                                    isPickerPresented = false
+                                    AudioFeedback.shared.playTink()
+                                } label: {
+                                    HStack {
+                                        Text("\(city.province) · \(city.name)")
+                                            .font(ArchiveTypography.bodySans(size: 11.5))
                                             .foregroundStyle(ArchivePalette.inkPrimary)
-                                        Text(city.province)
-                                            .font(ArchiveTypography.bodySans(size: 10))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                        Spacer()
                                     }
-                                    Spacer()
-                                    Text(city.code)
-                                        .font(ArchiveTypography.monoScale(size: 10.5))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(selectedCode == city.code ? ArchivePalette.accentWarm.opacity(0.1) : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
+                    .frame(height: 200)
                 }
-                .frame(maxHeight: 240)
+            } else {
+                // 两级联动省市选择面板 (免键盘纯点选)
+                HStack(spacing: 0) {
+                    // 左侧省份列表
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            ForEach(allProvinces, id: \.self) { prov in
+                                let isProvActive = prov == activeProvince
+                                Button {
+                                    activeProvince = prov
+                                    AudioFeedback.shared.playTink()
+                                } label: {
+                                    HStack {
+                                        Text(prov)
+                                            .font(ArchiveTypography.bodySans(size: 11, weight: isProvActive ? .semibold : .regular))
+                                            .foregroundStyle(isProvActive ? ArchivePalette.accentWarm : ArchivePalette.inkPrimary)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(isProvActive ? ArchivePalette.accentWarm.opacity(0.12) : Color.clear)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(width: 85, height: 210)
+
+                    Rectangle()
+                        .fill(ArchivePalette.borderSubtle)
+                        .frame(width: 0.5)
+                        .padding(.vertical, 2)
+
+                    // 右侧地级市列表
+                    let citiesInProv = CityDictionary.standardCities.filter { $0.province == activeProvince }
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            ForEach(citiesInProv) { city in
+                                Button {
+                                    selectedCode = city.code
+                                    selectedName = city.name
+                                    isPickerPresented = false
+                                    AudioFeedback.shared.playTink()
+                                } label: {
+                                    HStack {
+                                        Text(city.name)
+                                            .font(ArchiveTypography.bodySans(size: 11.5))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        Spacer()
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 8))
+                                            .foregroundStyle(selectedCode == city.code ? ArchivePalette.accentWarm : Color.clear)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(width: 140, height: 210)
+                }
             }
         }
-        .padding(12)
-        .frame(width: 300)
+        .padding(10)
+        .frame(width: 250)
         .background(ArchivePalette.archivePaper)
     }
 }

@@ -307,20 +307,20 @@ public struct CuratorDossierView: View {
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                TextField("常居地", text: $editLocation)
+                TextField("常居城市", text: $editLocation)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
-            TextField("精神信条 Motto", text: $editMotto)
+            TextField("近况题记", text: $editMotto)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("个人签名 Bio", text: $editBio)
+            TextField("副标题", text: $editBio)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)

@@ -402,7 +402,7 @@ public struct LedgerAssetsView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(ArchivePalette.accentWarm)
 
-                TextField("快速记账指令（如：42.5 咖啡），按 ↩ 直接入账…", text: $quickLine)
+                TextField("快速记账（如：42.5 咖啡）…", text: $quickLine)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: 13))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -673,7 +673,7 @@ public struct LedgerAssetsView: View {
 
                     // 提交表单按钮行
                     HStack {
-                        TextField("附加备注手记", text: $formNote)
+                        TextField("备注", text: $formNote)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
                             .padding(6)
@@ -1257,7 +1257,7 @@ public struct EditTransactionSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
-            TextField("账目名称 / 摘要", text: $title)
+            TextField("账目名称", text: $title)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
@@ -1294,7 +1294,7 @@ public struct EditTransactionSheet: View {
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "属地城市")
             }
 
-            TextField("补充备注手记", text: $note)
+            TextField("备注", text: $note)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
@@ -1392,7 +1392,7 @@ public struct AddGearSheet: View {
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                TextField("购入金额（元）", text: $priceYuan)
+                TextField("购入金额", text: $priceYuan)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: 13))
                     .padding(8)
@@ -1404,7 +1404,7 @@ public struct AddGearSheet: View {
                 .toggleStyle(.checkbox)
                 .font(ArchiveTypography.bodySans(size: 12))
 
-            TextField("器物手记/初衷", text: $note)
+            TextField("手记", text: $note)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
@@ -1490,14 +1490,14 @@ public struct SellGearSheet: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            TextField("实际转售回血金额（元）", text: $soldPriceYuan)
+            TextField("转售金额", text: $soldPriceYuan)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: 14))
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextField("转让流转手记", text: $note)
+            TextField("流转手记", text: $note)
                 .textFieldStyle(.plain)
                 .padding(8)
                 .background(ArchivePalette.archiveSubtle)

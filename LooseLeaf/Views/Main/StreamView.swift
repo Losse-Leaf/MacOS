@@ -357,7 +357,7 @@ public struct StreamView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 11.5))
                             .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                        TextField("检索散页手稿或地点… (⌘F)", text: $localSearchText)
+                        TextField("搜索… (⌘F)", text: $localSearchText)
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.bodySans(size: 12))
                             .focused($isSearchFocused)
@@ -1339,7 +1339,7 @@ public struct StreamView: View {
                     // 沉浸无界正文（如真纸落墨，无灰色内嵌框）
                     ZStack(alignment: .topLeading) {
                         if quickContent.isEmpty {
-                            Text("随时在此落墨写下散页手稿或灵感碎念，按 ⌘↩ 直接归档…")
+                            Text("记下此刻…… (⌘↩ 归档)")
                                 .font(ArchiveTypography.bodySans(size: 13.5))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                                 .padding(.top, 2)
@@ -1400,7 +1400,7 @@ public struct StreamView: View {
                             Image(systemName: "mappin.and.ellipse")
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(ArchivePalette.inkMuted)
-                            TextField("街巷/景点(选填)", text: $quickLocation)
+                            TextField("具体地点", text: $quickLocation)
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.bodySans(size: 12))
                                 .frame(maxWidth: 110)
@@ -2499,7 +2499,7 @@ public struct EditEntrySheetView: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "选择属地行政区划城市…")
+            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "选择城市…")
 
             // 照片相纸附件管理与增删
             VStack(alignment: .leading, spacing: 6) {

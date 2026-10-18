@@ -100,22 +100,38 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 0) {
-            // 左侧设置分类子侧栏 (Master Sidebar)
-            settingsSidebar
-                .frame(width: 220)
-                .background(ArchivePalette.archiveSubtle.opacity(0.4))
-                .overlay(
-                    Rectangle()
-                        .fill(ArchivePalette.borderSubtle.opacity(0.6))
-                        .frame(width: 0.5),
-                    alignment: .trailing
-                )
+        VStack(spacing: 0) {
+            // 顶栏偏好设置工具栏 (macOS Preferences Toolbar Tabs)
+            settingsTopToolbar
 
-            // 右侧设置详情主面板 (Detail Content Canvas)
-            settingsDetailContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(ArchivePalette.archivePaper)
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
+
+            // 居中黄金比例设置面板 (680~720pt centered, standard macOS HIG)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Group {
+                        switch selectedTab {
+                        case .general:
+                            generalTabContent
+                        case .devices:
+                            devicesTabContent
+                        case .backup:
+                            backupTabContent
+                        case .categories:
+                            categoriesTabContent
+                        case .about:
+                            aboutTabContent
+                        }
+                    }
+                    .id(selectedTab)
+                    .transition(.opacity)
+                }
+                .padding(.horizontal, 32)
+                .padding(.vertical, 24)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .background(ArchivePalette.archivePaper)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ArchivePalette.archivePaper)
@@ -135,325 +151,274 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 左侧分类子侧栏 (Master Sidebar)
-    private var settingsSidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 刊头印记
-            VStack(alignment: .leading, spacing: 3) {
+    // MARK: - 顶部偏好设置导航栏 (macOS Preferences Toolbar)
+    private var settingsTopToolbar: some View {
+        HStack(spacing: 12) {
+            // 左侧：返回手账主视图按钮 (若位于主工作区) 与标题
+            HStack(spacing: 8) {
+                if appState.activeSection == .settings {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.12)) {
+                            appState.activeSection = .stream
+                        }
+                        AudioFeedback.shared.playPaperFlip()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("返回手账")
+                                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .help("返回散页时光手账 (Esc / ⌘1)")
+                    .keyboardShortcut(.escape, modifiers: [])
+                }
+
                 HStack(spacing: 6) {
-                    Image(systemName: "gearshape.2.fill")
+                    Image(systemName: "gearshape.fill")
                         .font(.system(size: 13))
                         .foregroundStyle(ArchivePalette.accentWarm)
                     Text("系统配置")
-                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                 }
-                Text("活页系统参数 · 中枢设备 · 灾备字典")
-                    .font(ArchiveTypography.monoScale(size: 10.5))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 24)
-            .padding(.bottom, 16)
-
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
-
-            // 垂直分类选项列表
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(SettingsTab.allCases) { tab in
-                        Button {
-                            guard selectedTab != tab else { return }
-                            selectedTab = tab
-                            AudioFeedback.shared.playTink()
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: tab.iconName)
-                                    .font(.system(size: 12.5))
-                                    .foregroundStyle(selectedTab == tab ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
-                                    .frame(width: 20)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(tab.rawValue)
-                                        .font(ArchiveTypography.bodySans(size: 12.5, weight: selectedTab == tab ? .semibold : .medium))
-                                        .foregroundStyle(selectedTab == tab ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                                    Text(tab.subtitle)
-                                        .font(ArchiveTypography.monoScale(size: 10))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                        .lineLimit(1)
-                                }
-
-                                Spacer()
-
-                                if selectedTab == tab {
-                                    Circle()
-                                        .fill(ArchivePalette.accentWarm)
-                                        .frame(width: 5, height: 5)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(selectedTab == tab ? ArchivePalette.archivePaper : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(selectedTab == tab ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
-                            )
-                            .shadow(color: selectedTab == tab ? Color.black.opacity(0.03) : Color.clear, radius: 2, y: 1)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 12)
             }
 
             Spacer()
 
-            // 底部中枢状态与版本信息
-            VStack(alignment: .leading, spacing: 8) {
-                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
-                        .frame(width: 6, height: 6)
-                    Text(appState.isPaired ? "中枢节点在线" : "未配对中枢")
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-
-                    Spacer()
-
-                    Text("v\(UpdateChecker.shared.currentVersion)")
-                        .font(ArchiveTypography.monoScale(size: 10))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
-        }
-    }
-
-    // MARK: - 右侧详情主面板 (Detail Canvas)
-    private var settingsDetailContent: some View {
-        VStack(spacing: 0) {
-            // 详情顶栏
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        Image(systemName: selectedTab.iconName)
-                            .font(.system(size: 14))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(selectedTab.rawValue)
-                            .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                    }
-                    Text(selectedTab.subtitle)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-
-                Spacer()
-
-                if appState.activeSection == .settings {
+            // 中间：五个顶栏选项卡 (macOS Segmented Toolbar Tabs)
+            HStack(spacing: 2) {
+                ForEach(SettingsTab.allCases) { tab in
                     Button {
-                        appState.activeSection = .stream
-                        AudioFeedback.shared.playPaperFlip()
+                        guard selectedTab != tab else { return }
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selectedTab = tab
+                        }
+                        AudioFeedback.shared.playTink()
                     } label: {
                         HStack(spacing: 5) {
-                            Image(systemName: "arrow.left")
-                                .font(.system(size: 10.5))
-                            Text("返回手账")
-                                .font(ArchiveTypography.bodySans(size: 11.5))
+                            Image(systemName: tab.iconName)
+                                .font(.system(size: 11.5))
+                            Text(tab.rawValue)
+                                .font(ArchiveTypography.bodySans(size: 12, weight: selectedTab == tab ? .semibold : .medium))
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(selectedTab == tab ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
+                        .background(selectedTab == tab ? ArchivePalette.archiveSubtle : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(selectedTab == tab ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
                         )
+                        .shadow(color: selectedTab == tab ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
                     }
                     .buttonStyle(.plain)
-                    .help("返回散页时间流 (⌘1)")
-                } else if appState.showSettingsSheet {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.16)) {
-                            appState.showSettingsSheet = false
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 26, height: 26)
-                            .background(ArchivePalette.archiveSubtle)
-                            .clipShape(Circle())
+                }
+            }
+            .padding(3)
+            .background(ArchivePalette.archiveSubtle.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(ArchivePalette.borderSubtle.opacity(0.5), lineWidth: 0.5))
+
+            Spacer()
+
+            // 右侧：节点状态指示器与版本
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                    .frame(width: 6, height: 6)
+                Text(appState.isPaired ? "中枢在线" : "未配对")
+                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                Text("v\(UpdateChecker.shared.currentVersion)")
+                    .font(ArchiveTypography.monoScale(size: 9.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(ArchivePalette.archiveSubtle.opacity(0.6))
+            .clipShape(Capsule())
+            .help(appState.isPaired ? "数据中枢已连接: \(appState.hubURLString)" : "尚未配对生活数据中枢")
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 48)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    // MARK: - 拟物 macOS 风格 Grouped 卡片容器组件
+    private func settingsCardSection<Content: View>(
+        title: String? = nil,
+        caption: String? = nil,
+        footer: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title = title {
+                HStack {
+                    Text(title)
+                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Spacer()
+                    if let caption = caption {
+                        Text(caption)
+                            .font(ArchiveTypography.monoScale(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
                     }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.escape, modifiers: [])
                 }
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
 
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
-
-            // 呈现对应的选项卡内容
-            Group {
-                switch selectedTab {
-                case .general:
-                    generalTabContent
-                case .devices:
-                    devicesTabContent
-                case .backup:
-                    backupTabContent
-                case .categories:
-                    categoriesTabContent
-                case .about:
-                    aboutTabContent
-                }
+            VStack(spacing: 0) {
+                content()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .id(selectedTab)
-            .transition(.opacity)
+            .background(ArchivePalette.archiveSubtle.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(ArchivePalette.borderSubtle.opacity(0.7), lineWidth: 0.5)
+            )
+
+            if let footer = footer {
+                Text(footer)
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 2)
+            }
         }
     }
+
+    private func settingsCardRow<Trailing: View>(
+        icon: String,
+        iconColor: Color = ArchivePalette.accentWarm,
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(iconColor.opacity(0.12))
+                    .frame(width: 28, height: 28)
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(iconColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(ArchiveTypography.bodySans(size: 10.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+            }
+
+            Spacer(minLength: 16)
+
+            trailing()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+    }
+
+    private var settingsRowDivider: some View {
+        Divider()
+            .padding(.leading, 54)
+            .overlay(ArchivePalette.borderSubtle.opacity(0.5))
+    }
+
 
     // MARK: - 1. 偏好设置 Tab
     private var generalTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                // 纸本外观主题
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("纸本外观主题")
-                        .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
+        VStack(alignment: .leading, spacing: 20) {
+            // 纸本外观主题
+            settingsCardSection(title: "纸本外观主题", caption: "自适应色彩与排版") {
+                HStack(spacing: 12) {
+                    themeSwatchCard(
+                        mode: .system,
+                        title: "跟随系统",
+                        subtitle: "随 macOS 自动切换浅色/暗色",
+                        icon: "circle.lefthalf.filled"
+                    )
+                    themeSwatchCard(
+                        mode: .paper,
+                        title: "暖色棉纸",
+                        subtitle: "天然棉纸米黄底色与炭黑墨迹",
+                        icon: "sun.max.fill"
+                    )
+                    themeSwatchCard(
+                        mode: .darkroom,
+                        title: "暗房安全灯",
+                        subtitle: "低照度琥珀暗调与微光纸本",
+                        icon: "moon.fill"
+                    )
+                }
+                .padding(12)
+            }
 
-                    HStack(spacing: 12) {
-                        themeSwatchCard(
-                            mode: .system,
-                            title: "跟随系统",
-                            subtitle: "随 macOS 自动切换浅色/暗色",
-                            icon: "circle.lefthalf.filled"
-                        )
-                        themeSwatchCard(
-                            mode: .paper,
-                            title: "暖色棉纸",
-                            subtitle: "天然棉纸米黄底色与炭黑墨迹",
-                            icon: "sun.max.fill"
-                        )
-                        themeSwatchCard(
-                            mode: .darkroom,
-                            title: "暗房安全灯",
-                            subtitle: "低照度琥珀暗调与微光纸本",
-                            icon: "moon.fill"
-                        )
+            // 拟物声学与物理触觉
+            settingsCardSection(title: "拟物声学与物理触觉", footer: "声效与振动反馈能增强书写手账的真实沉浸感与操控确认感。") {
+                settingsCardRow(
+                    icon: "speaker.wave.2.fill",
+                    iconColor: ArchivePalette.accentWarm,
+                    title: "机械快门与翻纸音效",
+                    subtitle: "记录闪念、收支记账、快照完成时播放 32ms 低延迟真实快门与轻纸回弹声"
+                ) {
+                    HStack(spacing: 10) {
+                        Button("试听快门") {
+                            AudioFeedback.shared.playShutter()
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                        Toggle("", isOn: $appState.soundEnabled)
+                            .toggleStyle(.paperSwitch)
+                            .labelsHidden()
                     }
                 }
 
-                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
+                settingsRowDivider
 
-                // 拟物声学与触觉反馈
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("拟物声学与物理触觉")
-                        .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-
-                    VStack(spacing: 8) {
-                        HStack(alignment: .center) {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .font(.system(size: 13))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .frame(width: 22)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("机械快门与翻纸音效")
-                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                                Text("提交闪念、记账、快照完成时播放 32ms 低延迟真实机械快门与轻纸回弹声")
-                                    .font(ArchiveTypography.bodySans(size: 10.5))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                            }
-
-                            Spacer()
-
-                            Button("试听快门") {
-                                AudioFeedback.shared.playShutter()
-                            }
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-
-                            Toggle("", isOn: $appState.soundEnabled)
-                                .toggleStyle(.paperSwitch)
-                                .labelsHidden()
-                        }
-                        .padding(12)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                        HStack(alignment: .center) {
-                            Image(systemName: "hand.tap.fill")
-                                .font(.system(size: 13))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .frame(width: 22)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("触控板物理触觉反馈 (Force Touch Haptics)")
-                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                                Text("拖拽照片归档与触点交互时，通过 Taptic Engine 传递轻微物理微震触感")
-                                    .font(ArchiveTypography.bodySans(size: 10.5))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                            }
-
-                            Spacer()
-
-                            Toggle("", isOn: $appState.hapticsEnabled)
-                                .toggleStyle(.paperSwitch)
-                                .labelsHidden()
-                        }
-                        .padding(12)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
+                settingsCardRow(
+                    icon: "hand.tap.fill",
+                    iconColor: ArchivePalette.accentWarm,
+                    title: "触控板物理触觉反馈 (Force Touch)",
+                    subtitle: "拖拽照片归档与触点交互时，通过 Taptic Engine 传递轻微物理微震触感"
+                ) {
+                    Toggle("", isOn: $appState.hapticsEnabled)
+                        .toggleStyle(.paperSwitch)
+                        .labelsHidden()
                 }
+            }
 
-                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
-
-                // 全局极速手账悬浮窗快捷键
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("全局快捷键")
-                        .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-
-                    HStack {
-                        Image(systemName: "command")
-                            .font(.system(size: 13))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 22)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("全局呼出极速手账悬浮窗")
-                                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-                            Text("在任意应用程序窗口下随手唤起闪念录入与随行记账")
-                                .font(ArchiveTypography.bodySans(size: 10.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-
-                        Spacer()
-
-                        HStack(spacing: 4) {
-                            Text(hotKeyLabel)
-                                .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 1))
-                        }
+            // 全局快捷键
+            settingsCardSection(title: "全局快捷键", footer: "默认快捷键为 ⌥Space (Option + 空格)，在任意窗口下可唤起极速录入手账。") {
+                settingsCardRow(
+                    icon: "command",
+                    iconColor: ArchivePalette.inkSecondary,
+                    title: "全局呼出极速手账悬浮窗",
+                    subtitle: "在任意应用程序窗口下随手唤起闪念录入与随行记账"
+                ) {
+                    HStack(spacing: 8) {
+                        Text(hotKeyLabel)
+                            .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(ArchivePalette.borderSubtle, lineWidth: 1))
 
                         if isRecordingHotKey {
                             Text("按下新组合键…")
@@ -469,19 +434,15 @@ public struct SettingsView: View {
                             .frame(width: 1, height: 1)
                             .opacity(0.01)
                         } else {
-                            Button("修改") {
+                            Button("修改按键") {
                                 isRecordingHotKey = true
                             }
                             .font(ArchiveTypography.bodySans(size: 11))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         }
                     }
-                    .padding(12)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
-            .padding(20)
         }
     }
 
@@ -493,221 +454,245 @@ public struct SettingsView: View {
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Image(systemName: icon)
-                        .font(.system(size: 12))
-                        .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
+                    ZStack {
+                        Circle()
+                            .fill(isSelected ? ArchivePalette.accentWarm.opacity(0.15) : ArchivePalette.borderSubtle.opacity(0.5))
+                            .frame(width: 24, height: 24)
+                        Image(systemName: icon)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
+                    }
                     Spacer()
                     if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .bold))
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14))
                             .foregroundStyle(ArchivePalette.accentWarm)
+                    } else {
+                        Circle()
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                            .frame(width: 14, height: 14)
                     }
                 }
                 Text(title)
-                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                    .font(ArchiveTypography.bodySans(size: 12.5, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Text(subtitle)
-                    .font(ArchiveTypography.bodySans(size: 9.5))
+                    .font(ArchiveTypography.bodySans(size: 10))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .background(isSelected ? ArchivePalette.archivePaper : ArchivePalette.archiveSubtle.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isSelected ? 1.5 : 0.5)
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.7), lineWidth: isSelected ? 1.5 : 0.5)
             )
+            .shadow(color: isSelected ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
         }
         .buttonStyle(.plain)
     }
 
     // MARK: - 2. 中枢与设备 Tab
     private var devicesTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 中枢连接状态指示条
-                HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 20) {
+            // 中枢连接状态
+            settingsCardSection(title: "数据中枢连接", caption: appState.isPaired ? "已接入中枢网络" : "尚未配对") {
+                HStack(spacing: 12) {
                     Circle()
-                        .fill(ArchivePalette.accentMoss)
-                        .frame(width: 7, height: 7)
-                    Text("数据中枢已连接")
-                        .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                    Text(appState.hubURLString)
-                        .font(ArchiveTypography.monoScale(size: 10.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(appState.isPaired ? "数据中枢已连接" : "未配对中枢节点")
+                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Text(appState.isPaired ? appState.hubURLString : "配对后可跨设备多端实时同步散页与财务资产")
+                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
 
                     Spacer()
 
-                    Button {
-                        Task { @MainActor in
-                            issuedPairTicket = try? await APIClient.shared.initPairing()
-                            AudioFeedback.shared.playPaperFlip()
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "qrcode")
-                                .font(.system(size: 10))
-                            Text("签发新设备配对凭证")
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                }
-                .padding(10)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                // 配对工单二维码卡片 (若已生成)
-                if let ticket = issuedPairTicket {
-                    pairTicketBanner(ticket: ticket)
-                }
-
-                // 未配对时的凭证导入行
-                if !appState.isPaired {
-                    unpairedInputBar
-                }
-
-                // 本机客户端置顶展示
-                let currentDeviceId = CredentialStore.getDeviceId()
-                let selfDev = appState.trustedDevices.first(where: { $0.deviceId == currentDeviceId })
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("当前使用的设备")
-                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-
-                    HStack(spacing: 12) {
-                        Image(systemName: "macbook")
-                            .font(.system(size: 18))
-                            .foregroundStyle(ArchivePalette.accentMoss)
-                            .frame(width: 26)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(selfDev?.name ?? "迟暮的 MacBook Air")
-                                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .semibold))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                                Text("本机 · 当前客户端")
-                                    .font(ArchiveTypography.monoScale(size: 9))
-                                    .foregroundStyle(ArchivePalette.accentMoss)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                    if appState.isPaired {
+                        Button {
+                            Task { @MainActor in
+                                issuedPairTicket = try? await APIClient.shared.initPairing()
+                                AudioFeedback.shared.playPaperFlip()
                             }
-                            Text("macOS 原生客户端 · 刚刚活跃")
-                                .font(ArchiveTypography.monoScale(size: 9.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-
-                        Spacer()
-
-                        if let selfDev {
-                            Button("重命名") {
-                                renamingDevice = selfDev
-                                newDeviceNameInput = selfDev.name
-                            }
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .buttonStyle(.plain)
-                        }
-
-                        Button("解除本机配对") {
-                            appState.askConfirm(
-                                title: "确认解除本机配对？",
-                                message: "解除配对将清空保存在本机钥匙串的受保护凭据，需重新扫码配对才能接入中枢。",
-                                confirmText: "解除配对并退出",
-                                danger: true
-                            ) {
-                                Task { @MainActor in
-                                    await appState.disconnectDevice()
-                                }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "qrcode")
+                                    .font(.system(size: 11))
+                                Text("签发新设备配对凭证")
                             }
                         }
                         .font(ArchiveTypography.bodySans(size: 11))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                        .buttonStyle(.plain)
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     }
-                    .padding(12)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .padding(14)
+
+                // 未配对时的凭证导入行
+                if !appState.isPaired {
+                    Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+                    unpairedInputBar
+                        .padding(12)
                 }
 
-                // 受信任伴生设备组
-                let otherDevices = appState.trustedDevices.filter { $0.deviceId != currentDeviceId }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("已授权伴生设备 (\(otherDevices.count))")
-                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                // 配对工单二维码卡片 (若已生成)
+                if let ticket = issuedPairTicket {
+                    Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+                    pairTicketBanner(ticket: ticket)
+                        .padding(12)
+                }
+            }
 
-                    if otherDevices.isEmpty {
-                        Text("暂无其他已配对伴生设备，点击上方「签发新设备配对凭证」可在手机或 Web 端扫码接入。")
-                            .font(ArchiveTypography.bodySans(size: 11))
+            // 本机客户端置顶展示
+            let currentDeviceId = CredentialStore.getDeviceId()
+            let selfDev = appState.trustedDevices.first(where: { $0.deviceId == currentDeviceId })
+            settingsCardSection(title: "当前使用的设备") {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(ArchivePalette.accentMoss.opacity(0.12))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "laptopcomputer")
+                            .font(.system(size: 16))
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(selfDev?.name ?? "我的 Mac")
+                                .font(ArchiveTypography.bodySans(size: 13, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                            Text("本机 · 当前客户端")
+                                .font(ArchiveTypography.monoScale(size: 9.5))
+                                .foregroundStyle(ArchivePalette.accentMoss)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(ArchivePalette.accentMoss.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                        Text("macOS 原生客户端 · 刚刚活跃")
+                            .font(ArchiveTypography.monoScale(size: 10))
                             .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.vertical, 8)
-                    } else {
-                        VStack(spacing: 6) {
-                            ForEach(otherDevices) { dev in
-                                HStack(spacing: 12) {
-                                    Image(systemName: devicePlatformIcon(dev.platform, isSelf: false))
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(ArchivePalette.inkSecondary)
-                                        .frame(width: 26)
+                    }
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(dev.name)
-                                                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                                .foregroundStyle(ArchivePalette.inkPrimary)
-                                            Text(dev.platform)
-                                                .font(ArchiveTypography.monoScale(size: 9))
-                                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                                .padding(.horizontal, 4)
-                                                .padding(.vertical, 1)
-                                                .background(ArchivePalette.archivePaper)
-                                                .clipShape(RoundedRectangle(cornerRadius: 2))
-                                        }
-                                        Text("最近活跃：\(FormatUtils.parseOccurredDate(dev.lastActiveAt).dotDateTime)")
-                                            .font(ArchiveTypography.monoScale(size: 9.5))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
-                                    }
+                    Spacer()
 
-                                    Spacer()
+                    if let selfDev {
+                        Button("重命名") {
+                            renamingDevice = selfDev
+                            newDeviceNameInput = selfDev.name
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .buttonStyle(.plain)
+                    }
 
-                                    Button("重命名") {
-                                        renamingDevice = dev
-                                        newDeviceNameInput = dev.name
-                                    }
-                                    .font(ArchiveTypography.bodySans(size: 11))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                                    .buttonStyle(.plain)
-
-                                    Button("吊销授权") {
-                                        appState.askConfirm(
-                                            title: "确认吊销该设备的接入授权？",
-                                            message: "吊销后该伴生设备将无法继续同步或读取中枢生活档案。",
-                                            confirmText: "吊销设备凭证",
-                                            danger: true
-                                        ) {
-                                            revokeDeviceAction(dev)
-                                        }
-                                    }
-                                    .font(ArchiveTypography.bodySans(size: 11))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(10)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                    Button("解除配对") {
+                        appState.askConfirm(
+                            title: "确认解除本机配对？",
+                            message: "解除配对将清空保存在本机钥匙串的受保护凭据，需重新扫码配对才能接入中枢。",
+                            confirmText: "解除配对并退出",
+                            danger: true
+                        ) {
+                            Task { @MainActor in
+                                await appState.disconnectDevice()
                             }
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .buttonStyle(.plain)
+                }
+                .padding(14)
+            }
+
+            // 受信任伴生设备组
+            let otherDevices = appState.trustedDevices.filter { $0.deviceId != currentDeviceId }
+            settingsCardSection(title: "已授权伴生设备 (\(otherDevices.count))", footer: "所有已配对伴生设备享有端到端生活档案同步权限，可随时吊销授权。") {
+                if otherDevices.isEmpty {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 6) {
+                            Image(systemName: "iphone.and.arrow.forward")
+                                .font(.system(size: 20))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                            Text("暂无其他已配对伴生设备，点击上方「签发新设备配对凭证」可在手机或 Web 端扫码接入。")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+                        .padding(.vertical, 20)
+                        Spacer()
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(otherDevices.enumerated()), id: \.element.id) { index, dev in
+                            if index > 0 {
+                                settingsRowDivider
+                            }
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(ArchivePalette.inkSecondary.opacity(0.1))
+                                        .frame(width: 28, height: 28)
+                                    Image(systemName: devicePlatformIcon(dev.platform, isSelf: false))
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(dev.name)
+                                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        Text(dev.platform)
+                                            .font(ArchiveTypography.monoScale(size: 9))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(ArchivePalette.archivePaper)
+                                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                                    }
+                                    Text("最近活跃：\(FormatUtils.parseOccurredDate(dev.lastActiveAt).dotDateTime)")
+                                        .font(ArchiveTypography.monoScale(size: 9.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+
+                                Spacer()
+
+                                Button("重命名") {
+                                    renamingDevice = dev
+                                    newDeviceNameInput = dev.name
+                                }
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                .buttonStyle(.plain)
+
+                                Button("吊销授权") {
+                                    appState.askConfirm(
+                                        title: "确认吊销该设备的接入授权？",
+                                        message: "吊销后该伴生设备将无法继续同步或读取中枢生活档案。",
+                                        confirmText: "吊销设备凭证",
+                                        danger: true
+                                    ) {
+                                        revokeDeviceAction(dev)
+                                    }
+                                }
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
                         }
                     }
                 }
             }
-            .padding(20)
         }
     }
 
@@ -795,7 +780,7 @@ public struct SettingsView: View {
 
     // MARK: - 3. 存储与灾备 Tab
     private var backupTabContent: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 18) {
             // 次级选项卡切换胶囊 (对标 Web StorageBackupModal.vue)
             HStack(spacing: 8) {
                 PaperPillButton(
@@ -807,7 +792,7 @@ public struct SettingsView: View {
                 }
 
                 PaperPillButton(
-                    title: "对象存储设置",
+                    title: "对象存储设置 (R2/S3)",
                     isSelected: backupSubTab == "storage"
                 ) {
                     backupSubTab = "storage"
@@ -824,26 +809,17 @@ public struct SettingsView: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(ArchivePalette.archivePaper)
+            .padding(.bottom, 2)
 
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    switch backupSubTab {
-                    case "backup":
-                        serverBackupSubView
-                    case "storage":
-                        objectStorageSubView
-                    case "export":
-                        exportDataSubView
-                    default:
-                        serverBackupSubView
-                    }
-                }
-                .padding(20)
+            switch backupSubTab {
+            case "backup":
+                serverBackupSubView
+            case "storage":
+                objectStorageSubView
+            case "export":
+                exportDataSubView
+            default:
+                serverBackupSubView
             }
         }
     }
@@ -1441,231 +1417,404 @@ public struct SettingsView: View {
     }
 
     private var categoriesTabContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 类目分类范围切换
-                HStack(spacing: 6) {
-                    ForEach([
-                        ("expense", "支出类目"),
-                        ("income", "收入类目"),
-                        ("gear", "随身装备"),
-                        ("payment", "支付方式"),
-                        ("project", "造物分类")
-                    ], id: \.0) { scope, label in
-                        PaperPillButton(
-                            title: label,
-                            isSelected: selectedCategoryScope == scope
-                        ) {
-                            selectedCategoryScope = scope
-                            AudioFeedback.shared.playTink()
-                        }
+        VStack(alignment: .leading, spacing: 18) {
+            // 类目分类范围切换
+            HStack(spacing: 6) {
+                ForEach([
+                    ("expense", "支出类目"),
+                    ("income", "收入类目"),
+                    ("gear", "随身装备"),
+                    ("payment", "支付方式"),
+                    ("project", "造物分类")
+                ], id: \.0) { scope, label in
+                    PaperPillButton(
+                        title: label,
+                        isSelected: selectedCategoryScope == scope
+                    ) {
+                        selectedCategoryScope = scope
+                        AudioFeedback.shared.playTink()
                     }
-
-                    Spacer()
-
-                    Button {
-                        Task { @MainActor in
-                            do {
-                                try await APIClient.shared.resetCategories(scope: selectedCategoryScope)
-                                await appState.loadConfigAndProfile()
-                                allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                                AudioFeedback.shared.playPaperFlip()
-                                appState.showTemporaryBanner("已恢复「\(selectedCategoryScope)」默认预置分类")
-                            } catch {
-                                authError = "恢复分类失败: \(error.localizedDescription)"
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 9))
-                            Text("恢复默认")
-                        }
-                    }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .buttonStyle(.plain)
                 }
 
-                // 纸墨流式标签云
-                FlowTagLayout(spacing: 8) {
-                    ForEach(currentDisplayCategories) { cat in
-                        HStack(spacing: 5) {
-                            Text(cat.name)
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
+                Spacer()
 
-                            if cat.id > 0 {
-                                Button {
-                                    renamingCategory = cat
-                                    renameCategoryInput = cat.name
-                                } label: {
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    deleteCategoryAction(cat)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 8, weight: .semibold))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                            }
+                Button {
+                    Task { @MainActor in
+                        do {
+                            try await APIClient.shared.resetCategories(scope: selectedCategoryScope)
+                            await appState.loadConfigAndProfile()
+                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                            AudioFeedback.shared.playPaperFlip()
+                            appState.showTemporaryBanner("已恢复「\(selectedCategoryScope)」默认预置分类")
+                        } catch {
+                            authError = "恢复分类失败: \(error.localizedDescription)"
                         }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                        )
                     }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 9))
+                        Text("恢复默认预置")
+                    }
+                }
+                .font(ArchiveTypography.bodySans(size: 10.5))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .buttonStyle(.plain)
+            }
 
-                    // 行内即时添加新分类
-                    if isAddingCategoryInline {
-                        HStack(spacing: 4) {
-                            TextField("新分类…", text: $inlineCategoryName)
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .frame(width: 80)
-                                .onSubmit { submitInlineNewCategory() }
+            settingsCardSection(title: "字典词条管理", caption: "共 \(currentDisplayCategories.count) 个词条") {
+                VStack(alignment: .leading, spacing: 12) {
+                    // 纸墨流式标签云
+                    FlowTagLayout(spacing: 8) {
+                        ForEach(currentDisplayCategories) { cat in
+                            HStack(spacing: 5) {
+                                Text(cat.name)
+                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
 
-                            Button { submitInlineNewCategory() } label: {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
-                            }
-                            .buttonStyle(.plain)
+                                if cat.id > 0 {
+                                    Button {
+                                        renamingCategory = cat
+                                        renameCategoryInput = cat.name
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 8))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    .buttonStyle(.plain)
 
-                            Button { isAddingCategoryInline = false } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.accentWarm, lineWidth: 0.8))
-                    } else {
-                        Button {
-                            isAddingCategoryInline = true
-                            inlineCategoryName = ""
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 8, weight: .medium))
-                                Text("添加分类")
-                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    Button {
+                                        deleteCategoryAction(cat)
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 8, weight: .semibold))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                             .padding(.horizontal, 9)
                             .padding(.vertical, 5)
                             .background(ArchivePalette.archivePaper)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
                         }
-                        .buttonStyle(.plain)
+
+                        // 行内即时添加新分类
+                        if isAddingCategoryInline {
+                            HStack(spacing: 4) {
+                                TextField("新分类…", text: $inlineCategoryName)
+                                    .textFieldStyle(.plain)
+                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .frame(width: 80)
+                                    .onSubmit { submitInlineNewCategory() }
+
+                                Button { submitInlineNewCategory() } label: {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                }
+                                .buttonStyle(.plain)
+
+                                Button { isAddingCategoryInline = false } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.accentWarm, lineWidth: 0.8))
+                        } else {
+                            Button {
+                                isAddingCategoryInline = true
+                                inlineCategoryName = ""
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 8, weight: .medium))
+                                    Text("添加分类")
+                                        .font(ArchiveTypography.bodySans(size: 11))
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
+                .padding(14)
             }
-            .padding(20)
         }
     }
 
-    // MARK: - 5. 关于活页 Tab (包含原地平滑检查更新)
+    // MARK: - 5. 关于活页 Tab (包含原地平滑检查更新与系统诊断)
     private var aboutTabContent: some View {
-        VStack(spacing: 16) {
-            Spacer().frame(height: 12)
+        let currentVersion = UpdateChecker.shared.currentVersion
+        let currentBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        let checker = UpdateChecker.shared
 
-            Image(systemName: "leaf.circle.fill")
-                .font(.system(size: 46))
-                .foregroundStyle(ArchivePalette.accentMoss)
+        return VStack(spacing: 24) {
+            // 顶部 App 英雄刊头 (Hero Banner)
+            VStack(spacing: 12) {
+                // 精致纸墨拟物 App 图标
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    ArchivePalette.accentMoss.opacity(0.9),
+                                    ArchivePalette.accentMoss
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 76, height: 76)
+                        .shadow(color: ArchivePalette.accentMoss.opacity(0.25), radius: 8, y: 4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
 
-            VStack(spacing: 4) {
-                Text("Loose-Leaf · 活页集")
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("版本 1.5.1 (Build 16) · 原生 Apple Silicon")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
+                    Image(systemName: "leaf.fill")
+                        .font(.system(size: 38))
+                        .foregroundStyle(.white)
+                }
+                .padding(.top, 8)
+
+                VStack(spacing: 4) {
+                    Text("Loose-Leaf · 活页集")
+                        .font(ArchiveTypography.editorialSerif(size: 22, weight: .bold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    Text("以纸为介，散页成卷 · 生活原色，自当留存")
+                        .font(ArchiveTypography.editorialSerif(size: 12))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    // 100% 动态读取 Bundle 信息，绝不硬编码！
+                    Text("版本 \(currentVersion) (Build \(currentBuild)) · 原生 Apple Silicon")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.top, 2)
+                }
             }
+            .frame(maxWidth: .infinity)
 
-            // 平滑原地更新卡片
-            VStack(spacing: 8) {
-                let checker = UpdateChecker.shared
-                if checker.isChecking {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("正在检查最新版本…")
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                    }
-                } else if checker.isUpdating {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("正在下载并应用最新版本…")
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                    }
-                } else if let update = checker.availableUpdate {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text("发现新版本 \(update.tagName)")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Button("立即更新到 \(update.tagName)") {
-                            Task { @MainActor in
-                                await checker.performInAppUpdate()
+            // 1. 软件更新状态卡片 (Auto-Updater Card)
+            settingsCardSection(title: "软件更新") {
+                VStack(spacing: 0) {
+                    if checker.isChecking {
+                        HStack(spacing: 12) {
+                            ProgressView().controlSize(.small)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("正在检查最新版本…")
+                                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                Text("正在连接 GitHub Releases 官方源查询最新发布包")
+                                    .font(ArchiveTypography.bodySans(size: 10.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            }
+                            Spacer()
+                        }
+                        .padding(14)
+                    } else if checker.isUpdating {
+                        HStack(spacing: 12) {
+                            ProgressView().controlSize(.small)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("正在下载并应用最新版本…")
+                                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                    .foregroundStyle(ArchivePalette.accentWarm)
+                                Text("正在下载更新归档并替换 /Applications/LooseLeaf.app")
+                                    .font(ArchiveTypography.bodySans(size: 10.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            }
+                            Spacer()
+                        }
+                        .padding(14)
+                    } else if let update = checker.availableUpdate {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(ArchivePalette.accentWarm.opacity(0.15))
+                                        .frame(width: 28, height: 28)
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("发现新版本 \(update.tagName)")
+                                        .font(ArchiveTypography.bodySans(size: 12.5, weight: .semibold))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                    Text("发布于 \(update.publishedAt)")
+                                        .font(ArchiveTypography.monoScale(size: 10))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+
+                                Spacer()
+
+                                Button("立即更新并重启") {
+                                    Task { @MainActor in
+                                        await checker.performInAppUpdate()
+                                    }
+                                }
+                                .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                            }
+
+                            if !update.body.isEmpty {
+                                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+                                Text("更新日志：")
+                                    .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                                Text(update.body)
+                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .lineLimit(6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(8)
+                                    .background(ArchivePalette.archivePaper)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
                             }
                         }
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                    }
-                } else {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(ArchivePalette.accentMoss)
-                            .font(.system(size: 12))
-                        Text("当前已是最新版本 (v\(checker.currentVersion))")
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Button("重新检查更新") {
-                            Task { @MainActor in
-                                await checker.checkForUpdates(isUserInitiated: true)
+                        .padding(14)
+                    } else {
+                        settingsCardRow(
+                            icon: "checkmark.seal.fill",
+                            iconColor: ArchivePalette.accentMoss,
+                            title: "当前已是最新版本 (v\(currentVersion))",
+                            subtitle: "Loose-Leaf 已同步至官方最新稳定发行版"
+                        ) {
+                            Button("重新检查更新") {
+                                Task { @MainActor in
+                                    await checker.checkForUpdates(isUserInitiated: true)
+                                }
                             }
+                            .font(ArchiveTypography.bodySans(size: 11))
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         }
-                        .font(ArchiveTypography.bodySans(size: 10.5))
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            Spacer()
+            // 2. 系统与环境诊断 (Diagnostic Information)
+            settingsCardSection(title: "系统与环境") {
+                settingsCardRow(
+                    icon: "apple.logo",
+                    iconColor: ArchivePalette.inkSecondary,
+                    title: "运行环境",
+                    subtitle: "macOS \(ProcessInfo.processInfo.operatingSystemVersionString) · 原生 Apple Silicon (arm64)"
+                ) {
+                    EmptyView()
+                }
 
-            VStack(spacing: 4) {
-                Text("以纸为介，散页成卷。生活原色，自当留存。")
-                    .font(ArchiveTypography.editorialSerif(size: 11.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                Text("Local-First 本地优先 · SQLite + R2 冗余热备 · 拟物声学微触觉")
-                    .font(ArchiveTypography.monoScale(size: 9.5))
-                    .foregroundStyle(ArchivePalette.inkMuted)
+                settingsRowDivider
+
+                settingsCardRow(
+                    icon: "server.rack",
+                    iconColor: appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm,
+                    title: "数据中枢",
+                    subtitle: appState.isPaired ? appState.hubURLString : "未配对中枢 (单机离线状态)"
+                ) {
+                    Text(appState.isPaired ? "已连接" : "离线")
+                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+
+                settingsRowDivider
+
+                settingsCardRow(
+                    icon: "externaldrive.fill",
+                    iconColor: ArchivePalette.inkSecondary,
+                    title: "本地存储缓存",
+                    subtitle: "散页 \(appState.entries.count) 篇 · 账目 \(appState.transactions.count) 笔 · 待发 \(appState.outboxItems.count) 项"
+                ) {
+                    Button("在访达中显示") {
+                        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                            let looseLeafDir = appSupport.appendingPathComponent("LooseLeaf")
+                            try? FileManager.default.createDirectory(at: looseLeafDir, withIntermediateDirectories: true)
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: looseLeafDir.path)
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                }
             }
-            .padding(.bottom, 16)
+
+            // 3. 开源与链接 (Links & Community)
+            settingsCardSection(title: "社区与协议") {
+                settingsCardRow(
+                    icon: "chevron.left.forwardslash.chevron.right",
+                    iconColor: ArchivePalette.inkSecondary,
+                    title: "GitHub 开源仓库",
+                    subtitle: "github.com/cnsync/Loose-Leaf"
+                ) {
+                    Button {
+                        if let url = URL(string: "https://github.com/cnsync/Loose-Leaf") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("访问仓库")
+                            Image(systemName: "arrow.up.forward.app")
+                                .font(.system(size: 9))
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                }
+
+                settingsRowDivider
+
+                settingsCardRow(
+                    icon: "bubble.left.and.exclamationmark.bubble.right",
+                    iconColor: ArchivePalette.accentWarm,
+                    title: "问题反馈与建议",
+                    subtitle: "报告 Bug、提出改进建议或参与功能讨论"
+                ) {
+                    Button {
+                        if let url = URL(string: "https://github.com/cnsync/Loose-Leaf/issues") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("提交反馈")
+                            Image(systemName: "arrow.up.forward.app")
+                                .font(.system(size: 9))
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                }
+            }
+
+            // 底部版权信息
+            VStack(spacing: 4) {
+                Text("Local-First 本地优先 · SQLite + R2 冗余热备 · 拟物声学微触觉")
+                    .font(ArchiveTypography.monoScale(size: 10))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                Text("Copyright © 2024-2026 Loose-Leaf Contributors · MIT License")
+                    .font(ArchiveTypography.monoScale(size: 9.5))
+                    .foregroundStyle(ArchivePalette.inkMuted.opacity(0.8))
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(20)
     }
 
     // MARK: - 辅助操作方法与 Sheet 弹窗

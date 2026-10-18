@@ -1188,6 +1188,13 @@ public struct StreamView: View {
                     .font(ArchiveTypography.bodySans(size: 11.5))
                     .buttonStyle(.plain)
                     .foregroundStyle(ArchivePalette.inkMuted)
+
+                    Button("忽略此版本") {
+                        UpdateChecker.shared.ignoreCurrentUpdate()
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ArchivePalette.inkMuted)
                 }
             }
 

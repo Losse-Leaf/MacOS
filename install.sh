@@ -11,20 +11,25 @@ APP_PATH="${TARGET_DIR}/${APP_NAME}.app"
 
 echo "🍃 正在获取 Loose-Leaf (活页集) 最新版本信息..."
 
-# 1. 查询 GitHub Releases 最新版本信息
-RELEASE_JSON=$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || echo "")
-
-if [ -z "${RELEASE_JSON}" ] || echo "${RELEASE_JSON}" | grep -q '"message":'; then
-    # 回退到已知稳定 tag
-    TAG="v1.2.5"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/LooseLeaf-${TAG}-arm64.zip"
-else
-    TAG=$(echo "${RELEASE_JSON}" | grep '"tag_name":' | head -n 1 | cut -d '"' -f 4)
-    DOWNLOAD_URL=$(echo "${RELEASE_JSON}" | grep '"browser_download_url":' | grep -i "arm64.zip" | head -n 1 | cut -d '"' -f 4)
-    if [ -z "${DOWNLOAD_URL}" ]; then
-        DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/LooseLeaf-${TAG}-arm64.zip"
-    fi
+# 1. 查询 GitHub Releases 最新版本信息（优先通过重定向获取最新 Tag，完全规避 API 60次/小时频限）
+TAG=""
+EFFECTIVE_URL=$(curl -fsSLI -o /dev/null -w "%{url_effective}" "https://github.com/${REPO}/releases/latest" 2>/dev/null || echo "")
+if [[ "${EFFECTIVE_URL}" == *"/releases/tag/"* ]]; then
+    TAG=$(basename "${EFFECTIVE_URL}")
 fi
+
+if [ -z "${TAG}" ]; then
+    # 若重定向失败，回退至 API 接口
+    RELEASE_JSON=$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || echo "")
+    TAG=$(echo "${RELEASE_JSON}" | grep '"tag_name":' | head -n 1 | cut -d '"' -f 4)
+fi
+
+if [ -z "${TAG}" ]; then
+    echo "❌ 无法获取最新版本信息，请检查网络连接。"
+    exit 1
+fi
+
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/LooseLeaf-${TAG}-arm64.zip"
 
 echo "📦 准备安装版本: ${TAG}"
 echo "🔗 下载地址: ${DOWNLOAD_URL}"

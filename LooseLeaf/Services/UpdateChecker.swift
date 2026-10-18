@@ -31,8 +31,18 @@ public final class UpdateChecker {
         public let publishedAt: String
     }
 
+    private static let ignoredVersionKey = "ignoredUpdateVersion"
+
     public var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+
+    /// 用户选择忽略当前检测到的新版本（避免反复弹窗干扰）
+    public func ignoreCurrentUpdate() {
+        if let update = availableUpdate {
+            UserDefaults.standard.set(update.tagName, forKey: Self.ignoredVersionKey)
+        }
+        availableUpdate = nil
     }
 
     public func checkForUpdates(isUserInitiated: Bool = false) async {
@@ -40,6 +50,10 @@ public final class UpdateChecker {
         isChecking = true
         updateError = nil
         defer { isChecking = false }
+
+        if isUserInitiated {
+            UserDefaults.standard.removeObject(forKey: Self.ignoredVersionKey)
+        }
 
         guard let url = URL(string: "https://api.github.com/repos/\(Self.repo)/releases/latest") else { return }
         var request = URLRequest(url: url)
@@ -65,6 +79,13 @@ public final class UpdateChecker {
             let cleanLocalTag = currentVersion.hasPrefix("v") ? String(currentVersion.dropFirst()) : currentVersion
 
             if Self.isVersion(cleanRemoteTag, greaterThan: cleanLocalTag) {
+                let ignored = UserDefaults.standard.string(forKey: Self.ignoredVersionKey)
+                if !isUserInitiated && ignored == tagName {
+                    // 该版本已被用户手动忽略，且非用户手动点击检测，静默跳过横幅提示
+                    self.hasChecked = true
+                    return
+                }
+
                 // 查找 arm64.zip
                 if let asset = assets.first(where: {
                     let name = ($0["name"] as? String)?.lowercased() ?? ""
@@ -113,7 +134,7 @@ public final class UpdateChecker {
         AppState.shared.showTemporaryBanner("已复制终端安装命令，打开 Mac「终端」粘贴回车即可一键全自动升级")
     }
 
-    /// 执行一键无感下载、替换并重启
+    /// 执行一键无感下载、脱离主进程守护替换并重启
     public func performInAppUpdate() async {
         guard let update = availableUpdate, !isUpdating else { return }
         isUpdating = true
@@ -128,59 +149,110 @@ public final class UpdateChecker {
         }
 
         do {
-            // 1. 通过 URLSession 下载（不经过浏览器，系统不会打上 quarantine 属性）
-            let (tempZipURL, _) = try await URLSession.shared.download(from: update.downloadURL)
-            updateProgress = 0.55
+            // 1. 通过 URLSession 下载
+            updateProgress = 0.15
+            let (tempDownloadedURL, _) = try await URLSession.shared.download(from: update.downloadURL)
+            updateProgress = 0.50
 
-            // 2. 解压到沙箱临时目录
-            let tempExtractDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafExtract-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
+            // 2. 立即将下载的产物转移至独立临时目录，防止被系统或 URLSession 句柄早退清理
+            let workDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafUpdate-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+            let zipPath = workDir.appendingPathComponent("update.zip")
+            try FileManager.default.moveItem(at: tempDownloadedURL, to: zipPath)
+
+            // 3. 解压产物
+            updateProgress = 0.70
+            let extractDir = workDir.appendingPathComponent("extracted")
+            try FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
 
             let unzipProcess = Process()
             unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            unzipProcess.arguments = ["-q", "-o", tempZipURL.path, "-d", tempExtractDir.path]
+            unzipProcess.arguments = ["-q", "-o", zipPath.path, "-d", extractDir.path]
             try unzipProcess.run()
             unzipProcess.waitUntilExit()
 
+            guard unzipProcess.terminationStatus == 0 else {
+                throw NSError(domain: "UpdateError", code: 2, userInfo: [NSLocalizedDescriptionKey: "更新包解压失败"])
+            }
+
             updateProgress = 0.85
 
-            // 查找解压出的 LooseLeaf.app
-            let items = (try? FileManager.default.contentsOfDirectory(atPath: tempExtractDir.path)) ?? []
+            // 4. 定位解压出的 LooseLeaf.app
+            let items = (try? FileManager.default.contentsOfDirectory(atPath: extractDir.path)) ?? []
             guard let appBundleName = items.first(where: { $0.hasSuffix(".app") }) else {
-                throw NSError(domain: "UpdateError", code: 1, userInfo: [NSLocalizedDescriptionKey: "解压包中未包含 LooseLeaf.app"])
+                throw NSError(domain: "UpdateError", code: 3, userInfo: [NSLocalizedDescriptionKey: "解压包中未包含 LooseLeaf.app"])
             }
-            let extractedApp = tempExtractDir.appendingPathComponent(appBundleName)
+            let extractedApp = extractDir.appendingPathComponent(appBundleName)
 
-            // 3. 剥离可能存在的扩展隔离属性
+            // 5. 预先剥离解压产物的隔离属性
             let xattrProcess = Process()
             xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
             xattrProcess.arguments = ["-cr", extractedApp.path]
             try? xattrProcess.run()
             xattrProcess.waitUntilExit()
 
-            // 4. 定位目标应用安装路径（优先 Bundle 本身所在路径，若在只读区则回退到 /Applications）
+            // 6. 确定目标应用安装路径（若当前运行于开发/DerivedData 目录，自动定位至 /Applications/LooseLeaf.app）
             var targetAppURL = Bundle.main.bundleURL
-            if !targetAppURL.path.hasSuffix(".app") {
+            if !targetAppURL.path.hasSuffix(".app") || targetAppURL.path.contains("/build/") || targetAppURL.path.contains("/DerivedData/") {
                 targetAppURL = URL(fileURLWithPath: "/Applications/LooseLeaf.app")
             }
 
-            // 5. 调用外部 shell 进行平滑交换并重新拉起
-            let swapScript = """
-            sleep 0.8
-            rm -rf "\(targetAppURL.path)"
-            cp -R "\(extractedApp.path)" "\(targetAppURL.path)"
-            xattr -cr "\(targetAppURL.path)" 2>/dev/null || true
-            open "\(targetAppURL.path)"
+            // 7. 生成独立于当前主进程生命周期的守护替换脚本 (脱离会话组，安全等待主进程 PID 退出)
+            let currentPID = ProcessInfo.processInfo.processIdentifier
+            let scriptURL = workDir.appendingPathComponent("swap_updater.sh")
+            let scriptContent = """
+            #!/bin/bash
+            TARGET="\(targetAppURL.path)"
+            SOURCE="\(extractedApp.path)"
+            OLD_PID="\(currentPID)"
+            WORK_DIR="\(workDir.path)"
+
+            # 1. 严格轮询等待旧进程彻底安全退出（至多轮询 15 秒）
+            COUNT=0
+            while kill -0 "$OLD_PID" 2>/dev/null; do
+                sleep 0.2
+                COUNT=$((COUNT + 1))
+                if [ $COUNT -ge 75 ]; then
+                    kill -9 "$OLD_PID" 2>/dev/null || true
+                    break
+                fi
+            done
+
+            # 稍等 0.3 秒确保系统文件句柄释放
+            sleep 0.3
+
+            # 2. 覆盖替换安装
+            rm -rf "$TARGET"
+            cp -R "$SOURCE" "$TARGET"
+
+            # 3. 再次确保隔离属性清除
+            xattr -cr "$TARGET" 2>/dev/null || true
+
+            # 4. 重新拉起应用
+            open "$TARGET"
+
+            # 5. 清理临时解压工作目录
+            rm -rf "$WORK_DIR"
             """
 
-            let swapProcess = Process()
-            swapProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-            swapProcess.arguments = ["-c", swapScript]
-            try swapProcess.run()
+            try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
             updateProgress = 1.0
 
-            // 退出当前旧进程，让新版本无缝接管
+            // 8. 使用 nohup 启动独立替换脚本，彻底脱离父进程会话组，重定向 stdio 确保父进程退出不会阻断
+            let detachProcess = Process()
+            detachProcess.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
+            detachProcess.arguments = ["/bin/bash", scriptURL.path]
+            detachProcess.standardInput = FileHandle.nullDevice
+            detachProcess.standardOutput = FileHandle.nullDevice
+            detachProcess.standardError = FileHandle.nullDevice
+            try detachProcess.run()
+
+            // 给操作系统调度 150 毫秒确保子进程已独立驻留运行
+            try? await Task.sleep(nanoseconds: 150_000_000)
+
+            // 退出当前旧应用进程，由后台 swap_updater.sh 完成交接与唤起
             NSApp.terminate(nil)
         } catch {
             updateError = "自动更新失败：\(error.localizedDescription)"

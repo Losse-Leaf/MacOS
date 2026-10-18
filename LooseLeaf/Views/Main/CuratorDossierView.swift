@@ -94,7 +94,16 @@ public struct CuratorDossierView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: "location")
                                     .font(.system(size: 11))
-                                Text("常居与当下坐标：\(prof.location.isEmpty ? prof.currentCity : prof.location)")
+                                let coordText: String = {
+                                    if !prof.location.isEmpty && !prof.currentCity.isEmpty && prof.location != prof.currentCity {
+                                        return "常居：\(prof.location) · 当下：\(prof.currentCity)"
+                                    } else if !prof.currentCity.isEmpty {
+                                        return "当下坐标：\(prof.currentCity)"
+                                    } else {
+                                        return "常居坐标：\(prof.location)"
+                                    }
+                                }()
+                                Text(coordText)
                                     .font(ArchiveTypography.monoScale(size: 11.5))
                             }
                             .foregroundStyle(ArchivePalette.inkMuted)
@@ -515,14 +524,12 @@ public struct CuratorDossierView: View {
                     Task { @MainActor in
                         let trimmedCity = editCity.trimmingCharacters(in: .whitespacesAndNewlines)
                         let trimmedLoc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let finalCity = trimmedCity.isEmpty ? trimmedLoc : trimmedCity
-                        let finalLoc = trimmedLoc.isEmpty ? trimmedCity : trimmedLoc
                         let req = UpdateProfileRequest(
                             name: editName,
                             title: editTitle,
                             bio: editBio,
-                            location: finalLoc,
-                            currentCity: finalCity,
+                            location: trimmedLoc,
+                            currentCity: trimmedCity,
                             avatarKey: newAvatarKey ?? appState.profile.avatarKey,
                             motto: editMotto,
                             manifesto: editManifesto

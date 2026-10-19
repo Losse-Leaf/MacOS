@@ -330,7 +330,6 @@ public struct DarkroomDropZone: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             selectedIndex = index
-                            AudioFeedback.shared.playTink()
                         }
                     }
                 }
@@ -520,7 +519,6 @@ public struct DarkroomDropZone: View {
                             isSelected: galleryCategoryFilter == cat
                         ) {
                             galleryCategoryFilter = cat
-                            AudioFeedback.shared.playPaperFlip()
                         }
                     }
                 }
@@ -547,11 +545,9 @@ public struct DarkroomDropZone: View {
                     ForEach(photos) { item in
                         GalleryPhotoCard(item: item) {
                             selectedLightboxPhoto = item
-                            AudioFeedback.shared.playPaperFlip()
                         } onJumpToEntry: {
                             appState.highlightedEntry = item.parentEntry
                             appState.activeSection = .stream
-                            AudioFeedback.shared.playPaperFlip()
                         }
                     }
                 }
@@ -786,7 +782,6 @@ public struct DarkroomDropZone: View {
                     if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
                         entryContent = result.exifMetadata.formattedCameraLine
                     }
-                    AudioFeedback.shared.playPaperFlip()
                 }
             } catch {
                 self.errorMessage = error.localizedDescription
@@ -843,7 +838,6 @@ public struct DarkroomDropZone: View {
             }
         }
         selectedIndex = max(0, items.count - 1)
-        AudioFeedback.shared.playPaperFlip()
         isProcessing = false
     }
 
@@ -855,7 +849,6 @@ public struct DarkroomDropZone: View {
         } else {
             selectedIndex = min(selectedIndex, items.count - 1)
         }
-        AudioFeedback.shared.playTink()
     }
 
     private func uploadAndPublishPhotos() {

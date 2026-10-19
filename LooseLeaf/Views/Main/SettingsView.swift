@@ -33,11 +33,15 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 活页集统一配置中心视图 (SettingsView) - Option A 选项卡轻量架构
-/// 剔除工程调试杂质，分栏模块化呈现：纸本偏好、中枢设备、热备归档、分类字典与版本状态
+/// 活页集配置类视图 (SettingsView)
+/// 扁平化后 5 个配置条目已直接进入左侧菜单栏，本视图只负责渲染其中某一个 tab 的内容，
+/// 由侧栏入口通过 `pinnedTab` 指定；不再提供容器式 tab 切换栏。
 @MainActor
 public struct SettingsView: View {
     @Bindable var appState: AppState
+
+    /// 扁平化后由侧栏直接进入时锁定的 tab；nil 表示仍以「配置中心」容器形态运行（内部 tab 自切换）
+    private let pinnedTab: SettingsTab?
 
     @State private var selectedTab: SettingsTab = .general
 
@@ -93,15 +97,16 @@ public struct SettingsView: View {
     @State private var hotKeyLabel: String = AppDelegate.hotKeyDisplayName
     @State private var isRecordingHotKey: Bool = false
 
-    public init(appState: AppState) {
+    public init(appState: AppState, pinnedTab: SettingsTab? = nil) {
         self.appState = appState
+        self.pinnedTab = pinnedTab
+        _selectedTab = State(initialValue: pinnedTab ?? .general)
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            // 顶栏偏好设置工具栏 (macOS Preferences Toolbar Tabs)
-            settingsTopToolbar
-
+            // 扁平化后：每个 tab 都是独立的侧栏目的地，只保留精简页眉
+            pinnedSectionHeader
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
 
             // 居中黄金比例设置面板 (680~720pt centered, standard macOS HIG)
@@ -149,86 +154,18 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 顶部偏好设置导航栏 (macOS Preferences Toolbar)
-    private var settingsTopToolbar: some View {
-        HStack(spacing: 12) {
-            // 左侧：返回手账主视图按钮 (若位于主工作区) 与标题
-            HStack(spacing: 8) {
-                if appState.activeSection == .settings {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.12)) {
-                            appState.activeSection = .stream
-                        }
-                        AudioFeedback.shared.playPaperFlip()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("返回手账")
-                                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                        }
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(ArchivePalette.archiveSubtle.opacity(0.8))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .help("返回散页时光手账 (Esc / ⌘1)")
-                    .keyboardShortcut(.escape, modifiers: [])
-                }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    Text("系统配置")
-                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                }
-            }
+    // MARK: - 扁平化后的精简页眉（tab 已由侧栏承担，这里只做身份标识）
+    private var pinnedSectionHeader: some View {
+        HStack(spacing: 10) {
+            Image(systemName: selectedTab.iconName)
+                .font(.system(size: 13))
+                .foregroundStyle(ArchivePalette.accentWarm)
+            Text(selectedTab.rawValue)
+                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
 
             Spacer()
 
-            // 中间：五个顶栏选项卡 (macOS Segmented Toolbar Tabs)
-            HStack(spacing: 2) {
-                ForEach(SettingsTab.allCases) { tab in
-                    Button {
-                        guard selectedTab != tab else { return }
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            selectedTab = tab
-                        }
-                        AudioFeedback.shared.playTink()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: tab.iconName)
-                                .font(.system(size: 11.5))
-                            Text(tab.rawValue)
-                                .font(ArchiveTypography.bodySans(size: 12, weight: selectedTab == tab ? .semibold : .medium))
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .foregroundStyle(selectedTab == tab ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                        .background(selectedTab == tab ? ArchivePalette.archiveSubtle : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(selectedTab == tab ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
-                        )
-                        .shadow(color: selectedTab == tab ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(3)
-            .background(ArchivePalette.archiveSubtle.opacity(0.4))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(ArchivePalette.borderSubtle.opacity(0.5), lineWidth: 0.5))
-
-            Spacer()
-
-            // 右侧：节点状态指示器与版本
             HStack(spacing: 6) {
                 Circle()
                     .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
@@ -240,14 +177,10 @@ public struct SettingsView: View {
                     .font(ArchiveTypography.monoScale(size: 9.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(ArchivePalette.archiveSubtle.opacity(0.6))
-            .clipShape(Capsule())
             .help(appState.isPaired ? "数据中枢已连接: \(appState.hubURLString)" : "尚未配对生活数据中枢")
         }
         .padding(.horizontal, 18)
-        .frame(height: 48)
+        .frame(height: 46)
         .background(ArchivePalette.archivePaper)
     }
 
@@ -365,41 +298,6 @@ public struct SettingsView: View {
                 .padding(12)
             }
 
-            // 拟物声学与物理触觉
-            settingsCardSection(title: "拟物声学与物理触觉", footer: "声效与振动反馈能增强书写手账的真实沉浸感与操控确认感。") {
-                settingsCardRow(
-                    icon: "speaker.wave.2.fill",
-                    iconColor: ArchivePalette.accentWarm,
-                    title: "机械快门与翻纸音效",
-                    subtitle: "记录闪念、收支记账、快照完成时播放 32ms 低延迟真实快门与轻纸回弹声"
-                ) {
-                    HStack(spacing: 10) {
-                        Button("试听快门") {
-                            AudioFeedback.shared.playShutter()
-                        }
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-
-                        Toggle("", isOn: $appState.soundEnabled)
-                            .toggleStyle(.paperSwitch)
-                            .labelsHidden()
-                    }
-                }
-
-                settingsRowDivider
-
-                settingsCardRow(
-                    icon: "hand.tap.fill",
-                    iconColor: ArchivePalette.accentWarm,
-                    title: "触控板物理触觉反馈 (Force Touch)",
-                    subtitle: "拖拽照片归档与触点交互时，通过 Taptic Engine 传递轻微物理微震触感"
-                ) {
-                    Toggle("", isOn: $appState.hapticsEnabled)
-                        .toggleStyle(.paperSwitch)
-                        .labelsHidden()
-                }
-            }
-
             // 全局快捷键
             settingsCardSection(title: "全局快捷键", footer: "默认快捷键为 ⌥Space (Option + 空格)，在任意窗口下可唤起极速录入手账。") {
                 settingsCardRow(
@@ -427,7 +325,6 @@ public struct SettingsView: View {
                                 (NSApp.delegate as? AppDelegate)?.applyHotKey(keyCode: keyCode, carbonModifiers: modifiers)
                                 hotKeyLabel = AppDelegate.hotKeyDisplayName
                                 isRecordingHotKey = false
-                                AudioFeedback.shared.playTink()
                             }
                             .frame(width: 1, height: 1)
                             .opacity(0.01)
@@ -448,7 +345,6 @@ public struct SettingsView: View {
         let isSelected = appState.appearanceMode == mode
         return Button {
             appState.appearanceMode = mode
-            AudioFeedback.shared.playTink()
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -517,7 +413,6 @@ public struct SettingsView: View {
                         Button {
                             Task { @MainActor in
                                 issuedPairTicket = try? await APIClient.shared.initPairing()
-                                AudioFeedback.shared.playPaperFlip()
                             }
                         } label: {
                             HStack(spacing: 4) {
@@ -758,7 +653,6 @@ public struct SettingsView: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(ticket.qrPayload, forType: .string)
-                        AudioFeedback.shared.playTink()
                         appState.showTemporaryBanner("已复制配对链接")
                     } label: {
                         HStack(spacing: 4) {
@@ -786,7 +680,6 @@ public struct SettingsView: View {
                     isSelected: backupSubTab == "backup"
                 ) {
                     backupSubTab = "backup"
-                    AudioFeedback.shared.playTink()
                 }
 
                 PaperPillButton(
@@ -794,7 +687,6 @@ public struct SettingsView: View {
                     isSelected: backupSubTab == "storage"
                 ) {
                     backupSubTab = "storage"
-                    AudioFeedback.shared.playTink()
                 }
 
                 Spacer()
@@ -1327,7 +1219,6 @@ public struct SettingsView: View {
                         isSelected: selectedCategoryScope == scope
                     ) {
                         selectedCategoryScope = scope
-                        AudioFeedback.shared.playTink()
                     }
                 }
 
@@ -1339,7 +1230,6 @@ public struct SettingsView: View {
                             try await APIClient.shared.resetCategories(scope: selectedCategoryScope)
                             await appState.loadConfigAndProfile()
                             allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                            AudioFeedback.shared.playPaperFlip()
                             appState.showTemporaryBanner("已恢复「\(selectedCategoryScope)」默认预置分类")
                         } catch {
                             authError = "恢复分类失败: \(error.localizedDescription)"
@@ -1700,7 +1590,7 @@ public struct SettingsView: View {
 
             // 底部版权信息
             VStack(spacing: 4) {
-                Text("Local-First 本地优先 · SQLite + R2 冗余热备 · 拟物声学微触觉")
+                Text("Local-First 本地优先 · SQLite + R2 冗余热备")
                     .font(ArchiveTypography.monoScale(size: 10))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Text("Copyright © 2024-2026 Loose-Leaf Contributors · MIT License")
@@ -1739,7 +1629,6 @@ public struct SettingsView: View {
                         do {
                             _ = try await APIClient.shared.updateDeviceName(id: targetId, name: newName)
                             await refreshDevicesList()
-                            AudioFeedback.shared.playTink()
                         } catch {
                             authError = "重命名失败: \(error.localizedDescription)"
                         }
@@ -1779,7 +1668,6 @@ public struct SettingsView: View {
                             _ = try await APIClient.shared.updateCategoryOption(id: cat.id, name: newName)
                             await appState.loadConfigAndProfile()
                             allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                            AudioFeedback.shared.playTink()
                         } catch {
                             authError = "修改分类失败: \(error.localizedDescription)"
                         }
@@ -1878,7 +1766,6 @@ public struct SettingsView: View {
                 isAddingCategoryInline = false
                 await appState.loadConfigAndProfile()
                 allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                AudioFeedback.shared.playTink()
             } catch {
                 authError = "添加分类失败: \(error.localizedDescription)"
             }
@@ -1891,7 +1778,6 @@ public struct SettingsView: View {
                 try await APIClient.shared.deleteCategoryOption(id: cat.id)
                 await appState.loadConfigAndProfile()
                 allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                AudioFeedback.shared.playTink()
             } catch {
                 authError = "删除分类失败: \(error.localizedDescription)"
             }
@@ -1921,7 +1807,6 @@ public struct SettingsView: View {
                 let item = try await APIClient.shared.createServerBackupNow()
                 backupActionFeedback = "中枢快照生成成功：\(item.filename)"
                 serverBackups = try await APIClient.shared.fetchServerBackups()
-                AudioFeedback.shared.playShutter()
             } catch {
                 backupActionError = "生成中枢备份失败: \(error.localizedDescription)"
             }
@@ -1938,7 +1823,6 @@ public struct SettingsView: View {
                     let (data, _) = try await APIClient.shared.downloadServerBackup(filename: item.filename)
                     try data.write(to: targetURL, options: .atomic)
                     backupActionFeedback = "已成功下载「\(item.filename)」至本地"
-                    AudioFeedback.shared.playTink()
                 } catch {
                     backupActionError = "下载备份失败: \(error.localizedDescription)"
                 }
@@ -1951,7 +1835,6 @@ public struct SettingsView: View {
             do {
                 serverBackups = try await APIClient.shared.deleteServerBackup(filename: item.filename)
                 backupActionFeedback = "已从中枢删除快照「\(item.filename)」"
-                AudioFeedback.shared.playTink()
             } catch {
                 backupActionError = "删除备份失败: \(error.localizedDescription)"
             }
@@ -1963,7 +1846,6 @@ public struct SettingsView: View {
             do {
                 try await APIClient.shared.restoreServerBackup(filename: item.filename)
                 backupActionFeedback = "中枢已从快照成功回滚还原，正在同步最新状态…"
-                AudioFeedback.shared.playShutter()
                 await appState.refreshAll(forceFull: true)
                 await loadServerBackups()
             } catch {
@@ -2065,7 +1947,6 @@ public struct SettingsView: View {
                 let res = try await APIClient.shared.testStorageConfig(payload)
                 let latencyText = res.latencyMs != nil ? " · 延迟 \(res.latencyMs!)ms" : ""
                 storageFeedback = "\(res.message ?? "握手测试成功，读写校验正常")\(latencyText)"
-                AudioFeedback.shared.playTink()
             } catch {
                 storageError = "连接测试失败: \(error.localizedDescription)"
             }
@@ -2116,7 +1997,6 @@ public struct SettingsView: View {
                 storageStatus = status
                 storageSecretAccessKey = ""
                 storageFeedback = "配置已保存并生效，对象存储已成功热重载挂载"
-                AudioFeedback.shared.playPaperFlip()
             } catch {
                 storageError = "保存配置失败: \(error.localizedDescription)"
             }
@@ -2135,7 +2015,6 @@ public struct SettingsView: View {
                 storageStatus = status
                 storageSecretAccessKey = ""
                 storageFeedback = "已恢复为本地磁盘存储模式"
-                AudioFeedback.shared.playTink()
             } catch {
                 storageError = "恢复本地存储失败: \(error.localizedDescription)"
             }
@@ -2147,14 +2026,12 @@ public struct SettingsView: View {
         isMigratingStorage = true
         storageFeedback = nil
         storageError = nil
-        AudioFeedback.shared.playTink()
         Task { @MainActor in
             defer { isMigratingStorage = false }
             do {
                 let res = try await APIClient.shared.migrateStorageMedia()
                 let summary = "双向增量同步完成：上传 \(res.uploadedToR2 ?? 0) 项，拉取 \(res.downloadedToLocal ?? 0) 项"
                 storageFeedback = summary
-                AudioFeedback.shared.playPaperFlip()
                 await loadStorageStatusAction()
             } catch {
                 storageError = "增量同步失败: \(error.localizedDescription)"

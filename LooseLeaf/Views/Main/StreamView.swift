@@ -89,7 +89,6 @@ public struct StreamView: View {
                     Spacer()
                     Button {
                         appState.showNewEntrySheet = true
-                        AudioFeedback.shared.playTink()
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .semibold))
@@ -294,8 +293,16 @@ public struct StreamView: View {
             ProjectsView(appState: appState)
         case .dossier:
             CuratorDossierView(appState: appState)
-        case .settings:
-            SettingsView(appState: appState)
+        case .preferences:
+            SettingsView(appState: appState, pinnedTab: .general)
+        case .hub:
+            SettingsView(appState: appState, pinnedTab: .devices)
+        case .storage:
+            SettingsView(appState: appState, pinnedTab: .backup)
+        case .categories:
+            SettingsView(appState: appState, pinnedTab: .categories)
+        case .about:
+            SettingsView(appState: appState, pinnedTab: .about)
         case .darkroom:
             DarkroomDropZone(appState: appState)
         }
@@ -341,7 +348,6 @@ public struct StreamView: View {
             // 全局档案检索快捷按钮 (⌘K)
             Button {
                 appState.showSearchModal = true
-                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
@@ -372,25 +378,43 @@ public struct StreamView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 2)
 
-            // 导航菜单项
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(WorkbenchSection.sidebarSections) { section in
-                    WorkbenchNavRow(
-                        section: section,
-                        selected: appState.activeSection == section
-                    ) {
-                        guard appState.activeSection != section else { return }
-                        visitedSections.insert(section)
-                        withAnimation(.easeInOut(duration: 0.12)) {
-                            appState.activeSection = section
+            // 导航菜单项：6 大内容板块 + 5 个配置条目（扁平化后原「配置中心」tab 直接进侧栏）
+            // 12 行在 640pt 最小窗口高度下会贴边，故外层包 ScrollView 兜底
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(WorkbenchSection.contentSections) { section in
+                        WorkbenchNavRow(
+                            section: section,
+                            selected: appState.activeSection == section
+                        ) {
+                            guard appState.activeSection != section else { return }
+                            visitedSections.insert(section)
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                appState.activeSection = section
+                            }
                         }
-                        AudioFeedback.shared.playTink()
+                    }
+
+                    Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
+                        .padding(.vertical, 6)
+
+                    ForEach(WorkbenchSection.configurationSections) { section in
+                        WorkbenchNavRow(
+                            section: section,
+                            selected: appState.activeSection == section
+                        ) {
+                            guard appState.activeSection != section else { return }
+                            visitedSections.insert(section)
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                appState.activeSection = section
+                            }
+                        }
                     }
                 }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
 
-            // 辅助工具：银盐暗房不属于六大主内容板块，独立分组避免挤占主叙事
+            // 辅助工具：银盐暗房不属于内容也不属于配置，单独收尾
             VStack(alignment: .leading, spacing: 4) {
                 Text("辅助工具")
                     .font(ArchiveTypography.monoScale(size: 9.5))
@@ -407,48 +431,15 @@ public struct StreamView: View {
                     withAnimation(.easeInOut(duration: 0.12)) {
                         appState.activeSection = .darkroom
                     }
-                    AudioFeedback.shared.playTink()
                 }
             }
             .padding(.horizontal, 10)
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // 底部配置中心入口与系统状态
+            // 底部仅保留系统状态（配置入口已全部进侧栏）
             VStack(alignment: .leading, spacing: 8) {
                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-
-
-                // 原生偏好设置/配置中心入口 (⌘,)
-                Button {
-                    guard appState.activeSection != .settings else { return }
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        appState.activeSection = .settings
-                    }
-                    AudioFeedback.shared.playPaperFlip()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 12))
-                            .foregroundStyle(appState.activeSection == .settings ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
-                        Text("配置中心")
-                            .font(ArchiveTypography.bodySans(size: 12, weight: appState.activeSection == .settings ? .semibold : .medium))
-                            .foregroundStyle(appState.activeSection == .settings ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                        Spacer()
-                        Text("⌘,")
-                            .font(ArchiveTypography.monoScale(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(appState.activeSection == .settings ? ArchivePalette.archiveSubtle : ArchivePalette.archivePaper.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(appState.activeSection == .settings ? ArchivePalette.accentWarm.opacity(0.5) : ArchivePalette.borderSubtle, lineWidth: 0.5)
-                    )
-                }
-                .buttonStyle(.plain)
 
                 // 中枢就绪状态与快捷记账提示
                 HStack(spacing: 5) {
@@ -646,7 +637,6 @@ public struct StreamView: View {
 
                         Button {
                             appState.showNewEntrySheet = true
-                            AudioFeedback.shared.playTink()
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "square.and.pencil")
@@ -687,7 +677,6 @@ public struct StreamView: View {
                             ) {
                                 guard appState.selectedCategory != cat else { return }
                                 appState.selectedCategory = cat
-                                AudioFeedback.shared.playTink()
                             }
                         }
                     }
@@ -738,7 +727,7 @@ public struct StreamView: View {
                                     }
                                 },
                                 onToggleFeatured: { toggleFeatured(entry) },
-                                onOpenDetail: { appState.highlightedEntry = entry; AudioFeedback.shared.playTink() }
+                                onOpenDetail: { appState.highlightedEntry = entry}
                             )
                             .id(entry.id)
                         }
@@ -969,7 +958,6 @@ public struct StreamView: View {
                                             maxHeight: 220
                                         ) {
                                             appState.lightboxAttachment = att
-                                            AudioFeedback.shared.playTink()
                                         }
                                         .frame(width: 260)
                                     }
@@ -1014,7 +1002,6 @@ public struct StreamView: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
-                            AudioFeedback.shared.playTink()
                             appState.showTemporaryBanner("已拷贝金额至剪贴板")
                         } label: {
                             Label("拷贝金额", systemImage: "doc.on.doc")
@@ -1022,7 +1009,6 @@ public struct StreamView: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
-                            AudioFeedback.shared.playTink()
                             appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
                         } label: {
                             Label("拷贝账目摘要", systemImage: "text.quote")
@@ -1053,7 +1039,6 @@ public struct StreamView: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(entry.content, forType: .string)
-                        AudioFeedback.shared.playTink()
                         appState.showTemporaryBanner("已拷贝手稿正文至剪贴板")
                     } label: {
                         Label("拷贝手稿正文", systemImage: "doc.on.doc")
@@ -1061,7 +1046,6 @@ public struct StreamView: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(parsed.dotDateTime, forType: .string)
-                        AudioFeedback.shared.playTink()
                         appState.showTemporaryBanner("已拷贝时间戳至剪贴板")
                     } label: {
                         Label("拷贝时间戳", systemImage: "clock")
@@ -1251,7 +1235,6 @@ public struct StreamView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             appState.highlightedEntry = entry
-                            AudioFeedback.shared.playPaperFlip()
                         }
                     }
                 }
@@ -1303,7 +1286,6 @@ public struct StreamView: View {
 
                     Button {
                         appState.activeSection = .atlas
-                        AudioFeedback.shared.playPaperFlip()
                     } label: {
                         HStack(spacing: 3) {
                             Text("翻阅全谱与票根")
@@ -1321,7 +1303,6 @@ public struct StreamView: View {
                     ForEach(appState.footprints.prefix(6)) { fp in
                         Button {
                             appState.activeSection = .atlas
-                            AudioFeedback.shared.playPaperFlip()
                         } label: {
                             HStack(spacing: 3) {
                                 Image(systemName: "location.fill")
@@ -1374,7 +1355,6 @@ public struct StreamView: View {
                 cityName: entry.cityName
             )
             _ = try? await APIClient.shared.updateEntry(id: entry.id, req)
-            AudioFeedback.shared.playTink()
             await appState.loadEntries(forceFull: true)
         }
     }
@@ -1383,7 +1363,6 @@ public struct StreamView: View {
         guard entry.id > 0 else { return }
         Task { @MainActor in
             _ = try? await APIClient.shared.deleteEntry(id: entry.id)
-            AudioFeedback.shared.playPaperFlip()
             await appState.loadEntries(forceFull: true)
             await appState.loadConfigAndProfile()
             if appState.highlightedEntry?.id == entry.id {
@@ -1396,7 +1375,6 @@ public struct StreamView: View {
         guard tx.id > 0 else { return }
         Task { @MainActor in
             _ = try? await APIClient.shared.deleteTransaction(id: tx.id)
-            AudioFeedback.shared.playPaperFlip()
             await appState.loadTransactionsAndAssets(forceFull: true)
             await appState.loadConfigAndProfile()
             if appState.highlightedEntry?.id == tx.id {
@@ -1409,7 +1387,6 @@ public struct StreamView: View {
         EditEntrySheetView(entry: entry) { updated in
             Task { @MainActor in
                 _ = try? await APIClient.shared.updateEntry(id: entry.id, updated)
-                AudioFeedback.shared.playShutter()
                 await appState.loadEntries(forceFull: true)
                 await appState.loadConfigAndProfile()
                 editingEntry = nil
@@ -1595,7 +1572,6 @@ public struct StreamView: View {
                                                 maxHeight: 200
                                             ) {
                                                 appState.lightboxAttachment = att
-                                                AudioFeedback.shared.playTink()
                                             }
                                             .frame(width: 240)
                                         }
@@ -2172,7 +2148,6 @@ public struct EditorialLightboxView: View {
             lastOffset = .zero
             currentAttachment = allAttachments[newIdx]
         }
-        AudioFeedback.shared.playPaperFlip()
     }
 
     private func openInSystemPreview(url: URL) {
@@ -2199,14 +2174,12 @@ public struct EditorialLightboxView: View {
             if let cached = PaperImageCache.image(for: url) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([cached])
-                AudioFeedback.shared.playTink()
                 noticeText = "已拷贝相纸至剪贴板"
                 return
             }
             if let (data, _) = try? await URLSession.shared.data(from: url), let img = NSImage(data: data) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([img])
-                AudioFeedback.shared.playTink()
                 noticeText = "已拷贝相纸至剪贴板"
             }
         }
@@ -2219,7 +2192,6 @@ public struct EditorialLightboxView: View {
             Task { @MainActor in
                 if let (data, _) = try? await URLSession.shared.data(from: url) {
                     try? data.write(to: targetURL, options: .atomic)
-                    AudioFeedback.shared.playShutter()
                     noticeText = "相纸已导出落盘"
                 }
             }
@@ -2413,7 +2385,6 @@ public struct EditEntrySheetView: View {
                         let processed = try await ImageProcessor.processImageFileInBackground(at: url)
                         let att = try await R2DirectUploader.shared.uploadProcessedPhoto(processed)
                         editAttachments.append(att)
-                        AudioFeedback.shared.playShutter()
                     } catch {}
                 }
                 isUploading = false

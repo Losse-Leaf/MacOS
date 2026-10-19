@@ -86,11 +86,9 @@ public struct QuickLedgerView: View {
                 HStack(spacing: 4) {
                     PaperPillButton(title: "支出", isSelected: selectedType == "expense") {
                         selectedType = "expense"
-                        AudioFeedback.shared.playTink()
                     }
                     PaperPillButton(title: "收入", isSelected: selectedType == "income") {
                         selectedType = "income"
-                        AudioFeedback.shared.playTink()
                     }
                 }
 
@@ -140,7 +138,6 @@ public struct QuickLedgerView: View {
                             isSelected: selectedCategory == category
                         ) {
                             selectedCategory = category
-                            AudioFeedback.shared.playTink()
                         }
                     }
                 }
@@ -153,7 +150,6 @@ public struct QuickLedgerView: View {
                         ForEach(appState.paymentMethods, id: \.self) { method in
                             Button {
                                 selectedPayment = method
-                                AudioFeedback.shared.playTink()
                             } label: {
                                 Text(method)
                                     .font(ArchiveTypography.bodySans(size: 11))
@@ -174,7 +170,6 @@ public struct QuickLedgerView: View {
 
                 Button {
                     showDatePicker.toggle()
-                    AudioFeedback.shared.playTink()
                 } label: {
                     Image(systemName: "clock")
                         .font(.system(size: 11.5))

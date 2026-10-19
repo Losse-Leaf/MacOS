@@ -82,7 +82,6 @@ public struct LedgerAssetsView: View {
         }
         selectedYear = y
         selectedMonth = m
-        AudioFeedback.shared.playPaperFlip()
         Task {
             await loadSummaryForSelectedMonth()
         }
@@ -313,7 +312,6 @@ public struct LedgerAssetsView: View {
                             selectedYear = now.year
                             selectedMonth = now.month
                             customMonthSummary = nil
-                            AudioFeedback.shared.playPaperFlip()
                         }
                         .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
                         .foregroundStyle(ArchivePalette.accentWarm)
@@ -417,14 +415,12 @@ public struct LedgerAssetsView: View {
                                 if !appState.expenseCategories.contains(formCategory) {
                                     formCategory = appState.expenseCategories.first ?? "餐饮"
                                 }
-                                AudioFeedback.shared.playTink()
                             }
                             PaperPillButton(title: "收入", isSelected: formType == "income") {
                                 formType = "income"
                                 if !appState.incomeCategories.contains(formCategory) {
                                     formCategory = appState.incomeCategories.first ?? "薪资"
                                 }
-                                AudioFeedback.shared.playTink()
                             }
                         }
 
@@ -472,7 +468,6 @@ public struct LedgerAssetsView: View {
                                 ForEach(categoriesToShow, id: \.self) { cat in
                                     PaperPillButton(title: cat, isSelected: formCategory == cat) {
                                         formCategory = cat
-                                        AudioFeedback.shared.playTink()
                                     }
                                 }
                             }
@@ -489,7 +484,6 @@ public struct LedgerAssetsView: View {
                             ForEach(appState.paymentMethods, id: \.self) { pay in
                                 PaperPillButton(title: pay, isSelected: formPaymentMethod == pay) {
                                     formPaymentMethod = pay
-                                    AudioFeedback.shared.playTink()
                                 }
                             }
                         }
@@ -568,7 +562,6 @@ public struct LedgerAssetsView: View {
                                             ) {
                                                 formInstallmentChannelCode = ch.code
                                                 formRepaymentDay = ch.repaymentDay
-                                                AudioFeedback.shared.playTink()
                                             }
                                         }
                                     }
@@ -593,7 +586,6 @@ public struct LedgerAssetsView: View {
                                     ForEach([3, 6, 12, 24], id: \.self) { months in
                                         PaperPillButton(title: "\(months) 期", isSelected: formInstallmentMonths == months) {
                                             formInstallmentMonths = months
-                                            AudioFeedback.shared.playTink()
                                         }
                                     }
                                 }
@@ -788,14 +780,12 @@ public struct LedgerAssetsView: View {
                         isSelected: filterBySelectedMonth
                     ) {
                         filterBySelectedMonth = true
-                        AudioFeedback.shared.playTink()
                     }
                     PaperPillButton(
                         title: "全部历史",
                         isSelected: !filterBySelectedMonth
                     ) {
                         filterBySelectedMonth = false
-                        AudioFeedback.shared.playTink()
                     }
                 }
             }
@@ -950,7 +940,6 @@ public struct LedgerAssetsView: View {
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             editingTransaction = tx
-            AudioFeedback.shared.playTink()
         }
         .contextMenu {
             Button {
@@ -976,7 +965,6 @@ public struct LedgerAssetsView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
-                AudioFeedback.shared.playTink()
                 appState.showTemporaryBanner("已拷贝金额至剪贴板")
             } label: {
                 Label("拷贝金额", systemImage: "doc.on.doc")
@@ -984,7 +972,6 @@ public struct LedgerAssetsView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
-                AudioFeedback.shared.playTink()
                 appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
             } label: {
                 Label("拷贝账目摘要", systemImage: "text.quote")
@@ -1117,7 +1104,6 @@ public struct LedgerAssetsView: View {
                     gearSpec: formLinkGear ? formGearSpec : nil
                 )
                 _ = try await SyncManager.shared.submitTransaction(req)
-                AudioFeedback.shared.playShutter()
                 formAmountYuan = ""
                 formTitle = ""
                 formNote = ""
@@ -1138,7 +1124,6 @@ public struct LedgerAssetsView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteTransaction(id: tx.id)
-                AudioFeedback.shared.playTink()
                 await appState.loadTransactionsAndAssets(forceFull: true)
             } catch {
                 errorNotice = error.localizedDescription
@@ -1150,7 +1135,6 @@ public struct LedgerAssetsView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteGearAsset(id: gear.id)
-                AudioFeedback.shared.playTink()
                 await appState.loadConfigAndProfile()
                 await appState.loadTransactionsAndAssets(forceFull: true)
             } catch {
@@ -1315,7 +1299,6 @@ public struct EditTransactionSheet: View {
                     occurredAt: FormatUtils.beijingISOString(from: occurredDate)
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadTransactionsAndAssets(forceFull: true)
                 onDismiss()
             } catch {
@@ -1431,7 +1414,6 @@ public struct AddGearSheet: View {
                     paymentMethod: paymentMethod
                 )
                 _ = try await APIClient.shared.addGearAsset(req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadConfigAndProfile()
                 await appState.loadTransactionsAndAssets(forceFull: true)
                 onDismiss()
@@ -1519,7 +1501,6 @@ public struct SellGearSheet: View {
                     note: note.isEmpty ? nil : note
                 )
                 _ = try await APIClient.shared.sellGearAsset(id: gear.id, req)
-                AudioFeedback.shared.playShutter()
                 onSold()
                 onDismiss()
             } catch {
@@ -1735,7 +1716,6 @@ public struct CreditChannelsManagerSheet: View {
                     repaymentDay: newRepaymentDay
                 )
                 _ = try await APIClient.shared.createCreditChannel(req)
-                AudioFeedback.shared.playShutter()
                 newName = ""
                 newCode = ""
                 await appState.loadTransactionsAndAssets(forceFull: true)
@@ -1760,7 +1740,6 @@ public struct CreditChannelsManagerSheet: View {
                     color: ch.color
                 )
                 _ = try await APIClient.shared.updateCreditChannel(id: ch.id, req)
-                AudioFeedback.shared.playTink()
                 editingChannelId = nil
                 await appState.loadTransactionsAndAssets(forceFull: true)
             } catch {
@@ -1776,7 +1755,6 @@ public struct CreditChannelsManagerSheet: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteCreditChannel(id: ch.id)
-                AudioFeedback.shared.playTink()
                 await appState.loadTransactionsAndAssets(forceFull: true)
             } catch {
                 errorText = error.localizedDescription

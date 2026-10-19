@@ -203,7 +203,6 @@ public struct NewEntryModal: View {
                     Button {
                         guard selectedKind != kind else { return }
                         selectedKind = kind
-                        AudioFeedback.shared.playTink()
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: kind.icon)
@@ -733,7 +732,6 @@ public struct NewEntryModal: View {
                     try await submitTransaction()
                 }
                 clearDraft()
-                AudioFeedback.shared.playShutter()
                 await appState.refreshAll(forceFull: true)
                 onDismiss()
             } catch {
@@ -888,7 +886,6 @@ public struct NewEntryModal: View {
                     if !camera.isEmpty {
                         extractedCameraLine = camera
                     }
-                    AudioFeedback.shared.playPaperFlip()
                 } catch {
                     errorMessage = "相纸上传失败: \(error.localizedDescription)"
                 }

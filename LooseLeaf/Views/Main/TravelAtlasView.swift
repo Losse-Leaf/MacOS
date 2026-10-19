@@ -155,7 +155,6 @@ public struct TravelAtlasView: View {
 
             Button {
                 showNewFootprintSheet = true
-                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "location.fill.viewfinder")
@@ -174,17 +173,14 @@ public struct TravelAtlasView: View {
             PaperPillButton(title: "百宝格印谱", isSelected: viewMode == 0) {
                 guard viewMode != 0 else { return }
                 viewMode = 0
-                AudioFeedback.shared.playTink()
             }
             PaperPillButton(title: "典藏票根 (\(appState.footprints.count))", isSelected: viewMode == 1) {
                 guard viewMode != 1 else { return }
                 viewMode = 1
-                AudioFeedback.shared.playTink()
             }
             PaperPillButton(title: "经纬星野", isSelected: viewMode == 2) {
                 guard viewMode != 2 else { return }
                 viewMode = 2
-                AudioFeedback.shared.playTink()
             }
 
             Spacer()
@@ -211,13 +207,11 @@ public struct TravelAtlasView: View {
                 PaperPillButton(title: "全境", isSelected: selectedRegion == "all") {
                     guard selectedRegion != "all" else { return }
                     selectedRegion = "all"
-                    AudioFeedback.shared.playTink()
                 }
                 ForEach(Self.regions, id: \.name) { reg in
                     PaperPillButton(title: reg.name, isSelected: selectedRegion == reg.name) {
                         guard selectedRegion != reg.name else { return }
                         selectedRegion = reg.name
-                        AudioFeedback.shared.playTink()
                     }
                 }
             }
@@ -302,7 +296,6 @@ public struct TravelAtlasView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             if isLit {
-                AudioFeedback.shared.playPaperFlip()
                 selectedDrawerProvince = DrawerProvinceSelection(adcode: prov.adcode, name: prov.name)
             }
         }
@@ -405,7 +398,6 @@ public struct TravelAtlasView: View {
                         )
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            AudioFeedback.shared.playPaperFlip()
                             selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
                         }
                         .paperHover()
@@ -418,7 +410,6 @@ public struct TravelAtlasView: View {
     // MARK: - 5. 经纬星野
     private var celestialSection: some View {
         CelestialAtlasCanvasView(footprints: appState.footprints) { code, name in
-            AudioFeedback.shared.playPaperFlip()
             selectedDrawerCity = DrawerCitySelection(code: code, name: name)
         }
     }
@@ -441,7 +432,6 @@ public struct TravelAtlasView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteFootprint(id: fp.id)
-                AudioFeedback.shared.playTink()
                 await appState.loadProjectsWishesFootprints()
             } catch {
                 errorMessage = error.localizedDescription

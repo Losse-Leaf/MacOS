@@ -137,17 +137,11 @@ public struct PaperConfirmDialogView: View {
     }
 
     private func cancelAction() {
-        AudioFeedback.shared.playTink()
         request.onCancel?()
         onDismiss()
     }
 
     private func confirmAction() {
-        if request.danger {
-            AudioFeedback.shared.playShutter()
-        } else {
-            AudioFeedback.shared.playTink()
-        }
         request.onConfirm()
         onDismiss()
     }

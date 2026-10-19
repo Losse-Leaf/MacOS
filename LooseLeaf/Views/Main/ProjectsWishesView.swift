@@ -488,7 +488,6 @@ public struct NewWishSheet: View {
                     budget: cents
                 )
                 _ = try await APIClient.shared.createWish(req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 onDismiss()
             } catch {
@@ -622,7 +621,6 @@ public struct EditWishSheet: View {
                     budget: cents
                 )
                 _ = try await APIClient.shared.updateWish(id: wish.id, req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 onDismiss()
             } catch {
@@ -764,7 +762,6 @@ public struct ResolveWishSheet: View {
                     entryContent: entryContent.isEmpty ? nil : entryContent
                 )
                 _ = try await APIClient.shared.resolveWish(id: wish.id, req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 await appState.loadEntries(forceFull: true)
                 await appState.loadTransactionsAndAssets(forceFull: true)
@@ -852,7 +849,6 @@ public struct NewFootprintSheet: View {
                     note: note.isEmpty ? nil : note
                 )
                 _ = try await APIClient.shared.createFootprint(req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 await appState.loadEntries(forceFull: true)
                 onDismiss()
@@ -950,7 +946,6 @@ public struct EditFootprintSheet: View {
                     note: note.isEmpty ? nil : note
                 )
                 _ = try await APIClient.shared.updateFootprint(id: footprint.id, req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 onDismiss()
             } catch {
@@ -1060,7 +1055,6 @@ public struct NewProjectSheet: View {
                     githubUrl: githubUrl.isEmpty ? nil : githubUrl
                 )
                 _ = try await APIClient.shared.createProject(req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 onDismiss()
             } catch {
@@ -1183,7 +1177,6 @@ public struct EditProjectSheet: View {
                     githubUrl: githubUrl.isEmpty ? nil : githubUrl
                 )
                 _ = try await APIClient.shared.updateProject(id: project.id, req)
-                AudioFeedback.shared.playShutter()
                 await appState.loadProjectsWishesFootprints()
                 onDismiss()
             } catch {

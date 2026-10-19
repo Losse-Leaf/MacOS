@@ -110,14 +110,12 @@ public struct FilmFrameView: View {
         if let localImage {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([localImage])
-            AudioFeedback.shared.playTink()
             return
         }
         if let imageURL {
             if let cached = PaperImageCache.image(for: imageURL) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([cached])
-                AudioFeedback.shared.playTink()
                 return
             }
             Task { @MainActor in
@@ -125,7 +123,6 @@ public struct FilmFrameView: View {
                    let img = NSImage(data: data) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.writeObjects([img])
-                    AudioFeedback.shared.playTink()
                 }
             }
         }
@@ -157,7 +154,6 @@ public struct FilmFrameView: View {
             Task { @MainActor in
                 if let (data, _) = try? await URLSession.shared.data(from: url) {
                     try? data.write(to: targetURL, options: .atomic)
-                    AudioFeedback.shared.playShutter()
                 }
             }
         }

@@ -315,7 +315,6 @@ public struct GlobalSearchModalView: View {
         Button {
             onSelectEntry(entry)
             onDismiss()
-            AudioFeedback.shared.playTink()
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
@@ -369,7 +368,6 @@ public struct GlobalSearchModalView: View {
         Button {
             onSelectFootprint(fp)
             onDismiss()
-            AudioFeedback.shared.playTink()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
@@ -405,7 +403,6 @@ public struct GlobalSearchModalView: View {
         Button {
             onSelectWish(wish)
             onDismiss()
-            AudioFeedback.shared.playTink()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
@@ -442,7 +439,6 @@ public struct GlobalSearchModalView: View {
         Button {
             onSelectProject(proj)
             onDismiss()
-            AudioFeedback.shared.playTink()
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {

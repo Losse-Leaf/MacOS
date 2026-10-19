@@ -141,7 +141,6 @@ public struct LifeActivityHeatmapView: View {
                                             } else {
                                                 selectedDate = cell.dateKey
                                             }
-                                            AudioFeedback.shared.playTink()
                                         } label: {
                                             RoundedRectangle(cornerRadius: 1.5)
                                                 .fill(cellColor(for: count))
@@ -359,7 +358,6 @@ public struct PaperDatePicker: View {
             Button {
                 displayMonthDate = selection
                 isPopoverPresented.toggle()
-                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: enableTime ? "clock" : "calendar")
@@ -422,7 +420,6 @@ public struct PaperDatePicker: View {
                 Button {
                     if let prevYear = cal.date(byAdding: .year, value: -1, to: displayMonthDate) {
                         displayMonthDate = prevYear
-                        AudioFeedback.shared.playTink()
                     }
                 } label: {
                     Image(systemName: "chevron.left.2")
@@ -436,7 +433,6 @@ public struct PaperDatePicker: View {
                 Button {
                     if let prevMonth = cal.date(byAdding: .month, value: -1, to: displayMonthDate) {
                         displayMonthDate = prevMonth
-                        AudioFeedback.shared.playTink()
                     }
                 } label: {
                     Image(systemName: "chevron.left")
@@ -459,7 +455,6 @@ public struct PaperDatePicker: View {
                 Button {
                     if let nextMonth = cal.date(byAdding: .month, value: 1, to: displayMonthDate) {
                         displayMonthDate = nextMonth
-                        AudioFeedback.shared.playTink()
                     }
                 } label: {
                     Image(systemName: "chevron.right")
@@ -473,7 +468,6 @@ public struct PaperDatePicker: View {
                 Button {
                     if let nextYear = cal.date(byAdding: .year, value: 1, to: displayMonthDate) {
                         displayMonthDate = nextYear
-                        AudioFeedback.shared.playTink()
                     }
                 } label: {
                     Image(systemName: "chevron.right.2")
@@ -506,7 +500,6 @@ public struct PaperDatePicker: View {
 
                         Button {
                             updateSelectionDate(to: dayDate)
-                            AudioFeedback.shared.playTink()
                             if !enableTime {
                                 isPopoverPresented = false
                             }
@@ -633,7 +626,6 @@ public struct PaperDatePicker: View {
 
                 Button("确定") {
                     isPopoverPresented = false
-                    AudioFeedback.shared.playTink()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             }
@@ -646,7 +638,6 @@ public struct PaperDatePicker: View {
     private func shortcutDatePill(_ text: String, action: @escaping () -> Void) -> some View {
         Button {
             action()
-            AudioFeedback.shared.playTink()
             if !enableTime {
                 isPopoverPresented = false
             }
@@ -676,14 +667,12 @@ public struct PaperDatePicker: View {
     private func adjustHour(_ delta: Int) {
         if let newD = cal.date(byAdding: .hour, value: delta, to: selection) {
             selection = newD
-            AudioFeedback.shared.playTink()
         }
     }
 
     private func adjustMinute(_ delta: Int) {
         if let newD = cal.date(byAdding: .minute, value: delta, to: selection) {
             selection = newD
-            AudioFeedback.shared.playTink()
         }
     }
 
@@ -694,7 +683,6 @@ public struct PaperDatePicker: View {
         comps.second = 0
         if let newD = cal.date(from: comps) {
             selection = newD
-            AudioFeedback.shared.playTink()
         }
     }
 
@@ -745,7 +733,6 @@ public struct PaperTimePicker: View {
 
             Button {
                 isPopoverPresented.toggle()
-                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "clock")
@@ -803,7 +790,6 @@ public struct PaperTimePicker: View {
                     if let updated = cal.date(from: curComps) {
                         selection = updated
                     }
-                    AudioFeedback.shared.playTink()
                 }
                 .font(ArchiveTypography.bodySans(size: 10.5))
                 .buttonStyle(.plain)
@@ -910,7 +896,6 @@ public struct PaperTimePicker: View {
 
                 Button("完成") {
                     isPopoverPresented = false
-                    AudioFeedback.shared.playTink()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             }
@@ -927,7 +912,6 @@ public struct PaperTimePicker: View {
         comps.hour = hour
         if let d = cal.date(from: comps) {
             selection = d
-            AudioFeedback.shared.playTink()
         }
     }
 
@@ -938,7 +922,6 @@ public struct PaperTimePicker: View {
         comps.minute = minute
         if let d = cal.date(from: comps) {
             selection = d
-            AudioFeedback.shared.playTink()
         }
     }
 
@@ -949,7 +932,6 @@ public struct PaperTimePicker: View {
             comps.minute = minute
             if let d = cal.date(from: comps) {
                 selection = d
-                AudioFeedback.shared.playTink()
             }
         } label: {
             Text(label)
@@ -1065,7 +1047,6 @@ public struct PaperCityPicker: View {
                     Button {
                         selectedCode = ""
                         selectedName = ""
-                        AudioFeedback.shared.playTink()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 10))
@@ -1090,7 +1071,6 @@ public struct PaperCityPicker: View {
                     LocationManager.shared.fetchCurrentLocation()
                 }
                 isPickerPresented = true
-                AudioFeedback.shared.playTink()
             }
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("选择省市，当前为 \(displayText)")
@@ -1123,7 +1103,6 @@ public struct PaperCityPicker: View {
                         selectedName = resolvedName
                     }
                     isPickerPresented = false
-                    AudioFeedback.shared.playTink()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "location.fill")
@@ -1206,7 +1185,6 @@ public struct PaperCityPicker: View {
                                     selectedCode = city.code
                                     selectedName = city.name
                                     isPickerPresented = false
-                                    AudioFeedback.shared.playTink()
                                 } label: {
                                     HStack {
                                         Text("\(city.province) · \(city.name)")
@@ -1235,7 +1213,6 @@ public struct PaperCityPicker: View {
                                 let isProvActive = prov == activeProvince
                                 Button {
                                     activeProvince = prov
-                                    AudioFeedback.shared.playTink()
                                 } label: {
                                     HStack {
                                         Text(prov)
@@ -1268,7 +1245,6 @@ public struct PaperCityPicker: View {
                                     selectedCode = city.code
                                     selectedName = city.name
                                     isPickerPresented = false
-                                    AudioFeedback.shared.playTink()
                                 } label: {
                                     HStack {
                                         Text(city.name)
@@ -1358,7 +1334,6 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
             Button {
                 guard !disabled else { return }
                 isOpen.toggle()
-                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     if let selectedOption {
@@ -1409,7 +1384,6 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                                     Button {
                                         selection = opt.value
                                         isOpen = false
-                                        AudioFeedback.shared.playTink()
                                     } label: {
                                         HStack(spacing: 6) {
                                             Text(opt.label)
@@ -1494,7 +1468,6 @@ public struct PaperSegmentedControl<T: Hashable>: View {
                 Button {
                     guard item.value != selection else { return }
                     selection = item.value
-                    AudioFeedback.shared.playTink()
                 } label: {
                     HStack(spacing: 4) {
                         if let icon = item.icon {
@@ -1537,7 +1510,6 @@ public struct PaperCheckboxToggleStyle: ToggleStyle {
     public func makeBody(configuration: Configuration) -> some View {
         Button {
             configuration.isOn.toggle()
-            AudioFeedback.shared.playTink()
         } label: {
             HStack(spacing: 8) {
                 ZStack {
@@ -1579,7 +1551,6 @@ public struct PaperSwitchToggleStyle: ToggleStyle {
             withAnimation(.spring(response: 0.22, dampingFraction: 0.75)) {
                 configuration.isOn.toggle()
             }
-            AudioFeedback.shared.playTink()
         } label: {
             HStack(spacing: 8) {
                 configuration.label

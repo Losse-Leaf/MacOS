@@ -549,14 +549,6 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertFalse(unknown.x == 462.3 && unknown.y == 300.0, "未匹配地名应有离散散列坐标，避免死锁在中原原点")
     }
 
-    @MainActor
-    func testAudioFeedbackPolyphonicPool() {
-        // Rapid sequential calls should not crash or throw
-        for _ in 0..<10 {
-            AudioFeedback.shared.playTink()
-            AudioFeedback.shared.playPaperFlip()
-        }
-    }
 
     func testServerBackupItemDecodingAndFormatting() throws {
         let json = """

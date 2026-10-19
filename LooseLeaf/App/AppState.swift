@@ -29,6 +29,7 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// 桌面端主窗口侧栏导航模块 (对标 Web HeaderNav 6 大平级主视图)
+/// 侧栏平铺「6 大内容板块 + 5 个原配置中心 tab + 辅助工具暗房」，不再有二级容器页
 public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     case stream = "stream"       // 时间流 (home)
     case ledger = "ledger"       // 资产 (transactions)
@@ -36,14 +37,28 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     case atlas = "atlas"         // 足迹 (atlas)
     case projects = "projects"   // 项目 (projects)
     case dossier = "dossier"     // 主理人 (about)
-    case settings = "settings"   // 配置中心 (settings)
+    case preferences = "preferences" // 偏好设置
+    case hub = "hub"             // 中枢与设备
+    case storage = "storage"     // 存储与备份
+    case categories = "categories" // 分类字典
+    case about = "about"         // 关于活页
     case darkroom = "darkroom"   // 辅助：银盐暗房
 
     public var id: String { rawValue }
 
-    /// 侧边栏纯粹呈现 Web 6 大核心生活内容板块
-    public static var sidebarSections: [WorkbenchSection] {
+    /// 六大核心生活内容板块（与 Web HeaderNav 对齐，⌘1–⌘6 绑定到这些）
+    public static var contentSections: [WorkbenchSection] {
         [.stream, .ledger, .wishes, .atlas, .projects, .dossier]
+    }
+
+    /// 配置类条目：原「配置中心」内部的 5 个 tab，扁平后直接进侧栏
+    public static var configurationSections: [WorkbenchSection] {
+        [.preferences, .hub, .storage, .categories, .about]
+    }
+
+    /// 侧栏平铺的全部条目（内容 + 配置）
+    public static var sidebarSections: [WorkbenchSection] {
+        contentSections + configurationSections
     }
 
     public var title: String {
@@ -54,7 +69,11 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .atlas: return "足迹"
         case .projects: return "项目"
         case .dossier: return "主理人"
-        case .settings: return "配置中心"
+        case .preferences: return "偏好设置"
+        case .hub: return "中枢与设备"
+        case .storage: return "存储与备份"
+        case .categories: return "分类字典"
+        case .about: return "关于活页"
         case .darkroom: return "银盐暗房"
         }
     }
@@ -67,7 +86,11 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .atlas: return "map"
         case .projects: return "hammer"
         case .dossier: return "person.text.rectangle"
-        case .settings: return "gearshape"
+        case .preferences: return "slider.horizontal.3"
+        case .hub: return "laptopcomputer.and.iphone"
+        case .storage: return "archivebox"
+        case .categories: return "tag"
+        case .about: return "info.circle"
         case .darkroom: return "camera.aperture"
         }
     }
@@ -241,18 +264,6 @@ public final class AppState {
         }
     }
 
-    public var soundEnabled: Bool {
-        didSet {
-            AudioFeedback.shared.isSoundEnabled = soundEnabled
-        }
-    }
-
-    public var hapticsEnabled: Bool {
-        didSet {
-            AudioFeedback.shared.isHapticsEnabled = hapticsEnabled
-        }
-    }
-
     public var globalHotkeyLabel: String { AppDelegate.hotKeyDisplayName }
 
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
@@ -264,8 +275,6 @@ public final class AppState {
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
         self.appearanceMode = AppearanceMode(rawValue: savedAppearance) ?? .system
-        self.soundEnabled = AudioFeedback.shared.isSoundEnabled
-        self.hapticsEnabled = AudioFeedback.shared.isHapticsEnabled
         self.isPaired = (CredentialStore.getToken()?.isEmpty == false)
 
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
@@ -545,7 +554,6 @@ public final class AppState {
         } ?? 0
         index = min(max(index + delta, 0), list.count - 1)
         keyboardFocusedEntryId = list[index].id
-        AudioFeedback.shared.playTink()
     }
 
     /// 打开当前键盘聚焦的散页详情
@@ -597,7 +605,6 @@ public final class AppState {
         )
 
         let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req)
-        AudioFeedback.shared.playShutter()
         if queuedOffline {
             showTemporaryBanner("已暂存至本地发件箱，网络恢复后自动同步")
         } else {
@@ -629,7 +636,6 @@ public final class AppState {
         )
 
         let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
-        AudioFeedback.shared.playShutter()
         if queuedOffline {
             showTemporaryBanner("账单已暂存至本地发件箱，网络恢复后自动同步")
         } else {
@@ -666,7 +672,6 @@ public final class AppState {
             deviceModel: "Mac"
         )
         self.isPaired = true
-        AudioFeedback.shared.playShutter()
         showTemporaryBanner("配对工单握手成功，凭证已写入本机受保护档案")
         await refreshAll(forceFull: true)
     }
@@ -689,14 +694,12 @@ public final class AppState {
 
         if let found = entries.first(where: { $0.id == entryId }) {
             self.highlightedEntry = found
-            AudioFeedback.shared.playPaperFlip()
         } else {
             // 若当前本地快照中尚未载入该条目，异步刷新后再次尝试查找
             Task { @MainActor in
                 await self.loadEntries(forceFull: true)
                 if let found = self.entries.first(where: { $0.id == entryId }) {
                     self.highlightedEntry = found
-                    AudioFeedback.shared.playPaperFlip()
                 }
             }
         }

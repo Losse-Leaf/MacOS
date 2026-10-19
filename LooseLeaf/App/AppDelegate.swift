@@ -236,7 +236,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        AudioFeedback.shared.playPaperFlip()
     }
 
     public func closeQuickCapturePanel() {

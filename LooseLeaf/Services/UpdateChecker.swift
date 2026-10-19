@@ -136,7 +136,6 @@ public final class UpdateChecker {
     public func copyInstallCommandToClipboard() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.installCommand, forType: .string)
-        AudioFeedback.shared.playTink()
         AppState.shared.showTemporaryBanner("已复制终端安装命令，打开 Mac「终端」粘贴回车即可一键全自动升级")
     }
 

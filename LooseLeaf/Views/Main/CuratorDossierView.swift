@@ -77,7 +77,6 @@ public struct CuratorDossierView: View {
 
                             Button {
                                 appState.showStatsSheet = true
-                                AudioFeedback.shared.playTink()
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "chart.bar")
@@ -167,7 +166,6 @@ public struct CuratorDossierView: View {
 
                         Button {
                             appState.showAlmanacSheet = true
-                            AudioFeedback.shared.playPaperFlip()
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "book.closed")
@@ -209,7 +207,6 @@ public struct CuratorDossierView: View {
 
                                 Button {
                                     selectedHeatmapDate = nil
-                                    AudioFeedback.shared.playTink()
                                 } label: {
                                     HStack(spacing: 3) {
                                         Image(systemName: "xmark")
@@ -232,7 +229,6 @@ public struct CuratorDossierView: View {
                                     ForEach(selectedDateEntries) { item in
                                         Button {
                                             appState.highlightedEntry = item
-                                            AudioFeedback.shared.playPaperFlip()
                                         } label: {
                                             VStack(alignment: .leading, spacing: 4) {
                                                 HStack {
@@ -288,7 +284,6 @@ public struct CuratorDossierView: View {
 
                         Button {
                             showAddGearSheet = true
-                            AudioFeedback.shared.playPaperFlip()
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "plus")
@@ -438,7 +433,6 @@ public struct CuratorDossierView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteGearAsset(id: gear.id)
-                AudioFeedback.shared.playTink()
                 await appState.loadConfigAndProfile()
                 await appState.loadTransactionsAndAssets(forceFull: true)
             } catch {
@@ -549,7 +543,6 @@ public struct CuratorDossierView: View {
                         )
                         do {
                             _ = try await APIClient.shared.updateCuratorProfile(req)
-                            AudioFeedback.shared.playShutter()
                             await appState.loadConfigAndProfile()
                             dossierError = nil
                             showEditProfileSheet = false
@@ -589,7 +582,6 @@ public struct CuratorDossierView: View {
                         folder: "avatar"
                     )
                     newAvatarKey = att.objectKey
-                    AudioFeedback.shared.playShutter()
                 } catch {
                     dossierError = "肖像上传失败：\(error.localizedDescription)"
                 }

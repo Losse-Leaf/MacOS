@@ -45,11 +45,10 @@ public struct LooseLeafApp: App {
         .defaultSize(width: 1180, height: 780)
         .commands {
             CommandGroup(replacing: .appSettings) {
-                Button("配置中心…") {
+                Button("偏好设置…") {
                     withAnimation(.easeInOut(duration: 0.12)) {
-                        appState.activeSection = .settings
+                        appState.activeSection = .preferences
                     }
-                    AudioFeedback.shared.playPaperFlip()
                 }
                 .keyboardShortcut(",", modifiers: [.command])
             }
@@ -65,13 +64,11 @@ public struct LooseLeafApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("记一笔…") {
                     appState.showNewEntrySheet = true
-                    AudioFeedback.shared.playTink()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
 
                 Button("全局搜索档案…") {
                     appState.showSearchModal = true
-                    AudioFeedback.shared.playTink()
                 }
                 .keyboardShortcut("k", modifiers: [.command])
 
@@ -82,22 +79,32 @@ public struct LooseLeafApp: App {
             }
 
             CommandMenu("活页工作台") {
-                ForEach(Array(WorkbenchSection.sidebarSections.enumerated()), id: \.element.id) { index, section in
+                // ⌘1–⌘6 只绑六大内容板块；配置类条目不占用数字键
+                ForEach(Array(WorkbenchSection.contentSections.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
                         guard appState.activeSection != section else { return }
                         withAnimation(.easeInOut(duration: 0.12)) {
                             appState.activeSection = section
                         }
-                        AudioFeedback.shared.playTink()
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
                 }
 
                 Divider()
 
+                ForEach(WorkbenchSection.configurationSections) { section in
+                    Button(section.title) {
+                        guard appState.activeSection != section else { return }
+                        withAnimation(.easeInOut(duration: 0.12)) {
+                            appState.activeSection = section
+                        }
+                    }
+                }
+
+                Divider()
+
                 Button("生活刻度统计…") {
                     appState.showStatsSheet = true
-                    AudioFeedback.shared.playTink()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
 

@@ -102,7 +102,6 @@ public struct ProjectsView: View {
 
             Button {
                 showNewProjectSheet = true
-                AudioFeedback.shared.playTink()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "hammer")
@@ -122,7 +121,6 @@ public struct ProjectsView: View {
                 PaperPillButton(title: "全部造物 (\(allProjects.count))", isSelected: selectedCategory == "all") {
                     guard selectedCategory != "all" else { return }
                     selectedCategory = "all"
-                    AudioFeedback.shared.playTink()
                 }
 
                 ForEach(categories, id: \.self) { cat in
@@ -130,7 +128,6 @@ public struct ProjectsView: View {
                     PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedCategory == cat) {
                         guard selectedCategory != cat else { return }
                         selectedCategory = cat
-                        AudioFeedback.shared.playTink()
                     }
                 }
             }
@@ -236,7 +233,6 @@ public struct ProjectsView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteProject(id: proj.id)
-                AudioFeedback.shared.playTink()
                 await appState.loadProjectsWishesFootprints()
             } catch {
                 errorMessage = error.localizedDescription

@@ -295,7 +295,6 @@ public struct PairingGateView: View {
                     // 若直接输入纯 ticket 码 (如 pair_tk_xxx)
                     try await appState.pairWithTicket(trimmed, hubURL: appState.hubURLString)
                 }
-                AudioFeedback.shared.playShutter()
                 isSubmitting = false
             } catch {
                 errorMessage = error.localizedDescription

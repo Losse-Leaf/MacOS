@@ -122,7 +122,6 @@ public struct QuickCaptureView: View {
                         isSelected: appState.quickDraft.activeTab == tab
                     ) {
                         appState.quickDraft.activeTab = tab
-                        AudioFeedback.shared.playPaperFlip()
                     }
                 }
             }
@@ -143,7 +142,6 @@ public struct QuickCaptureView: View {
                         isSelected: draft.entryType == kind
                     ) {
                         draft.entryType = kind
-                        AudioFeedback.shared.playTink()
                     }
                 }
             }
@@ -215,7 +213,6 @@ public struct QuickCaptureView: View {
 
                 Button {
                     draft.showBackdatePicker.toggle()
-                    AudioFeedback.shared.playTink()
                 } label: {
                     Image(systemName: "clock")
                         .font(.system(size: 11.5))
@@ -230,7 +227,6 @@ public struct QuickCaptureView: View {
 
                 Button {
                     draft.isFeatured.toggle()
-                    AudioFeedback.shared.playTink()
                 } label: {
                     Image(systemName: draft.isFeatured ? "star.fill" : "star")
                         .font(.system(size: 11.5))
@@ -408,7 +404,7 @@ public struct QuickCaptureView: View {
             .buttonStyle(.plain)
 
             Button {
-                appState.activeSection = .settings
+                appState.activeSection = .preferences
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
                 onClosePopover?()
@@ -418,7 +414,7 @@ public struct QuickCaptureView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
             .buttonStyle(.plain)
-            .help("设备配对与偏好设置")
+            .help("偏好设置")
         }
     }
 
@@ -504,7 +500,6 @@ public struct QuickCaptureView: View {
                     }
                 }
                 appState.quickDraft.uploadedAttachments.append(attachment)
-                AudioFeedback.shared.playShutter()
             } catch {
                 errorText = "「\(url.lastPathComponent)」上传失败：\(error.localizedDescription)"
             }
@@ -538,7 +533,6 @@ public struct QuickCaptureView: View {
                     }
                 }
                 appState.quickDraft.uploadedAttachments.append(attachment)
-                AudioFeedback.shared.playShutter()
             } catch {
                 errorText = "剪贴板图片处理失败：\(error.localizedDescription)"
             }
@@ -569,7 +563,6 @@ public struct QuickCaptureView: View {
                         }
                     }
                     appState.quickDraft.uploadedAttachments.append(attachment)
-                    AudioFeedback.shared.playShutter()
                 } catch {
                     errorText = error.localizedDescription
                 }

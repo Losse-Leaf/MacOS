@@ -92,7 +92,8 @@ mac/
 │   │   └── FormatUtils.swift          # Int64 分转换、UTC+8 北京时间解析与自然语言记账解析
 │   ├── Views/
 │   │   ├── MenuBar/                   # QuickCaptureView & QuickLedgerView
-│   │   ├── Main/                      # StreamView / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / DarkroomDropZone / SettingsView
+│   │   ├── Main/                      # StreamView / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / DarkroomDropZone / SettingsView（导航外壳）
+│   │   ├── Settings/                  # PreferencesSettingsView / HubDevicesSettingsView / StorageBackupSettingsView / CategoriesSettingsView / AboutSettingsView / SettingsCardComponents
 │   │   └── Components/                # FilmFrameView / NoiseBackground / PaperComponents
 │   └── Resources/
 │       ├── Assets.xcassets/           # 跨端统一语义色板与图标资产

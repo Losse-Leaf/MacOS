@@ -1,0 +1,821 @@
+import SwiftUI
+
+/// 存储与备份（左侧菜单「存储与备份」入口）：中枢全量 ZIP 快照灾备与 R2/S3 对象存储配置
+@MainActor
+struct StorageBackupSettingsView: View {
+    @Bindable var appState: AppState
+
+    // 中枢系统级备份状态
+    @State private var serverBackups: [ServerBackupItem] = []
+    @State private var isLoadingServerBackups: Bool = false
+    @State private var isCreatingServerBackup: Bool = false
+    @State private var backupActionFeedback: String?
+    @State private var backupActionError: String?
+
+    // 对象存储与中枢灾备管理 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
+    @State private var backupSubTab: String = "backup" // "backup", "storage"
+    @State private var storageStatus: StorageStatus?
+    @State private var isLoadingStorageStatus: Bool = false
+    @State private var isTestingStorage: Bool = false
+    @State private var isSavingStorage: Bool = false
+    @State private var isResettingStorage: Bool = false
+    @State private var isMigratingStorage: Bool = false
+    @State private var storageFeedback: String?
+    @State private var storageError: String?
+
+    @State private var storageProviderType: String = "r2" // "r2" or "s3"
+    @State private var showSecretKey: Bool = false
+    @State private var storageAccountId: String = ""
+    @State private var storageBucketName: String = ""
+    @State private var storageEndpoint: String = ""
+    @State private var storageAccessKeyId: String = ""
+    @State private var storageSecretAccessKey: String = ""
+    @State private var storagePublicDomain: String = ""
+    @State private var storagePresignSeconds: Int = 1800
+
+    public init(appState: AppState) {
+        self.appState = appState
+    }
+
+    public var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
+            // 次级选项卡切换胶囊 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
+            HStack(spacing: 8) {
+                PaperPillButton(
+                    title: "全量快照与灾备 (\(serverBackups.count)/7)",
+                    isSelected: backupSubTab == "backup"
+                ) {
+                    backupSubTab = "backup"
+                }
+
+                PaperPillButton(
+                    title: "对象存储设置 (R2/S3)",
+                    isSelected: backupSubTab == "storage"
+                ) {
+                    backupSubTab = "storage"
+                }
+
+                Spacer()
+            }
+            .padding(.bottom, 2)
+
+            switch backupSubTab {
+            case "backup":
+                serverBackupSubView
+            case "storage":
+                objectStorageSubView
+            default:
+                serverBackupSubView
+            }
+        }
+            }
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .background(ArchivePalette.archivePaper)
+        .task {
+            if appState.isPaired {
+                await loadServerBackups()
+                await loadStorageStatusAction()
+            }
+        }
+    }
+    private var serverBackupSubView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // 顶栏缓存体量与全量快照触发
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("中枢系统级全量热备")
+                            .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Text("\(serverBackups.count)/7 份")
+                            .font(ArchiveTypography.monoScale(size: 9.5))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                    }
+                    Text("本地缓存：散页 \(appState.entries.count) 篇 · 账目 \(appState.transactions.count) 笔 · 待发 \(appState.outboxItems.count) 项 · 目的地：\(storageStatus?.configured == true ? "Cloudflare R2" : "中枢本地磁盘")")
+                        .font(ArchiveTypography.monoScale(size: 10))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button {
+                        Task { @MainActor in
+                            await loadServerBackups()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            if isLoadingServerBackups {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 9))
+                            }
+                            Text("刷新")
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                    Button {
+                        createServerBackupAction()
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isCreatingServerBackup {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 10))
+                            }
+                            Text(isCreatingServerBackup ? "正在生成…" : "立即生成快照")
+                        }
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .disabled(isCreatingServerBackup || !appState.isPaired)
+                }
+            }
+
+            // 极简备份策略说明
+            Text("每日自动热备整库，保留最新 7 份快照，支持 Cloudflare R2 与本地存储双重冗余，可在任一时间节点一键回滚整库。")
+                .font(ArchiveTypography.bodySans(size: 11))
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if let fb = backupActionFeedback {
+                Text(fb)
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.accentMoss)
+            }
+            if let err = backupActionError {
+                Text(err)
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+            }
+
+            // 历史快照清单
+            Text("历史快照归档清单 (\(serverBackups.count)/7)")
+                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            if isLoadingServerBackups && serverBackups.isEmpty {
+                ProgressView().padding(.vertical, 12)
+            } else if serverBackups.isEmpty {
+                Text("暂无中枢备份快照，您可以点击右上角「立即生成快照」创建首个全量热备。")
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.vertical, 12)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(serverBackups) { backup in
+                        HStack(spacing: 10) {
+                            Image(systemName: "archivebox")
+                                .font(.system(size: 13))
+                                .foregroundStyle(ArchivePalette.accentMoss)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("\(backup.formattedDate) 快照")
+                                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                    Text(backup.storageTypeBadge)
+                                        .font(ArchiveTypography.monoScale(size: 9))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(ArchivePalette.archivePaper)
+                                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                                }
+                                Text("\(backup.formattedSize) · \(backup.filename)")
+                                    .font(ArchiveTypography.monoScale(size: 9.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                downloadServerBackupAction(backup)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "arrow.down.to.line")
+                                        .font(.system(size: 9))
+                                    Text("下载至 Mac")
+                                }
+                            }
+                            .font(ArchiveTypography.bodySans(size: 10.5))
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                            Button {
+                                appState.askConfirm(
+                                    title: "确认回滚还原整库？",
+                                    message: "将从快照「\(backup.filename)」恢复中枢数据库与媒体文件，现有未同步数据将被该快照覆盖。",
+                                    confirmText: "确认回滚覆盖",
+                                    danger: true
+                                ) {
+                                    restoreServerBackupAction(backup)
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.system(size: 9))
+                                    Text("回滚还原")
+                                }
+                            }
+                            .font(ArchiveTypography.bodySans(size: 10.5))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                            Button {
+                                appState.askConfirm(
+                                    title: "确认从中枢删除该备份快照？",
+                                    message: "删除后将从中枢永久移除该备份文件，无法再回滚至此时间节点。",
+                                    confirmText: "删除快照",
+                                    danger: true
+                                ) {
+                                    deleteServerBackupAction(backup)
+                                }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(10)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+            }
+        }
+    }
+
+
+    private var objectStorageSubView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // 状态概览卡片
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: storageStatus?.configured == true ? "cloud.fill" : "internaldrive")
+                        .foregroundStyle(storageStatus?.configured == true ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .font(.system(size: 14))
+
+                    Text(storageStatus?.configured == true ? "当前接入：\(storageStatus?.provider ?? "Cloudflare R2") (已挂载)" : "当前接入：中枢本地磁盘存储 (/media)")
+                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                }
+
+                Text("·")
+                    .foregroundStyle(ArchivePalette.inkMuted)
+
+                Text("媒体文件 \(storageStatus?.localFileCount ?? 0) 件 (\(formatByteCount(storageStatus?.localTotalBytes ?? 0)))")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+
+                Spacer()
+
+                if storageStatus?.configured == true {
+                    Button {
+                        migrateStorageAction()
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isMigratingStorage {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 10))
+                            }
+                            Text(isMigratingStorage ? "正在同步…" : "双向同步媒体")
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .disabled(isMigratingStorage)
+                }
+            }
+            .padding(12)
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            // 模式切换与凭据表单卡片
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("对象存储接入凭据")
+                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    Spacer()
+
+                    HStack(spacing: 2) {
+                        Button("Cloudflare R2") {
+                            storageProviderType = "r2"
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11, weight: storageProviderType == "r2" ? .semibold : .regular))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(storageProviderType == "r2" ? ArchivePalette.inkPrimary : Color.clear)
+                        .foregroundStyle(storageProviderType == "r2" ? ArchivePalette.archivePaper : ArchivePalette.inkSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .buttonStyle(.plain)
+
+                        Button("S3 兼容协议") {
+                            storageProviderType = "s3"
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11, weight: storageProviderType == "s3" ? .semibold : .regular))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(storageProviderType == "s3" ? ArchivePalette.inkPrimary : Color.clear)
+                        .foregroundStyle(storageProviderType == "s3" ? ArchivePalette.archivePaper : ArchivePalette.inkSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .buttonStyle(.plain)
+                    }
+                    .padding(2)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                }
+
+                // 表单网格
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(storageProviderType == "r2" ? "Cloudflare 账户 ID *" : "S3 服务端点 (Endpoint) *")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                            TextField(
+                                storageProviderType == "r2" ? "32 位 Cloudflare Account ID" : "https://s3.ap-northeast-1.amazonaws.com",
+                                text: storageProviderType == "r2" ? $storageAccountId : $storageEndpoint
+                            )
+                            .textFieldStyle(.plain)
+                            .font(ArchiveTypography.monoScale(size: 11.5))
+                            .padding(7)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("存储桶名称 (Bucket Name) *")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                            TextField("looseleaf-bucket", text: $storageBucketName)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.monoScale(size: 11.5))
+                                .padding(7)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                        }
+                    }
+
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("访问密钥 ID (Access Key ID) *")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                            TextField("Access Key ID", text: $storageAccessKeyId)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.monoScale(size: 11.5))
+                                .padding(7)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("私有访问密钥 (Secret Access Key)")
+                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
+                                if storageStatus?.hasSecretKey == true {
+                                    Text("已配置")
+                                        .font(ArchiveTypography.monoScale(size: 9))
+                                        .foregroundStyle(ArchivePalette.accentMoss)
+                                }
+                            }
+
+                            HStack(spacing: 4) {
+                                if showSecretKey {
+                                    TextField(storageStatus?.hasSecretKey == true ? "留空保持已存密钥" : "Secret Access Key", text: $storageSecretAccessKey)
+                                        .textFieldStyle(.plain)
+                                } else {
+                                    SecureField(storageStatus?.hasSecretKey == true ? "留空保持已存密钥" : "Secret Access Key", text: $storageSecretAccessKey)
+                                        .textFieldStyle(.plain)
+                                }
+
+                                Button {
+                                    showSecretKey.toggle()
+                                } label: {
+                                    Image(systemName: showSecretKey ? "eye.slash" : "eye")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .font(ArchiveTypography.monoScale(size: 11.5))
+                            .padding(7)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                        }
+                    }
+
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("公网访问加速域名 (可选)")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                            TextField("https://media.example.com", text: $storagePublicDomain)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.monoScale(size: 11.5))
+                                .padding(7)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("临时下载链接有效时长")
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+
+                            let presignOptions: [PaperSelectOption<Int>] = [
+                                PaperSelectOption(value: 900, label: "15 分钟 (高安全)"),
+                                PaperSelectOption(value: 1800, label: "30 分钟 (推荐)"),
+                                PaperSelectOption(value: 3600, label: "1 小时"),
+                                PaperSelectOption(value: 21600, label: "6 小时"),
+                                PaperSelectOption(value: 86400, label: "24 小时"),
+                                PaperSelectOption(value: 604800, label: "7 天 (最长上限)")
+                            ]
+                            PaperSelect(selection: $storagePresignSeconds, options: presignOptions)
+                        }
+                    }
+                }
+
+                // 提示与反馈信息
+                if let fb = storageFeedback {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                        Text(fb)
+                            .font(ArchiveTypography.bodySans(size: 11))
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                    }
+                    .padding(.top, 2)
+                }
+
+                if let err = storageError {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text(err)
+                            .font(ArchiveTypography.bodySans(size: 11))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+                    .padding(.top, 2)
+                }
+
+                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6)).padding(.vertical, 4)
+
+                // 操作按钮栏
+                HStack {
+                    if storageStatus?.configured == true {
+                        Button {
+                            appState.askConfirm(
+                                title: "切换为本地磁盘存储",
+                                message: "确定要关闭云端对象存储并恢复为本地磁盘存储模式吗？新上传的文件将直接保存在服务端本地磁盘 (/media)。",
+                                confirmText: "确认恢复本地存储",
+                                danger: true
+                            ) {
+                                resetStorageAction()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                if isResettingStorage {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.system(size: 9))
+                                }
+                                Text(isResettingStorage ? "正在切换…" : "恢复为本地磁盘存储")
+                            }
+                        }
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .buttonStyle(.plain)
+                        .disabled(isResettingStorage || isSavingStorage || isTestingStorage)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        testStorageAction()
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isTestingStorage {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 9))
+                            }
+                            Text(isTestingStorage ? "握手测试中…" : "测试连通性")
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .disabled(isTestingStorage || isSavingStorage)
+
+                    Button {
+                        saveStorageAction()
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isSavingStorage {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            Text(isSavingStorage ? "保存中…" : "保存并挂载配置")
+                        }
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11))
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .disabled(isSavingStorage || isTestingStorage)
+                }
+            }
+            .padding(14)
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    private func loadServerBackups() async {
+        guard appState.isPaired else { return }
+        isLoadingServerBackups = true
+        defer { isLoadingServerBackups = false }
+        do {
+            serverBackups = try await APIClient.shared.fetchServerBackups()
+            backupActionError = nil
+        } catch {
+            backupActionError = "获取中枢备份列表失败: \(error.localizedDescription)"
+        }
+    }
+
+    private func createServerBackupAction() {
+        guard !isCreatingServerBackup else { return }
+        isCreatingServerBackup = true
+        backupActionFeedback = nil
+        backupActionError = nil
+        Task { @MainActor in
+            defer { isCreatingServerBackup = false }
+            do {
+                let item = try await APIClient.shared.createServerBackupNow()
+                backupActionFeedback = "中枢快照生成成功：\(item.filename)"
+                serverBackups = try await APIClient.shared.fetchServerBackups()
+            } catch {
+                backupActionError = "生成中枢备份失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func downloadServerBackupAction(_ item: ServerBackupItem) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.zip]
+        panel.nameFieldStringValue = item.filename
+        if panel.runModal() == .OK, let targetURL = panel.url {
+            Task { @MainActor in
+                do {
+                    let (data, _) = try await APIClient.shared.downloadServerBackup(filename: item.filename)
+                    try data.write(to: targetURL, options: .atomic)
+                    backupActionFeedback = "已成功下载「\(item.filename)」至本地"
+                } catch {
+                    backupActionError = "下载备份失败: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func deleteServerBackupAction(_ item: ServerBackupItem) {
+        Task { @MainActor in
+            do {
+                serverBackups = try await APIClient.shared.deleteServerBackup(filename: item.filename)
+                backupActionFeedback = "已从中枢删除快照「\(item.filename)」"
+            } catch {
+                backupActionError = "删除备份失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func restoreServerBackupAction(_ item: ServerBackupItem) {
+        Task { @MainActor in
+            do {
+                try await APIClient.shared.restoreServerBackup(filename: item.filename)
+                backupActionFeedback = "中枢已从快照成功回滚还原，正在同步最新状态…"
+                await appState.refreshAll(forceFull: true)
+                await loadServerBackups()
+            } catch {
+                backupActionError = "回滚还原失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - 云端对象存储灾备动作 (Storage Management Actions)
+
+    private func formatByteCount(_ bytes: Int64) -> String {
+        guard bytes > 0 else { return "0 B" }
+        let kb = Double(bytes) / 1024.0
+        if kb < 1024.0 {
+            return String(format: "%.1f KB", kb)
+        }
+        let mb = kb / 1024.0
+        if mb < 1024.0 {
+            return String(format: "%.1f MB", mb)
+        }
+        let gb = mb / 1024.0
+        return String(format: "%.2f GB", gb)
+    }
+
+    private func syncStorageFormWithStatus(_ status: StorageStatus?) {
+        guard let status else { return }
+        storageAccountId = status.accountId ?? ""
+        storageBucketName = status.bucket ?? ""
+        storageEndpoint = status.endpoint ?? ""
+        storageAccessKeyId = status.accessKeyId ?? ""
+        storagePublicDomain = status.publicDomain ?? ""
+        storagePresignSeconds = status.presignExpireSeconds ?? 1800
+
+        if let ep = status.endpoint, !ep.isEmpty, !ep.contains(".r2.cloudflarestorage.com") {
+            storageProviderType = "s3"
+        } else {
+            storageProviderType = "r2"
+        }
+    }
+
+    private func loadStorageStatusAction() async {
+        guard appState.isPaired else { return }
+        isLoadingStorageStatus = true
+        defer { isLoadingStorageStatus = false }
+        do {
+            let status = try await APIClient.shared.fetchStorageStatus()
+            storageStatus = status
+            syncStorageFormWithStatus(status)
+        } catch {
+            storageError = "加载对象存储状态失败: \(error.localizedDescription)"
+        }
+    }
+
+    private func testStorageAction() {
+        guard !isTestingStorage else { return }
+        storageFeedback = nil
+        storageError = nil
+
+        let bucket = storageBucketName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let accessKey = storageAccessKeyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if bucket.isEmpty {
+            storageError = "请填写存储桶名称 (Bucket Name)"
+            return
+        }
+        if accessKey.isEmpty {
+            storageError = "请填写 Access Key ID"
+            return
+        }
+        if storageSecretAccessKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           storageStatus?.hasSecretKey == true {
+            storageError = "连通性测试需要重新输入 Secret Access Key（已保存的密钥不会回传；保存配置时可留空保持不变）"
+            return
+        }
+
+        let endpoint: String = {
+            if storageProviderType == "r2" {
+                let acc = storageAccountId.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !acc.isEmpty && storageEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return "https://\(acc).r2.cloudflarestorage.com"
+                }
+            }
+            return storageEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+
+        let payload = StorageConfigPayload(
+            accountId: storageAccountId.trimmingCharacters(in: .whitespacesAndNewlines),
+            accessKeyId: accessKey,
+            secretAccessKey: storageSecretAccessKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            bucketName: bucket,
+            endpoint: endpoint,
+            publicDomain: storagePublicDomain.trimmingCharacters(in: .whitespacesAndNewlines),
+            presignExpireSeconds: storagePresignSeconds
+        )
+
+        isTestingStorage = true
+        Task { @MainActor in
+            defer { isTestingStorage = false }
+            do {
+                let res = try await APIClient.shared.testStorageConfig(payload)
+                let latencyText = res.latencyMs != nil ? " · 延迟 \(res.latencyMs!)ms" : ""
+                storageFeedback = "\(res.message ?? "握手测试成功，读写校验正常")\(latencyText)"
+            } catch {
+                storageError = "连接测试失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func saveStorageAction() {
+        guard !isSavingStorage else { return }
+        storageFeedback = nil
+        storageError = nil
+
+        let bucket = storageBucketName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let accessKey = storageAccessKeyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if bucket.isEmpty {
+            storageError = "请填写存储桶名称 (Bucket Name)"
+            return
+        }
+        if accessKey.isEmpty {
+            storageError = "请填写 Access Key ID"
+            return
+        }
+
+        let endpoint: String = {
+            if storageProviderType == "r2" {
+                let acc = storageAccountId.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !acc.isEmpty && storageEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return "https://\(acc).r2.cloudflarestorage.com"
+                }
+            }
+            return storageEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+
+        let payload = StorageConfigPayload(
+            accountId: storageAccountId.trimmingCharacters(in: .whitespacesAndNewlines),
+            accessKeyId: accessKey,
+            secretAccessKey: storageSecretAccessKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            bucketName: bucket,
+            endpoint: endpoint,
+            publicDomain: storagePublicDomain.trimmingCharacters(in: .whitespacesAndNewlines),
+            presignExpireSeconds: storagePresignSeconds
+        )
+
+        isSavingStorage = true
+        Task { @MainActor in
+            defer { isSavingStorage = false }
+            do {
+                let status = try await APIClient.shared.updateStorageConfig(payload)
+                storageStatus = status
+                storageSecretAccessKey = ""
+                storageFeedback = "配置已保存并生效，对象存储已成功热重载挂载"
+            } catch {
+                storageError = "保存配置失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func resetStorageAction() {
+        guard !isResettingStorage else { return }
+        isResettingStorage = true
+        storageFeedback = nil
+        storageError = nil
+        Task { @MainActor in
+            defer { isResettingStorage = false }
+            do {
+                let status = try await APIClient.shared.resetStorageConfig()
+                storageStatus = status
+                storageSecretAccessKey = ""
+                storageFeedback = "已恢复为本地磁盘存储模式"
+            } catch {
+                storageError = "恢复本地存储失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func migrateStorageAction() {
+        guard !isMigratingStorage else { return }
+        isMigratingStorage = true
+        storageFeedback = nil
+        storageError = nil
+        Task { @MainActor in
+            defer { isMigratingStorage = false }
+            do {
+                let res = try await APIClient.shared.migrateStorageMedia()
+                let summary = "双向增量同步完成：上传 \(res.uploadedToR2 ?? 0) 项，拉取 \(res.downloadedToLocal ?? 0) 项"
+                storageFeedback = summary
+                await loadStorageStatusAction()
+            } catch {
+                storageError = "增量同步失败: \(error.localizedDescription)"
+            }
+        }
+    }
+}

@@ -254,6 +254,12 @@ public struct PaperHoverModifier: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .brightness(isHovering ? 0.015 : 0)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isHovering ? ArchivePalette.accentWarm.opacity(0.45) : Color.clear, lineWidth: 0.5)
+                    .allowsHitTesting(false)
+            )
+            .shadow(color: Color.black.opacity(isHovering ? 0.05 : 0), radius: isHovering ? 6 : 2, y: isHovering ? 2 : 1)
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.12)) {
                     isHovering = hovering

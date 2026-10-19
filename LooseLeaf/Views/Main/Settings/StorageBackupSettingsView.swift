@@ -38,8 +38,6 @@ struct StorageBackupSettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
         VStack(alignment: .leading, spacing: 18) {
             // 次级选项卡切换胶囊 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
             HStack(spacing: 8) {
@@ -70,13 +68,6 @@ struct StorageBackupSettingsView: View {
                 serverBackupSubView
             }
         }
-            }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .background(ArchivePalette.archivePaper)
         .task {
             if appState.isPaired {
                 await loadServerBackups()

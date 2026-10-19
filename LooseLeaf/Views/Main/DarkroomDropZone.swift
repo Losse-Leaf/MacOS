@@ -1,4 +1,16 @@
 import SwiftUI
+
+/// 暗房回廊底片条目（全端通用：随AppState记忆化缓存）
+public struct GalleryPhotoItem: Identifiable, Equatable {
+    public let id: String
+    public let attachment: Attachment
+    public let parentEntry: LifeEntry
+
+    public static func == (lhs: GalleryPhotoItem, rhs: GalleryPhotoItem) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 import UniformTypeIdentifiers
 import AppKit
 
@@ -20,16 +32,6 @@ public struct DarkroomDropZone: View {
         public var originalURL: URL?
 
         public static func == (lhs: DarkroomPhotoItem, rhs: DarkroomPhotoItem) -> Bool {
-            lhs.id == rhs.id
-        }
-    }
-
-    public struct GalleryPhotoItem: Identifiable, Equatable {
-        public let id: String
-        public let attachment: Attachment
-        public let parentEntry: LifeEntry
-
-        public static func == (lhs: GalleryPhotoItem, rhs: GalleryPhotoItem) -> Bool {
             lhs.id == rhs.id
         }
     }
@@ -65,18 +67,8 @@ public struct DarkroomDropZone: View {
         return items[idx]
     }
 
-    private var allGalleryPhotos: [GalleryPhotoItem] {
-        var list: [GalleryPhotoItem] = []
-        for entry in appState.entries {
-            for att in entry.attachments {
-                list.append(GalleryPhotoItem(id: "\(entry.id)-\(att.id)", attachment: att, parentEntry: entry))
-            }
-        }
-        return list
-    }
-
     private var filteredGalleryPhotos: [GalleryPhotoItem] {
-        let all = allGalleryPhotos
+        let all = appState.allGalleryPhotos
         if galleryCategoryFilter == .all {
             return all
         }
@@ -316,7 +308,7 @@ public struct DarkroomDropZone: View {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 11))
                                         .foregroundStyle(ArchivePalette.accentWarm)
-                                        .background(Circle().fill(Color.white))
+                                        .background(Circle().fill(ArchivePalette.archivePaper))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("移除这张底片")
@@ -416,24 +408,13 @@ public struct DarkroomDropZone: View {
                 isFullWidth: true
             )
 
-            ZStack(alignment: .topLeading) {
-                if entryContent.isEmpty {
-                    Text("写下按下快门时的心境与手记…")
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $entryContent)
-                    .font(ArchiveTypography.bodySans(size: 12))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.hidden)
-                    .padding(4)
-                    .frame(height: 90)
-            }
-            .background(ArchivePalette.archivePaper)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            TextField("写下按下快门时的心境与手记…", text: $entryContent, axis: .vertical)
+                .font(ArchiveTypography.bodySans(size: 12))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(2...4)
+                .padding(10)
+                .background(ArchivePalette.archivePaper)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
@@ -956,6 +937,7 @@ public struct DarkroomDropZone: View {
     }
 
     private func resetDarkroom() {
+        DropLoader.cleanupStaleDropFiles(olderThan: 0)
         items.removeAll()
         selectedIndex = 0
         entryTitle = ""

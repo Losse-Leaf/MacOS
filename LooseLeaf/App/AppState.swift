@@ -266,6 +266,14 @@ public final class AppState {
 
     public var globalHotkeyLabel: String { AppDelegate.hotKeyDisplayName }
 
+    /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
+    public var searchFocusRequest: Int = 0
+
+    public func requestStreamSearchFocus() {
+        activeSection = .stream
+        searchFocusRequest += 1
+    }
+
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
     @ObservationIgnored private var dataRevision: Int = 0
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
@@ -366,6 +374,24 @@ public final class AppState {
         public let entry: LifeEntry
         public let gapDays: Int
         public var id: Int { entry.id }
+    }
+
+    @ObservationIgnored private var galleryPhotosMemo: (revision: Int, value: [GalleryPhotoItem])?
+
+    /// 暗房回廊全量底片（记忆缓存：仅随 dataRevision 变化重建，
+    /// 上传进度跳动 / 标题输入等本地 State 变更不再触发 entries × attachments 双重遍历）
+    public var allGalleryPhotos: [GalleryPhotoItem] {
+        if let memo = galleryPhotosMemo, memo.revision == dataRevision {
+            return memo.value
+        }
+        var photos: [GalleryPhotoItem] = []
+        for entry in entries {
+            for att in entry.attachments {
+                photos.append(GalleryPhotoItem(id: "\(entry.id)-\(att.id)", attachment: att, parentEntry: entry))
+            }
+        }
+        galleryPhotosMemo = (dataRevision, photos)
+        return photos
     }
 
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳

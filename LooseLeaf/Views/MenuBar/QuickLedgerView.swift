@@ -28,12 +28,17 @@ public struct QuickLedgerView: View {
         self.onSubmitted = onSubmitted
     }
 
+    /// 当前收支形态下的可用类目
+    private var activeCategories: [String] {
+        selectedType == "income" ? appState.incomeCategories : appState.expenseCategories
+    }
+
     private var resolvedQuickParsed: FormatUtils.QuickLedgerParsed? {
         if !smartInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return FormatUtils.parseQuickLedgerInput(
                 smartInput,
                 defaultCategory: selectedCategory,
-                knownCategories: appState.expenseCategories
+                knownCategories: activeCategories
             )
         }
         guard let cents = FormatUtils.parseYuanToCents(amountString), cents > 0 else {
@@ -86,9 +91,15 @@ public struct QuickLedgerView: View {
                 HStack(spacing: 4) {
                     PaperPillButton(title: "支出", isSelected: selectedType == "expense") {
                         selectedType = "expense"
+                        if !appState.expenseCategories.contains(selectedCategory) {
+                            selectedCategory = appState.expenseCategories.first ?? selectedCategory
+                        }
                     }
                     PaperPillButton(title: "收入", isSelected: selectedType == "income") {
                         selectedType = "income"
+                        if !appState.incomeCategories.contains(selectedCategory) {
+                            selectedCategory = appState.incomeCategories.first ?? selectedCategory
+                        }
                     }
                 }
 
@@ -127,12 +138,12 @@ public struct QuickLedgerView: View {
 
             // 3. 常用类目胶囊网格
             VStack(alignment: .leading, spacing: 6) {
-                Text("支出类目")
+                Text(selectedType == "income" ? "收入类目" : "支出类目")
                     .font(ArchiveTypography.bodySans(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 68), spacing: 6)], alignment: .leading, spacing: 6) {
-                    ForEach(appState.expenseCategories, id: \.self) { category in
+                    ForEach(activeCategories, id: \.self) { category in
                         PaperPillButton(
                             title: category,
                             isSelected: selectedCategory == category

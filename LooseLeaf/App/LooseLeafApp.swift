@@ -62,6 +62,12 @@ public struct LooseLeafApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
+                Button("搜索散页…") {
+                    appState.requestStreamSearchFocus()
+                }
+                .keyboardShortcut("f", modifiers: [.command])
+
+
                 Button("记一笔…") {
                     appState.showNewEntrySheet = true
                 }

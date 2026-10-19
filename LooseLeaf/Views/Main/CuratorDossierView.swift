@@ -298,14 +298,16 @@ public struct CuratorDossierView: View {
                     // 分类筛选胶囊
                     let gearCats = Set(prof.edcGear.map { $0.category })
                     if gearCats.count > 1 {
-                        HStack(spacing: 6) {
-                            PaperPillButton(title: "全部 (\(prof.edcGear.count))", isSelected: selectedGearCategory == "all") {
-                                selectedGearCategory = "all"
-                            }
-                            ForEach(Array(gearCats).sorted(), id: \.self) { cat in
-                                let count = prof.edcGear.filter { $0.category == cat }.count
-                                PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedGearCategory == cat) {
-                                    selectedGearCategory = cat
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                PaperPillButton(title: "全部 (\(prof.edcGear.count))", isSelected: selectedGearCategory == "all") {
+                                    selectedGearCategory = "all"
+                                }
+                                ForEach(Array(gearCats).sorted(), id: \.self) { cat in
+                                    let count = prof.edcGear.filter { $0.category == cat }.count
+                                    PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedGearCategory == cat) {
+                                        selectedGearCategory = cat
+                                    }
                                 }
                             }
                         }
@@ -397,6 +399,7 @@ public struct CuratorDossierView: View {
                                     RoundedRectangle(cornerRadius: 6)
                                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                                 )
+                                .paperHover()
                             }
                         }
                     }

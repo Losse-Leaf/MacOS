@@ -17,6 +17,53 @@ public struct GlobalSearchModalView: View {
     @State private var isSearchingRemote: Bool = false
     @State private var searchTask: Task<Void, Never>? = nil
     @FocusState private var isFieldFocused: Bool
+    @State private var highlightedIndex: Int = 0
+
+    /// 扁平化检索结果：供 ↑/↓/Return 键盘导航使用
+    private enum SearchResultHit {
+        case entry(LifeEntry)
+        case footprint(Footprint)
+        case wish(Wish)
+        case project(Project)
+
+        var scrollId: String {
+            switch self {
+            case .entry(let e): return "hit-e-\(e.id)"
+            case .footprint(let f): return "hit-f-\(f.id)"
+            case .wish(let w): return "hit-w-\(w.id)"
+            case .project(let p): return "hit-p-\(p.id)"
+            }
+        }
+    }
+
+    private var flatSections: [(title: String, icon: String, tint: Color, hits: [SearchResultHit])] {
+        var sections: [(title: String, icon: String, tint: Color, hits: [SearchResultHit])] = []
+        if !mergedEntries.isEmpty {
+            sections.append(("生活印记 (\(mergedEntries.count))", "book.pages", ArchivePalette.inkMuted, mergedEntries.map { .entry($0) }))
+        }
+        if !remoteFootprints.isEmpty {
+            sections.append(("山川足迹 (\(remoteFootprints.count))", "map", ArchivePalette.accentWarm, remoteFootprints.map { .footprint($0) }))
+        }
+        if !remoteWishes.isEmpty {
+            sections.append(("心愿清单 (\(remoteWishes.count))", "sparkles", ArchivePalette.accentWarm, remoteWishes.map { .wish($0) }))
+        }
+        if !remoteProjects.isEmpty {
+            sections.append(("造物项目 (\(remoteProjects.count))", "hammer", ArchivePalette.accentMoss, remoteProjects.map { .project($0) }))
+        }
+        return sections
+    }
+
+    private var allHits: [SearchResultHit] { flatSections.flatMap(\.hits) }
+
+    private func activateHit(_ hit: SearchResultHit) {
+        switch hit {
+        case .entry(let e): onSelectEntry(e)
+        case .footprint(let f): onSelectFootprint(f)
+        case .wish(let w): onSelectWish(w)
+        case .project(let p): onSelectProject(p)
+        }
+        onDismiss()
+    }
 
     public init(
         appState: AppState,
@@ -98,6 +145,23 @@ public struct GlobalSearchModalView: View {
                     .onChange(of: query) { _, newQ in
                         handleQueryChange(newQ)
                     }
+                    .onKeyPress(keys: [.upArrow, .downArrow, .return]) { press in
+                        let total = allHits.count
+                        guard total > 0 else { return .ignored }
+                        switch press.key {
+                        case .upArrow:
+                            highlightedIndex = (highlightedIndex - 1 + total) % total
+                            return .handled
+                        case .downArrow:
+                            highlightedIndex = (highlightedIndex + 1) % total
+                            return .handled
+                        case .return:
+                            activateHit(allHits[min(highlightedIndex, total - 1)])
+                            return .handled
+                        default:
+                            return .ignored
+                        }
+                    }
 
                 if !query.isEmpty {
                     Button("清空") {
@@ -132,6 +196,7 @@ public struct GlobalSearchModalView: View {
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
             // 内容列表区
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -167,81 +232,35 @@ public struct GlobalSearchModalView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 60)
                     } else {
-                        // 1. 生活印记
-                        if !mergedEntries.isEmpty {
+                        let sections = flatSections
+                        ForEach(Array(sections.indices), id: \.self) { sectionIndex in
+                            let section = sections[sectionIndex]
+                            let baseIndex = sections.prefix(sectionIndex).reduce(0) { $0 + $1.hits.count }
+
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 6) {
-                                    Image(systemName: "book.pages")
+                                    Image(systemName: section.icon)
                                         .font(.system(size: 11))
-                                    Text("生活印记 (\(mergedEntries.count))")
+                                    Text(section.title)
                                         .font(ArchiveTypography.monoScale(size: 11))
                                 }
-                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .foregroundStyle(section.tint)
                                 .padding(.horizontal, 4)
 
-                                VStack(spacing: 6) {
-                                    ForEach(mergedEntries) { entry in
-                                        entryResultCard(entry)
+                                // 生活印记为纵向单列；足迹 / 心愿 / 项目保持双列网格
+                                if sectionIndex == 0 {
+                                    VStack(spacing: 6) {
+                                        ForEach(section.hits.indices, id: \.self) { hitIndex in
+                                            let hit = section.hits[hitIndex]
+                                            searchResultCard(hit, isHighlighted: baseIndex + hitIndex == highlightedIndex)
+                                        }
                                     }
-                                }
-                            }
-                        }
-
-                        // 2. 山川足迹
-                        if !remoteFootprints.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "map")
-                                        .font(.system(size: 11))
-                                    Text("山川足迹 (\(remoteFootprints.count))")
-                                        .font(ArchiveTypography.monoScale(size: 11))
-                                }
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .padding(.horizontal, 4)
-
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                                    ForEach(remoteFootprints) { fp in
-                                        footprintResultCard(fp)
-                                    }
-                                }
-                            }
-                        }
-
-                        // 3. 心愿清单
-                        if !remoteWishes.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "sparkles")
-                                        .font(.system(size: 11))
-                                    Text("心愿清单 (\(remoteWishes.count))")
-                                        .font(ArchiveTypography.monoScale(size: 11))
-                                }
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .padding(.horizontal, 4)
-
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                                    ForEach(remoteWishes) { wish in
-                                        wishResultCard(wish)
-                                    }
-                                }
-                            }
-                        }
-
-                        // 4. 造物项目
-                        if !remoteProjects.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "hammer")
-                                        .font(.system(size: 11))
-                                    Text("造物项目 (\(remoteProjects.count))")
-                                        .font(ArchiveTypography.monoScale(size: 11))
-                                }
-                                .foregroundStyle(ArchivePalette.accentMoss)
-                                .padding(.horizontal, 4)
-
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                                    ForEach(remoteProjects) { proj in
-                                        projectResultCard(proj)
+                                } else {
+                                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                        ForEach(section.hits.indices, id: \.self) { hitIndex in
+                                            let hit = section.hits[hitIndex]
+                                            searchResultCard(hit, isHighlighted: baseIndex + hitIndex == highlightedIndex)
+                                        }
                                     }
                                 }
                             }
@@ -249,6 +268,13 @@ public struct GlobalSearchModalView: View {
                     }
                 }
                 .padding(16)
+            }
+            .onChange(of: highlightedIndex) { _, newIndex in
+                guard allHits.indices.contains(newIndex) else { return }
+                withAnimation(.easeOut(duration: 0.14)) {
+                    proxy.scrollTo(allHits[newIndex].scrollId, anchor: .center)
+                }
+            }
             }
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
@@ -288,6 +314,7 @@ public struct GlobalSearchModalView: View {
 
     private func handleQueryChange(_ newQ: String) {
         searchTask?.cancel()
+        highlightedIndex = 0
         let trimmed = newQ.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             debouncedQuery = ""
@@ -311,7 +338,21 @@ public struct GlobalSearchModalView: View {
 
     // MARK: - 子卡片组件
 
-    private func entryResultCard(_ entry: LifeEntry) -> some View {
+    @ViewBuilder
+    private func searchResultCard(_ hit: SearchResultHit, isHighlighted: Bool) -> some View {
+        switch hit {
+        case .entry(let entry):
+            entryResultCard(entry, isHighlighted: isHighlighted)
+        case .footprint(let fp):
+            footprintResultCard(fp, isHighlighted: isHighlighted)
+        case .wish(let wish):
+            wishResultCard(wish, isHighlighted: isHighlighted)
+        case .project(let proj):
+            projectResultCard(proj, isHighlighted: isHighlighted)
+        }
+    }
+
+    private func entryResultCard(_ entry: LifeEntry, isHighlighted: Bool) -> some View {
         Button {
             onSelectEntry(entry)
             onDismiss()
@@ -357,14 +398,17 @@ public struct GlobalSearchModalView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    .stroke(isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHighlighted ? 1.2 : 0.5)
             )
+            .background(isHighlighted ? ArchivePalette.accentWarm.opacity(0.06) : Color.clear)
+            .paperHover()
             .contentShape(Rectangle())
+            .id("hit-e-\(entry.id)")
         }
         .buttonStyle(.plain)
     }
 
-    private func footprintResultCard(_ fp: Footprint) -> some View {
+    private func footprintResultCard(_ fp: Footprint, isHighlighted: Bool) -> some View {
         Button {
             onSelectFootprint(fp)
             onDismiss()
@@ -393,13 +437,14 @@ public struct GlobalSearchModalView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    .stroke(isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHighlighted ? 1.2 : 0.5)
             )
+            .paperHover()
         }
         .buttonStyle(.plain)
     }
 
-    private func wishResultCard(_ wish: Wish) -> some View {
+    private func wishResultCard(_ wish: Wish, isHighlighted: Bool) -> some View {
         Button {
             onSelectWish(wish)
             onDismiss()
@@ -429,13 +474,14 @@ public struct GlobalSearchModalView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    .stroke(isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHighlighted ? 1.2 : 0.5)
             )
+            .paperHover()
         }
         .buttonStyle(.plain)
     }
 
-    private func projectResultCard(_ proj: Project) -> some View {
+    private func projectResultCard(_ proj: Project, isHighlighted: Bool) -> some View {
         Button {
             onSelectProject(proj)
             onDismiss()
@@ -465,8 +511,9 @@ public struct GlobalSearchModalView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    .stroke(isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHighlighted ? 1.2 : 0.5)
             )
+            .paperHover()
         }
         .buttonStyle(.plain)
     }

@@ -15,6 +15,7 @@ public struct StreamView: View {
 
     // 键盘流与检索状态
     @State private var keyboardScrollPosition: Int?
+    @State private var isSystemGroupCollapsed: Bool = false
     @State private var localSearchText: String = ""
     @FocusState private var isSearchFocused: Bool
     @State private var isOnThisDayExpanded: Bool = true
@@ -57,13 +58,23 @@ public struct StreamView: View {
                     }
 
                     ZStack {
-                        ForEach(WorkbenchSection.allCases) { section in
-                            if visitedSections.contains(section) {
-                                sectionContentView(for: section)
-                                    .opacity(appState.activeSection == section ? 1 : 0)
-                                    .allowsHitTesting(appState.activeSection == section)
-                                    .zIndex(appState.activeSection == section ? 1 : 0)
-                            }
+                        // 仅时间流常驻（保留滚动位置与键盘流焦点）；其余板块按需挂载，
+                        // 避免 12 个板块同时存活导致任意 AppState 变更触发全量隐藏视图重算
+                        if visitedSections.contains(.stream) {
+                            sectionContentView(for: .stream)
+                                .modifier(WorkbenchCanvasMaxWidth(maxWidth: 960))
+                                .padding(.bottom, 48)
+                                .opacity(appState.activeSection == .stream ? 1 : 0)
+                                .allowsHitTesting(appState.activeSection == .stream)
+                                .zIndex(appState.activeSection == .stream ? 1 : 0)
+                        }
+
+                        if appState.activeSection != .stream {
+                            let section = appState.activeSection
+                            sectionContentView(for: section)
+                                .modifier(WorkbenchCanvasMaxWidth(maxWidth: 1120))
+                                .padding(.bottom, WorkbenchSection.configurationSections.contains(section) ? 0 : 48)
+                                .transition(.opacity)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,7 +93,8 @@ public struct StreamView: View {
                 }
             }
 
-            // 全局快捷悬浮发布按钮 (Floating Action Button)
+            // 全局快捷悬浮发布按钮（配置类页面隐藏：低频页面无需高频记一笔，⌘N 随时可用）
+            if !WorkbenchSection.configurationSections.contains(appState.activeSection) {
             VStack {
                 Spacer()
                 HStack {
@@ -105,6 +117,7 @@ public struct StreamView: View {
                 }
             }
             .allowsHitTesting(!appState.showNewEntrySheet && !appState.showSearchModal && !appState.showStatsSheet)
+            }
 
             if appState.showNewEntrySheet {
                 ZStack {
@@ -382,6 +395,12 @@ public struct StreamView: View {
             // 12 行在 640pt 最小窗口高度下会贴边，故外层包 ScrollView 兜底
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("生活卷宗")
+                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 2)
+
                     ForEach(WorkbenchSection.contentSections) { section in
                         WorkbenchNavRow(
                             section: section,
@@ -398,6 +417,27 @@ public struct StreamView: View {
                     Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
                         .padding(.vertical, 6)
 
+                    // 系统配置组标题（可点击折叠/展开）
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            isSystemGroupCollapsed.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("系统配置")
+                            Image(systemName: isSystemGroupCollapsed ? "chevron.right" : "chevron.down")
+                                .font(.system(size: 7, weight: .semibold))
+                        }
+                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 2)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isSystemGroupCollapsed ? "展开系统配置分组" : "折叠系统配置分组")
+
+                    if !isSystemGroupCollapsed {
                     ForEach(WorkbenchSection.configurationSections) { section in
                         WorkbenchNavRow(
                             section: section,
@@ -409,6 +449,7 @@ public struct StreamView: View {
                                 appState.activeSection = section
                             }
                         }
+                    }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -737,6 +778,13 @@ public struct StreamView: View {
             .padding(24)
         }
         .scrollPosition(id: $keyboardScrollPosition)
+        .onChange(of: appState.searchFocusRequest) { _, _ in
+            // 切回时间流后等一帧再聚焦，避免视图尚未可见时 FocusState 不生效
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                isSearchFocused = true
+            }
+        }
         .onChange(of: appState.keyboardFocusedEntryId) { _, newValue in
             guard let id = newValue else { return }
             withAnimation(.easeOut(duration: 0.2)) {
@@ -2254,12 +2302,9 @@ public struct EditEntrySheetView: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            TextEditor(text: $editContent)
+            TextField("手稿正文…", text: $editContent, axis: .vertical)
                 .font(ArchiveTypography.bodySans(size: 13))
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(.hidden)
-                .padding(6)
-                .frame(minHeight: 140)
+                .lineLimit(6...14)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
@@ -2405,3 +2450,13 @@ fileprivate final class WindowDragNSView: NSView {
     override var mouseDownCanMoveWindow: Bool { true }
 }
 
+/// 板块画布最大阅读行宽：宽屏下内容居中陈列，两侧自然呈现宣纸留白
+struct WorkbenchCanvasMaxWidth: ViewModifier {
+    let maxWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: maxWidth)
+            .frame(maxWidth: .infinity, alignment: .top)
+    }
+}

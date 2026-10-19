@@ -10,8 +10,6 @@ struct AboutSettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
         let currentVersion = UpdateChecker.shared.currentVersion
         let currentBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         let checker = UpdateChecker.shared
@@ -36,12 +34,12 @@ struct AboutSettingsView: View {
                         .shadow(color: ArchivePalette.accentMoss.opacity(0.25), radius: 8, y: 4)
                         .overlay(
                             RoundedRectangle(cornerRadius: 18)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(ArchivePalette.archivePaper.opacity(0.2), lineWidth: 1)
                         )
 
                     Image(systemName: "leaf.fill")
                         .font(.system(size: 38))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ArchivePalette.archivePaper)
                 }
                 .padding(.top, 8)
 
@@ -158,6 +156,21 @@ struct AboutSettingsView: View {
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         }
                     }
+
+                    if let updateError = checker.updateError, !updateError.isEmpty {
+                        Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.octagon.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Text(updateError)
+                                .font(ArchiveTypography.bodySans(size: 11))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 4)
+                    }
                 }
             }
 
@@ -215,10 +228,10 @@ struct AboutSettingsView: View {
                     icon: "chevron.left.forwardslash.chevron.right",
                     iconColor: ArchivePalette.inkSecondary,
                     title: "GitHub 开源仓库",
-                    subtitle: "github.com/cnsync/Loose-Leaf"
+                    subtitle: "github.com/Losse-Leaf/MacOS"
                 ) {
                     Button {
-                        if let url = URL(string: "https://github.com/cnsync/Loose-Leaf") {
+                        if let url = URL(string: "https://github.com/Losse-Leaf/MacOS") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
@@ -241,7 +254,7 @@ struct AboutSettingsView: View {
                     subtitle: "报告 Bug、提出改进建议或参与功能讨论"
                 ) {
                     Button {
-                        if let url = URL(string: "https://github.com/cnsync/Loose-Leaf/issues") {
+                        if let url = URL(string: "https://github.com/Losse-Leaf/MacOS/issues") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
@@ -268,12 +281,5 @@ struct AboutSettingsView: View {
             .padding(.top, 4)
             .padding(.bottom, 24)
         }
-            }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .background(ArchivePalette.archivePaper)
     }
 }

@@ -89,3 +89,34 @@ extension View {
             .overlay(ArchivePalette.borderSubtle.opacity(0.5))
     }
 }
+
+    /// 设置页统一操作反馈条：错误（朱砂）优先、成功（苔绿）其次，同位互斥展示
+    func settingsFeedbackBanner(feedback: String?, error: String?) -> some View {
+        Group {
+            if let error, !error.isEmpty {
+                feedbackRow(text: error, icon: "exclamationmark.octagon.fill", tint: ArchivePalette.accentWarm)
+            } else if let feedback, !feedback.isEmpty {
+                feedbackRow(text: feedback, icon: "checkmark.seal.fill", tint: ArchivePalette.accentMoss)
+            }
+        }
+    }
+
+    private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+            Text(text)
+                .font(ArchiveTypography.bodySans(size: 11.5))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(tint.opacity(0.4), lineWidth: 0.5)
+        )
+    }

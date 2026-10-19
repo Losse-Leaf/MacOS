@@ -760,6 +760,7 @@ public struct LedgerAssetsView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
         )
+        .paperHover()
     }
 
     // MARK: - 6. 流水列表

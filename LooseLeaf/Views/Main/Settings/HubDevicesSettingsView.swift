@@ -22,9 +22,8 @@ struct HubDevicesSettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
         VStack(alignment: .leading, spacing: 20) {
+            settingsFeedbackBanner(feedback: authFeedback, error: authError)
             // 中枢连接状态
             settingsCardSection(title: "数据中枢连接", caption: appState.isPaired ? "已接入中枢网络" : "尚未配对") {
                 HStack(spacing: 12) {
@@ -122,7 +121,7 @@ struct HubDevicesSettingsView: View {
                     Button("解除配对") {
                         appState.askConfirm(
                             title: "确认解除本机配对？",
-                            message: "解除配对将清空保存在本机钥匙串的受保护凭据，需重新扫码配对才能接入中枢。",
+                            message: "解除配对将清空保存在本机的受保护凭据档案 (credentials.json)，需重新扫码配对才能接入中枢。",
                             confirmText: "解除配对并退出",
                             danger: true
                         ) {
@@ -220,13 +219,6 @@ struct HubDevicesSettingsView: View {
                 }
             }
         }
-            }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .background(ArchivePalette.archivePaper)
         .sheet(item: $renamingDevice) { dev in
             renameDeviceSheetView(dev: dev)
         }

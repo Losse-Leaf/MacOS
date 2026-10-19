@@ -11,8 +11,6 @@ struct CategoriesSettingsView: View {
     @State private var isAddingCategoryInline: Bool = false
     @State private var inlineCategoryName: String = ""
     @State private var allCategoriesList: [CategoryOption] = []
-    @State private var renamingCategory: CategoryOption?
-    @State private var renameCategoryInput: String = ""
 
     private var currentDisplayCategories: [CategoryOption] {
         let matched = allCategoriesList.filter { $0.scope == selectedCategoryScope }
@@ -37,9 +35,8 @@ struct CategoriesSettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
         VStack(alignment: .leading, spacing: 18) {
+            settingsFeedbackBanner(feedback: nil, error: authError)
             // 类目分类范围切换
             HStack(spacing: 6) {
                 ForEach([
@@ -58,28 +55,6 @@ struct CategoriesSettingsView: View {
                 }
 
                 Spacer()
-
-                Button {
-                    Task { @MainActor in
-                        do {
-                            try await APIClient.shared.resetCategories(scope: selectedCategoryScope)
-                            await appState.loadConfigAndProfile()
-                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                            appState.showTemporaryBanner("已恢复「\(selectedCategoryScope)」默认预置分类")
-                        } catch {
-                            authError = "恢复分类失败: \(error.localizedDescription)"
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 9))
-                        Text("恢复默认预置")
-                    }
-                }
-                .font(ArchiveTypography.bodySans(size: 10.5))
-                .foregroundStyle(ArchivePalette.inkSecondary)
-                .buttonStyle(.plain)
             }
 
             settingsCardSection(title: "字典词条管理", caption: "共 \(currentDisplayCategories.count) 个词条") {
@@ -93,16 +68,6 @@ struct CategoriesSettingsView: View {
                                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                                 if cat.id > 0 {
-                                    Button {
-                                        renamingCategory = cat
-                                        renameCategoryInput = cat.name
-                                    } label: {
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 8))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
-                                    }
-                                    .buttonStyle(.plain)
-
                                     Button {
                                         deleteCategoryAction(cat)
                                     } label: {
@@ -175,62 +140,12 @@ struct CategoriesSettingsView: View {
                 .padding(14)
             }
         }
-            }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .background(ArchivePalette.archivePaper)
-        .sheet(item: $renamingCategory) { cat in
-            renameCategorySheetView(cat: cat)
-        }
         .task {
             if appState.isPaired {
                 allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
             }
         }
     }
-    private func renameCategorySheetView(cat: CategoryOption) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("修改分类名称")
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            TextField("分类名称", text: $renameCategoryInput)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: 12.5))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            HStack {
-                Button("取消") { renamingCategory = nil }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                Spacer()
-                Button("保存修改") {
-                    let newName = renameCategoryInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    renamingCategory = nil
-                    Task { @MainActor in
-                        do {
-                            _ = try await APIClient.shared.updateCategoryOption(id: cat.id, name: newName)
-                            await appState.loadConfigAndProfile()
-                            allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-                        } catch {
-                            authError = "修改分类失败: \(error.localizedDescription)"
-                        }
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .disabled(renameCategoryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(18)
-        .frame(width: 300)
-        .background(ArchivePalette.archivePaper)
-    }
-
-
     private func submitInlineNewCategory() {
         let name = inlineCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {

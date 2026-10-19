@@ -234,7 +234,7 @@ struct WishCardView: View {
         switch wish.status {
         case "fulfilled": return ArchivePalette.accentMoss
         case "relinquished": return ArchivePalette.inkMuted
-        case "shelved": return Color.orange.opacity(0.8)
+        case "shelved": return ArchivePalette.accentWarm.opacity(0.75)
         default: return ArchivePalette.accentWarm
         }
     }
@@ -431,24 +431,13 @@ public struct NewWishSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            ZStack(alignment: .topLeading) {
-                if note.isEmpty {
-                    Text("写下心愿初衷与手记…")
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $note)
-                    .font(ArchiveTypography.bodySans(size: 12))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.hidden)
-                    .padding(4)
-                    .frame(minHeight: 64, maxHeight: 90)
-            }
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                .font(ArchiveTypography.bodySans(size: 12))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(3...5)
+                .padding(10)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
 
             if let errorText {
                 Text(errorText)
@@ -564,24 +553,13 @@ public struct EditWishSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            ZStack(alignment: .topLeading) {
-                if note.isEmpty {
-                    Text("写下心愿初衷与手记…")
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $note)
-                    .font(ArchiveTypography.bodySans(size: 12))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.hidden)
-                    .padding(4)
-                    .frame(minHeight: 64, maxHeight: 90)
-            }
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                .font(ArchiveTypography.bodySans(size: 12))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(3...5)
+                .padding(10)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
 
             if let errorText {
                 Text(errorText)

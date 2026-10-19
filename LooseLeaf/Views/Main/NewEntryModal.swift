@@ -59,6 +59,7 @@ public struct NewEntryModal: View {
 
     @State private var selectedKind: Kind = .life
     @State private var isSubmitting: Bool = false
+    @State private var didSubmitSuccessfully: Bool = false
     @State private var errorMessage: String?
 
     // 通用字段
@@ -184,6 +185,12 @@ public struct NewEntryModal: View {
         .background(ArchivePalette.archivePaper)
         .onAppear {
             setupInitialState()
+        }
+        .onDisappear {
+            // 点击遮罩 / ESC / 切窗关闭都要保住草稿；成功提交后由 clearDraft 收尾
+            if !didSubmitSuccessfully {
+                saveDraft()
+            }
         }
     }
 
@@ -655,16 +662,9 @@ public struct NewEntryModal: View {
                         ForEach(attachments) { att in
                             ZStack(alignment: .topTrailing) {
                                 if let url = APIClient.shared.resolveMediaURL(att.url) {
-                                    AsyncImage(url: url) { phase in
-                                        switch phase {
-                                        case .success(let image):
-                                            image.resizable().scaledToFill()
-                                        default:
-                                            ProgressView()
-                                        }
-                                    }
-                                    .frame(width: 72, height: 72)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    CachedFilmImageView(url: url, maxHeight: 72)
+                                        .frame(width: 72, height: 72)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 4)
                                             .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
@@ -732,6 +732,7 @@ public struct NewEntryModal: View {
                     try await submitTransaction()
                 }
                 clearDraft()
+                didSubmitSuccessfully = true
                 await appState.refreshAll(forceFull: true)
                 onDismiss()
             } catch {

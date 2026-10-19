@@ -15,8 +15,6 @@ struct PreferencesSettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
         VStack(alignment: .leading, spacing: 20) {
             // 纸本外观主题
             settingsCardSection(title: "纸本外观主题", caption: "自适应色彩与排版") {
@@ -44,7 +42,7 @@ struct PreferencesSettingsView: View {
             }
 
             // 全局快捷键
-            settingsCardSection(title: "全局快捷键", footer: "默认快捷键为 ⌥Space (Option + 空格)，在任意窗口下可唤起极速录入手账。") {
+            settingsCardSection(title: "全局快捷键", footer: "默认 ⌘ + ⇧ + L，在任意窗口下唤起极速录入手账；点击「修改按键」后按下新组合键即可全局更换。") {
                 settingsCardRow(
                     icon: "command",
                     iconColor: ArchivePalette.inkSecondary,
@@ -84,13 +82,6 @@ struct PreferencesSettingsView: View {
                 }
             }
         }
-            }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .background(ArchivePalette.archivePaper)
     }
     private func themeSwatchCard(mode: AppearanceMode, title: String, subtitle: String, icon: String) -> some View {
         let isSelected = appState.appearanceMode == mode

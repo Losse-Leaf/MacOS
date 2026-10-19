@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CryptoKit
+import ImageIO
 
 /// 胶片暗房装裱边框组件 (.film-frame)
 /// 严格遵循 docs/ecosystem.md §4.1.2 规范：
@@ -213,6 +214,62 @@ public enum PaperImageCache {
         memoryCache.object(forKey: url as NSURL)
     }
 
+    /// 缩略图内存键：与原图内存缓存共存（磁盘始终只存原图）
+    private static func thumbKey(_ url: URL, maxPixel: Int) -> NSURL {
+        NSURL(string: "\(url.absoluteString)#thumb-\(maxPixel)") ?? url as NSURL
+    }
+
+    /// 仅查降采样缩略图内存（列表/网格 init 专用，零 I/O）
+    public static func memoryImage(for url: URL, maxPixel: Int) -> NSImage? {
+        memoryCache.object(forKey: thumbKey(url, maxPixel: maxPixel))
+    }
+
+    /// 按显示尺寸降采样的异步两级命中：单张 4K 原图解码约 39MB，缩略图仅约 0.5MB
+    public static func loadImage(for url: URL, maxPixel: Int) async -> NSImage? {
+        if let hit = memoryImage(for: url, maxPixel: maxPixel) {
+            return hit
+        }
+        return await withCheckedContinuation { continuation in
+            diskQueue.async {
+                let image = decodeThumbnailFromDisk(url, maxPixel: maxPixel)
+                if let image {
+                    memoryCache.setObject(image, forKey: thumbKey(url, maxPixel: maxPixel), cost: maxPixel * maxPixel * 4)
+                }
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
+    private static func decodeThumbnailFromDisk(_ url: URL, maxPixel: Int) -> NSImage? {
+        guard let data = try? Data(contentsOf: diskFileURL(for: url)) else { return nil }
+        return decodeThumbnail(from: data, maxPixel: maxPixel)
+    }
+
+    private static func decodeThumbnail(from data: Data, maxPixel: Int) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
+    /// 下载完成后：原图落盘（异步）+ 指定尺寸缩略图进内存，不在主线程做全尺寸解码
+    public static func storeDownloaded(rawData: Data, for url: URL, maxPixel: Int) -> NSImage? {
+        let thumbnail = decodeThumbnail(from: rawData, maxPixel: maxPixel)
+        if let thumbnail {
+            memoryCache.setObject(thumbnail, forKey: thumbKey(url, maxPixel: maxPixel), cost: maxPixel * maxPixel * 4)
+        }
+        let diskURL = diskFileURL(for: url)
+        diskQueue.async {
+            try? rawData.write(to: diskURL, options: .atomic)
+            pruneDiskCacheIfNeeded()
+        }
+        return thumbnail
+    }
+
     /// 同步两级命中：仅供详情灯箱、导出、复制等允许阻塞的路径使用
     public static func image(for url: URL) -> NSImage? {
         if let memoryHit = memoryImage(for: url) {
@@ -315,11 +372,16 @@ public struct CachedFilmImageView: View {
     @State private var isLoading: Bool = false
     @State private var hasFailed: Bool = false
 
+    /// 缩略图目标像素：显示高度的 2 倍（Retina），下限 160
+    private static func thumbPixel(for displayHeight: CGFloat) -> Int {
+        max(160, Int(displayHeight * 2))
+    }
+
     public init(url: URL, maxHeight: CGFloat) {
         self.url = url
         self.maxHeight = maxHeight
-        // 只做内存命中（零 I/O）；磁盘解码交给 .task 在后台完成
-        _loadedImage = State(initialValue: PaperImageCache.memoryImage(for: url))
+        // 只做缩略图内存命中（零 I/O）；磁盘降采样解码交给 .task 在后台完成
+        _loadedImage = State(initialValue: PaperImageCache.memoryImage(for: url, maxPixel: Self.thumbPixel(for: maxHeight)))
     }
 
     public var body: some View {
@@ -359,12 +421,13 @@ public struct CachedFilmImageView: View {
     }
 
     private func loadImage() async {
-        if let cached = PaperImageCache.memoryImage(for: url) {
+        let pixel = Self.thumbPixel(for: maxHeight)
+        if let cached = PaperImageCache.memoryImage(for: url, maxPixel: pixel) {
             self.loadedImage = cached
             return
         }
-        // 磁盘命中在后台队列完成，不再阻塞首帧
-        if let diskHit = await PaperImageCache.loadImage(for: url) {
+        // 磁盘降采样解码在后台队列完成，不再阻塞首帧
+        if let diskHit = await PaperImageCache.loadImage(for: url, maxPixel: pixel) {
             self.loadedImage = diskHit
             return
         }
@@ -374,9 +437,8 @@ public struct CachedFilmImageView: View {
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let image = NSImage(data: data) {
-                PaperImageCache.setImage(image, rawData: data, for: url, cost: data.count)
-                self.loadedImage = image
+            if let thumb = PaperImageCache.storeDownloaded(rawData: data, for: url, maxPixel: pixel) {
+                self.loadedImage = thumb
             } else {
                 self.hasFailed = true
             }

@@ -203,15 +203,17 @@ public struct TravelAtlasView: View {
     private var stampsMatrixSection: some View {
         VStack(alignment: .leading, spacing: 18) {
             // 大区筛选 Tab
-            HStack(spacing: 6) {
-                PaperPillButton(title: "全境", isSelected: selectedRegion == "all") {
-                    guard selectedRegion != "all" else { return }
-                    selectedRegion = "all"
-                }
-                ForEach(Self.regions, id: \.name) { reg in
-                    PaperPillButton(title: reg.name, isSelected: selectedRegion == reg.name) {
-                        guard selectedRegion != reg.name else { return }
-                        selectedRegion = reg.name
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "全境", isSelected: selectedRegion == "all") {
+                        guard selectedRegion != "all" else { return }
+                        selectedRegion = "all"
+                    }
+                    ForEach(Self.regions, id: \.name) { reg in
+                        PaperPillButton(title: reg.name, isSelected: selectedRegion == reg.name) {
+                            guard selectedRegion != reg.name else { return }
+                            selectedRegion = reg.name
+                        }
                     }
                 }
             }

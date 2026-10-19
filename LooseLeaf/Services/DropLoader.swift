@@ -49,6 +49,24 @@ public enum DropLoader {
         return nil
     }
 
+    /// 清理暗房拖拽历史遗留的临时文件（应用启动与暗房重置时调用；olderThan <= 0 表示全清）
+    public static func cleanupStaleDropFiles(olderThan interval: TimeInterval = 3600) {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
+        DispatchQueue.global(qos: .utility).async {
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: tempDir,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+            ) else { return }
+            let cutoff = Date().addingTimeInterval(-interval)
+            for file in files {
+                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                if modified < cutoff {
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+        }
+    }
+
     /// 从单个 provider 提取文件 URL（Finder 拖拽场景）
     static func loadFileURL(from provider: NSItemProvider) async -> URL? {
         guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { return nil }

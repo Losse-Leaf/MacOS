@@ -26,11 +26,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
         registerGlobalHotKeyFromPreferences()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            for window in NSApp.windows {
-                window.isMovableByWindowBackground = true
-            }
-        }
+        // 主窗口不再开启背景拖拽：内容区点选 / 文本选择 / 热力图交互易误拖窗口，
+        // 仅保留 QuickCapturePanel 浮动小窗的背景拖拽（在其构造处单独设置）。
+
+        // 清理历史遗留的暗房拖拽临时文件
+        DropLoader.cleanupStaleDropFiles()
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
@@ -72,7 +72,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             // 优先唤回主工作台窗口，避免把浮动捕捉面板当成主窗口
             let mainWindow = sender.windows.first { $0.identifier?.rawValue == "main" }
                 ?? sender.windows.first { $0.canBecomeMain }
-            mainWindow?.isMovableByWindowBackground = true
             mainWindow?.makeKeyAndOrderFront(nil)
             sender.activate(ignoringOtherApps: true)
         }
@@ -258,7 +257,12 @@ private final class KeyableFloatingPanel: NSPanel {
                 // 如果当前激活窗口是 Popover、Picker、或者本面板的子窗口，不自动收起
                 if let keyWin = NSApp.keyWindow, keyWin != self {
                     let className = keyWin.className
-                    if className.contains("Popover") || className.contains("Picker") || className.contains("Menu") || keyWin.parent == self {
+                    let isTransient = className.contains("Popover") || className.contains("Picker") || className.contains("Menu")
+                    let isOwned = self.childWindows?.contains(keyWin) == true
+                        || keyWin.sheetParent === self
+                        || keyWin.parent === self
+                        || NSApp.modalWindow != nil
+                    if isTransient || isOwned {
                         return
                     }
                 }

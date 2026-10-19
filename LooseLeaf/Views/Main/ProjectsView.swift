@@ -117,17 +117,19 @@ public struct ProjectsView: View {
     // MARK: - 2. 筛选胶囊
     private var filterPillsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                PaperPillButton(title: "全部造物 (\(allProjects.count))", isSelected: selectedCategory == "all") {
-                    guard selectedCategory != "all" else { return }
-                    selectedCategory = "all"
-                }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "全部造物 (\(allProjects.count))", isSelected: selectedCategory == "all") {
+                        guard selectedCategory != "all" else { return }
+                        selectedCategory = "all"
+                    }
 
-                ForEach(categories, id: \.self) { cat in
-                    let count = allProjects.filter { $0.category == cat }.count
-                    PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedCategory == cat) {
-                        guard selectedCategory != cat else { return }
-                        selectedCategory = cat
+                    ForEach(categories, id: \.self) { cat in
+                        let count = allProjects.filter { $0.category == cat }.count
+                        PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedCategory == cat) {
+                            guard selectedCategory != cat else { return }
+                            selectedCategory = cat
+                        }
                     }
                 }
             }

@@ -18,8 +18,37 @@ enum SpotlightIndexer {
     /// 串行化多次重建，避免防抖任务与 immediate 调用互相覆盖状态
     private static let reindexLock = NSLock()
 
+    /// 指纹持久化文件：跨会话增量，避免每次冷启动全量清空重建系统索引
+    private static var persistedStateURL: URL {
+        SyncManager.sharedStorageDirectory.appendingPathComponent("spotlight_versions.json")
+    }
+
+    /// 首次访问时从磁盘恢复指纹（static let 保证只执行一次）
+    private static let restorePersistedState: Void = {
+        guard let data = try? Data(contentsOf: persistedStateURL),
+              let decoded = try? JSONDecoder().decode([Int: String].self, from: data), !decoded.isEmpty else {
+            return
+        }
+        lock.lock()
+        indexedVersions = decoded
+        hasRebuiltDomain = true
+        lock.unlock()
+    }()
+
+    private static func persistState() {
+        lock.lock()
+        let snapshot = indexedVersions
+        lock.unlock()
+        DispatchQueue.global(qos: .utility).async {
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to: persistedStateURL, options: .atomic)
+            }
+        }
+    }
+
     /// 全量/增量重建散页索引（防抖 1.5 秒，避免高频保存触发重复擦写系统索引库）
     static func reindex(entries: [LifeEntry], immediate: Bool = false) {
+        _ = restorePersistedState
         lock.lock()
         debounceTask?.cancel()
         if immediate {
@@ -88,6 +117,7 @@ enum SpotlightIndexer {
             hasRebuiltDomain = true
             lock.unlock()
             logger.info("Spotlight incremental reindex: +\(changedItems.count) / -\(removedIdentifiers.count), total \(newVersions.count)")
+        persistState()
         }
 
         func indexChanged() {

@@ -963,8 +963,10 @@ public struct NewEntryModal: View {
     /// 拖拽装裱：支持多文件同时拖入
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         guard !providers.isEmpty else { return false }
+        // NSItemProvider 不是 Sendable：用 @unchecked Sendable 盒子安全跨隔离域传递
+        let box = DropLoader.makeProviderBox(providers)
         Task { @MainActor in
-            let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
+            let urls = await DropLoader.loadDroppablePhotoURLs(from: box)
             guard !urls.isEmpty else { return }
             uploadMediaFiles(urls)
         }

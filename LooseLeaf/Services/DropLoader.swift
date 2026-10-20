@@ -133,13 +133,14 @@ public enum DropLoader {
 
     /// 批量提取可处理的图片 URL（支持 Finder、系统照片.app 与浏览器混合多选拖拽）
     /// 关键：并发提取而非逐个 await。原先串行处理 20 张图需要 10~40 秒。
-    static func loadDroppablePhotoURLs(from providers: [NSItemProvider]) async -> [URL] {
-        guard !providers.isEmpty else { return [] }
-        // NSItemProvider 不是 Sendable，用一个 @unchecked Sendable 盒子安全地跨并发边界传递
-        let box = ProviderBox(providers)
+    static func loadDroppablePhotoURLs(from box: ProviderBox) async -> [URL] {
+        guard !box.providers.isEmpty else { return [] }
+        // 只捕获 box（@unchecked Sendable），不捕获非 Sendable 的数组本身
         return await withTaskGroup(of: (Int, URL?).self) { group -> [URL] in
             for (index, provider) in box.providers.enumerated() {
-                group.addTask { (index, await loadDroppablePhotoURL(from: provider)) }
+                // 逐个装箱传递，避免在 @Sendable 子任务闭包中捕获非 Sendable 的数组
+                let single = ProviderBox([provider])
+                group.addTask { (index, await loadDroppablePhotoURL(from: single.providers[0])) }
             }
             var collected: [(Int, URL)] = []
             for await (index, url) in group {
@@ -150,11 +151,21 @@ public enum DropLoader {
         }
     }
 
+    /// 便捷入口：直接传入 provider 数组
+    static func loadDroppablePhotoURLs(from providers: [NSItemProvider]) async -> [URL] {
+        await loadDroppablePhotoURLs(from: ProviderBox(providers))
+    }
+
     /// NSItemProvider 数组的 Sendable 包装（AppKit 未标注 Sendable，
     /// 但 NSItemProvider 的读取接口是线程安全的，因此在并发任务间传递是安全的）
-    private final class ProviderBox: @unchecked Sendable {
-        let providers: [NSItemProvider]
+    public final class ProviderBox: @unchecked Sendable {
+        public let providers: [NSItemProvider]
         init(_ providers: [NSItemProvider]) { self.providers = providers }
+    }
+
+    /// 创建可跨隔离域传递的 provider 包装
+    public static func makeProviderBox(_ providers: [NSItemProvider]) -> ProviderBox {
+        ProviderBox(providers)
     }
 
     /// 从单个 provider 提取图像二进制数据（支持 JPEG、PNG、HEIC、TIFF、通用图像）

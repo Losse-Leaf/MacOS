@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import Carbon
 import CoreSpotlight
-import UserNotifications
+@preconcurrency import UserNotifications
 import os
 
 /// 应用系统事件与全局快捷键托管代理 (AppDelegate)
@@ -105,6 +105,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - 系统通知 (User Notifications)
 
     /// 发送一条本地系统通知（同步完成 / 失败 / 备份完成等关键事件）
+    @MainActor
     public static func postNotification(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
@@ -115,15 +116,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     /// 请求通知授权（仅在用户开启相关偏好后调用一次）
+    @MainActor
     public static func requestNotificationAuthorizationIfNeeded() {
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
+        // 使用异步 API：UNUserNotificationCenter 未标注 Sendable，
+        // 在主线程上就地调用可避免把非 Sendable 实例捕获进 @Sendable 闭包。
+        Task { @MainActor in
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
             guard settings.authorizationStatus == .notDetermined else { return }
-            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
         }
     }
 

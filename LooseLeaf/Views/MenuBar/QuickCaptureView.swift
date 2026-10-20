@@ -9,6 +9,16 @@ import AppKit
 /// 3. 自动识别 #标签、支持拖拽相片自动提取 EXIF 直传 R2
 /// 4. Cmd + Enter 即刻落库，提交结果在面板内就地反馈（菜单栏窗口看不到全局横幅）
 /// 5. ESC 收起统一由视图层处理，避免与 AppKit `cancelOperation` 双重触发
+/// 跨并发边界共享的进度计数器（避免可变局部变量被捕获进 @Sendable 闭包）
+final class ProgressCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Double = 0
+    var value: Double {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
+    }
+}
+
 @MainActor
 public struct QuickCaptureView: View {
     @Bindable var appState: AppState
@@ -561,8 +571,10 @@ public struct QuickCaptureView: View {
 
     private func handlePhotoDrop(providers: [NSItemProvider]) {
         guard !providers.isEmpty else { return }
+        // NSItemProvider 不是 Sendable：交由 DropLoader 内部的 @unchecked Sendable 盒子跨隔离域传递
+        let box = DropLoader.makeProviderBox(providers)
         Task { @MainActor in
-            let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
+            let urls = await DropLoader.loadDroppablePhotoURLs(from: box)
             await processAndUploadFiles(urls)
         }
     }
@@ -575,7 +587,8 @@ public struct QuickCaptureView: View {
         errorText = nil
         successText = nil
         let total = Double(urls.count)
-        var finished = 0.0
+        // 进度计数器放在引用盒中，避免可变局部变量被捕获进 @Sendable 闭包
+        let counter = ProgressCounter()
         for url in urls {
             do {
                 let processed = try await ImageProcessor.processImageFileInBackground(at: url)
@@ -584,15 +597,15 @@ public struct QuickCaptureView: View {
                 }
                 let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
                     Task { @MainActor in
-                        self.uploadProgress = (finished + prog) / total
+                        self.uploadProgress = (counter.value + prog) / total
                     }
                 }
                 appState.quickDraft.uploadedAttachments.append(attachment)
             } catch {
                 errorText = "「\(url.lastPathComponent)」上传失败：\(error.localizedDescription)"
             }
-            finished += 1
-            uploadProgress = max(uploadProgress, finished / total)
+            counter.value += 1
+            uploadProgress = max(uploadProgress, counter.value / total)
         }
         isUploadingPhoto = false
     }
@@ -662,7 +675,9 @@ public struct QuickCaptureView: View {
         isUploadingPhoto = true
         uploadProgress = 0.05
         errorText = nil
-        for (index, provider) in providers.enumerated() {
+        // NSItemProvider 不是 Sendable：用 @unchecked Sendable 盒子安全跨隔离域传递
+        let box = DropLoader.makeProviderBox(providers)
+        for (index, provider) in box.providers.enumerated() {
             guard let data = await DropLoader.loadImageData(from: provider) else { continue }
             do {
                 let processed = try await ImageProcessor.processImageDataInBackground(

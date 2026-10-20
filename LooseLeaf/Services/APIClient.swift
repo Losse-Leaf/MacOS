@@ -211,7 +211,7 @@ public actor APIClient {
         throw APIError.networkFailure(lastError?.localizedDescription ?? "网络请求失败")
     }
 
-    private func performEnvelopeRequest<T: Decodable>(
+    private func performEnvelopeRequest<T: Decodable & Sendable>(
         path: String,
         method: String = "GET",
         queryItems: [URLQueryItem] = [],

@@ -173,7 +173,8 @@ public struct FilmFrameView: View {
 /// 相纸画廊专用双级缓存池 (Memory NSCache + Disk MediaCache)
 /// 遵循 Local-First 架构：已查看相纸自动落盘，支持离线即刻本地显影
 public enum PaperImageCache {
-    private static let memoryCache: NSCache<NSURL, NSImage> = {
+    // NSCache 本身是线程安全的（Apple 明确保证），因此作为不可变常量共享是安全的。
+    nonisolated(unsafe) private static let memoryCache: NSCache<NSURL, NSImage> = {
         let c = NSCache<NSURL, NSImage>()
         c.totalCostLimit = 100 * 1024 * 1024 // 100 MB 内存解码池
         c.countLimit = 150

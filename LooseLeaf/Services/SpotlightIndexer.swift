@@ -150,11 +150,13 @@ enum SpotlightIndexer {
 
         let visible = entries.filter { ($0.deletedAt ?? "").isEmpty }
 
-        var newVersions: [Int: String] = [:]
-        newVersions.reserveCapacity(visible.count)
+        var versionMap: [Int: String] = [:]
+        versionMap.reserveCapacity(visible.count)
         for entry in visible {
-            newVersions[entry.id] = fingerprint(entry)
+            versionMap[entry.id] = fingerprint(entry)
         }
+        // 固化为 let：后续要被 @Sendable 闭包捕获，不能是 var
+        let newVersions = versionMap
 
         let removedIdentifiers = oldVersions.keys
             .filter { newVersions[$0] == nil }

@@ -25,7 +25,20 @@ import AppKit
 public struct DarkroomDropZone: View {
     @Bindable var appState: AppState
 
-    public struct DarkroomPhotoItem: Identifiable, Equatable {
+    /// 跨并发边界共享的上传进度计数器（避免可变局部变量被捕获进 @Sendable 闭包）
+final class UploadProgressCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Double = 0
+    var value: Double {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
+    }
+}
+
+/// 底片条目。
+    /// Sendable 说明：photo 为值类型快照；preview (NSImage) 在创建后不再被修改，
+    /// AppKit 文档保证 NSImage 的读取是线程安全的，因此可在并发任务间传递。
+    public struct DarkroomPhotoItem: Identifiable, Equatable, @unchecked Sendable {
         public let id = UUID()
         public var photo: ImageProcessor.ProcessedPhoto
         public var preview: NSImage
@@ -800,8 +813,10 @@ public struct DarkroomDropZone: View {
 
     private func handleImageDrop(providers: [NSItemProvider]) {
         guard !providers.isEmpty else { return }
+        // NSItemProvider 不是 Sendable：用 @unchecked Sendable 盒子安全跨隔离域传递
+        let box = DropLoader.makeProviderBox(providers)
         Task { @MainActor in
-            let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
+            let urls = await DropLoader.loadDroppablePhotoURLs(from: box)
             guard !urls.isEmpty else { return }
             await loadPhotos(from: urls)
         }
@@ -902,17 +917,18 @@ public struct DarkroomDropZone: View {
                     // 全部底片合并装裱入同一篇生活手记
                     var attachmentIds: [Int] = []
                     let total = Double(items.count)
-                    var finished = 0.0
+                    // 进度计数器放在引用盒中，避免可变局部变量被捕获进 @Sendable 闭包
+                    let counter = UploadProgressCounter()
 
                     for item in items {
                         let att = try await R2DirectUploader.shared.uploadProcessedPhoto(item.photo) { prog in
                             Task { @MainActor in
-                                self.uploadProgress = (finished + prog) / total
+                                self.uploadProgress = (counter.value + prog) / total
                             }
                         }
                         attachmentIds.append(att.id)
-                        finished += 1
-                        self.uploadProgress = finished / total
+                        counter.value += 1
+                        self.uploadProgress = counter.value / total
                     }
 
                     var bodyText = entryContent.trimmingCharacters(in: .whitespacesAndNewlines)

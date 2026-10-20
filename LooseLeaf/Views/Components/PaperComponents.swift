@@ -401,7 +401,7 @@ public struct PaperQuickTimePreset: Identifiable, Hashable {
 /// 四大经典快捷时刻真源：纸本历法弹层、时刻微调器与时空组合选择器共用，
 /// 避免三处时刻表各自漂移。
 public enum PaperQuickTimePresets {
-    public static let all: [PaperQuickTimePreset] = [
+    public nonisolated(unsafe) static let all: [PaperQuickTimePreset] = [
         PaperQuickTimePreset(id: "morning", title: "晨 09:00", shortTitle: "晨", hour: 9, minute: 0),
         PaperQuickTimePreset(id: "noon", title: "午 12:30", shortTitle: "午", hour: 12, minute: 30),
         PaperQuickTimePreset(id: "dusk", title: "暮 18:00", shortTitle: "暮", hour: 18, minute: 0),

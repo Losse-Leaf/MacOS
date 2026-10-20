@@ -233,7 +233,7 @@ public final class UpdateChecker {
         do {
             // 1. 通过 URLSession 下载（带真实进度回调）
             updateProgress = 0.15
-            let progressDelegate = DownloadProgressDelegate { [weak self] fraction in
+            let progressDelegate = DownloadProgressDelegate { @Sendable [weak self] fraction in
                 Task { @MainActor in
                     // 下载阶段占据 0.15 ~ 0.50
                     self?.updateProgress = 0.15 + fraction * 0.35
@@ -436,13 +436,14 @@ public final class UpdateChecker {
 }
 
 /// 下载进度代理：把 URLSession 的字节进度转换为 0~1 比例（节流后回调，避免刷屏）
-private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: (Double) -> Void
-    private var lastReportedFraction: Double = 0
-    private var lastReportTime: Date = .distantPast
+private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let onProgress: @Sendable (Double) -> Void
+    // 可变状态全部在 lock 保护下访问
+    nonisolated(unsafe) private var lastReportedFraction: Double = 0
+    nonisolated(unsafe) private var lastReportTime: Date = .distantPast
     private let lock = NSLock()
 
-    init(onProgress: @escaping (Double) -> Void) {
+    init(onProgress: @escaping @Sendable (Double) -> Void) {
         self.onProgress = onProgress
     }
 

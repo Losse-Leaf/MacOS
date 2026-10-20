@@ -47,8 +47,27 @@ jobs:
         run: |
           python3 scripts/check_color_contrast.py LooseLeaf/Resources/Assets.xcassets
 
+      - name: Verify City Dictionary Consistency (macOS vs Web)
+        run: |
+          python3 scripts/check_city_dictionary.py \
+            LooseLeaf/Models/CityDictionary.swift ../web/src/utils/cities.ts
+
       - name: Run Unit Tests
         run: swift test --verbose
+
+      - name: Verify Snapshot Baselines Are Committed
+        run: |
+          # 快照基准图必须入库：缺失说明有人改了视觉却没更新基准
+          if [ ! -d LooseLeafTests/__Snapshots__ ]; then
+            echo "Missing LooseLeafTests/__Snapshots__ directory"
+            exit 1
+          fi
+          COUNT=$(ls -1 LooseLeafTests/__Snapshots__/*.png 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -lt 1 ]; then
+            echo "No snapshot baselines found"
+            exit 1
+          fi
+          echo "Snapshot baselines present: $COUNT"
 
       - name: Build Release App Bundle (unsigned)
         run: |

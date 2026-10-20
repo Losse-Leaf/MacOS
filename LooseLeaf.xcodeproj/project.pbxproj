@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
+		AA0000060000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000100000000000000001;
+			remoteInfo = LooseLeaf;
+		};
 		AA0000010000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AA0000000000000000000001 /* Project object */;
@@ -19,12 +26,18 @@
 /* Begin PBXFileReference section */
 		AA0000110000000000000001 /* LooseLeaf.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LooseLeaf.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000210000000000000001 /* LooseLeafTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LooseLeafTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000310000000000000001 /* LooseLeafUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LooseLeafUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0000300000000000000001 /* LooseLeaf */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LooseLeaf;
+			sourceTree = "<group>";
+		};
+		AA0000330000000000000001 /* LooseLeafUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LooseLeafUITests;
 			sourceTree = "<group>";
 		};
 		AA0000320000000000000001 /* LooseLeafTests */ = {
@@ -36,6 +49,13 @@
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA0000120000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000370000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -57,6 +77,7 @@
 			children = (
 				AA0000300000000000000001 /* LooseLeaf */,
 				AA0000320000000000000001 /* LooseLeafTests */,
+				AA0000330000000000000001 /* LooseLeafUITests */,
 				AA0000030000000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,6 +87,7 @@
 			children = (
 				AA0000110000000000000001 /* LooseLeaf.app */,
 				AA0000210000000000000001 /* LooseLeafTests.xctest */,
+				AA0000310000000000000001 /* LooseLeafUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -118,6 +140,29 @@
 			productReference = AA0000210000000000000001 /* LooseLeafTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		AA0000340000000000000001 /* LooseLeafUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000460000000000000001 /* Build configuration list for PBXNativeTarget "LooseLeafUITests" */;
+			buildPhases = (
+				AA0000360000000000000001 /* Sources */,
+				AA0000370000000000001 /* Frameworks */,
+				AA0000380000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000390000000000000001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000330000000000000001 /* LooseLeafUITests */,
+			);
+			name = LooseLeafUITests;
+			packageProductDependencies = (
+			);
+			productName = LooseLeafUITests;
+			productReference = AA0000310000000000000001 /* LooseLeafUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -132,6 +177,10 @@
 						CreatedOnToolsVersion = 16.0;
 					};
 					AA0000200000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = AA0000100000000000000001;
+					};
+					AA0000340000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 						TestTargetID = AA0000100000000000000001;
 					};
@@ -153,12 +202,20 @@
 			targets = (
 				AA0000100000000000000001 /* LooseLeaf */,
 				AA0000200000000000000001 /* LooseLeafTests */,
+				AA0000340000000000000001 /* LooseLeafUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0000140000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000380000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -182,6 +239,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000360000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000230000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -192,6 +256,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		AA0000390000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000100000000000000001 /* LooseLeaf */;
+			targetProxy = AA0000060000000000000001 /* PBXContainerItemProxy */;
+		};
 		AA0000250000000000000001 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = AA0000100000000000000001 /* LooseLeaf */;
@@ -292,6 +361,34 @@
 			};
 			name = Release;
 		};
+		AA0000560000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 25;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.5.10;
+				PRODUCT_BUNDLE_IDENTIFIER = com.looseleaf.macUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = LooseLeaf;
+			};
+			name = Debug;
+		};
+		AA0000570000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 25;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.5.10;
+				PRODUCT_BUNDLE_IDENTIFIER = com.looseleaf.macUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = LooseLeaf;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -309,6 +406,15 @@
 			buildConfigurations = (
 				AA0000540000000000000001 /* Debug */,
 				AA0000550000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000460000000000000001 /* Build configuration list for PBXNativeTarget "LooseLeafUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000560000000000000001 /* Debug */,
+				AA0000570000000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

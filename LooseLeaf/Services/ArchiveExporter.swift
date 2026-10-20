@@ -166,7 +166,10 @@ public enum ArchiveExporter {
             || trimmed.hasPrefix("\t")
         let minusWithoutNumber = trimmed.hasPrefix("-") && Double(trimmed) == nil
         if startsDangerously || minusWithoutNumber {
-            cleaned = "'" + cleaned
+            // 先剥离前导空白与制表符（Excel 会 trim 后再执行公式），再前置单引号，
+            // 这样即使攻击载荷以空格开头也会被彻底中和。
+            let leadingTrimmed = cleaned.drop(while: { $0 == " " || $0 == "\t" })
+            cleaned = "'" + leadingTrimmed
         }
 
         // 含分隔符、引号、空格或制表符的字段必须加引号（原实现漏了 \t，会被 Excel 错切）

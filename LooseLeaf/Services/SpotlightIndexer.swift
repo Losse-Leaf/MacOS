@@ -16,16 +16,16 @@ enum SpotlightIndexer {
     private static let stateLock = NSLock()
 
     /// 防抖任务句柄
-    private static var debounceTask: Task<Void, Never>?
+    nonisolated(unsafe) private static var debounceTask: Task<Void, Never>?
     /// 重建代号：每次调度自增；执行时若代号已过期则直接放弃
-    private static var generation: UInt64 = 0
+    nonisolated(unsafe) private static var generation: UInt64 = 0
 
     /// 已写入系统索引的条目指纹（id -> 内容版本），用于计算增量
-    private static var indexedVersions: [Int: String] = [:]
+    nonisolated(unsafe) private static var indexedVersions: [Int: String] = [:]
     /// 首次运行需要清理历史遗留的孤儿索引项
-    private static var hasRebuiltDomain = false
+    nonisolated(unsafe) private static var hasRebuiltDomain = false
     /// 指纹是否已从磁盘恢复
-    private static var didRestorePersistedState = false
+    nonisolated(unsafe) private static var didRestorePersistedState = false
 
     /// 单次提交给 CoreSpotlight 的最大条目数（避免一次性提交几千条导致系统侧内存峰值）
     private static let indexBatchSize = 200
@@ -163,54 +163,16 @@ enum SpotlightIndexer {
 
         let index = CSSearchableIndex.default()
 
-        /// 提交指纹状态：只有系统索引**写入成功**后才提交，
-        /// 否则该条目的指纹会被记为「已索引」，导致它**永久无法被 Spotlight 搜到**。
-        func commitState() {
-            stateLock.lock()
-            indexedVersions = newVersions
-            hasRebuiltDomain = true
-            stateLock.unlock()
-            logger.info("Spotlight incremental reindex: +\(changedEntries.count) / -\(removedIdentifiers.count), total \(newVersions.count)")
-            persistState()
-        }
-
-        func indexChanged() {
-            guard !changedEntries.isEmpty else {
-                commitState()
-                return
-            }
-            // 分批提交，避免一次性提交数千条导致 CoreSpotlight 侧内存峰值
-            let batches = stride(from: 0, to: changedEntries.count, by: indexBatchSize).map {
-                Array(changedEntries[$0..<min($0 + indexBatchSize, changedEntries.count)])
-            }
-            func submit(_ remaining: [[LifeEntry]]) {
-                guard let batch = remaining.first else {
-                    commitState()
-                    return
-                }
-                let items = batch.map(makeItem)
-                index.indexSearchableItems(items) { error in
-                    if let error {
-                        // 写入失败：绝不提交指纹状态，下次 reindex 会自动重试该批条目
-                        logger.error("Spotlight index failed: \(error.localizedDescription)")
-                        return
-                    }
-                    submit(Array(remaining.dropFirst()))
-                }
-            }
-            submit(batches)
-        }
-
         if needsDomainReset {
             // 首次运行：清掉旧版本可能留下的孤儿条目，再写入当前全量
             index.deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in
-                indexChanged()
+                indexChanged(entries: changedEntries, newVersions: newVersions, removedIdentifiers: removedIdentifiers)
             }
             return
         }
 
         guard !removedIdentifiers.isEmpty else {
-            indexChanged()
+            indexChanged(entries: changedEntries, newVersions: newVersions, removedIdentifiers: removedIdentifiers)
             return
         }
         index.deleteSearchableItems(withIdentifiers: removedIdentifiers) { error in
@@ -219,7 +181,52 @@ enum SpotlightIndexer {
                 logger.error("Spotlight delete failed: \(error.localizedDescription)")
                 return
             }
-            indexChanged()
+            indexChanged(entries: changedEntries, newVersions: newVersions, removedIdentifiers: removedIdentifiers)
         }
     }
+
+    /// 提交指纹状态（只有系统索引写入成功后才调用）
+    private static func commitState(newVersions: [Int: String], changedCount: Int, removedCount: Int) {
+        stateLock.lock()
+        indexedVersions = newVersions
+        hasRebuiltDomain = true
+        stateLock.unlock()
+        logger.info("Spotlight incremental reindex: +\(changedCount) / -\(removedCount), total \(newVersions.count)")
+        persistState()
+    }
+
+    /// 写入变更条目（分批提交，避免一次性提交数千条导致 CoreSpotlight 侧内存峰值）
+    private static func indexChanged(
+        entries: [LifeEntry],
+        newVersions: [Int: String],
+        removedIdentifiers: [String]
+    ) {
+        guard !entries.isEmpty else {
+            commitState(newVersions: newVersions, changedCount: 0, removedCount: removedIdentifiers.count)
+            return
+        }
+        let batches = stride(from: 0, to: entries.count, by: indexBatchSize).map {
+            Array(entries[$0..<min($0 + indexBatchSize, entries.count)])
+        }
+        submit(batches: batches, newVersions: newVersions, removedCount: removedIdentifiers.count)
+    }
+
+    /// 递归提交分批条目（每批成功后再提交下一批）
+    private static func submit(batches: [[LifeEntry]], newVersions: [Int: String], removedCount: Int) {
+        guard let batch = batches.first else {
+            commitState(newVersions: newVersions, changedCount: 0, removedCount: removedCount)
+            return
+        }
+        let items = batch.map(makeItem)
+        let index = CSSearchableIndex.default()
+        index.indexSearchableItems(items) { error in
+            if let error {
+                // 写入失败：绝不提交指纹状态，下次 reindex 会自动重试该批条目
+                logger.error("Spotlight index failed: \(error.localizedDescription)")
+                return
+            }
+            submit(batches: Array(batches.dropFirst()), newVersions: newVersions, removedCount: removedCount)
+        }
+    }
+
 }

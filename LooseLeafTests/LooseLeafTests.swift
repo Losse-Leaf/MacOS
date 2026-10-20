@@ -438,8 +438,10 @@ final class LooseLeafTests: XCTestCase {
 
         var snap = LocalArchiveSnapshot()
         snap.transactions = [tx]
-        let jsonData = ArchiveExporter.makeFullArchiveJSON(snapshot: snap, projects: [], wishes: [], footprints: [])
-        XCTAssertNotNil(jsonData)
+        // makeFullArchiveJSON 现为 throwing：编码失败必须可感知，不能静默返回 nil
+        let jsonData = try ArchiveExporter.makeFullArchiveJSON(snapshot: snap, projects: [], wishes: [], footprints: [])
+        XCTAssertFalse(jsonData.isEmpty)
+        XCTAssertTrue(String(data: jsonData, encoding: .utf8)?.contains("transactions") == true)
 
         let lonLat = CityDictionary.lonLat(forCode: "330100", cityName: "杭州市")
         XCTAssertTrue(lonLat.lon > 85.0 && lonLat.lon < 125.0)
@@ -610,4 +612,222 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(FormatUtils.daysBetween("not-a-date", "2026-10-01 10:00:00"), 0)
     }
 
+    // MARK: - 19. 第二版优化清单新增回归测试
+
+    /// 快照 schema 版本：老快照（无 schemaVersion 字段）必须能解码并被迁移，
+    /// 否则老用户会命中「解码失败 → 隔离备份」路径，表现为档案凭空消失。
+    func testSnapshotSchemaVersionMigration() throws {
+        let legacyJSON = """
+        {
+          "entries": [],
+          "transactions": [],
+          "transactionSummary": { "totalExpense": 0, "totalIncome": 0, "balance": 0, "categoryBreakdown": {} },
+          "profile": { "name": "测试", "title": "", "bio": "", "location": "", "currentCity": "", "avatarUrl": "", "motto": "", "manifesto": "", "edcGear": [] },
+          "siteConfig": { "siteName": "散页", "curatorName": "测试", "defaultLocation": "", "initialized": true },
+          "stats": { "total_entries": 0, "total_photos": 0, "total_projects": 0, "month_expense": 0, "current_year": 2026, "current_month": 10 },
+          "outbox": [],
+          "updatedAt": "2026-10-20T10:00:00+08:00"
+        }
+        """
+        let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(decoded.schemaVersion, 1, "缺少 schemaVersion 的老快照应按 v1 解释")
+        let migrated = decoded.migrated()
+        XCTAssertEqual(migrated.schemaVersion, LocalArchiveSnapshot.currentSchemaVersion)
+        XCTAssertFalse(migrated.entries.isEmpty == false, "迁移不得丢弃任何历史数据")
+    }
+
+    /// 新快照必须带 schemaVersion，且能被解码回来
+    func testSnapshotRoundTripKeepsSchemaVersion() throws {
+        var snap = LocalArchiveSnapshot()
+        snap.schemaVersion = LocalArchiveSnapshot.currentSchemaVersion
+        let data = try JSONEncoder().encode(snap)
+        let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: data)
+        XCTAssertEqual(decoded.schemaVersion, LocalArchiveSnapshot.currentSchemaVersion)
+    }
+
+    /// 日期解析的形状判别：所有历史格式都必须解析成功且结果一致
+    func testFlexDateShapeDispatchKeepsAllFormats() {
+        let samples: [(String, String)] = [
+            ("2026-10-13T21:15:00+08:00", "2026-10-13"),
+            ("2026-10-13 09:30:00", "2026-10-13"),
+            ("2026-10-13 09:30", "2026-10-13"),
+            ("2026-10-13", "2026-10-13"),
+            ("2026.10.13 09:30:00", "2026-10-13"),
+            ("2026.10.13", "2026-10-13"),
+            ("2026:10:13 09:30:00", "2026-10-13"),
+        ]
+        for (raw, expectedKey) in samples {
+            guard let parsed = FormatUtils.parseFlexDate(raw) else {
+                XCTFail("格式 \(raw) 解析失败")
+                continue
+            }
+            XCTAssertEqual(FormatUtils.formatBeijingDate(parsed).dateKey, expectedKey, "格式 \(raw) 解析结果不正确")
+        }
+    }
+
+    /// 金额解析：四舍五入而非截断
+    func testYuanToCentsRoundsInsteadOfTruncating() {
+        XCTAssertEqual(FormatUtils.parseYuanToCentsAllowZero("0.999"), 100)
+        XCTAssertEqual(FormatUtils.parseYuanToCentsAllowZero("42.999"), 4300)
+        XCTAssertEqual(FormatUtils.parseYuanToCentsAllowZero("42.5"), 4250)
+        XCTAssertEqual(FormatUtils.parseYuanToCentsAllowZero("0"), 0, "0 元必须能被区分于解析失败")
+        XCTAssertNil(FormatUtils.parseYuanToCentsAllowZero("abc"))
+    }
+
+    /// CSV 公式注入：前导空格也必须被中和（Excel 会 trim 后执行）
+    func testCSVNeutralizesFormulaInjectionWithLeadingWhitespace() {
+        let tx = Transaction(
+            id: 99,
+            amount: 100,
+            type: "expense",
+            category: "餐饮",
+            title: " =cmd|'/c calc'!A1",
+            note: "",
+            paymentMethod: "现金",
+            cityCode: "330100",
+            occurredAt: "2026-10-14T09:30:00+08:00"
+        )
+        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
+        XCTAssertTrue(csv.contains("'=cmd"), "前导空格后的公式注入必须被中和：\(csv)")
+    }
+
+    /// Outbox 排序：乐观插入的记录必须按发生时间归位，而不是插到列表顶部
+    func testSortedEntriesPlacesOptimisticRecordByDate() {
+        let older = LifeEntry(id: 1, title: "旧", content: "", occurredAt: "2024-01-01T10:00:00+08:00")
+        let newer = LifeEntry(id: 2, title: "新", content: "", occurredAt: "2026-05-05T10:00:00+08:00")
+        let sorted = SyncManager.sortedEntries([older, newer])
+        XCTAssertEqual(sorted.first?.id, 2, "时间较新的记录必须排在前面")
+    }
+
+    /// 日期解析的 Date 版本与字符串版本结果一致
+    func testDaysBetweenDateOverloadMatchesStringVersion() {
+        let a = FormatUtils.parseFlexDate("2026-10-01 08:00:00")!
+        let b = FormatUtils.parseFlexDate("2026-10-20 19:00:00")!
+        XCTAssertEqual(FormatUtils.daysBetween(a, b), FormatUtils.daysBetween("2026-10-01 08:00:00", "2026-10-20 19:00:00"))
+    }
+
+    /// 语义色对比度回归：全部语义色在浅/深两档都必须达到 WCAG AA 正文级（≥ 4.5:1）。
+    /// 与 CI 中的 `scripts/check_color_contrast.py` 门禁互为双保险。
+    func testSemanticColorsMeetWCAGAAContrast() throws {
+        // 定位 Assets.xcassets。
+        // 注意：SPM 的 .process 会用 actool 把资源编译成资产目录，
+        // 原始 Colorset JSON 不会打进 Bundle，因此从源码路径定位。
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()          // LooseLeafTests
+            .deletingLastPathComponent()          // mac
+            .appendingPathComponent("LooseLeaf/Resources/Assets.xcassets")
+        var assetsURL: URL? = FileManager.default.fileExists(atPath: sourceRoot.path) ? sourceRoot : nil
+        if assetsURL == nil {
+            assetsURL = Bundle.module.url(forResource: "Assets", withExtension: "xcassets")
+        }
+        let root = try XCTUnwrap(assetsURL, "无法定位 Assets.xcassets")
+
+        func luminance(_ rgb: (Double, Double, Double)) -> Double {
+            func channel(_ v: Double) -> Double {
+                v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(rgb.0) + 0.7152 * channel(rgb.1) + 0.0722 * channel(rgb.2)
+        }
+        func ratio(_ a: (Double, Double, Double), _ b: (Double, Double, Double)) -> Double {
+            let la = luminance(a), lb = luminance(b)
+            let hi = max(la, lb), lo = min(la, lb)
+            return (hi + 0.05) / (lo + 0.05)
+        }
+        func parseHex(_ value: String) -> (Double, Double, Double) {
+            let cleaned = value.replacingOccurrences(of: "0x", with: "")
+            func part(_ offset: Int) -> Double {
+                let start = cleaned.index(cleaned.startIndex, offsetBy: offset)
+                let end = cleaned.index(start, offsetBy: 2)
+                let hexPart = String(cleaned[start..<end])
+                return Double(UInt16(hexPart, radix: 16) ?? 0)
+            }
+            return (part(0) / 255.0, part(2) / 255.0, part(4) / 255.0)
+        }
+
+        struct ColorSet: Decodable {
+            struct Entry: Decodable {
+                struct Color: Decodable {
+                    struct Components: Decodable {
+                        let red: String
+                        let green: String
+                        let blue: String
+                    }
+                    let components: Components
+                }
+                let color: Color
+                let appearances: [Appearance]?
+
+                struct Appearance: Decodable {
+                    let appearance: String
+                    let value: String
+                }
+            }
+            let colors: [Entry]
+        }
+
+        let fileManager = FileManager.default
+        let colorsetDirs = try fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "colorset" }
+
+        var paperLight: (Double, Double, Double)?
+        var paperDark: (Double, Double, Double)?
+
+        for dir in colorsetDirs {
+            let name = dir.deletingPathExtension().lastPathComponent
+            let jsonURL = dir.appendingPathComponent("Contents.json")
+            guard let data = try? Data(contentsOf: jsonURL),
+                  let decoded = try? JSONDecoder().decode(ColorSet.self, from: data) else { continue }
+
+            var light: (Double, Double, Double)?
+            var dark: (Double, Double, Double)?
+            for entry in decoded.colors {
+                let c = entry.color.components
+                let rgb = parseHex(c.red + c.green + c.blue)
+                let isDark = entry.appearances?.contains { $0.value == "dark" } ?? false
+                if isDark { dark = rgb } else { light = rgb }
+            }
+            if name == "ArchivePaper" {
+                paperLight = light
+                paperDark = dark
+            }
+        }
+
+        let bgLight = try XCTUnwrap(paperLight)
+        let bgDark = try XCTUnwrap(paperDark)
+
+        // 仅背景/边框类语义色不参与「正文级」判定
+        let nonText = Set(["ArchivePaper", "ArchiveSubtle", "BorderSubtle", "BorderDivider"])
+
+        for dir in colorsetDirs {
+            let name = dir.deletingPathExtension().lastPathComponent
+            if nonText.contains(name) { continue }
+            let jsonURL = dir.appendingPathComponent("Contents.json")
+            guard let data = try? Data(contentsOf: jsonURL),
+                  let decoded = try? JSONDecoder().decode(ColorSet.self, from: data) else { continue }
+            for entry in decoded.colors {
+                let c = entry.color.components
+                let rgb = parseHex(c.red + c.green + c.blue)
+                let isDark = entry.appearances?.contains { $0.value == "dark" } ?? false
+                let bg = isDark ? bgDark : bgLight
+                let value = ratio(rgb, bg)
+                XCTAssertGreaterThanOrEqual(
+                    value, 4.5,
+                    "\(name) 在 \(isDark ? "深色" : "浅色") 模式下对比度仅 \(String(format: "%.2f", value)):1，不达 WCAG AA"
+                )
+            }
+        }
+    }
+
+    /// 索引令牌：命中区与间距阶梯必须存在且为正值
+    func testDesignTokensAreSane() {
+        XCTAssertGreaterThanOrEqual(ArchiveHitTarget.minPointer, 28)
+        XCTAssertGreaterThanOrEqual(ArchiveHitTarget.minTouch, 44)
+        XCTAssertGreaterThan(ArchiveSpacing.xl, ArchiveSpacing.l)
+        XCTAssertGreaterThan(ArchiveSpacing.l, ArchiveSpacing.m)
+        XCTAssertGreaterThan(ArchiveSpacing.m, ArchiveSpacing.s)
+        XCTAssertGreaterThanOrEqual(ArchiveTypography.Scale.micro, 10, "正文级最小字号不得低于 10pt")
+    }
 }

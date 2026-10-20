@@ -27,7 +27,10 @@ public enum CredentialStore {
         }
     }
 
-    private static var cachedPayload: Payload?
+    /// 内存缓存。
+    /// 非隔离可变状态是安全的：所有读写都在同一把 `lock` 保护下完成
+    /// （read/mutate 均持锁访问），Swift 6 语言模式下用 `nonisolated(unsafe)` 显式声明。
+    nonisolated(unsafe) private static var cachedPayload: Payload?
 
     // MARK: - Device Token
 

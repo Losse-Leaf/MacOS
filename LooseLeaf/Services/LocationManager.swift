@@ -74,8 +74,10 @@ public final class LocationManager: NSObject, CLLocationManagerDelegate {
     // MARK: - CLLocationManagerDelegate
 
     public nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // 先在当前上下文取出授权状态（避免把 CLLocationManager 跨隔离域传入 Task）
+        let status = manager.authorizationStatus
         Task { @MainActor in
-            self.authorizationStatus = manager.authorizationStatus
+            self.authorizationStatus = status
             // 关键：只有用户**显式**触发过定位才允许自动发起。
             // CLLocationManager 设置 delegate 后会立即回调一次授权状态，
             // 原实现会导致「每次启动应用都自动定位」，与设计意图冲突且白白消耗电量。

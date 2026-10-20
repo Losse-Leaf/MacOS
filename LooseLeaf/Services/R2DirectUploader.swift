@@ -177,11 +177,12 @@ public final class R2DirectUploader: NSObject, Sendable {
     }
 }
 
-private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate {
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let handler: @Sendable (Double) -> Void
     private let lock = NSLock()
-    private var lastFraction: Double = -1
-    private var lastEmittedAt: Date = .distantPast
+    // 可变状态全部在 lock 保护下访问
+    nonisolated(unsafe) private var lastFraction: Double = -1
+    nonisolated(unsafe) private var lastEmittedAt: Date = .distantPast
 
     init(handler: @escaping @Sendable (Double) -> Void) {
         self.handler = handler

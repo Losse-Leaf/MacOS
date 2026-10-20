@@ -1,7 +1,7 @@
 import Foundation
 
 /// 标准 RESTful API v1 统一响应信封
-public struct APIEnvelope<T: Decodable>: Decodable {
+public struct APIEnvelope<T: Decodable & Sendable>: Decodable, Sendable {
     public let code: Int
     public let message: String
     public let data: T?

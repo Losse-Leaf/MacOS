@@ -135,8 +135,10 @@ public enum DropLoader {
     /// 关键：并发提取而非逐个 await。原先串行处理 20 张图需要 10~40 秒。
     static func loadDroppablePhotoURLs(from providers: [NSItemProvider]) async -> [URL] {
         guard !providers.isEmpty else { return [] }
+        // NSItemProvider 不是 Sendable，用一个 @unchecked Sendable 盒子安全地跨并发边界传递
+        let box = ProviderBox(providers)
         return await withTaskGroup(of: (Int, URL?).self) { group -> [URL] in
-            for (index, provider) in providers.enumerated() {
+            for (index, provider) in box.providers.enumerated() {
                 group.addTask { (index, await loadDroppablePhotoURL(from: provider)) }
             }
             var collected: [(Int, URL)] = []
@@ -146,6 +148,13 @@ public enum DropLoader {
             // 保持拖拽提供的原始顺序
             return collected.sorted { $0.0 < $1.0 }.map(\.1)
         }
+    }
+
+    /// NSItemProvider 数组的 Sendable 包装（AppKit 未标注 Sendable，
+    /// 但 NSItemProvider 的读取接口是线程安全的，因此在并发任务间传递是安全的）
+    private final class ProviderBox: @unchecked Sendable {
+        let providers: [NSItemProvider]
+        init(_ providers: [NSItemProvider]) { self.providers = providers }
     }
 
     /// 从单个 provider 提取图像二进制数据（支持 JPEG、PNG、HEIC、TIFF、通用图像）

@@ -47,17 +47,21 @@ jobs:
         run: |
           python3 scripts/check_color_contrast.py LooseLeaf/Resources/Assets.xcassets
 
-      - name: Checkout Web Repository (for city dictionary cross-check)
-        uses: actions/checkout@v5
-        with:
-          repository: Losse-Leaf/web
-          ref: main
-          path: ${{ runner.temp }}/web
+      - name: Fetch Web Repository (for city dictionary cross-check)
+        run: |
+          set -euo pipefail
+          # 用匿名浅克隆而非 actions/checkout：跨仓库 checkout 在受限令牌下会失败，
+          # 而 web 仓库本身是公开的，浅克隆即可拿到城市字典真源。
+          WEB_DIR="${RUNNER_TEMP}/web"
+          rm -rf "${WEB_DIR}"
+          git clone --depth 1 --quiet https://github.com/Losse-Leaf/web.git "${WEB_DIR}"
+          test -f "${WEB_DIR}/src/utils/cities.ts"
+          echo "WEB_DIR=${WEB_DIR}" >> "${GITHUB_ENV}"
 
       - name: Verify City Dictionary Consistency (macOS vs Web)
         run: |
           python3 scripts/check_city_dictionary.py \
-            LooseLeaf/Models/CityDictionary.swift "${{ runner.temp }}/web/src/utils/cities.ts"
+            LooseLeaf/Models/CityDictionary.swift "${WEB_DIR}/src/utils/cities.ts"
 
       - name: Run Unit Tests
         run: swift test --verbose

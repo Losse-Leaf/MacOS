@@ -158,6 +158,52 @@ public struct ArchiveEmptyState: View {
     }
 }
 
+// MARK: - 统一骨架屏 (Skeleton)
+
+/// 首屏加载骨架：与纸本卡片同构的占位条。
+/// 关键：加载态与「真的没有记录」必须视觉可区分，否则用户会以为数据丢了。
+public struct ArchiveSkeletonView: View {
+    private let rowCount: Int
+    private let showsHeader: Bool
+
+    public init(rowCount: Int = 4, showsHeader: Bool = true) {
+        self.rowCount = rowCount
+        self.showsHeader = showsHeader
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+            if showsHeader {
+                skeletonBar(width: 220, height: 22)
+                skeletonBar(width: 140, height: 12)
+            }
+            ForEach(0..<max(1, rowCount), id: \.self) { index in
+                VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                    HStack(spacing: ArchiveSpacing.s) {
+                        skeletonBar(width: 64, height: 16)
+                        skeletonBar(width: 120, height: 12)
+                    }
+                    skeletonBar(width: nil, height: 12)
+                    skeletonBar(width: 220, height: 12)
+                }
+                .padding(ArchiveCardMetrics.padding)
+                .background(ArchivePalette.archiveSubtle.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius))
+                .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("正在加载档案")
+    }
+
+    private func skeletonBar(width: CGFloat?, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(ArchivePalette.borderSubtle.opacity(0.55))
+            .frame(width: width, height: height)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+    }
+}
+
 // MARK: - 统一 Sheet 骨架 (Sheet Scaffold)
 
 /// 统一表单弹窗骨架：标题 + 内容 + 取消/提交。

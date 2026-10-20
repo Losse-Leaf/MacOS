@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Carbon
 import CoreSpotlight
+import UserNotifications
 import os
 
 /// 应用系统事件与全局快捷键托管代理 (AppDelegate)
@@ -21,10 +22,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventHandlerRef: EventHandlerRef?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // Dock 图标策略（用户可关闭，让应用只驻留菜单栏）
+        let showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
+        NSApp.setActivationPolicy(showsDockIcon ? .regular : .accessory)
+        if showsDockIcon {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         NSApp.servicesProvider = self
         registerGlobalHotKeyFromPreferences()
+
+        // 窗口状态记忆：让系统自动保存主窗口的位置与尺寸
+        restoreMainWindowFrame()
 
         // 主窗口不再开启背景拖拽：内容区点选 / 文本选择 / 热力图交互易误拖窗口，
         // 仅保留 QuickCapturePanel 浮动小窗的背景拖拽（在其构造处单独设置）。
@@ -69,6 +77,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// 恢复主窗口尺寸与位置（macOS 的 frame autosave）
+    private func restoreMainWindowFrame() {
+        DispatchQueue.main.async {
+            guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" })
+                ?? NSApp.windows.first(where: { $0.canBecomeMain }) else { return }
+            let autosaveName = "LooseLeafMainWindow"
+            if !window.setFrameUsingName(autosaveName) {
+                // 首次启动没有保存记录：用默认尺寸居中
+                window.center()
+            }
+            window.setFrameAutosaveName(autosaveName)
+        }
+    }
+
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             // 优先唤回主工作台窗口，避免把浮动捕捉面板当成主窗口
@@ -78,6 +100,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             sender.activate(ignoringOtherApps: true)
         }
         return true
+    }
+
+    // MARK: - 系统通知 (User Notifications)
+
+    /// 发送一条本地系统通知（同步完成 / 失败 / 备份完成等关键事件）
+    public static func postNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = nil
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    /// 请求通知授权（仅在用户开启相关偏好后调用一次）
+    public static func requestNotificationAuthorizationIfNeeded() {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
     }
 
     // MARK: - 系统服务菜单：摘录选中文本到散页

@@ -385,7 +385,23 @@ public final class SyncManager {
                 self.handleOutboxFailure(item: item, error: APIError.networkFailure(error.localizedDescription))
             }
         }
-        Self.logger.info("Outbox flush finished, \(self.snapshot.outbox.count) item(s) still pending")
+        let remaining = self.snapshot.outbox.count
+        Self.logger.info("Outbox flush finished, \(remaining) item(s) still pending")
+
+        // 同步完成后给一条系统通知（用户切到别的 App 时也能知道结果）
+        if AppState.shared.notifiesOnSync {
+            if remaining == 0, !itemsToFlush.isEmpty {
+                AppDelegate.postNotification(
+                    title: "活页集 · 同步完成",
+                    body: "本地发件箱的 \(itemsToFlush.count) 条记录已同步至中枢。"
+                )
+            } else if remaining > 0 {
+                AppDelegate.postNotification(
+                    title: "活页集 · 仍有待同步记录",
+                    body: "有 \(remaining) 条本地记录暂未同步成功，将自动重试。"
+                )
+            }
+        }
     }
 
     /// 发件箱失败分类处理：

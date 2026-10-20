@@ -609,7 +609,12 @@ public struct StreamView: View {
                 // 5. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
                 let rows = appState.streamRows
                 if rows.isEmpty {
-                    emptyStreamPlaceholder
+                    // 加载中显示骨架屏（而非空态），避免用户误以为数据丢失
+                    if appState.isLoading {
+                        ArchiveSkeletonView(rowCount: 4)
+                    } else {
+                        emptyStreamPlaceholder
+                    }
                 } else {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         ForEach(rows) { row in
@@ -1206,6 +1211,21 @@ public struct StreamView: View {
 
     private func deleteEntryAction(_ entry: LifeEntry) {
         guard entry.id > 0 else { return }
+        // 登记撤销：删除后可在 5 秒内（或随时按 ⌘Z）恢复该条手稿
+        let restoreRequest = CreateEntryRequest(
+            type: entry.type,
+            title: entry.title,
+            content: entry.content,
+            occurredAt: entry.occurredAt,
+            location: entry.location,
+            featured: entry.featured ?? false,
+            cityCode: entry.cityCode,
+            cityName: entry.cityName,
+            projectId: entry.projectId,
+            wishId: entry.wishId,
+            footprintId: entry.footprintId,
+            attachmentIds: entry.attachments.map(\.id)
+        )
         Task { @MainActor in
             _ = try? await APIClient.shared.deleteEntry(id: entry.id)
             await appState.loadEntries(forceFull: true)
@@ -1213,11 +1233,26 @@ public struct StreamView: View {
             if appState.highlightedEntry?.id == entry.id {
                 appState.highlightedEntry = nil
             }
+            appState.registerUndo(label: "删除手稿「\(entry.title.isEmpty ? "未命名" : entry.title)」") {
+                _ = try? await APIClient.shared.createEntry(restoreRequest)
+                await appState.loadEntries(forceFull: true)
+            }
+            appState.showTemporaryBanner("已删除手稿 · 可按 ⌘Z 撤销")
         }
     }
 
     private func deleteTransactionAction(_ tx: Transaction) {
         guard tx.id > 0 else { return }
+        let restoreRequest = CreateTransactionRequest(
+            amount: tx.amount,
+            type: tx.type,
+            category: tx.category,
+            title: tx.title,
+            note: tx.note,
+            paymentMethod: tx.paymentMethod,
+            cityCode: tx.cityCode,
+            occurredAt: tx.occurredAt
+        )
         Task { @MainActor in
             _ = try? await APIClient.shared.deleteTransaction(id: tx.id)
             await appState.loadTransactionsAndAssets(forceFull: true)
@@ -1225,6 +1260,11 @@ public struct StreamView: View {
             if appState.highlightedEntry?.id == tx.id {
                 appState.highlightedEntry = nil
             }
+            appState.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
+                _ = try? await APIClient.shared.createTransaction(restoreRequest)
+                await appState.loadTransactionsAndAssets(forceFull: true)
+            }
+            appState.showTemporaryBanner("已删除账目 · 可按 ⌘Z 撤销")
         }
     }
 

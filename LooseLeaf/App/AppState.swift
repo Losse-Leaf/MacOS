@@ -2,6 +2,9 @@ import Foundation
 import SwiftUI
 import Observation
 import AppKit
+#if canImport(ServiceManagement)
+import ServiceManagement
+#endif
 
 /// 桌面端主题外观模式 (支持跟随系统、暖色棉纸、胶片暗房)
 public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
@@ -269,6 +272,31 @@ public final class AppState {
     /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
     public var searchFocusRequest: Int = 0
 
+    // MARK: - 偏好：Dock 图标与登录启动
+
+    /// 是否在 Dock 中显示应用图标（常驻菜单栏型应用可关闭以释放 Dock 位置）
+    public var showsDockIcon: Bool {
+        didSet {
+            UserDefaults.standard.set(showsDockIcon, forKey: "looseleaf_shows_dock_icon")
+            applyActivationPolicy()
+        }
+    }
+
+    /// 是否在登录时自动启动
+    public var launchesAtLogin: Bool {
+        didSet {
+            UserDefaults.standard.set(launchesAtLogin, forKey: "looseleaf_launches_at_login")
+            applyLaunchAtLogin()
+        }
+    }
+
+    /// 是否在同步完成 / 失败时发送系统通知
+    public var notifiesOnSync: Bool {
+        didSet {
+            UserDefaults.standard.set(notifiesOnSync, forKey: "looseleaf_notifies_on_sync")
+        }
+    }
+
     /// 当前是否存在需要关闭的自定义浮层（供 ⌘W 菜单项启用/禁用）
     public var hasOpenOverlay: Bool {
         activeConfirmDialog != nil
@@ -294,6 +322,9 @@ public final class AppState {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
         self.appearanceMode = AppearanceMode(rawValue: savedAppearance) ?? .system
         self.isPaired = (CredentialStore.getToken()?.isEmpty == false)
+        self.showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
+        self.launchesAtLogin = UserDefaults.standard.object(forKey: "looseleaf_launches_at_login") as? Bool ?? false
+        self.notifiesOnSync = UserDefaults.standard.object(forKey: "looseleaf_notifies_on_sync") as? Bool ?? true
 
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
         self.isOnline = SyncManager.shared.isOnline
@@ -778,6 +809,77 @@ public final class AppState {
                 navigateToEntry(id: entryId)
             }
         }
+    }
+
+    // MARK: - Dock 图标策略与登录启动
+
+    /// 应用激活策略：.regular 显示在 Dock 与 ⌘Tab；.accessory 只驻留菜单栏
+    private func applyActivationPolicy() {
+        let policy: NSApplication.ActivationPolicy = showsDockIcon ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+    }
+
+    /// 登录时启动（macOS 13+ 使用 SMAppService 主应用注册）
+    private func applyLaunchAtLogin() {
+        #if canImport(ServiceManagement)
+        if #available(macOS 13.0, *) {
+            let service = SMAppService.mainApp
+            do {
+                if launchesAtLogin {
+                    if service.status != .enabled {
+                        try service.register()
+                    }
+                } else {
+                    if service.status == .enabled {
+                        try service.unregister()
+                    }
+                }
+            } catch {
+                showTemporaryBanner("登录启动设置失败：\(error.localizedDescription)")
+            }
+        }
+        #endif
+    }
+
+    // MARK: - 撤销栈 (Undo)
+
+    /// 一次可撤销的操作
+    public struct UndoAction: Identifiable {
+        public let id = UUID()
+        public let label: String
+        let perform: () async -> Void
+
+        public init(label: String, perform: @escaping () async -> Void) {
+            self.label = label
+            self.perform = perform
+        }
+    }
+
+    /// 最近的撤销操作（栈顶为最近一次）
+    @ObservationIgnored private var undoStack: [UndoAction] = []
+    /// 撤销栈容量上限
+    public static let maxUndoStackSize = 20
+
+    /// 是否存在可撤销的操作（供菜单项启用/禁用）
+    public var canUndo: Bool { !undoStack.isEmpty }
+
+    /// 最近一次可撤销操作的名称（供界面展示）
+    public var undoActionLabel: String? { undoStack.last?.label }
+
+    /// 登记一次可撤销操作
+    public func registerUndo(label: String, perform: @escaping () async -> Void) {
+        undoStack.append(UndoAction(label: label, perform: perform))
+        if undoStack.count > Self.maxUndoStackSize {
+            undoStack.removeFirst(undoStack.count - Self.maxUndoStackSize)
+        }
+    }
+
+    /// 执行并弹出最近一次撤销操作
+    public func performUndo() async {
+        guard let action = undoStack.popLast() else { return }
+        await action.perform()
+        showTemporaryBanner("已撤销「\(action.label)」")
     }
 
     public func showTemporaryBanner(_ text: String) {

@@ -96,6 +96,78 @@ struct PreferencesSettingsView: View {
                     }
                 }
             }
+
+            // 系统集成偏好
+            settingsCardSection(title: "系统集成", caption: "常驻方式与系统通知") {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                    settingsCardRow(
+                        icon: "menubar.rectangle",
+                        iconColor: ArchivePalette.inkSecondary,
+                        title: "在 Dock 中显示图标",
+                        subtitle: "关闭后应用只驻留菜单栏，不占用 Dock 与 ⌘Tab 位置"
+                    ) {
+                        Toggle("", isOn: $appState.showsDockIcon)
+                            .toggleStyle(PaperSwitchToggleStyle())
+                            .labelsHidden()
+                            .accessibilityLabel("在 Dock 中显示图标")
+                    }
+
+                    settingsCardRow(
+                        icon: "power",
+                        iconColor: ArchivePalette.inkSecondary,
+                        title: "登录时自动启动",
+                        subtitle: "开机后自动运行，以便随时用全局快捷键唤起极速手账"
+                    ) {
+                        Toggle("", isOn: $appState.launchesAtLogin)
+                            .toggleStyle(PaperSwitchToggleStyle())
+                            .labelsHidden()
+                            .accessibilityLabel("登录时自动启动")
+                    }
+
+                    settingsCardRow(
+                        icon: "bell.badge",
+                        iconColor: ArchivePalette.inkSecondary,
+                        title: "同步完成后发送通知",
+                        subtitle: "离线发件箱排空或同步失败时给出系统通知"
+                    ) {
+                        Toggle("", isOn: $appState.notifiesOnSync)
+                            .toggleStyle(PaperSwitchToggleStyle())
+                            .labelsHidden()
+                            .accessibilityLabel("同步完成后发送通知")
+                            .onChange(of: appState.notifiesOnSync) { _, newValue in
+                                if newValue {
+                                    AppDelegate.requestNotificationAuthorizationIfNeeded()
+                                }
+                            }
+                    }
+                }
+                .padding(ArchiveCardMetrics.padding)
+            }
+
+            // 键盘快捷键速查
+            settingsCardSection(title: "键盘快捷键", caption: "全部常用操作的键位一览") {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                    ForEach(ArchiveShortcutReference.all, id: \.combination) { item in
+                        HStack(spacing: ArchiveSpacing.m) {
+                            Text(item.title)
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                            Spacer(minLength: ArchiveSpacing.m)
+                            Text(item.combination)
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                .padding(.horizontal, ArchiveSpacing.s)
+                                .padding(.vertical, 2)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(item.title)，快捷键 \(item.combination)")
+                    }
+                }
+                .padding(ArchiveCardMetrics.padding)
+            }
         }
     }
 

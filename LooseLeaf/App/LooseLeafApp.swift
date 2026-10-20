@@ -106,6 +106,16 @@ public struct LooseLeafApp: App {
                 }
             }
 
+            CommandGroup(replacing: .undoRedo) {
+                Button(appState.undoActionLabel.map { "撤销 \($0)" } ?? "撤销") {
+                    Task { @MainActor in
+                        await appState.performUndo()
+                    }
+                }
+                .keyboardShortcut("z", modifiers: [.command])
+                .disabled(!appState.canUndo)
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("关闭当前弹层") {
                     closeTopmostOverlay()

@@ -517,7 +517,7 @@ public struct QuickCaptureView: View {
         let draft = appState.quickDraft
         var finalContent = draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines)
         if finalContent.isEmpty && !draft.uploadedAttachments.isEmpty {
-            finalContent = draft.extractedCameraLine.isEmpty ? "暗房胶片冲印归档" : draft.extractedCameraLine
+            finalContent = draft.extractedCameraLine.isEmpty ? "相纸影像归档" : draft.extractedCameraLine
         }
         guard !finalContent.isEmpty, !isSubmitting else { return }
 

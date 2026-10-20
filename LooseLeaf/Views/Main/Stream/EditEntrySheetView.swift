@@ -5,7 +5,8 @@ import AppKit
 @MainActor
 public struct EditEntrySheetView: View {
     public let entry: LifeEntry
-    public var onSave: (UpdateEntryRequest) -> Void
+    /// 异步抛错：保存失败必须留在弹窗里显示原因，不能静默关闭。
+    public var onSave: @MainActor (UpdateEntryRequest) async throws -> Void
     public var onCancel: () -> Void
 
     @State private var editTitle: String
@@ -15,10 +16,12 @@ public struct EditEntrySheetView: View {
     @State private var editFeatured: Bool
     @State private var editAttachments: [Attachment]
     @State private var isUploading: Bool = false
+    @State private var isSaving: Bool = false
+    @State private var saveError: String?
 
     public init(
         entry: LifeEntry,
-        onSave: @escaping (UpdateEntryRequest) -> Void,
+        onSave: @escaping @MainActor (UpdateEntryRequest) async throws -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.entry = entry
@@ -66,7 +69,7 @@ public struct EditEntrySheetView: View {
                         HStack(spacing: 4) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("暗房直传中…")
+                            Text("相纸上传中…")
                                 .font(ArchiveTypography.monoScale(size: 11))
                                 .foregroundStyle(ArchivePalette.accentWarm)
                         }
@@ -113,6 +116,23 @@ public struct EditEntrySheetView: View {
                 }
             }
 
+            if let saveError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                    Text(saveError)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .lineLimit(3)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(ArchivePalette.accentWarm)
+                .padding(8)
+                .background(ArchivePalette.accentWarm.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("保存失败：\(saveError)")
+            }
+
             HStack {
                 Toggle("标记为精选印记", isOn: $editFeatured)
                     .toggleStyle(.paperCheckbox)
@@ -124,31 +144,45 @@ public struct EditEntrySheetView: View {
                     onCancel()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .disabled(isSaving)
 
-                Button("保存修改 ⌘↩") {
-                    let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let code = editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode
-                    let req = UpdateEntryRequest(
-                        type: entry.type,
-                        title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-                        content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
-                        occurredAt: entry.occurredAt,
-                        location: cleanCity.isEmpty ? nil : cleanCity,
-                        featured: editFeatured,
-                        cityCode: code,
-                        cityName: cleanCity.isEmpty ? nil : cleanCity,
-                        attachmentIds: editAttachments.map(\.id)
-                    )
-                    onSave(req)
+                Button(isSaving ? "保存中…" : "保存修改 ⌘↩") {
+                    Task { await save() }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(isSaving || isUploading || editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(24)
         .frame(width: 520)
         .background(ArchivePalette.archivePaper)
+    }
+
+    private func save() async {
+        guard !isSaving else { return }
+        isSaving = true
+        saveError = nil
+        defer { isSaving = false }
+
+        let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode
+        let req = UpdateEntryRequest(
+            type: entry.type,
+            title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+            content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
+            occurredAt: entry.occurredAt,
+            location: cleanCity.isEmpty ? nil : cleanCity,
+            featured: editFeatured,
+            cityCode: code,
+            cityName: cleanCity.isEmpty ? nil : cleanCity,
+            attachmentIds: editAttachments.map(\.id)
+        )
+        do {
+            try await onSave(req)
+        } catch {
+            saveError = error.localizedDescription
+        }
     }
 
     private func selectPhotosForEdit() {
@@ -162,12 +196,21 @@ public struct EditEntrySheetView: View {
             guard !urls.isEmpty else { return }
             Task { @MainActor in
                 isUploading = true
+                saveError = nil
+                var failures: [String] = []
                 for url in urls {
                     do {
                         let processed = try await ImageProcessor.processImageFileInBackground(at: url)
                         let att = try await R2DirectUploader.shared.uploadProcessedPhoto(processed)
                         editAttachments.append(att)
-                    } catch {}
+                    } catch {
+                        failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
+                    }
+                }
+                if !failures.isEmpty {
+                    saveError = failures.count == 1
+                        ? "相纸上传失败：\(failures[0])"
+                        : "\(failures.count) 张相纸上传失败：\(failures.prefix(2).joined(separator: "；"))"
                 }
                 isUploading = false
             }

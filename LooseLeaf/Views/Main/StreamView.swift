@@ -267,8 +267,6 @@ public struct StreamView: View {
             SettingsView(appState: appState, pinnedTab: .categories)
         case .about:
             SettingsView(appState: appState, pinnedTab: .about)
-        case .darkroom:
-            DarkroomDropZone(appState: appState)
         }
     }
 
@@ -724,8 +722,12 @@ public struct StreamView: View {
                 cityCode: entry.cityCode,
                 cityName: entry.cityName
             )
-            _ = try? await APIClient.shared.updateEntry(id: entry.id, req)
-            await appState.loadEntries(forceFull: true)
+            do {
+                _ = try await APIClient.shared.updateEntry(id: entry.id, req)
+                await appState.loadEntries(forceFull: true)
+            } catch {
+                appState.showTemporaryBanner("精选状态更新失败：\(error.localizedDescription)")
+            }
         }
     }
 
@@ -747,15 +749,24 @@ public struct StreamView: View {
             attachmentIds: entry.attachments.map(\.id)
         )
         Task { @MainActor in
-            _ = try? await APIClient.shared.deleteEntry(id: entry.id)
+            do {
+                _ = try await APIClient.shared.deleteEntry(id: entry.id)
+            } catch {
+                appState.showTemporaryBanner("删除失败：\(error.localizedDescription)")
+                return
+            }
             await appState.loadEntries(forceFull: true)
             await appState.loadConfigAndProfile()
             if appState.highlightedEntry?.id == entry.id {
                 appState.highlightedEntry = nil
             }
             appState.registerUndo(label: "删除手稿「\(entry.title.isEmpty ? "未命名" : entry.title)」") {
-                _ = try? await APIClient.shared.createEntry(restoreRequest)
-                await appState.loadEntries(forceFull: true)
+                do {
+                    _ = try await APIClient.shared.createEntry(restoreRequest)
+                    await appState.loadEntries(forceFull: true)
+                } catch {
+                    appState.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                }
             }
             appState.showTemporaryBanner("已删除手稿 · 可按 ⌘Z 撤销")
         }
@@ -774,15 +785,24 @@ public struct StreamView: View {
             occurredAt: tx.occurredAt
         )
         Task { @MainActor in
-            _ = try? await APIClient.shared.deleteTransaction(id: tx.id)
+            do {
+                _ = try await APIClient.shared.deleteTransaction(id: tx.id)
+            } catch {
+                appState.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
+                return
+            }
             await appState.loadTransactionsAndAssets(forceFull: true)
             await appState.loadConfigAndProfile()
             if appState.highlightedEntry?.id == tx.id {
                 appState.highlightedEntry = nil
             }
             appState.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
-                _ = try? await APIClient.shared.createTransaction(restoreRequest)
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                do {
+                    _ = try await APIClient.shared.createTransaction(restoreRequest)
+                    await appState.loadTransactionsAndAssets(forceFull: true)
+                } catch {
+                    appState.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                }
             }
             appState.showTemporaryBanner("已删除账目 · 可按 ⌘Z 撤销")
         }
@@ -790,12 +810,11 @@ public struct StreamView: View {
 
     private func editEntrySheet(entry: LifeEntry) -> some View {
         EditEntrySheetView(entry: entry) { updated in
-            Task { @MainActor in
-                _ = try? await APIClient.shared.updateEntry(id: entry.id, updated)
-                await appState.loadEntries(forceFull: true)
-                await appState.loadConfigAndProfile()
-                editingEntry = nil
-            }
+            // 不要 try?：失败必须抛回弹窗，由弹窗就地展示并保持打开。
+            _ = try await APIClient.shared.updateEntry(id: entry.id, updated)
+            await appState.loadEntries(forceFull: true)
+            await appState.loadConfigAndProfile()
+            editingEntry = nil
         } onCancel: {
             editingEntry = nil
         }

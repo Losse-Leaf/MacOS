@@ -355,6 +355,22 @@ public final class SyncManager {
         return (optimistic, true)
     }
 
+    /// 用户主动同步（⌘R）时，把已暂停的死信重新放回队列。
+    /// 自动同步不会调用，避免对永久 4xx 错误反复重试。
+    public func resetPausedOutboxItems() {
+        var latest = snapshot
+        var changed = false
+        for index in latest.outbox.indices where latest.outbox[index].retryCount >= Self.maxOutboxRetryCount {
+            latest.outbox[index].retryCount = 0
+            latest.outbox[index].lastError = nil
+            changed = true
+        }
+        if changed {
+            Self.logger.info("Re-queued paused outbox items for manual retry")
+            saveSnapshot(latest)
+        }
+    }
+
     /// 排空并同步本地 Outbox 待发送队列
     public func flushOutbox() async {
         guard !isFlushingOutbox, !snapshot.outbox.isEmpty else { return }
@@ -363,7 +379,7 @@ public final class SyncManager {
 
         Self.logger.info("Flushing outbox: \(self.snapshot.outbox.count) item(s) queued")
 
-        let itemsToFlush = snapshot.outbox
+        let itemsToFlush = snapshot.outbox.filter { $0.retryCount < Self.maxOutboxRetryCount }
 
         for item in itemsToFlush {
             if Task.isCancelled { break }
@@ -433,29 +449,35 @@ public final class SyncManager {
     }
 
     /// 发件箱失败分类处理：
-    /// - 401 未授权：丢弃并上报（需重新配对，重试无意义）
-    /// - 4xx 客户端错误：永久错误，丢弃并上报
-    /// - 其余（网络 / 5xx）：有限次重试，超过上限判定为死信并丢弃，防止无限重试与无界增长
+    /// - 401 未授权：暂停自动重试但**保留**记录，重新配对后可手动重试
+    /// - 4xx 客户端错误：暂停自动重试但**保留**记录，避免静默丢数据
+    /// - 其余（网络 / 5xx）：有限次重试，超过上限后暂停并保留，等待用户手动重试
     private func handleOutboxFailure(item: OutboxItem, error: APIError) {
         var latest = snapshot
         guard let idx = latest.outbox.firstIndex(where: { $0.id == item.id }) else { return }
 
         switch error {
         case .unauthorized:
-            latest.outbox.removeAll { $0.id == item.id }
-            Self.logger.error("Outbox item \(item.id.uuidString) dropped: device unauthorized")
-            onLocalDataWarning?("设备授权已失效，\(latest.outbox.count) 条本地记录待重新配对后同步")
+            latest.outbox[idx].retryCount = Self.maxOutboxRetryCount
+            latest.outbox[idx].lastError = error.localizedDescription
+            Self.logger.error("Outbox item \(item.id.uuidString) paused: device unauthorized")
+            onLocalDataWarning?("设备授权已失效，\(latest.outbox.count) 条本地记录已暂停同步；重新配对后点「同步」重试")
         case .serverError(let code, _) where (400..<500).contains(code):
-            latest.outbox.removeAll { $0.id == item.id }
-            Self.logger.error("Outbox item \(item.id.uuidString) dropped: permanent client error \(code)")
-            onLocalDataWarning?("有条本地记录因参数错误无法同步，已被丢弃")
+            latest.outbox[idx].retryCount = Self.maxOutboxRetryCount
+            latest.outbox[idx].lastError = error.localizedDescription
+            Self.logger.error("Outbox item \(item.id.uuidString) paused: client error \(code)")
+            onLocalDataWarning?("有条本地记录因参数错误无法同步，已暂停自动重试；内容仍保留在本机")
         default:
-            if latest.outbox[idx].retryCount >= Self.maxOutboxRetryCount {
-                latest.outbox.removeAll { $0.id == item.id }
-                Self.logger.error("Outbox item \(item.id.uuidString) exceeded retry limit, dropped as dead letter")
-                onLocalDataWarning?("有条本地记录多次同步失败，已转入待处理队列")
+            let nextRetry = latest.outbox[idx].retryCount + 1
+            if nextRetry >= Self.maxOutboxRetryCount {
+                // 不再删除：死信保留在 outbox 中，用户仍能看到待同步计数，
+                // 后续版本可提供「查看/重试/导出」入口。静默 removeAll 等于数据丢失。
+                latest.outbox[idx].retryCount = Self.maxOutboxRetryCount
+                latest.outbox[idx].lastError = error.localizedDescription
+                Self.logger.error("Outbox item \(item.id.uuidString) paused after \(Self.maxOutboxRetryCount) attempts")
+                onLocalDataWarning?("有条本地记录多次同步失败，已暂停自动重试；内容仍保留在本机，请检查网络或中枢状态")
             } else {
-                latest.outbox[idx].retryCount += 1
+                latest.outbox[idx].retryCount = nextRetry
                 latest.outbox[idx].lastError = error.localizedDescription
             }
         }

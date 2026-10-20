@@ -10,6 +10,12 @@ public struct LooseLeafApp: App {
 
     public init() {}
 
+    /// 板块快捷键：显式数组，禁止再用 `Character("\(index + 7)")`。
+    /// 数字 ≥10 时 Character(String) 会触发「more than one extended grapheme cluster」运行时崩溃，
+    /// 且配置板块有 5 项，⌘7–⌘0 只有 4 个键位，必然越界。
+    private static let contentShortcuts: [KeyEquivalent] = ["1", "2", "3", "4", "5", "6"]
+    private static let configurationShortcuts: [KeyEquivalent] = ["1", "2", "3", "4", "5"]
+
     /// 关闭最上层的自定义弹层（⌘W）。
     /// 自绘 ZStack 弹层不是系统 sheet，拿不到系统级的 ⌘W 行为，必须自行实现。
     private func closeTopmostOverlay() {
@@ -142,36 +148,31 @@ public struct LooseLeafApp: App {
             }
 
             CommandMenu("活页工作台") {
-                // ⌘1–⌘6 绑定六大内容板块；⌘7–⌘0 绑定五个配置板块与辅助工具
-                ForEach(Array(WorkbenchSection.contentSections.enumerated()), id: \.element.id) { index, section in
+                // ⌘1–⌘6 绑定六大内容板块；⌥⌘1–⌥⌘5 绑定配置板块。
+                // prefix 防御：将来新增板块但忘记补快捷键时，只是没有快捷键，不会数组越界。
+                let contentSections = Array(WorkbenchSection.contentSections.prefix(Self.contentShortcuts.count))
+                ForEach(Array(contentSections.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
                         guard appState.activeSection != section else { return }
                         withAnimation(.easeInOut(duration: 0.12)) {
                             appState.activeSection = section
                         }
                     }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
+                    .keyboardShortcut(Self.contentShortcuts[index], modifiers: [.command])
                 }
 
                 Divider()
 
-                ForEach(Array(WorkbenchSection.configurationSections.enumerated()), id: \.element.id) { index, section in
+                let configurationSections = Array(WorkbenchSection.configurationSections.prefix(Self.configurationShortcuts.count))
+                ForEach(Array(configurationSections.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
                         guard appState.activeSection != section else { return }
                         withAnimation(.easeInOut(duration: 0.12)) {
                             appState.activeSection = section
                         }
                     }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 7)")), modifiers: [.command])
+                    .keyboardShortcut(Self.configurationShortcuts[index], modifiers: [.command, .option])
                 }
-
-                Button("银盐暗房") {
-                    guard appState.activeSection != .darkroom else { return }
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        appState.activeSection = .darkroom
-                    }
-                }
-                .keyboardShortcut(KeyEquivalent(Character("0")), modifiers: [.command])
 
                 Divider()
 

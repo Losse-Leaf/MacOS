@@ -1,6 +1,6 @@
 # Loose-Leaf (活页集) · macOS Native Workstation
 
-> **暗房工作台与灵感捕捉器 (The Darkroom & Quick Capture Station)**  
+> **生活档案工作台与灵感捕捉器 (The Life Archive & Quick Capture Station)**  
 > 活页集 (`Loose-Leaf`) 的原生 macOS 桌面客户端，基于 `SwiftUI + AppKit` 构建。
 
 ---
@@ -50,11 +50,12 @@
 2. **全局极速捕捉 (`MenuBarExtra` & 全局快捷键)**
    - **全局呼出 (`⌘⇧L`)**：任意应用内呼出菜单栏捕捉面板（自动聚焦输入框，`⌘↩` 归档，`ESC` 收起），热键可在设置中录制修改。
    - **双 Tab 捕捉**：面板内「极速记录 / 快速记账」切换；记账支持类 Spotlight 自然语言解析（如输入 `42.5 午餐手冲咖啡` 自动拆解为 `4250` 分、`餐饮` 分类与备注），记录支持 `#标签` 自动提取、多张照片拖拽、`⌘V` 截图直贴与任意历史时刻补记。
-   - **工作台快捷键**：主窗口 `⌘N` 撰写散页、`⌘R` 全量同步、`⌘K` 全局档案检索、`⌘F` 聚焦搜索、`⌘1`–`⌘6` 切换六大内容板块、`⌘7`–`⌘0` 切换配置板块与暗房、`⌘↑`/`⌘↓` 键盘流浏览、`⌘↩` 打开详情、`⌘W` 关闭当前弹层、`⌘Z` 撤销上一次删除。
-   - **侧栏结构**：6 大内容板块 + 5 个配置条目（偏好设置 / 中枢与设备 / 存储与备份 / 分类字典 / 关于活页）平铺，底部「辅助工具」收银盐暗房；配置类原「配置中心」容器已扁平化进侧栏。
+   - **工作台快捷键**：主窗口 `⌘N` 撰写散页、`⌘R` 全量同步、`⌘K` 全局档案检索、`⌘F` 聚焦搜索、`⌘1`–`⌘6` 切换六大内容板块、`⌥⌘1`–`⌥⌘5` 切换配置板块、`⌘↑`/`⌘↓` 键盘流浏览、`⌘↩` 打开详情、`⌘W` 关闭当前弹层、`⌘Z` 撤销上一次删除。
+   - **侧栏结构**：6 大内容板块 + 5 个配置条目（偏好设置 / 中枢与设备 / 存储与备份 / 分类字典 / 关于活页）平铺；配置类原「配置中心」容器已扁平化进侧栏。
    - **系统集成**：系统右键「服务」菜单「摘录到活页集」直送捕捉面板；散页已接入 Spotlight 系统搜索（增量重建）。Apple 快捷指令 / Siri 入口已于 1.5.x 下线，不再提供。
 
-3. **桌面暗房流水线 (`DarkroomDropZone`)**
+3. **图文一体装裱流水线 (`Media Attachments`)**
+   - 新建散页与极速捕捉均支持从 Finder / 照片 App 拖拽、`⌘V` 粘贴截图、或选择文件添加照片。
    - 原生 `ImageIO` 提取相机、镜头、光圈、快门、ISO 等 EXIF 元数据。
    - 客户端无损缩放至 4K (`3840px`) 与 85% JPEG 编码，通过预签名 URL 直传 Cloudflare R2（本地开发未配置 R2 时自动回退至 `/api/v1/files/upload`）。
 
@@ -65,6 +66,20 @@
 5. **离线发件箱与增量同步 (`SyncManager`)**
    - 本地快照 (`archive_snapshot_v1.json`，`~/Library/Application Support/LooseLeaf/`) 冷启动直接渲染；写入做 0.35 秒合并，退出前强制落盘。快照损坏时会隔离备份并以只读警告提示，不会静默覆盖。
    - 断网状态下新建的手稿与账单自动进入持久化 `Outbox` 发件箱，`NWPathMonitor` 探测网络恢复后自动重放上云（相片上传仍需联网）。
+
+---
+
+## v1.6.1 稳定性修复（2026-10-20）
+
+- **修复启动即崩溃**：`Character("\(index + 7)")` 在配置板块第 4/5 项生成 `"10"`/`"11"`，触发运行时陷阱。快捷键改为显式数组，配置板块使用 `⌥⌘1`–`⌥⌘5`。
+- **修复添加图片崩溃**：macOS 27 下 `CGImageDestinationCreateWithData` + 压缩质量对部分带 ICC 配置的 JPEG 会在 `CFDataReplaceBytes` 触发 SIGTRAP。JPEG 编码改为先写临时文件再读回，47 张真实缓存图已验证全部通过。
+- **移除「银盐暗房」页面**：删除 `DarkroomDropZone` 及其侧栏、菜单、`⌘0` 入口；照片装裱仍保留在新建散页、编辑散页与极速捕捉中。
+- **编辑/删除失败不再静默**：保存失败保留弹窗并显示原因；删除失败不再提示「已删除」。
+- **修复新建项目/心愿/账目后界面不刷新**：提交后按领域重新拉取，而不是只刷新配置。
+- **修复拖拽超时仍会卡死**：`DropLoader.withTimeout` 不再用 TaskGroup 等待永不回调的 `NSItemProvider`。
+- **修复全局搜索旧结果覆盖新结果**：加入请求代号，只接受最新查询结果。
+
+详细复现与审计见 [`docs/macos-logic-audit.md`](../docs/macos-logic-audit.md)。
 
 ---
 
@@ -107,7 +122,7 @@ mac/
 │   │   └── FormatUtils.swift          # Int64 分转换、UTC+8 北京时间解析与自然语言记账解析
 │   ├── Views/
 │   │   ├── MenuBar/                   # QuickCaptureView & QuickLedgerView
-│   │   ├── Main/                      # StreamView / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / DarkroomDropZone / SettingsView（导航外壳）
+│   │   ├── Main/                      # StreamView / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / SettingsView（导航外壳）
 │   │   ├── Settings/                  # PreferencesSettingsView / HubDevicesSettingsView / StorageBackupSettingsView / CategoriesSettingsView / AboutSettingsView / SettingsCardComponents
 │   │   └── Components/                # FilmFrameView / NoiseBackground / PaperComponents
 │   └── Resources/

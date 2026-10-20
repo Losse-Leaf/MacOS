@@ -605,8 +605,7 @@ struct StorageBackupSettingsView: View {
 
     // MARK: - 云端对象存储灾备动作 (Storage Management Actions)
 
-    /// 字节数格式化（本文件内的统一实现，命名与 DarkroomDropZone 保持一致）。
-    /// 注意：DarkroomDropZone 内的同款实现归其它模块维护，此处不重复改动。
+    /// 字节数格式化（本文件内的统一实现，供存储用量/备份大小展示）。
     private func formatByteCount(_ bytes: Int64) -> String {
         guard bytes > 0 else { return "0 B" }
         let kb = Double(bytes) / 1024.0

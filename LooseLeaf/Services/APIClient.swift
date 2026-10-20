@@ -65,11 +65,26 @@ public actor APIClient {
             config.waitsForConnectivity = true
             config.httpMaximumConnectionsPerHost = 8
             config.requestCachePolicy = .useProtocolCachePolicy
-            config.urlCache = URLCache(
-                memoryCapacity: 8 * 1024 * 1024,
-                diskCapacity: 64 * 1024 * 1024,
-                diskPath: "com.looseleaf.apicache"
-            )
+            // 关键：不能用相对 diskPath。相对路径会落到进程当前工作目录：
+            // 开发时污染仓库，Finder 启动时 CWD 通常是 "/"，导致缓存库无法创建，
+            // 每次请求都退化到无缓存（日志里可见 Cache.db Error=14）。
+            if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                let httpCacheDirectory = caches.appendingPathComponent("LooseLeaf/HTTPCache", isDirectory: true)
+                do {
+                    try FileManager.default.createDirectory(at: httpCacheDirectory, withIntermediateDirectories: true)
+                    config.urlCache = URLCache(
+                        memoryCapacity: 8 * 1024 * 1024,
+                        diskCapacity: 64 * 1024 * 1024,
+                        directory: httpCacheDirectory
+                    )
+                } catch {
+                    // 目录不可写（受限环境/只读容器）时退化为纯内存缓存，
+                    // 否则 URLCache 会持续报 Cache.db Error=14，且每次请求都无缓存。
+                    config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
+                }
+            } else {
+                config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
+            }
             self.session = URLSession(configuration: config)
         }
     }
@@ -907,7 +922,10 @@ public actor APIClient {
         let envelope: APIEnvelope<UnifiedUploadResponse>
         do {
             envelope = try await Task.detached(priority: .userInitiated) {
-                try Self.decoder.decode(APIEnvelope<UnifiedUploadResponse>.self, from: data)
+                // JSONDecoder 不是线程安全的：不能复用 static decoder 跨任务并发解码。
+                // 这里每次上传完成都是独立任务，创建局部 decoder 的成本远低于竞态风险。
+                let decoder = JSONDecoder()
+                return try decoder.decode(APIEnvelope<UnifiedUploadResponse>.self, from: data)
             }.value
         } catch {
             throw APIError.decodingFailure(error.localizedDescription)

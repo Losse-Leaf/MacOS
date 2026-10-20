@@ -307,7 +307,8 @@ public struct NewEntryModal: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-            .disabled(isSubmitting)
+            // 上传中禁止提交：否则 attachments 还没 append 完就提交，图片成为孤儿。
+            .disabled(isSubmitting || isUploadingMedia)
             .keyboardShortcut(.return, modifiers: [.command])
         }
     }
@@ -781,8 +782,22 @@ public struct NewEntryModal: View {
                 if appState.enablesHapticFeedback {
                     ArchiveFeedback.success()
                 }
-                // 不再全量重拉：提交结果已经通过 SyncManager 乐观写入本地快照，
-                // 全量 refreshAll 会带来数秒等待与整页重绘。
+                // 只有 life / travel 走 submitQuickCapture 的乐观写入；
+                // project / wish / transaction 在此处直接调 API，必须把对应领域重新拉一次，
+                // 否则用户刚创建的项目/心愿/账目不会出现在界面上（直到下一次全量同步）。
+                switch selectedKind {
+                case .life, .travel:
+                    break
+                case .project:
+                    await appState.loadProjectsWishesFootprints()
+                    if projectMode == "entry" {
+                        await appState.loadEntries(forceFull: true)
+                    }
+                case .wish:
+                    await appState.loadProjectsWishesFootprints()
+                case .transaction:
+                    await appState.loadTransactionsAndAssets(forceFull: true)
+                }
                 await appState.loadConfigAndProfile()
                 onDismiss()
             } catch {
@@ -913,7 +928,9 @@ public struct NewEntryModal: View {
             gearCategory: (isExp && syncToGear) ? gearCategory : nil,
             gearSpec: (isExp && syncToGear) ? (gearSpec.isEmpty ? nil : gearSpec) : nil
         )
-        _ = try await APIClient.shared.createTransaction(req)
+        // 走 SyncManager 而不是直连 API：离线时进入持久化 Outbox，
+        // 并复用其乐观插入与重试逻辑（此前离线提交会直接失败）。
+        _ = try await SyncManager.shared.submitTransaction(req)
     }
 
     private func pickAndUploadMedia() {

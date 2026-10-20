@@ -107,24 +107,6 @@ struct WorkbenchSidebar: View {
                     .padding(.horizontal, 10)
                 }
 
-                // 辅助工具：银盐暗房不属于内容也不属于配置，单独收尾
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("辅助工具")
-                        .font(ArchiveTypography.monoScale(size: 9.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-
-                    WorkbenchNavRow(
-                        section: .darkroom,
-                        selected: appState.activeSection == .darkroom
-                    ) {
-                        guard appState.activeSection != .darkroom else { return }
-                        onSelect(.darkroom)
-                    }
-                }
-                .padding(.horizontal, 10)
-
                 Spacer(minLength: 8)
 
                 // 底部仅保留系统状态（配置入口已全部进侧栏）

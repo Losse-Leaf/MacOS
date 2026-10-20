@@ -102,19 +102,43 @@ public enum DropLoader {
 
     /// 带超时兜底的 await：超时后返回 nil，避免 continuation 永不恢复导致的挂起。
     /// `operation` 返回 `T?`；`nil` 既表示「超时」，也表示「本身就没有结果」。
+    ///
+    /// 注意：不能用 `withTaskGroup` 做这件事。TaskGroup 在退出作用域时会等待**所有**
+    /// 子任务结束；如果 `operation` 卡在一个永不回调的 `NSItemProvider` continuation 上，
+    /// 即使超时分支已经返回，group 仍会永久等待，界面照样卡死。
+    /// 这里改为「一次性 continuation + 两个独立 Task 竞争」，谁先到谁恢复，另一个结果丢弃。
     static func withTimeout<T: Sendable>(
         seconds: TimeInterval,
         _ operation: @escaping @Sendable () async -> T?
     ) async -> T? {
-        await withTaskGroup(of: T?.self) { group -> T? in
-            group.addTask { await operation() }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(seconds))
-                return nil
+        await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+            let once = TimeoutContinuation(continuation)
+            Task {
+                let value = await operation()
+                once.resume(value)
             }
-            let first = await group.next()
-            group.cancelAll()
-            return first ?? nil
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                once.resume(nil)
+            }
+        }
+    }
+
+    /// 保证 CheckedContinuation 只恢复一次：超时与真实结果竞争时，后到者被忽略。
+    private final class TimeoutContinuation<T: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T?, Never>?
+
+        init(_ continuation: CheckedContinuation<T?, Never>) {
+            self.continuation = continuation
+        }
+
+        func resume(_ value: T?) {
+            lock.lock()
+            let pending = continuation
+            continuation = nil
+            lock.unlock()
+            pending?.resume(returning: value)
         }
     }
 

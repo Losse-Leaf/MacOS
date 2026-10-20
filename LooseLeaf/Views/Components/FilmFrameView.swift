@@ -461,7 +461,7 @@ public struct CachedFilmImageView: View {
                 VStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("暗房显影中…")
+                    Text("相纸显影中…")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }

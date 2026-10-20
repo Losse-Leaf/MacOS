@@ -65,14 +65,16 @@ public enum ImageProcessor {
             }
 
             var lensSpec: [String] = []
-            if let fl = focalLength, fl > 0 {
+            // EXIF 来自任意相机/损坏文件，必须先做有限性与范围校验：
+            // Int(fl) / Int(1/exp) 对 infinity、NaN 或超大值会直接触发 Swift 运行时陷阱。
+            if let fl = focalLength, fl.isFinite, fl > 0, fl < 100_000 {
                 if fl.truncatingRemainder(dividingBy: 1) == 0 {
                     lensSpec.append("\(Int(fl))mm")
                 } else {
                     lensSpec.append(String(format: "%.1fmm", fl))
                 }
             }
-            if let fn = fNumber, fn > 0 {
+            if let fn = fNumber, fn.isFinite, fn > 0, fn < 1_000 {
                 lensSpec.append(String(format: "F%.1f", fn))
             }
             if !lensSpec.isEmpty {
@@ -81,11 +83,14 @@ public enum ImageProcessor {
                 parts.append(lensModel.trimmingCharacters(in: .whitespacesAndNewlines))
             }
 
-            if let exp = exposureTime, exp > 0 {
+            if let exp = exposureTime, exp.isFinite, exp > 0 {
                 if exp < 1.0 {
-                    let denom = Int(round(1.0 / exp))
-                    if denom > 0 {
-                        parts.append("1/\(denom)s")
+                    let reciprocal = 1.0 / exp
+                    if reciprocal.isFinite, reciprocal < 1_000_000 {
+                        let denom = Int(reciprocal.rounded())
+                        if denom > 0 {
+                            parts.append("1/\(denom)s")
+                        }
                     }
                 } else {
                     parts.append(String(format: "%.1fs", exp))
@@ -162,7 +167,10 @@ public enum ImageProcessor {
         guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil) else {
             throw APIError.decodingFailure("无法读取图像数据源: \(fileURL.lastPathComponent)")
         }
-        let fileSize: Int64 = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
+        // attributesOfItem 返回的是 NSNumber，直接 `as? Int64` 在部分路径会失败并静默变成 0；
+        // 统一走 NSNumber.int64Value，压缩率统计才可信。
+        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let fileSize: Int64 = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         return try processImageSource(
             source,
             originalFilename: fileURL.lastPathComponent,
@@ -249,13 +257,17 @@ public enum ImageProcessor {
         let width = cgImage.width
         let height = cgImage.height
 
-        // 预估输出容量，避免 CFMutableData 从 0 容量开始反复 realloc
-        let estimatedCapacity = max(64 * 1024, width * height / 8)
-        guard let mutableData = CFDataCreateMutable(nil, estimatedCapacity) else {
-            throw APIError.decodingFailure("无法创建图像输出缓冲区")
-        }
+        // 关键：不要把 JPEG 编码结果写进内存 CFMutableData。
+        // macOS 27 + 部分带 ICC 配置的 JPEG 在「内存目的端 + 压缩质量」组合下，
+        // CGImageDestinationFinalize 会在 CoreFoundation 内部触发
+        // 「Invalid length passed to CFDataReplaceBytes when newBytes == NULL」并 SIGTRAP。
+        // 已用 47 张真实缓存图复现（其中 11 张必崩）；改为先写临时文件再读回，
+        // 既绕开该崩溃，也保留原始色彩配置与 EXIF。
         let destType = UTType.jpeg.identifier as CFString
-        guard let destination = CGImageDestinationCreateWithData(mutableData, destType, 1, nil) else {
+        let encodeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("looseleaf-encode-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: encodeURL) }
+        guard let destination = CGImageDestinationCreateWithURL(encodeURL as CFURL, destType, 1, nil) else {
             throw APIError.decodingFailure("创建 JPEG 编码器失败")
         }
 
@@ -284,7 +296,9 @@ public enum ImageProcessor {
             throw APIError.decodingFailure("图像压制输出失败")
         }
 
-        let compressedData = mutableData as Data
+        guard let compressedData = try? Data(contentsOf: encodeURL) else {
+            throw APIError.decodingFailure("读取 JPEG 编码结果失败")
+        }
         let baseName = (originalFilename as NSString).deletingPathExtension
         // 文件名清洗：剔除路径分隔符与非法字符，避免生成 "../../etc/passwd.jpg" 这类名字
         let sanitized = baseName
@@ -292,7 +306,7 @@ public enum ImageProcessor {
             .replacingOccurrences(of: "\\", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanBase = sanitized.isEmpty ? "darkroom-\(Int(Date().timeIntervalSince1970))" : sanitized
+        let cleanBase = sanitized.isEmpty ? "photo-\(Int(Date().timeIntervalSince1970))" : sanitized
         let outputFilename = "\(cleanBase).jpg"
 
         return ProcessedPhoto(

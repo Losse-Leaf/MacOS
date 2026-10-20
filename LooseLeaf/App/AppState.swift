@@ -32,7 +32,7 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// 桌面端主窗口侧栏导航模块 (对标 Web HeaderNav 6 大平级主视图)
-/// 侧栏平铺「6 大内容板块 + 5 个原配置中心 tab + 辅助工具暗房」，不再有二级容器页
+/// 侧栏平铺「6 大内容板块 + 5 个配置中心 tab」，不再有二级容器页
 public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     case stream = "stream"       // 时间流 (home)
     case ledger = "ledger"       // 资产 (transactions)
@@ -45,7 +45,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     case storage = "storage"     // 存储与备份
     case categories = "categories" // 分类字典
     case about = "about"         // 关于活页
-    case darkroom = "darkroom"   // 辅助：银盐暗房
 
     public var id: String { rawValue }
 
@@ -77,7 +76,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .storage: return "存储与备份"
         case .categories: return "分类字典"
         case .about: return "关于活页"
-        case .darkroom: return "银盐暗房"
         }
     }
 
@@ -94,7 +92,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .storage: return "archivebox"
         case .categories: return "tag"
         case .about: return "info.circle"
-        case .darkroom: return "camera.aperture"
         }
     }
 }
@@ -375,6 +372,8 @@ public final class AppState {
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
     /// 账目索引（id -> 账目）：时间流卡片按 id 查账目时避免全量遍历
     @ObservationIgnored private var transactionIndexMemo: (Int, [Int: Transaction])?
+    /// 全局检索代号：防止先发出的慢请求覆盖后发出的快请求结果
+    @ObservationIgnored private var globalSearchGeneration: UInt64 = 0
 
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
@@ -497,11 +496,7 @@ public final class AppState {
         public var id: Int { entry.id }
     }
 
-    @ObservationIgnored private var galleryPhotosMemo: (revision: Int, value: [GalleryPhotoItem])?
-
-    /// 暗房回廊全量底片（记忆缓存：仅随 dataRevision 变化重建，
-    /// 上传进度跳动 / 标题输入等本地 State 变更不再触发 entries × attachments 双重遍历）
-    /// 账目 id → 账目 的索引（按 entriesRevision 记忆化）
+    // 账目 id → 账目 的索引（按 entriesRevision 记忆化）
     /// 关键：时间流卡片原先在 body 里对每个条目做 `transactions.first(where:)`，
     /// N 行 × M 条账目 = O(N×M)；现在一次建表，查询 O(1)。
     public var transactionById: [Int: Transaction] {
@@ -513,20 +508,6 @@ public final class AppState {
         for tx in transactions { map[tx.id] = tx }
         transactionIndexMemo = (entriesRevision, map)
         return map
-    }
-
-    public var allGalleryPhotos: [GalleryPhotoItem] {
-        if let memo = galleryPhotosMemo, memo.revision == entriesRevision {
-            return memo.value
-        }
-        var photos: [GalleryPhotoItem] = []
-        for entry in entries {
-            for att in entry.attachments {
-                photos.append(GalleryPhotoItem(id: "\(entry.id)-\(att.id)", attachment: att, parentEntry: entry))
-            }
-        }
-        galleryPhotosMemo = (entriesRevision, photos)
-        return photos
     }
 
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
@@ -553,17 +534,27 @@ public final class AppState {
     public func performGlobalSearch(query: String) async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, isPaired else {
+            // 清空查询时让所有在途请求失效，避免旧结果稍后回填
+            globalSearchGeneration &+= 1
             self.globalSearchResult = nil
+            self.isGlobalSearching = false
             return
         }
+        // 代号机制：快速输入「咖 → 咖啡」时，先发出的「咖」请求可能后返回；
+        // 只允许最新代号的结果写入 UI，旧结果直接丢弃。
+        globalSearchGeneration &+= 1
+        let generation = globalSearchGeneration
         self.isGlobalSearching = true
         globalSearchLoading.begin()
         defer {
-            self.isGlobalSearching = false
+            if generation == globalSearchGeneration {
+                self.isGlobalSearching = false
+            }
             globalSearchLoading.end()
         }
         do {
             let res = try await APIClient.shared.searchGlobalArchive(query: q, limit: 30)
+            guard generation == globalSearchGeneration, !Task.isCancelled else { return }
             self.globalSearchResult = res
         } catch {
             // 网络受阻或离线时保持本地纯粹搜索
@@ -599,13 +590,20 @@ public final class AppState {
     }
 
     public func refreshAll(forceFull: Bool = false) async {
-        // 启动期主窗口与子视图可能各触发一次；并发执行只会重复请求并互相冲刷快照
-        guard !isLoading else { return }
+        // 启动期主窗口与子视图可能各触发一次；并发执行只会重复请求并互相冲刷快照。
+        // 但直接 return 会让用户按 ⌘R 时毫无反馈，误以为快捷键失效。
+        guard !isLoading else {
+            showTemporaryBanner("正在同步档案，请稍候…")
+            return
+        }
         isLoading = true
         errorBanner = nil
         defer { isLoading = false }
 
-        // 先尝试排空离线发件箱
+        // 先尝试排空离线发件箱；用户主动「全量同步」时把暂停的死信重新入队。
+        if forceFull {
+            SyncManager.shared.resetPausedOutboxItems()
+        }
         await SyncManager.shared.flushOutbox()
 
         // 批量模式：5 个并发任务各自会写快照，若每次都立即回调 UI，

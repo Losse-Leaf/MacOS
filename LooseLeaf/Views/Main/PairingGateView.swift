@@ -46,7 +46,7 @@ public struct PairingGateView: View {
                             .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.display, weight: .bold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
 
-                        Text("主理人专属数字档案馆与桌面暗房工作台")
+                        Text("主理人专属数字档案馆与桌面影像工作台")
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }

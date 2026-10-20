@@ -79,18 +79,42 @@ public enum DropLoader {
     /// 从单个 provider 提取文件 URL（Finder 拖拽场景）
     static func loadFileURL(from provider: NSItemProvider) async -> URL? {
         guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { return nil }
-        return await withCheckedContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                let url: URL?
-                if let u = item as? URL {
-                    url = u
-                } else if let d = item as? Data {
-                    url = URL(dataRepresentation: d, relativeTo: nil)
-                } else {
-                    url = nil
+        // 关键：加超时兜底。少数第三方 NSItemProvider 会静默不回调，
+        // 原实现会让 continuation 永不 resume → 拖拽界面永远转圈。
+        // NSItemProvider 不是 Sendable：用 @unchecked Sendable 盒子安全跨隔离域传递。
+        let box = ProviderBox([provider])
+        return await withTimeout(seconds: 10) {
+            await withCheckedContinuation { continuation in
+                box.providers[0].loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    let url: URL?
+                    if let u = item as? URL {
+                        url = u
+                    } else if let d = item as? Data {
+                        url = URL(dataRepresentation: d, relativeTo: nil)
+                    } else {
+                        url = nil
+                    }
+                    continuation.resume(returning: url)
                 }
-                continuation.resume(returning: url)
             }
+        }
+    }
+
+    /// 带超时兜底的 await：超时后返回 nil，避免 continuation 永不恢复导致的挂起。
+    /// `operation` 返回 `T?`；`nil` 既表示「超时」，也表示「本身就没有结果」。
+    static func withTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        _ operation: @escaping @Sendable () async -> T?
+    ) async -> T? {
+        await withTaskGroup(of: T?.self) { group -> T? in
+            group.addTask { await operation() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(seconds))
+                return nil
+            }
+            let first = await group.next()
+            group.cancelAll()
+            return first ?? nil
         }
     }
 
@@ -178,9 +202,13 @@ public enum DropLoader {
             UTType.image.identifier
         ]
         for identifier in candidates where provider.hasItemConformingToTypeIdentifier(identifier) {
-            let data = await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
-                provider.loadDataRepresentation(forTypeIdentifier: identifier) { data, _ in
-                    continuation.resume(returning: data)
+            // NSItemProvider 不是 Sendable：用 @unchecked Sendable 盒子安全跨隔离域传递
+            let box = ProviderBox([provider])
+            let data = await withTimeout(seconds: 15) {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
+                    box.providers[0].loadDataRepresentation(forTypeIdentifier: identifier) { data, _ in
+                        continuation.resume(returning: data)
+                    }
                 }
             }
             if let data, !data.isEmpty {

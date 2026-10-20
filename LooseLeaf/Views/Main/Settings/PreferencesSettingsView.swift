@@ -125,6 +125,18 @@ struct PreferencesSettingsView: View {
                     }
 
                     settingsCardRow(
+                        icon: "hand.tap",
+                        iconColor: ArchivePalette.inkSecondary,
+                        title: "触感反馈",
+                        subtitle: "提交、确认与切换时的触控板微震（不含音效）"
+                    ) {
+                        Toggle("", isOn: $appState.enablesHapticFeedback)
+                            .toggleStyle(PaperSwitchToggleStyle())
+                            .labelsHidden()
+                            .accessibilityLabel("触感反馈")
+                    }
+
+                    settingsCardRow(
                         icon: "bell.badge",
                         iconColor: ArchivePalette.inkSecondary,
                         title: "同步完成后发送通知",

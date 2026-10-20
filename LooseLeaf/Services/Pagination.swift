@@ -10,10 +10,15 @@ enum Pagination {
     static let maxEntries = 50_000
     static let maxTransactions = 20_000
 
+    /// 分页拉取生活档案。
+    /// - Parameter onFirstPage: 第一页到达时的回调（用于让 UI 立即渲染首屏内容，
+    ///   而不必等待全部页拉完）。原实现要等所有页拉完才返回，
+    ///   1,000 条档案时用户会盯着空白等待。
     static func fetchAllEntries(
         since: String?,
         pageSize: Int = 100,
-        useETagOnFirstPage: Bool = false
+        useETagOnFirstPage: Bool = false,
+        onFirstPage: ((Int, [LifeEntry]) async -> Void)? = nil
     ) async throws -> [LifeEntry] {
         var page = 1
         var all: [LifeEntry] = []
@@ -28,6 +33,9 @@ enum Pagination {
                 useETag: useETagOnFirstPage && page == 1
             )
             all.append(contentsOf: response.entries)
+            if page == 1 {
+                await onFirstPage?(response.total, response.entries)
+            }
             if response.entries.count < pageSize || all.count >= response.total {
                 break
             }

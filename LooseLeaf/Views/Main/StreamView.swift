@@ -2270,17 +2270,6 @@ public struct EditEntrySheetView: View {
 }
 
 /// macOS 标题栏窗口拖拽手势区域（配合 .hiddenTitleBar 实现全区域平滑拖拽）
-fileprivate struct WindowDragHandleView: NSViewRepresentable {
-    func makeNSView(context: Context) -> WindowDragNSView {
-        WindowDragNSView()
-    }
-    func updateNSView(_ nsView: WindowDragNSView, context: Context) {}
-}
-
-fileprivate final class WindowDragNSView: NSView {
-    override var mouseDownCanMoveWindow: Bool { true }
-}
-
 /// 板块画布最大阅读行宽：宽屏下内容居中陈列，两侧自然呈现宣纸留白
 struct WorkbenchCanvasMaxWidth: ViewModifier {
     let maxWidth: CGFloat

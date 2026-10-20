@@ -3,7 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "LooseLeaf",
-    defaultLocalization: "zh-Hans",
+    // 注：本工程暂无 .lproj 本地化资源目录（界面文案直接内联在 Swift 中），
+    // 因此**不声明** defaultLocalization —— 声明一个不存在的本地化会让
+    // Bundle.module 的 localizedString 行为与预期不符。
+    // 需要多语言时：新增 Resources/zh-Hans.lproj/Localizable.strings 后再恢复该声明。
     platforms: [
         .macOS(.v14)
     ],

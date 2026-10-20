@@ -463,6 +463,10 @@ public actor APIClient {
         case plainArray
     }
     private var categoriesShape: CategoriesResponseShape?
+    /// 形态缓存的时间戳：服务端切换响应形态后，客户端不应永久沿用旧形态
+    private var categoriesShapeProbedAt: Date = .distantPast
+    /// 形态缓存有效期（10 分钟）
+    private static let categoriesShapeTTL: TimeInterval = 600
 
     public func fetchCategories(scope: String? = nil) async throws -> [CategoryOption] {
         var items: [URLQueryItem] = []
@@ -470,16 +474,30 @@ public actor APIClient {
             items.append(URLQueryItem(name: "scope", value: scope))
         }
 
-        if let shape = categoriesShape {
+        // 形态缓存过期后重新探测：服务端可能已切换响应形态，
+        // 原实现永久沿用首次探测结果，会一直用错误的形态解析分类。
+        if let shape = categoriesShape,
+           Date().timeIntervalSince(categoriesShapeProbedAt) < Self.categoriesShapeTTL {
             switch shape {
             case .wrapped:
-                let response: CategoryResetResponse = try await performEnvelopeRequest(
-                    path: "/api/v1/categories",
-                    queryItems: items
-                )
-                return response.items ?? []
+                do {
+                    let response: CategoryResetResponse = try await performEnvelopeRequest(
+                        path: "/api/v1/categories",
+                        queryItems: items
+                    )
+                    return response.items ?? []
+                } catch let error as APIError {
+                    // 形态可能已失效（服务端切换了响应结构）：清除缓存并重新探测一次
+                    guard case .decodingFailure = error else { throw error }
+                    categoriesShape = nil
+                }
             case .plainArray:
-                return try await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items)
+                do {
+                    return try await performEnvelopeRequest(path: "/api/v1/categories", queryItems: items)
+                } catch let error as APIError {
+                    guard case .decodingFailure = error else { throw error }
+                    categoriesShape = nil
+                }
             }
         }
 
@@ -489,6 +507,7 @@ public actor APIClient {
                 queryItems: items
             )
             categoriesShape = .wrapped
+            categoriesShapeProbedAt = Date()
             return response.items ?? []
         } catch let error as APIError {
             // 只有"解码形态不匹配"才值得换一种再试；网络/鉴权错误直接上抛
@@ -498,6 +517,7 @@ public actor APIClient {
                     queryItems: items
                 )
                 categoriesShape = .plainArray
+                categoriesShapeProbedAt = Date()
                 return plain
             }
             throw error

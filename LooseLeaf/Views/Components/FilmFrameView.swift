@@ -174,12 +174,35 @@ public struct FilmFrameView: View {
 /// 遵循 Local-First 架构：已查看相纸自动落盘，支持离线即刻本地显影
 public enum PaperImageCache {
     // NSCache 本身是线程安全的（Apple 明确保证），因此作为不可变常量共享是安全的。
+    //
+    // 关键：缩略图与原图**分池**。
+    // 原先共用一个池且 cost 计算失真（缩略图按正方形高估 25%~56%，
+    // 原图按压缩字节数低估约 20 倍），导致实际内存占用远超 totalCostLimit。
     nonisolated(unsafe) private static let memoryCache: NSCache<NSURL, NSImage> = {
         let c = NSCache<NSURL, NSImage>()
-        c.totalCostLimit = 100 * 1024 * 1024 // 100 MB 内存解码池
-        c.countLimit = 150
+        c.totalCostLimit = 60 * 1024 * 1024 // 60 MB 缩略图解码池
+        c.countLimit = 300
         return c
     }()
+
+    /// 原图专用内存池（灯箱/导出路径才会用到）
+    nonisolated(unsafe) private static let originalMemoryCache: NSCache<NSURL, NSImage> = {
+        let c = NSCache<NSURL, NSImage>()
+        c.totalCostLimit = 60 * 1024 * 1024
+        c.countLimit = 20
+        return c
+    }()
+
+    /// 计算 NSImage 真实占用的位图内存（字节数），用于 NSCache cost
+    static func bitmapByteCost(of image: NSImage) -> Int {
+        var total = 0
+        for rep in image.representations {
+            if let bitmap = rep as? NSBitmapImageRep {
+                total += bitmap.bytesPerRow * bitmap.pixelsHigh
+            }
+        }
+        return max(total, 1)
+    }
 
     private static let diskQueue = DispatchQueue(label: "com.looseleaf.media.diskcache", qos: .utility)
 
@@ -217,7 +240,7 @@ public enum PaperImageCache {
 
     /// 仅查内存（可在 View init 中安全调用，不触发磁盘 I/O）
     public static func memoryImage(for url: URL) -> NSImage? {
-        memoryCache.object(forKey: url as NSURL)
+        originalMemoryCache.object(forKey: url as NSURL)
     }
 
     /// 缩略图内存键：与原图内存缓存共存（磁盘始终只存原图）
@@ -239,7 +262,11 @@ public enum PaperImageCache {
             diskQueue.async {
                 let image = decodeThumbnailFromDisk(url, maxPixel: maxPixel)
                 if let image {
-                    memoryCache.setObject(image, forKey: thumbKey(url, maxPixel: maxPixel), cost: maxPixel * maxPixel * 4)
+                    memoryCache.setObject(
+                        image,
+                        forKey: thumbKey(url, maxPixel: maxPixel),
+                        cost: bitmapByteCost(of: image)
+                    )
                 }
                 continuation.resume(returning: image)
             }
@@ -247,7 +274,9 @@ public enum PaperImageCache {
     }
 
     private static func decodeThumbnailFromDisk(_ url: URL, maxPixel: Int) -> NSImage? {
-        guard let data = try? Data(contentsOf: diskFileURL(for: url)) else { return nil }
+        let diskPath = diskFileURL(for: url)
+        guard let data = try? Data(contentsOf: diskPath) else { return nil }
+        touchDiskFile(at: diskPath)
         return decodeThumbnail(from: data, maxPixel: maxPixel)
     }
 
@@ -266,7 +295,11 @@ public enum PaperImageCache {
     public static func storeDownloaded(rawData: Data, for url: URL, maxPixel: Int) -> NSImage? {
         let thumbnail = decodeThumbnail(from: rawData, maxPixel: maxPixel)
         if let thumbnail {
-            memoryCache.setObject(thumbnail, forKey: thumbKey(url, maxPixel: maxPixel), cost: maxPixel * maxPixel * 4)
+            memoryCache.setObject(
+                thumbnail,
+                forKey: thumbKey(url, maxPixel: maxPixel),
+                cost: bitmapByteCost(of: thumbnail)
+            )
         }
         let diskURL = diskFileURL(for: url)
         diskQueue.async {
@@ -278,7 +311,7 @@ public enum PaperImageCache {
 
     /// 同步两级命中：仅供详情灯箱、导出、复制等允许阻塞的路径使用
     public static func image(for url: URL) -> NSImage? {
-        if let memoryHit = memoryImage(for: url) {
+        if let memoryHit = originalMemoryCache.object(forKey: url as NSURL) {
             return memoryHit
         }
         return loadFromDisk(url)
@@ -303,8 +336,18 @@ public enum PaperImageCache {
             return nil
         }
         normalizePixelSize(diskImage)
-        memoryCache.setObject(diskImage, forKey: url as NSURL, cost: diskData.count)
+        // cost 用真实位图内存（4K 原图解码后约 39MB，而压缩文件只有 2MB）
+        originalMemoryCache.setObject(diskImage, forKey: url as NSURL, cost: bitmapByteCost(of: diskImage))
+        touchDiskFile(at: diskPath)
         return diskImage
+    }
+
+    /// 触达磁盘缓存文件：更新修改时间，使其成为「最近使用」
+    /// 否则淘汰策略按写入时间排序，热门老照片永远不被回收，冷门新图反而先被删。
+    private static func touchDiskFile(at url: URL) {
+        diskQueue.async {
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        }
     }
 
     private static func normalizePixelSize(_ image: NSImage) {
@@ -315,7 +358,8 @@ public enum PaperImageCache {
 
     public static func setImage(_ image: NSImage, rawData: Data? = nil, for url: URL, cost: Int = 0) {
         normalizePixelSize(image)
-        memoryCache.setObject(image, forKey: url as NSURL, cost: cost)
+        let resolvedCost = cost > 0 ? cost : bitmapByteCost(of: image)
+        originalMemoryCache.setObject(image, forKey: url as NSURL, cost: resolvedCost)
 
         // 异步写入磁盘缓存，避免主线程 I/O 阻塞
         let diskURL = diskFileURL(for: url)

@@ -36,10 +36,6 @@ public struct LooseLeafApp: App {
                 } else {
                     StreamView(appState: appState)
                         .frame(minWidth: 980, minHeight: 640)
-                        .task {
-                            await appState.refreshAll()
-                            await UpdateChecker.shared.checkForUpdates(isUserInitiated: false)
-                        }
                         .onOpenURL { url in
                             appState.handleIncomingURL(url)
                         }

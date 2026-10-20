@@ -13,7 +13,8 @@ import os
 @MainActor
 public final class UpdateChecker {
     public static let shared = UpdateChecker()
-    public static let repo = "Losse-Leaf/MacOS"
+    /// 仓库地址（唯一来源：ArchiveAppInfo）
+    public static let repo = ArchiveAppInfo.repository
 
     nonisolated private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "updater")
 
@@ -40,7 +41,7 @@ public final class UpdateChecker {
     nonisolated private static let checkInterval: TimeInterval = 24 * 60 * 60
 
     /// 当前版本号（一次性读取，避免每次 body 求值都拷贝 Bundle 字典）
-    public let currentVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    public let currentVersion: String = ArchiveAppInfo.version
 
     /// 用户选择忽略当前检测到的新版本（避免反复弹窗干扰）
     public func ignoreCurrentUpdate() {

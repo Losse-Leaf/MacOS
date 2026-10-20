@@ -295,7 +295,7 @@ public struct GlobalSearchModalView: View {
                 Spacer()
 
                 HStack(spacing: 12) {
-                    if isSearchingRemote {
+                    if appState.globalSearchLoading.isVisible {
                         HStack(spacing: 4) {
                             ProgressView().scaleEffect(0.6)
                             Text("中枢查询中")

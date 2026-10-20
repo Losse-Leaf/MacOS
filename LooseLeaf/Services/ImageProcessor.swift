@@ -197,6 +197,29 @@ public enum ImageProcessor {
         maxPixelSize: Int = 3840,
         quality: Double = 0.85
     ) throws -> ProcessedPhoto {
+        // autoreleasepool：CGImageSource / CGImage / CFMutableData 等 CF 对象由 ARC 通过
+        // Unmanaged 管理，不会在函数返回前释放。批量处理时中间产物会累积到批处理结束，
+        // 峰值内存 = N 张图的中间产物之和。
+        return try autoreleasepool {
+            try ArchivePerformance.measure(.image, "processImage") {
+                try processImageSourceImpl(
+                source,
+                originalFilename: originalFilename,
+                originalSize: originalSize,
+                    maxPixelSize: maxPixelSize,
+                    quality: quality
+                )
+            }
+        }
+    }
+
+    private static func processImageSourceImpl(
+        _ source: CGImageSource,
+        originalFilename: String,
+        originalSize: Int64,
+        maxPixelSize: Int = 3840,
+        quality: Double = 0.85
+    ) throws -> ProcessedPhoto {
         // 属性只读一次：既用于 EXIF 摘要，也用于写入 JPEG 的 EXIF/TIFF 字典
         let originalProperties = copyProperties(from: source)
         let exifSummary = originalProperties.map(exifSummary(from:)) ?? EXIFSummary()
@@ -292,10 +315,9 @@ public enum ImageProcessor {
         maxPixelSize: Int = 3840,
         quality: Double = 0.85
     ) async throws -> ProcessedPhoto {
-        try await Task.detached(priority: .userInitiated) {
-            try Task.checkCancellation()
-            return try processImageFile(at: fileURL, maxPixelSize: maxPixelSize, quality: quality)
-        }.value
+        try await BackgroundExecutor.run {
+            try processImageFile(at: fileURL, maxPixelSize: maxPixelSize, quality: quality)
+        }
     }
 
     /// 在后台线程处理内存中的图像数据（剪贴板粘贴等场景）
@@ -305,9 +327,8 @@ public enum ImageProcessor {
         maxPixelSize: Int = 3840,
         quality: Double = 0.85
     ) async throws -> ProcessedPhoto {
-        try await Task.detached(priority: .userInitiated) {
-            try Task.checkCancellation()
-            return try processImageData(rawData, originalFilename: originalFilename, maxPixelSize: maxPixelSize, quality: quality)
-        }.value
+        try await BackgroundExecutor.run {
+            try processImageData(rawData, originalFilename: originalFilename, maxPixelSize: maxPixelSize, quality: quality)
+        }
     }
 }

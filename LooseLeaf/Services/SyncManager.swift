@@ -31,6 +31,10 @@ public final class SyncManager {
     private var pendingWrite: DispatchWorkItem?
     /// 单调递增的快照版本号：只有更高版本的快照才允许落盘，杜绝「旧数据覆盖新数据」
     private var snapshotRevision: UInt64 = 0
+    /// 批量更新模式：一次全量同步会触发多次保存，
+    /// 若每次都立即回调 UI，会造成 5 次整页重绘。此模式下只在批次结束时回调一次。
+    private var isBatching: Bool = false
+    private var pendingBatchSnapshot: LocalArchiveSnapshot?
     /// 已落盘的最大版本号（跨线程访问，仅由 diskWriteQueue 读写）
     nonisolated(unsafe) private static var lastWrittenRevision: UInt64 = 0
     /// 最近一次网络状态（用于去重，避免同状态反复触发排空队列）
@@ -116,7 +120,9 @@ public final class SyncManager {
     private func hydrateFromDiskInBackground() {
         let fileURL = Self.snapshotFileURL
         Task.detached(priority: .userInitiated) {
-            let result = Self.loadSnapshotFromDisk(at: fileURL)
+            let result = ArchivePerformance.measure(.startup, "decodeSnapshot") {
+                Self.loadSnapshotFromDisk(at: fileURL)
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if let message = result.failureMessage {
@@ -157,9 +163,28 @@ public final class SyncManager {
         copy.schemaVersion = LocalArchiveSnapshot.currentSchemaVersion
         snapshotRevision += 1
         self.snapshot = copy
-        // 立即通知 UI 响应刷新，保证 0ms 上屏
-        onSnapshotUpdated?(copy)
+        if isBatching {
+            // 批次内只记录最终状态，批次结束时统一回调一次
+            pendingBatchSnapshot = copy
+        } else {
+            // 立即通知 UI 响应刷新，保证 0ms 上屏
+            onSnapshotUpdated?(copy)
+        }
         scheduleDiskWrite(copy, revision: snapshotRevision)
+    }
+
+    /// 开始批量更新（期间不逐次回调 UI）
+    public func beginBatch() {
+        isBatching = true
+        pendingBatchSnapshot = nil
+    }
+
+    /// 结束批量更新（若有变更则回调一次）
+    public func endBatch() {
+        isBatching = false
+        guard let snapshot = pendingBatchSnapshot else { return }
+        pendingBatchSnapshot = nil
+        onSnapshotUpdated?(snapshot)
     }
 
     /// 合并 0.35 秒内的连续保存：一次全量刷新会触发 5 次 save，没必要写 5 次盘。
@@ -180,7 +205,10 @@ public final class SyncManager {
         guard revision >= lastWrittenRevision else { return }
         do {
             let data = try JSONEncoder().encode(snapshot)
-            try data.write(to: url, options: .atomic)
+            ArchivePerformance.metric(.disk, "snapshotBytes", data.count)
+            try ArchivePerformance.measure(.disk, "writeSnapshot") {
+                try data.write(to: url, options: .atomic)
+            }
             lastWrittenRevision = revision
         } catch {
             Self.logger.error("Snapshot write failed: \(error.localizedDescription, privacy: .public)")
@@ -476,13 +504,16 @@ public final class SyncManager {
     /// 时间流统一排序（全量与增量共用）：北京时间倒序，同刻按服务端 id 倒序。
     /// 排序前一次性提取时间戳 (O(N))，避免比较器内部重复 DateFormatter 解析。
     nonisolated static func sortedEntries(_ entries: [LifeEntry]) -> [LifeEntry] {
-        let itemsWithDate: [(entry: LifeEntry, date: Date)] = entries.map {
-            ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
+        ArchivePerformance.metric(.sync, "sortEntryCount", entries.count)
+        return ArchivePerformance.measure(.sync, "sortEntries") {
+            let itemsWithDate: [(entry: LifeEntry, date: Date)] = entries.map {
+                ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
+            }
+            return itemsWithDate.sorted {
+                if $0.date != $1.date { return $0.date > $1.date }
+                return $0.entry.id > $1.entry.id
+            }.map(\.entry)
         }
-        return itemsWithDate.sorted {
-            if $0.date != $1.date { return $0.date > $1.date }
-            return $0.entry.id > $1.entry.id
-        }.map(\.entry)
     }
 
     public func mergeTransactions(_ incoming: [Transaction], isDelta: Bool) {

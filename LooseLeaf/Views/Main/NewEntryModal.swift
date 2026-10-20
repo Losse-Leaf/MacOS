@@ -778,6 +778,9 @@ public struct NewEntryModal: View {
                 }
                 clearDraft()
                 didSubmitSuccessfully = true
+                if appState.enablesHapticFeedback {
+                    ArchiveFeedback.success()
+                }
                 // 不再全量重拉：提交结果已经通过 SyncManager 乐观写入本地快照，
                 // 全量 refreshAll 会带来数秒等待与整页重绘。
                 await appState.loadConfigAndProfile()

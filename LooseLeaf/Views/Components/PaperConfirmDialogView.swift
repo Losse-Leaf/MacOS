@@ -166,6 +166,10 @@ public struct PaperConfirmDialogView: View {
     }
 
     private func confirmAction() {
+        // 触感确认（用户可在偏好设置中关闭）
+        if AppState.shared.enablesHapticFeedback {
+            ArchiveFeedback.light()
+        }
         request.onConfirm()
         onDismiss()
     }

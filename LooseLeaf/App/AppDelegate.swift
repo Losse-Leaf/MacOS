@@ -34,6 +34,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // 窗口状态记忆：让系统自动保存主窗口的位置与尺寸
         restoreMainWindowFrame()
 
+        // 冷启动引导：拉取全量档案并静默检查更新。
+        // 关键：触发点放在 App 生命周期而非视图 `.task`，
+        // 否则主窗口与子视图各挂一次 `.task` 会重复发起整套拉取。
+        Task { @MainActor in
+            await AppState.shared.bootstrap()
+        }
+
         // 主窗口不再开启背景拖拽：内容区点选 / 文本选择 / 热力图交互易误拖窗口，
         // 仅保留 QuickCapturePanel 浮动小窗的背景拖拽（在其构造处单独设置）。
 

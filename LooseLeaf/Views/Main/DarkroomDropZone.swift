@@ -845,8 +845,13 @@ final class UploadProgressCounter: @unchecked Sendable {
                     group.addTask {
                         do {
                             let result = try await ImageProcessor.processImageFileInBackground(at: url)
-                            if let img = NSImage(data: result.compressedData) {
-                                let item = DarkroomPhotoItem(photo: result, preview: img, originalURL: url)
+                            // autoreleasepool：批量处理时及时释放每张图的中间产物，
+                            // 避免峰值内存 = N 张图之和
+                            let preview: NSImage? = autoreleasepool {
+                                NSImage(data: result.compressedData)
+                            }
+                            if let preview {
+                                let item = DarkroomPhotoItem(photo: result, preview: preview, originalURL: url)
                                 return (url, .success(item))
                             }
                             return (url, .failure(APIError.decodingFailure("无法解码图像预览")))

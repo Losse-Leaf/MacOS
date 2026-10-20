@@ -210,6 +210,8 @@ public final class AppState {
     public var selectedCategory: ArchiveCategory = .all
     public var searchQuery: String = ""
     public var globalSearchResult: GlobalSearchResponse?
+    /// 全局检索的加载指示防抖（避免 spinner 闪烁）
+    public let globalSearchLoading = LoadingDebouncer()
     public var isGlobalSearching: Bool = false
     public var highlightedEntry: LifeEntry?
     public var lightboxAttachment: Attachment?
@@ -290,12 +292,22 @@ public final class AppState {
         }
     }
 
+    /// 是否启用触感反馈
+    public var enablesHapticFeedback: Bool {
+        didSet {
+            UserDefaults.standard.set(enablesHapticFeedback, forKey: "looseleaf_enables_haptic_feedback")
+        }
+    }
+
     /// 是否在同步完成 / 失败时发送系统通知
     public var notifiesOnSync: Bool {
         didSet {
             UserDefaults.standard.set(notifiesOnSync, forKey: "looseleaf_notifies_on_sync")
         }
     }
+
+    /// 冷启动引导是否已执行（防止重复拉取）
+    @ObservationIgnored private var hasBootstrapped: Bool = false
 
     /// 当前是否存在需要关闭的自定义浮层（供 ⌘W 菜单项启用/禁用）
     public var hasOpenOverlay: Bool {
@@ -325,6 +337,7 @@ public final class AppState {
         self.showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
         self.launchesAtLogin = UserDefaults.standard.object(forKey: "looseleaf_launches_at_login") as? Bool ?? false
         self.notifiesOnSync = UserDefaults.standard.object(forKey: "looseleaf_notifies_on_sync") as? Bool ?? true
+        self.enablesHapticFeedback = UserDefaults.standard.object(forKey: "looseleaf_enables_haptic_feedback") as? Bool ?? true
 
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
         self.isOnline = SyncManager.shared.isOnline
@@ -390,7 +403,11 @@ public final class AppState {
             entriesRevision += 1
         }
         // 系统搜索索引（Spotlight，异步派发不阻塞渲染）
-        SpotlightIndexer.reindex(entries: snap.entries)
+        // 关键：仅在条目**真正变化**时才重建索引 ——
+        // 只改了配置/统计时也全量 diff 会白做一次 O(N) 遍历与指纹计算。
+        if entriesChanged {
+            SpotlightIndexer.reindex(entries: snap.entries)
+        }
     }
 
     // MARK: - 过滤与检索计算属性
@@ -458,6 +475,7 @@ public final class AppState {
         if let memo = streamRowsMemo, memo.key == key {
             return memo.value
         }
+        ArchivePerformance.mark(.render, "streamRows.recompute")
         let list = filteredStreamEntries
         var rows: [StreamRow] = []
         rows.reserveCapacity(list.count)
@@ -479,7 +497,11 @@ public final class AppState {
             return
         }
         self.isGlobalSearching = true
-        defer { self.isGlobalSearching = false }
+        globalSearchLoading.begin()
+        defer {
+            self.isGlobalSearching = false
+            globalSearchLoading.end()
+        }
         do {
             let res = try await APIClient.shared.searchGlobalArchive(query: q, limit: 30)
             self.globalSearchResult = res
@@ -506,6 +528,16 @@ public final class AppState {
 
     // MARK: - 远端全量与增量拉取
 
+    /// 应用冷启动引导：全量刷新 + 检查更新。
+    /// 关键：触发点从「视图 .task」迁移到 App 生命周期，
+    /// 否则主窗口与子视图各挂一次 `.task` 会重复发起整套拉取。
+    public func bootstrap() async {
+        guard !hasBootstrapped else { return }
+        hasBootstrapped = true
+        await refreshAll()
+        await UpdateChecker.shared.checkForUpdates(isUserInitiated: false)
+    }
+
     public func refreshAll(forceFull: Bool = false) async {
         // 启动期主窗口与子视图可能各触发一次；并发执行只会重复请求并互相冲刷快照
         guard !isLoading else { return }
@@ -515,6 +547,11 @@ public final class AppState {
 
         // 先尝试排空离线发件箱
         await SyncManager.shared.flushOutbox()
+
+        // 批量模式：5 个并发任务各自会写快照，若每次都立即回调 UI，
+        // 会造成 5 次整页重绘；批次结束后统一回调一次。
+        SyncManager.shared.beginBatch()
+        defer { SyncManager.shared.endBatch() }
 
         // 并发拉取公开基础配置与档案
         await withTaskGroup(of: Void.self) { group in
@@ -564,11 +601,20 @@ public final class AppState {
         // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
         let cursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
         do {
+            // 首屏优先：第一页一到就先把内容铺到界面上，
+            // 剩余页在后台继续拉取并追加，用户无需等待全量同步完成。
+            var deliveredFirstPage = false
             let allFetched = try await Pagination.fetchAllEntries(
                 since: cursor,
                 pageSize: 100,
                 useETagOnFirstPage: !forceFull && cursor == nil
-            )
+            ) { _, firstPage in
+                guard !deliveredFirstPage, !firstPage.isEmpty else { return }
+                deliveredFirstPage = true
+                await MainActor.run {
+                    SyncManager.shared.mergeEntries(firstPage, isDelta: cursor != nil)
+                }
+            }
             SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified: 本地缓存已是最新

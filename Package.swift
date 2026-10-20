@@ -28,7 +28,9 @@ let package = Package(
         .testTarget(
             name: "LooseLeafTests",
             dependencies: ["LooseLeaf"],
-            path: "LooseLeafTests"
+            path: "LooseLeafTests",
+            // 快照基准图是测试夹具，不是可执行资源：显式排除避免 SPM 报「未处理文件」
+            exclude: ["__Snapshots__"]
         )
     ]
 )

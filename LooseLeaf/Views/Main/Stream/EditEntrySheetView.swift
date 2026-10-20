@@ -1,0 +1,176 @@
+import SwiftUI
+import AppKit
+
+/// 修改散页手稿弹窗表单 (EditEntrySheetView)
+@MainActor
+public struct EditEntrySheetView: View {
+    public let entry: LifeEntry
+    public var onSave: (UpdateEntryRequest) -> Void
+    public var onCancel: () -> Void
+
+    @State private var editTitle: String
+    @State private var editContent: String
+    @State private var editCityCode: String
+    @State private var editCityName: String
+    @State private var editFeatured: Bool
+    @State private var editAttachments: [Attachment]
+    @State private var isUploading: Bool = false
+
+    public init(
+        entry: LifeEntry,
+        onSave: @escaping (UpdateEntryRequest) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.entry = entry
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _editTitle = State(initialValue: entry.title)
+        _editContent = State(initialValue: entry.content)
+        _editCityCode = State(initialValue: entry.cityCode ?? "")
+        _editCityName = State(initialValue: entry.cityName ?? entry.location ?? "")
+        _editFeatured = State(initialValue: entry.featured ?? false)
+        _editAttachments = State(initialValue: entry.attachments)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑生活手稿")
+                .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            TextField("标题", text: $editTitle)
+                .textFieldStyle(.plain)
+                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                .padding(8)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            TextField("手稿正文…", text: $editContent, axis: .vertical)
+                .font(ArchiveTypography.bodySans(size: 13))
+                .lineLimit(6...14)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "选择城市…")
+
+            // 照片相纸附件管理与增删
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("手账影像相纸 (\(editAttachments.count))")
+                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    Spacer()
+
+                    if isUploading {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("暗房直传中…")
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                        }
+                    } else {
+                        Button("+ 补选相纸照片") {
+                            selectPhotosForEdit()
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .controlSize(.small)
+                    }
+                }
+
+                if !editAttachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(editAttachments) { att in
+                                ZStack(alignment: .topTrailing) {
+                                    if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                        // 关键：AsyncImage 不走 PaperImageCache，也不做降采样，
+                                        // 一张 4K 原图会在 68×68 的方框里解码出约 39MB 位图。
+                                        CachedFilmImageView(url: url, maxHeight: 68)
+                                            .frame(width: 68, height: 68)
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                                        )
+                                    }
+
+                                    Button {
+                                        editAttachments.removeAll(where: { $0.id == att.id })
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(Color.white, ArchivePalette.inkPrimary.opacity(0.85))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(2)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+
+            HStack {
+                Toggle("标记为精选印记", isOn: $editFeatured)
+                    .toggleStyle(.paperCheckbox)
+                    .font(ArchiveTypography.bodySans(size: 12))
+
+                Spacer()
+
+                Button("取消") {
+                    onCancel()
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+
+                Button("保存修改 ⌘↩") {
+                    let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let code = editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode
+                    let req = UpdateEntryRequest(
+                        type: entry.type,
+                        title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+                        content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
+                        occurredAt: entry.occurredAt,
+                        location: cleanCity.isEmpty ? nil : cleanCity,
+                        featured: editFeatured,
+                        cityCode: code,
+                        cityName: cleanCity.isEmpty ? nil : cleanCity,
+                        attachmentIds: editAttachments.map(\.id)
+                    )
+                    onSave(req)
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+        .background(ArchivePalette.archivePaper)
+    }
+
+    private func selectPhotosForEdit() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .rawImage]
+        if panel.runModal() == .OK {
+            let urls = panel.urls
+            guard !urls.isEmpty else { return }
+            Task { @MainActor in
+                isUploading = true
+                for url in urls {
+                    do {
+                        let processed = try await ImageProcessor.processImageFileInBackground(at: url)
+                        let att = try await R2DirectUploader.shared.uploadProcessedPhoto(processed)
+                        editAttachments.append(att)
+                    } catch {}
+                }
+                isUploading = false
+            }
+        }
+    }
+}

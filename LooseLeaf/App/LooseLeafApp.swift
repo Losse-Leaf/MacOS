@@ -215,7 +215,35 @@ public struct LooseLeafApp: App {
             }
         }
 
-        // 2. 常驻菜单栏动态活页夹 (MenuBarExtra)
+        // 2. 独立散页详情窗口（深链 looseleaf://entry/<id> 与「在新窗口打开」使用）
+        Window("散页详情", id: "detail") {
+            Group {
+                if let entry = appState.detailWindowEntry {
+                    StreamEntryDetailView(entry: entry, appState: appState)
+                        .frame(minWidth: 520, minHeight: 380)
+                        .background(ArchivePalette.archivePaper)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 28, weight: .light))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        Text("未选定散页")
+                            .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Text("从时间流中打开一条手稿，或用 looseleaf://entry/<id> 深链直达")
+                            .font(ArchiveTypography.bodySans(size: 12))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .frame(minWidth: 520, minHeight: 380)
+                    .background(ArchivePalette.archivePaper)
+                }
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        }
+        .defaultSize(width: 620, height: 560)
+        .windowResizability(.contentMinSize)
+
+        // 3. 常驻菜单栏动态活页夹 (MenuBarExtra)
         MenuBarExtra {
             Group {
                 if !appState.isPaired {

@@ -23,6 +23,14 @@ public final class R2DirectUploader: NSObject, Sendable {
     ) async throws -> Attachment {
         onProgress?(0.08)
 
+        // 声明系统活动：上传期间阻止 App Nap / 空闲休眠，
+        // 否则大图在后台被系统 Nap 后上传会被中断，产物半途中断。
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .background],
+            reason: "正在上传相纸至对象存储"
+        )
+        defer { ProcessInfo.processInfo.endActivity(activity) }
+
         do {
             return try await performDirectUpload(photo, onProgress: onProgress)
         } catch {

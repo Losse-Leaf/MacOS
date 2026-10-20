@@ -197,23 +197,51 @@ public final class AppState {
     public var projectCategories: [String] = ["开源项目", "独立开发", "硬件改造", "设计作品", "写作出版"]
     public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金", "其他"]
 
-    // MARK: - 导航与交互状态
-    public var activeSection: WorkbenchSection = .stream
+    // MARK: - 导航与交互状态（拆分到独立可观察对象）
+    /// 导航与检索状态（独立对象，避免高频交互写入唤醒数据视图）
+    public let navigation = AppNavigation()
+    /// 瞬时提示状态（独立对象，避免提示条写入唤醒数据视图）
+    public let banners = AppBanners()
+
+    public var activeSection: WorkbenchSection {
+        get { navigation.activeSection }
+        set { navigation.activeSection = newValue }
+    }
     public var showNewEntrySheet: Bool = false
-    public var newEntryInitialKind: String? = nil
-    public var newEntryInitialProjectId: Int? = nil
-    public var newEntryInitialCityCode: String? = nil
-    public var newEntryInitialCityName: String? = nil
+    public var newEntryInitialKind: String? {
+        get { navigation.newEntryInitialKind }
+        set { navigation.newEntryInitialKind = newValue }
+    }
+    public var newEntryInitialProjectId: Int? {
+        get { navigation.newEntryInitialProjectId }
+        set { navigation.newEntryInitialProjectId = newValue }
+    }
+    public var newEntryInitialCityCode: String? {
+        get { navigation.newEntryInitialCityCode }
+        set { navigation.newEntryInitialCityCode = newValue }
+    }
+    public var newEntryInitialCityName: String? {
+        get { navigation.newEntryInitialCityName }
+        set { navigation.newEntryInitialCityName = newValue }
+    }
     public var showAlmanacSheet: Bool = false
     public var showStatsSheet: Bool = false
     public var showSearchModal: Bool = false
-    public var selectedCategory: ArchiveCategory = .all
-    public var searchQuery: String = ""
+    public var selectedCategory: ArchiveCategory {
+        get { navigation.selectedCategory }
+        set { navigation.selectedCategory = newValue }
+    }
+    public var searchQuery: String {
+        get { navigation.searchQuery }
+        set { navigation.searchQuery = newValue }
+    }
     public var globalSearchResult: GlobalSearchResponse?
     /// 全局检索的加载指示防抖（避免 spinner 闪烁）
     public let globalSearchLoading = LoadingDebouncer()
     public var isGlobalSearching: Bool = false
     public var highlightedEntry: LifeEntry?
+    /// 在**独立窗口**中打开的条目（深链 / 「在新窗口打开」使用，与主窗口的弹层互不影响）
+    public var detailWindowEntry: LifeEntry?
     public var lightboxAttachment: Attachment?
     public var activeConfirmDialog: ConfirmDialogRequest? = nil
 
@@ -258,10 +286,19 @@ public final class AppState {
     public var isLoading: Bool = false
     public var isOnline: Bool = true
     public var isFlushingOutbox: Bool = false
-    public var statusBanner: String?
-    public var errorBanner: String?
+    public var statusBanner: String? {
+        get { banners.status }
+        set { banners.status = newValue }
+    }
+    public var errorBanner: String? {
+        get { banners.error }
+        set { banners.error = newValue }
+    }
     /// 本地档案完整性问题（快照解码失败等），优先级高于普通网络错误，需用户手动关闭
-    public var localDataWarning: String?
+    public var localDataWarning: String? {
+        get { banners.localWarning }
+        set { banners.localWarning = newValue }
+    }
 
     public var appearanceMode: AppearanceMode {
         didSet {
@@ -272,7 +309,10 @@ public final class AppState {
     public var globalHotkeyLabel: String { AppDelegate.hotKeyDisplayName }
 
     /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
-    public var searchFocusRequest: Int = 0
+    public var searchFocusRequest: Int {
+        get { navigation.searchFocusRequest }
+        set { navigation.searchFocusRequest = newValue }
+    }
 
     // MARK: - 偏好：Dock 图标与登录启动
 
@@ -319,8 +359,7 @@ public final class AppState {
     }
 
     public func requestStreamSearchFocus() {
-        activeSection = .stream
-        searchFocusRequest += 1
+        navigation.requestStreamSearchFocus()
     }
 
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
@@ -329,6 +368,8 @@ public final class AppState {
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
     @ObservationIgnored private var streamRowsMemo: (key: String, value: [StreamRow])?
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
+    /// 账目索引（id -> 账目）：时间流卡片按 id 查账目时避免全量遍历
+    @ObservationIgnored private var transactionIndexMemo: (Int, [Int: Transaction])?
 
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
@@ -455,6 +496,20 @@ public final class AppState {
 
     /// 暗房回廊全量底片（记忆缓存：仅随 dataRevision 变化重建，
     /// 上传进度跳动 / 标题输入等本地 State 变更不再触发 entries × attachments 双重遍历）
+    /// 账目 id → 账目 的索引（按 entriesRevision 记忆化）
+    /// 关键：时间流卡片原先在 body 里对每个条目做 `transactions.first(where:)`，
+    /// N 行 × M 条账目 = O(N×M)；现在一次建表，查询 O(1)。
+    public var transactionById: [Int: Transaction] {
+        if let memo = transactionIndexMemo, memo.0 == entriesRevision {
+            return memo.1
+        }
+        var map: [Int: Transaction] = [:]
+        map.reserveCapacity(transactions.count)
+        for tx in transactions { map[tx.id] = tx }
+        transactionIndexMemo = (entriesRevision, map)
+        return map
+    }
+
     public var allGalleryPhotos: [GalleryPhotoItem] {
         if let memo = galleryPhotosMemo, memo.revision == entriesRevision {
             return memo.value
@@ -823,13 +878,13 @@ public final class AppState {
         self.keyboardFocusedEntryId = entryId
 
         if let found = entries.first(where: { $0.id == entryId }) {
-            self.highlightedEntry = found
+            self.detailWindowEntry = found
         } else {
             // 若当前本地快照中尚未载入该条目，异步刷新后再次尝试查找
             Task { @MainActor in
                 await self.loadEntries(forceFull: true)
                 if let found = self.entries.first(where: { $0.id == entryId }) {
-                    self.highlightedEntry = found
+                    self.detailWindowEntry = found
                 }
             }
         }

@@ -459,12 +459,14 @@ final class LooseLeafTests: XCTestCase {
         let savedCategory = state.selectedCategory
         let savedFocused = state.keyboardFocusedEntryId
         let savedHighlighted = state.highlightedEntry
+        let savedDetailWindow = state.detailWindowEntry
         defer {
             state.entries = savedEntries
             state.activeSection = savedSection
             state.selectedCategory = savedCategory
             state.keyboardFocusedEntryId = savedFocused
             state.highlightedEntry = savedHighlighted
+            state.detailWindowEntry = savedDetailWindow
         }
 
         let entry = LifeEntry(id: 777, title: "聚焦测试", content: "通过聚焦搜索直达", occurredAt: "2026-10-15 12:00:00")
@@ -476,7 +478,9 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(state.activeSection, .stream)
         XCTAssertEqual(state.selectedCategory, .all)
         XCTAssertEqual(state.keyboardFocusedEntryId, 777)
-        XCTAssertEqual(state.highlightedEntry?.id, 777)
+        // 深链条目进入**独立详情窗口**槽位，不再占用主窗口的详情弹层
+        XCTAssertEqual(state.detailWindowEntry?.id, 777)
+        XCTAssertNil(state.highlightedEntry, "深链不应同时弹出主窗口详情弹层")
     }
 
     @MainActor

@@ -11,6 +11,8 @@ import UniformTypeIdentifiers
 @MainActor
 public struct StreamView: View {
     @Bindable var appState: AppState
+    /// 打开独立详情窗口（深链 / 「在新窗口打开」）
+    @Environment(\.openWindow) private var openWindow
 
     // 键盘流与检索状态
     @State private var keyboardScrollPosition: Int?
@@ -474,6 +476,11 @@ public struct StreamView: View {
                 isSearchFocused = true
             }
         }
+        // 深链 / 外部请求打开某条散页时，唤起独立详情窗口
+        .onChange(of: appState.detailWindowEntry?.id) { _, newValue in
+            guard newValue != nil else { return }
+            openWindow(id: "detail")
+        }
         .onChange(of: appState.keyboardFocusedEntryId) { _, newValue in
             guard let id = newValue else { return }
             withAnimation(.easeOut(duration: 0.2)) {
@@ -774,195 +781,13 @@ public struct StreamView: View {
     }
 
     private func entryDetailSheet(entry: LifeEntry) -> some View {
-        let isTx = (entry.type == "transaction")
-        let txId = entry.associatedTransactionId ?? Int64(entry.id)
-        let matchingTx = isTx ? appState.transactions.first(where: { $0.id == txId }) : nil
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(entryTypeBadge(entry.type))
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Text(entry.parsedDate.dotDateTime)
-                    .font(ArchiveTypography.monoScale(size: 11.5))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                Spacer()
-                if appState.isPaired && (entry.id > 0 || (isTx && matchingTx != nil)) {
-                    if isTx {
-                        if let tx = matchingTx {
-                            Button("编辑账目") {
-                                appState.highlightedEntry = nil
-                                editingTransaction = tx
-                            }
-                            .font(ArchiveTypography.bodySans(size: 12))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .buttonStyle(.plain)
-
-                            Button("删除账目") {
-                                appState.askConfirm(
-                                    title: "确认删除该笔流水账目？",
-                                    message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
-                                    confirmText: "删除账目",
-                                    danger: true
-                                ) {
-                                    deleteTransactionAction(tx)
-                                    appState.highlightedEntry = nil
-                                }
-                            }
-                            .font(ArchiveTypography.bodySans(size: 12))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                            .buttonStyle(.plain)
-                        }
-                    } else {
-                        Button("编辑手稿") {
-                            let target = entry
-                            appState.highlightedEntry = nil
-                            editingEntry = target
-                        }
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                        .buttonStyle(.plain)
-
-                        Button("删除记录") {
-                            appState.askConfirm(
-                                title: "确认删除该条生活手稿？",
-                                message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
-                                confirmText: "删除手稿",
-                                danger: true
-                            ) {
-                                Task { @MainActor in
-                                    try? await APIClient.shared.deleteEntry(id: entry.id)
-                                    await appState.loadEntries(forceFull: true)
-                                    appState.highlightedEntry = nil
-                                }
-                            }
-                        }
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                        .buttonStyle(.plain)
-                    }
-                }
-                Button("关闭") {
-                    appState.highlightedEntry = nil
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-            }
-
-            if let tx = matchingTx {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(tx.title.isEmpty ? tx.category : tx.title)
-                            .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Spacer()
-                        Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
-                            .font(ArchiveTypography.monoScale(size: 22, weight: .bold))
-                            .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
-                    }
-
-                    HStack(spacing: 8) {
-                        Text(tx.category)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(ArchivePalette.archiveSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                        if let pay = tx.paymentMethod, !pay.isEmpty {
-                            Text(pay)
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                        }
-
-                        if tx.isInstallment == true, let months = tx.installmentMonths, months > 0 {
-                            Text("分期 \(months) 期")
-                                .font(ArchiveTypography.monoScale(size: 11))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
-                                )
-                        }
-                    }
-
-                    if let note = tx.note, !note.isEmpty {
-                        Text(note)
-                            .font(ArchiveTypography.bodySans(size: 13.5))
-                            .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.88))
-                            .padding(.top, 4)
-                    }
-                }
-                .padding(.vertical, 6)
-            } else {
-                HStack(spacing: 8) {
-                    if let city = entry.cityName ?? entry.location, !city.isEmpty {
-                        HStack(spacing: 3) {
-                            Image(systemName: "mappin.and.ellipse")
-                                .font(.system(size: 10))
-                            Text(city)
-                                .font(ArchiveTypography.monoScale(size: 11))
-                        }
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-
-                    if entry.featured == true {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bookmark.fill")
-                                .font(.system(size: 10))
-                            Text("精选典藏")
-                                .font(ArchiveTypography.monoScale(size: 11))
-                        }
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    }
-                }
-
-                if !entry.title.isEmpty {
-                    Text(entry.title)
-                        .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                }
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(LocalizedStringKey(entry.content))
-                            .font(ArchiveTypography.bodySans(size: 14))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                            .lineSpacing(5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-
-                        if !entry.attachments.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 10) {
-                                    ForEach(entry.attachments) { att in
-                                        if let url = APIClient.shared.resolveMediaURL(att.url) {
-                                            FilmFrameView(
-                                                imageURL: url,
-                                                caption: entry.title.isEmpty ? att.originalFilename : entry.title,
-                                                metaText: entry.parsedDate.dotDate,
-                                                maxHeight: 200
-                                            ) {
-                                                appState.lightboxAttachment = att
-                                            }
-                                            .frame(width: 240)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        }
-                    }
-                }
-                .frame(minHeight: 160, maxHeight: 420)
-            }
-        }
-        .padding(24)
+        StreamEntryDetailView(
+            entry: entry,
+            appState: appState,
+            onEditEntry: { editingEntry = $0 },
+            onEditTransaction: { editingTransaction = $0 },
+            onDeleteTransaction: { deleteTransactionAction($0) }
+        )
         .frame(width: 540)
         .background(ArchivePalette.archivePaper)
     }

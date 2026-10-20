@@ -96,7 +96,7 @@ import AppKit
                             if isHovering {
                                 if entry.type == "transaction" {
                                     let txId = entry.associatedTransactionId ?? Int64(entry.id)
-                                    if let tx = appState.transactions.first(where: { $0.id == txId }) {
+                                    if let tx = appState.transactionById[Int(txId)] {
                                         Button {
                                             onEditTransaction(tx)
                                         } label: {
@@ -241,7 +241,7 @@ import AppKit
             .contextMenu {
                 if entry.type == "transaction" {
                     let txId = entry.associatedTransactionId ?? Int64(entry.id)
-                    if let tx = appState.transactions.first(where: { $0.id == txId }) {
+                    if let tx = appState.transactionById[Int(txId)] {
                         Button {
                             onEditTransaction(tx)
                         } label: {

@@ -569,7 +569,9 @@ struct StorageBackupSettingsView: View {
                 do {
                     let (data, _) = try await APIClient.shared.downloadServerBackup(filename: item.filename)
                     try data.write(to: targetURL, options: .atomic)
-                    backupActionFeedback = "已成功下载「\(item.filename)」至本地"
+                    // 下载完成后直接提供「在访达中显示」，用户无需再去手动翻目录
+                    NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+                    backupActionFeedback = "已成功下载「\(item.filename)」至本地，并在访达中选中"
                 } catch {
                     backupActionError = "下载备份失败: \(error.localizedDescription)"
                 }

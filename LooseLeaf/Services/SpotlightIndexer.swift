@@ -5,66 +5,104 @@ import os
 
 /// Spotlight 系统搜索索引器：将散页记录写入系统级搜索（标题 / 正文 / 城市 / 标签）。
 /// 采用「防抖 + 增量 diff」策略：只重建发生变化或消失的条目，避免每次保存都擦写整个索引域。
+///
+/// 并发模型：全部可变状态由单一 `stateLock` 保护；重建任务用「代号（generation）」判新旧，
+/// 防止被取消但仍在运行的旧任务覆盖新结果（Swift 取消不会中断已开始的同步工作）。
 enum SpotlightIndexer {
     private static let domainIdentifier = "com.looseleaf.archive.entries"
     private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "spotlight")
+
+    /// 单一状态锁：保护 indexedVersions / hasRebuiltDomain / debounceTask / generation
+    private static let stateLock = NSLock()
+
+    /// 防抖任务句柄
     private static var debounceTask: Task<Void, Never>?
-    private static let lock = NSLock()
+    /// 重建代号：每次调度自增；执行时若代号已过期则直接放弃
+    private static var generation: UInt64 = 0
 
     /// 已写入系统索引的条目指纹（id -> 内容版本），用于计算增量
     private static var indexedVersions: [Int: String] = [:]
     /// 首次运行需要清理历史遗留的孤儿索引项
     private static var hasRebuiltDomain = false
-    /// 串行化多次重建，避免防抖任务与 immediate 调用互相覆盖状态
-    private static let reindexLock = NSLock()
+    /// 指纹是否已从磁盘恢复
+    private static var didRestorePersistedState = false
+
+    /// 单次提交给 CoreSpotlight 的最大条目数（避免一次性提交几千条导致系统侧内存峰值）
+    private static let indexBatchSize = 200
 
     /// 指纹持久化文件：跨会话增量，避免每次冷启动全量清空重建系统索引
     private static var persistedStateURL: URL {
         SyncManager.sharedStorageDirectory.appendingPathComponent("spotlight_versions.json")
     }
 
-    /// 首次访问时从磁盘恢复指纹（static let 保证只执行一次）
-    private static let restorePersistedState: Void = {
-        guard let data = try? Data(contentsOf: persistedStateURL),
-              let decoded = try? JSONDecoder().decode([Int: String].self, from: data), !decoded.isEmpty else {
-            return
+    /// 指纹状态恢复（后台执行，绝不在主线程读盘 + 解码）
+    private static func restorePersistedStateIfNeeded() {
+        stateLock.lock()
+        let alreadyRestored = didRestorePersistedState
+        stateLock.unlock()
+        guard !alreadyRestored else { return }
+
+        let url = persistedStateURL
+        Task.detached(priority: .utility) {
+            let decoded = (try? Data(contentsOf: url, options: .mappedIfSafe))
+                .flatMap { try? JSONDecoder().decode([Int: String].self, from: $0) }
+            applyRestoredState(decoded)
         }
-        lock.lock()
-        indexedVersions = decoded
-        hasRebuiltDomain = true
-        lock.unlock()
-    }()
+    }
+
+    /// 同步应用恢复结果（独立函数：避免在异步上下文中直接操作 NSLock）
+    private static func applyRestoredState(_ decoded: [Int: String]?) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        if let decoded, !decoded.isEmpty {
+            indexedVersions = decoded
+            hasRebuiltDomain = true
+        }
+        didRestorePersistedState = true
+    }
+
+    /// 指纹状态持久化（串行队列，避免并发写导致旧数据覆盖新数据）
+    private static let persistQueue = DispatchQueue(label: "com.looseleaf.spotlight.persist", qos: .utility)
 
     private static func persistState() {
-        lock.lock()
+        stateLock.lock()
         let snapshot = indexedVersions
-        lock.unlock()
-        DispatchQueue.global(qos: .utility).async {
+        stateLock.unlock()
+        let url = persistedStateURL
+        persistQueue.async {
             if let data = try? JSONEncoder().encode(snapshot) {
-                try? data.write(to: persistedStateURL, options: .atomic)
+                try? data.write(to: url, options: .atomic)
             }
         }
     }
 
     /// 全量/增量重建散页索引（防抖 1.5 秒，避免高频保存触发重复擦写系统索引库）
     static func reindex(entries: [LifeEntry], immediate: Bool = false) {
-        _ = restorePersistedState
-        lock.lock()
+        restorePersistedStateIfNeeded()
+
+        stateLock.lock()
         debounceTask?.cancel()
+        generation &+= 1
+        let currentGeneration = generation
+        stateLock.unlock()
+
         if immediate {
-            lock.unlock()
-            performReindex(entries: entries)
+            performReindex(entries: entries, generation: currentGeneration)
             return
         }
 
-        debounceTask = Task.detached(priority: .utility) {
+        let task = Task.detached(priority: .utility) {
             do {
                 try await Task.sleep(for: .seconds(1.5))
-                guard !Task.isCancelled else { return }
-                performReindex(entries: entries)
-            } catch {}
+            } catch {
+                return   // 被取消（正常路径）
+            }
+            guard !Task.isCancelled else { return }
+            SpotlightIndexer.performReindex(entries: entries, generation: currentGeneration)
         }
-        lock.unlock()
+        stateLock.lock()
+        debounceTask = task
+        stateLock.unlock()
     }
 
     private static func fingerprint(_ entry: LifeEntry) -> String {
@@ -85,16 +123,19 @@ enum SpotlightIndexer {
         )
     }
 
-    private static func performReindex(entries: [LifeEntry]) {
-        reindexLock.lock()
-        defer { reindexLock.unlock() }
-
-        let visible = entries.filter { ($0.deletedAt ?? "").isEmpty }
-
-        lock.lock()
+    /// 执行一次增量重建。
+    /// - Parameter generation: 调度时的代号；若已被更新的调度取代则直接放弃本次工作。
+    private static func performReindex(entries: [LifeEntry], generation expectedGeneration: UInt64) {
+        stateLock.lock()
+        guard expectedGeneration == generation else {
+            stateLock.unlock()
+            return
+        }
         let oldVersions = indexedVersions
         let needsDomainReset = !hasRebuiltDomain
-        lock.unlock()
+        stateLock.unlock()
+
+        let visible = entries.filter { ($0.deletedAt ?? "").isEmpty }
 
         var newVersions: [Int: String] = [:]
         newVersions.reserveCapacity(visible.count)
@@ -105,32 +146,46 @@ enum SpotlightIndexer {
         let removedIdentifiers = oldVersions.keys
             .filter { newVersions[$0] == nil }
             .map { "looseleaf-entry-\($0)" }
-        let changedItems = visible
-            .filter { newVersions[$0.id] != oldVersions[$0.id] }
-            .map(makeItem)
+        let changedEntries = visible.filter { newVersions[$0.id] != oldVersions[$0.id] }
 
         let index = CSSearchableIndex.default()
 
+        /// 提交指纹状态：只有系统索引**写入成功**后才提交，
+        /// 否则该条目的指纹会被记为「已索引」，导致它**永久无法被 Spotlight 搜到**。
         func commitState() {
-            lock.lock()
+            stateLock.lock()
             indexedVersions = newVersions
             hasRebuiltDomain = true
-            lock.unlock()
-            logger.info("Spotlight incremental reindex: +\(changedItems.count) / -\(removedIdentifiers.count), total \(newVersions.count)")
-        persistState()
+            stateLock.unlock()
+            logger.info("Spotlight incremental reindex: +\(changedEntries.count) / -\(removedIdentifiers.count), total \(newVersions.count)")
+            persistState()
         }
 
         func indexChanged() {
-            guard !changedItems.isEmpty else {
+            guard !changedEntries.isEmpty else {
                 commitState()
                 return
             }
-            index.indexSearchableItems(changedItems) { error in
-                if let error {
-                    logger.error("Spotlight index failed: \(error.localizedDescription)")
-                }
-                commitState()
+            // 分批提交，避免一次性提交数千条导致 CoreSpotlight 侧内存峰值
+            let batches = stride(from: 0, to: changedEntries.count, by: indexBatchSize).map {
+                Array(changedEntries[$0..<min($0 + indexBatchSize, changedEntries.count)])
             }
+            func submit(_ remaining: [[LifeEntry]]) {
+                guard let batch = remaining.first else {
+                    commitState()
+                    return
+                }
+                let items = batch.map(makeItem)
+                index.indexSearchableItems(items) { error in
+                    if let error {
+                        // 写入失败：绝不提交指纹状态，下次 reindex 会自动重试该批条目
+                        logger.error("Spotlight index failed: \(error.localizedDescription)")
+                        return
+                    }
+                    submit(Array(remaining.dropFirst()))
+                }
+            }
+            submit(batches)
         }
 
         if needsDomainReset {
@@ -147,7 +202,9 @@ enum SpotlightIndexer {
         }
         index.deleteSearchableItems(withIdentifiers: removedIdentifiers) { error in
             if let error {
+                // 删除失败：同样不提交状态，下次会重试删除（避免系统索引残留「幽灵条目」）
                 logger.error("Spotlight delete failed: \(error.localizedDescription)")
+                return
             }
             indexChanged()
         }

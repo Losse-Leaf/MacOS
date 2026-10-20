@@ -275,7 +275,8 @@ public final class AppState {
     }
 
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
-    @ObservationIgnored private var dataRevision: Int = 0
+    /// 仅在「条目/账目」集合变化时自增；配置类变更不应让列表 memo 全部失效
+    @ObservationIgnored private var entriesRevision: Int = 0
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
     @ObservationIgnored private var streamRowsMemo: (key: String, value: [StreamRow])?
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
@@ -288,17 +289,9 @@ public final class AppState {
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
         self.isOnline = SyncManager.shared.isOnline
         self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
-        applySnapshot(SyncManager.shared.currentSnapshot())
 
-        // 本地快照解码失败时必须在首屏明确告警，绝不能让用户以为"数据只是变少了"
-        if let failure = SyncManager.lastLoadFailureMessage {
-            self.localDataWarning = failure
-        }
-
-        SyncManager.shared.onNetworkStatusChanged = { [weak self] online in
-            self?.isOnline = online
-        }
-
+        // 2. 先注册回调，再读取快照：若后台解码已完成则直接拿到完整快照，
+        //    否则后续 onSnapshotUpdated 回调会把注水后的快照推给 UI（两条路径都覆盖）。
         SyncManager.shared.onSnapshotUpdated = { [weak self] snap in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -306,6 +299,25 @@ public final class AppState {
                 self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
                 self.applySnapshot(snap)
             }
+        }
+
+        SyncManager.shared.onLocalDataWarning = { [weak self] message in
+            Task { @MainActor [weak self] in
+                self?.localDataWarning = message
+            }
+        }
+
+        SyncManager.shared.onNetworkStatusChanged = { [weak self] online in
+            Task { @MainActor [weak self] in
+                self?.isOnline = online
+            }
+        }
+
+        applySnapshot(SyncManager.shared.currentSnapshot())
+
+        // 本地快照解码失败时必须在首屏明确告警，绝不能让用户以为"数据只是变少了"
+        if let failure = SyncManager.shared.lastLoadFailureMessage {
+            self.localDataWarning = failure
         }
 
         NotificationCenter.default.addObserver(
@@ -323,14 +335,20 @@ public final class AppState {
     }
 
     private func applySnapshot(_ snap: LocalArchiveSnapshot) {
-        self.entries = snap.entries
-        self.transactions = snap.transactions
-        self.transactionSummary = snap.transactionSummary
-        self.profile = snap.profile
-        self.siteConfig = snap.siteConfig
-        self.stats = snap.stats
-        self.outboxItems = snap.outbox
-        dataRevision += 1
+        // 相等性判断：@Observable 的 setter 无论值是否相等都会触发全树重渲染，
+        // 因此必须先比较再赋值，把「每次同步全量重绘」降级为「仅真正变化时重绘」。
+        let entriesChanged = self.entries != snap.entries
+        let transactionsChanged = self.transactions != snap.transactions
+        if entriesChanged { self.entries = snap.entries }
+        if transactionsChanged { self.transactions = snap.transactions }
+        if self.transactionSummary != snap.transactionSummary { self.transactionSummary = snap.transactionSummary }
+        if self.profile != snap.profile { self.profile = snap.profile }
+        if self.siteConfig != snap.siteConfig { self.siteConfig = snap.siteConfig }
+        if self.stats != snap.stats { self.stats = snap.stats }
+        if self.outboxItems != snap.outbox { self.outboxItems = snap.outbox }
+        if entriesChanged || transactionsChanged {
+            entriesRevision += 1
+        }
         // 系统搜索索引（Spotlight，异步派发不阻塞渲染）
         SpotlightIndexer.reindex(entries: snap.entries)
     }
@@ -340,7 +358,7 @@ public final class AppState {
     /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤、#标签下钻与模糊搜索）
     /// 带记忆缓存：仅在数据版本或筛选条件变化时重算，渲染路径零重复过滤
     public var filteredStreamEntries: [LifeEntry] {
-        let key = "\(dataRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
+        let key = "\(entriesRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
         if let memo = filteredMemo, memo.key == key {
             return memo.value
         }
@@ -381,7 +399,7 @@ public final class AppState {
     /// 暗房回廊全量底片（记忆缓存：仅随 dataRevision 变化重建，
     /// 上传进度跳动 / 标题输入等本地 State 变更不再触发 entries × attachments 双重遍历）
     public var allGalleryPhotos: [GalleryPhotoItem] {
-        if let memo = galleryPhotosMemo, memo.revision == dataRevision {
+        if let memo = galleryPhotosMemo, memo.revision == entriesRevision {
             return memo.value
         }
         var photos: [GalleryPhotoItem] = []
@@ -390,13 +408,13 @@ public final class AppState {
                 photos.append(GalleryPhotoItem(id: "\(entry.id)-\(att.id)", attachment: att, parentEntry: entry))
             }
         }
-        galleryPhotosMemo = (dataRevision, photos)
+        galleryPhotosMemo = (entriesRevision, photos)
         return photos
     }
 
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
     public var streamRows: [StreamRow] {
-        let key = "\(dataRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
+        let key = "\(entriesRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
         if let memo = streamRowsMemo, memo.key == key {
             return memo.value
         }
@@ -432,7 +450,7 @@ public final class AppState {
 
     /// 按北京时间自然日聚合的记录密度（52 周热力图数据源，带记忆缓存）
     public var entryCountsByDate: [String: Int] {
-        let key = "\(dataRevision)"
+        let key = "\(entriesRevision)"
         if let memo = entryCountsMemo, memo.key == key {
             return memo.value
         }

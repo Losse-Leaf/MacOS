@@ -11,21 +11,36 @@ public final class SyncManager {
 
     nonisolated private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "sync")
 
+    /// 发件箱单条最大重试次数，超过即判定为死信并丢弃（避免无限重试与无界增长）
+    public static let maxOutboxRetryCount = 5
+
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.looseleaf.archive.network.monitor")
     private let diskWriteQueue = DispatchQueue(label: "com.looseleaf.archive.snapshot.io", qos: .utility)
 
     public private(set) var isOnline: Bool = true
     public private(set) var isFlushingOutbox: Bool = false
-    public var onSnapshotUpdated: ((LocalArchiveSnapshot) -> Void)?
-    public var onNetworkStatusChanged: ((Bool) -> Void)?
+
+    /// 快照更新回调（保证在主线程调用，UI 可零延迟响应）
+    public var onSnapshotUpdated: (@MainActor (LocalArchiveSnapshot) -> Void)?
+    public var onNetworkStatusChanged: (@MainActor (Bool) -> Void)?
+    /// 本地快照加载失败时的用户可读告警（nil 表示正常）
+    public var onLocalDataWarning: (@MainActor (String) -> Void)?
 
     private var snapshot: LocalArchiveSnapshot
     private var pendingWrite: DispatchWorkItem?
+    /// 单调递增的快照版本号：只有更高版本的快照才允许落盘，杜绝「旧数据覆盖新数据」
+    private var snapshotRevision: UInt64 = 0
+    /// 已落盘的最大版本号（跨线程访问，仅由 diskWriteQueue 读写）
+    nonisolated(unsafe) private static var lastWrittenRevision: UInt64 = 0
+    /// 最近一次网络状态（用于去重，避免同状态反复触发排空队列）
+    private var lastKnownOnline: Bool?
 
     private init() {
-        self.snapshot = Self.loadFromDisk() ?? LocalArchiveSnapshot()
+        // 首屏 0 阻塞：先给空壳立即返回，快照在后台线程解码完成后再注水。
+        self.snapshot = LocalArchiveSnapshot()
         startNetworkMonitor()
+        hydrateFromDiskInBackground()
     }
 
     // MARK: - 本地临时 ID 生成
@@ -45,45 +60,74 @@ public final class SyncManager {
 
     // MARK: - 本地磁盘缓存路径
 
-    /// 快照文件名（archive_snapshot_v1.json）
     /// 本地快照目录 (存储于 ~/Library/Application Support/LooseLeaf/ 保证沙箱环境下 100% 可靠读写)
-    public nonisolated static var sharedStorageDirectory: URL {
+    /// 目录 URL 只计算一次，避免每次写盘都做一次 createDirectory 系统调用。
+    nonisolated public static let sharedStorageDirectory: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = appSupport.appendingPathComponent("LooseLeaf", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // 目录权限收紧为 0700，且排除 Time Machine / iCloud 备份（令牌等敏感文件不可外传）
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableDir = dir
+        try? mutableDir.setResourceValues(resourceValues)
         return dir
-    }
+    }()
 
     public nonisolated static var snapshotFileURL: URL {
         sharedStorageDirectory.appendingPathComponent("archive_snapshot_v1.json")
     }
 
     /// 最近一次本地快照加载失败的原因（供启动期提示，nil 表示加载正常或文件不存在）
-    nonisolated(unsafe) public private(set) static var lastLoadFailureMessage: String?
+    public private(set) var lastLoadFailureMessage: String?
 
-    public nonisolated static func loadFromDisk() -> LocalArchiveSnapshot? {
-        let url = snapshotFileURL
-        guard let data = try? Data(contentsOf: url) else {
-            lastLoadFailureMessage = nil
-            return nil
+    /// 磁盘读取 + JSON 解码（纯 IO，可在任意线程调用）
+    nonisolated static func loadFromDisk() -> LocalArchiveSnapshot? {
+        loadSnapshotFromDisk(at: snapshotFileURL).snapshot
+    }
+
+    /// 磁盘读取 + JSON 解码，返回快照与失败原因。
+    /// 解码失败绝不静默重建：先把原文件隔离备份，否则随后任何一次 saveSnapshot
+    /// 都会用空快照原子覆盖掉用户仅存的一份本地档案。
+    nonisolated static func loadSnapshotFromDisk(at url: URL) -> (snapshot: LocalArchiveSnapshot?, failureMessage: String?) {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+            return (nil, nil)
         }
         do {
-            lastLoadFailureMessage = nil
-            return try JSONDecoder().decode(LocalArchiveSnapshot.self, from: data)
+            let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: data)
+            return (decoded.migrated(), nil)
         } catch {
-            // 解码失败绝不静默重建：先把原文件隔离备份，否则随后任何一次 saveSnapshot
-            // 都会用空快照原子覆盖掉用户仅存的一份本地档案。
             let stamp = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
             let backupURL = url.deletingLastPathComponent()
                 .appendingPathComponent("archive_snapshot_v1.corrupt-\(stamp).json")
             let moved = (try? FileManager.default.moveItem(at: url, to: backupURL)) != nil
-            lastLoadFailureMessage = moved
+            let message = moved
                 ? "本地快照无法解析，已隔离备份为 \(backupURL.lastPathComponent)，本次以空档案启动，请勿继续录入以免混淆。"
                 : "本地快照无法解析且备份失败，请立即手动备份 \(url.path) 后再启动。"
             Self.logger.error("Snapshot decode failed: \(error.localizedDescription, privacy: .public); backup moved: \(moved)")
-            return nil
+            return (nil, message)
+        }
+    }
+
+    /// 后台解码本地快照并在主线程注水，避免冷启动首帧被主线程 IO 阻塞。
+    private func hydrateFromDiskInBackground() {
+        let fileURL = Self.snapshotFileURL
+        Task.detached(priority: .userInitiated) {
+            let result = Self.loadSnapshotFromDisk(at: fileURL)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if let message = result.failureMessage {
+                    self.lastLoadFailureMessage = message
+                    self.onLocalDataWarning?(message)
+                    return
+                }
+                guard let loaded = result.snapshot else { return }
+                self.snapshot = loaded
+                self.onSnapshotUpdated?(loaded)
+            }
         }
     }
 
@@ -110,33 +154,49 @@ public final class SyncManager {
     public func saveSnapshot(_ updated: LocalArchiveSnapshot) {
         var copy = updated
         copy.updatedAt = FormatUtils.beijingISOString()
+        copy.schemaVersion = LocalArchiveSnapshot.currentSchemaVersion
+        snapshotRevision += 1
         self.snapshot = copy
         // 立即通知 UI 响应刷新，保证 0ms 上屏
         onSnapshotUpdated?(copy)
-        scheduleDiskWrite(copy)
+        scheduleDiskWrite(copy, revision: snapshotRevision)
     }
 
     /// 合并 0.35 秒内的连续保存：一次全量刷新会触发 5 次 save，没必要写 5 次盘。
-    private func scheduleDiskWrite(_ copy: LocalArchiveSnapshot) {
+    /// 写盘全部发生在 diskWriteQueue（串行），并用 revision 保证「后写的一定更新」。
+    private func scheduleDiskWrite(_ copy: LocalArchiveSnapshot, revision: UInt64) {
         pendingWrite?.cancel()
         let fileURL = Self.snapshotFileURL
-        let item = DispatchWorkItem {
-            if let data = try? JSONEncoder().encode(copy) {
-                try? data.write(to: fileURL, options: .atomic)
-            }
+        let item = DispatchWorkItem { [weak self] in
+            Self.writeSnapshot(copy, to: fileURL, revision: revision)
+            _ = self
         }
         pendingWrite = item
         diskWriteQueue.asyncAfter(deadline: .now() + 0.35, execute: item)
     }
 
-    /// 退出前同步落盘，确保防抖窗口内的最后一次修改不丢失
+    /// 串行落盘：只有 revision ≥ 已落盘版本时才允许覆盖，杜绝旧数据回滚新数据。
+    nonisolated static func writeSnapshot(_ snapshot: LocalArchiveSnapshot, to url: URL, revision: UInt64) {
+        guard revision >= lastWrittenRevision else { return }
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            try data.write(to: url, options: .atomic)
+            lastWrittenRevision = revision
+        } catch {
+            Self.logger.error("Snapshot write failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 退出前同步落盘，确保防抖窗口内的最后一次修改不丢失。
+    /// 关键：在**同一串行队列**上同步等待，而不是在主线程另写一份，否则会与队列中的旧写入乱序。
     public func flushSnapshotToDiskIfNeeded() {
         pendingWrite?.cancel()
         pendingWrite = nil
         let copy = snapshot
+        let revision = snapshotRevision
         let fileURL = Self.snapshotFileURL
-        if let data = try? JSONEncoder().encode(copy) {
-            try? data.write(to: fileURL, options: .atomic)
+        diskWriteQueue.sync {
+            Self.writeSnapshot(copy, to: fileURL, revision: revision)
         }
     }
 
@@ -147,7 +207,10 @@ public final class SyncManager {
             let online = (path.status == .satisfied)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let wasOffline = !self.isOnline
+                // 状态去重：相同状态不重复回调，避免反复触发排空队列
+                if let last = self.lastKnownOnline, last == online { return }
+                self.lastKnownOnline = online
+                let wasOffline = !(self.isOnline)
                 self.isOnline = online
                 Self.logger.info("Network status: \(online ? "online" : "offline", privacy: .public)")
                 self.onNetworkStatusChanged?(online)
@@ -200,7 +263,8 @@ public final class SyncManager {
         )
 
         var current = snapshot
-        current.entries.insert(optimistic, at: 0)
+        // 乐观记录按发生时间归位，而不是无条件插到列表顶部
+        current.entries = Self.sortedEntries(current.entries + [optimistic])
         current.outbox.append(OutboxItem(
             kind: .createEntry,
             localTempId: tempId,
@@ -246,7 +310,7 @@ public final class SyncManager {
         )
 
         var current = snapshot
-        current.transactions.insert(optimistic, at: 0)
+        current.transactions = Self.sortedTransactions(current.transactions + [optimistic])
         if req.type == "expense" {
             current.transactionSummary.totalExpense += req.amount
             current.transactionSummary.categoryBreakdown[req.category, default: 0] += req.amount
@@ -274,6 +338,7 @@ public final class SyncManager {
         let itemsToFlush = snapshot.outbox
 
         for item in itemsToFlush {
+            if Task.isCancelled { break }
             // 确保该项目尚未被外部清除
             guard self.snapshot.outbox.contains(where: { $0.id == item.id }) else { continue }
             do {
@@ -283,7 +348,8 @@ public final class SyncManager {
                         let created = try await APIClient.shared.createEntry(req)
                         var latest = self.snapshot
                         latest.entries.removeAll { $0.id == item.localTempId }
-                        latest.entries.insert(created, at: 0)
+                        // 同步成功的记录按发生时间归位，而非插到列表顶部
+                        latest.entries = Self.sortedEntries(latest.entries + [created])
                         latest.outbox.removeAll { $0.id == item.id }
                         self.saveSnapshot(latest)
                     }
@@ -300,7 +366,7 @@ public final class SyncManager {
                         let created = try await APIClient.shared.createTransaction(req)
                         var latest = self.snapshot
                         latest.transactions.removeAll { $0.id == item.localTempId }
-                        latest.transactions.insert(created, at: 0)
+                        latest.transactions = Self.sortedTransactions(latest.transactions + [created])
                         latest.outbox.removeAll { $0.id == item.id }
                         self.saveSnapshot(latest)
                     }
@@ -313,16 +379,43 @@ public final class SyncManager {
                         self.saveSnapshot(latest)
                     }
                 }
+            } catch let apiErr as APIError {
+                self.handleOutboxFailure(item: item, error: apiErr)
             } catch {
-                var latest = self.snapshot
-                if let idx = latest.outbox.firstIndex(where: { $0.id == item.id }) {
-                    latest.outbox[idx].retryCount += 1
-                    latest.outbox[idx].lastError = error.localizedDescription
-                    self.saveSnapshot(latest)
-                }
+                self.handleOutboxFailure(item: item, error: APIError.networkFailure(error.localizedDescription))
             }
         }
         Self.logger.info("Outbox flush finished, \(self.snapshot.outbox.count) item(s) still pending")
+    }
+
+    /// 发件箱失败分类处理：
+    /// - 401 未授权：丢弃并上报（需重新配对，重试无意义）
+    /// - 4xx 客户端错误：永久错误，丢弃并上报
+    /// - 其余（网络 / 5xx）：有限次重试，超过上限判定为死信并丢弃，防止无限重试与无界增长
+    private func handleOutboxFailure(item: OutboxItem, error: APIError) {
+        var latest = snapshot
+        guard let idx = latest.outbox.firstIndex(where: { $0.id == item.id }) else { return }
+
+        switch error {
+        case .unauthorized:
+            latest.outbox.removeAll { $0.id == item.id }
+            Self.logger.error("Outbox item \(item.id.uuidString) dropped: device unauthorized")
+            onLocalDataWarning?("设备授权已失效，\(latest.outbox.count) 条本地记录待重新配对后同步")
+        case .serverError(let code, _) where (400..<500).contains(code):
+            latest.outbox.removeAll { $0.id == item.id }
+            Self.logger.error("Outbox item \(item.id.uuidString) dropped: permanent client error \(code)")
+            onLocalDataWarning?("有条本地记录因参数错误无法同步，已被丢弃")
+        default:
+            if latest.outbox[idx].retryCount >= Self.maxOutboxRetryCount {
+                latest.outbox.removeAll { $0.id == item.id }
+                Self.logger.error("Outbox item \(item.id.uuidString) exceeded retry limit, dropped as dead letter")
+                onLocalDataWarning?("有条本地记录多次同步失败，已转入待处理队列")
+            } else {
+                latest.outbox[idx].retryCount += 1
+                latest.outbox[idx].lastError = error.localizedDescription
+            }
+        }
+        saveSnapshot(latest)
     }
 
     // MARK: - 增量拉取与软删除对账合并 (Delta Sync & LWW Reconciliation)

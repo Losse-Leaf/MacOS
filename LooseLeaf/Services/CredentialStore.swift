@@ -65,44 +65,45 @@ public enum CredentialStore {
 
     public static func clearAllCredentials() {
         lock.lock()
-        cachedPayload = Payload()
+        let payload = Payload()
+        cachedPayload = payload
         lock.unlock()
-        writePayload(Payload())
+        writePayload(payload)
     }
 
     // MARK: - 底层读写
 
+    /// 读取凭据。
+    /// 关键：**持锁完成磁盘加载**。原先的「解锁 → 读盘 → 再加锁写缓存」存在丢失更新竞态：
+    /// 线程 A 读到旧磁盘内容后，线程 B 写入了新令牌，随后 A 用旧内容覆盖了缓存，
+    /// 导致刚保存的令牌凭空消失、用户被迫重新配对。
     private static func read<T>(_ transform: (Payload?) -> T) -> T {
         lock.lock()
+        defer { lock.unlock() }
         if let cachedPayload {
-            lock.unlock()
             return transform(cachedPayload)
         }
-        lock.unlock()
-
         let payload = loadFromDisk()
-        lock.lock()
         cachedPayload = payload
-        lock.unlock()
         return transform(payload)
     }
 
+    /// 修改并落盘。锁内完成「读-改-写」，保证并发写不会互相覆盖。
     private static func mutate(_ change: (inout Payload) -> Void) -> Bool {
         lock.lock()
         var payload = cachedPayload ?? loadFromDisk() ?? Payload()
         change(&payload)
         cachedPayload = payload
+        let written = writePayload(payload)
         lock.unlock()
-        return writePayload(payload)
+        return written
     }
 
     private static var storageDirectory: URL {
         if let overrideDirectory {
             return overrideDirectory
         }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return base.appendingPathComponent("LooseLeaf", isDirectory: true)
+        return SyncManager.sharedStorageDirectory
     }
 
     private static var fileURL: URL {
@@ -110,22 +111,39 @@ public enum CredentialStore {
     }
 
     private static func loadFromDisk() -> Payload? {
-        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else { return nil }
         return try? JSONDecoder().decode(Payload.self, from: data)
     }
 
+    /// 原子落盘凭据。
+    /// 关键：**先设权限再原子替换**。原先的 `write(.atomic)` 会先写临时文件再 rename，
+    /// rename 后的文件继承 umask（通常 0644），之后才收紧到 0600 —— 中间存在窗口期，
+    /// 且若收紧失败，文件将永久保持 0644 而函数却报告失败。
     @discardableResult
     private static func writePayload(_ payload: Payload) -> Bool {
         let dir = storageDirectory
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        } catch {
+            // 目录权限收紧失败不阻断写入（写入时会再次尝试设置文件权限）
+        }
         guard let data = try? JSONEncoder().encode(payload) else { return false }
 
         let url = fileURL
+        let tmpURL = dir.appendingPathComponent("credentials.json.tmp")
         do {
-            try data.write(to: url, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            try data.write(to: tmpURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpURL.path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: tmpURL)
+            } else {
+                try FileManager.default.moveItem(at: tmpURL, to: url)
+            }
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             return true
         } catch {
+            try? FileManager.default.removeItem(at: tmpURL)
             return false
         }
     }

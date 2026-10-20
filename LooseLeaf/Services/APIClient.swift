@@ -40,22 +40,55 @@ public actor APIClient {
 
     private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "api")
 
-    private let session: URLSession
-    private var etagCache: [String: String] = [:]
+    /// 复用 JSON 编解码器实例，避免每次请求都新建（省去内部缓冲初始化开销）
+    nonisolated private static let decoder = JSONDecoder()
+    nonisolated private static let encoder = JSONEncoder()
 
-    public init(session: URLSession = .shared) {
-        self.session = session
+    private let session: URLSession
+    /// ETag 缓存：URL → (设备令牌指纹, ETag)
+    /// 必须与令牌绑定 —— 换令牌后沿用旧 ETag 会让服务端回 304，导致数据静默不更新。
+    private var etagCache: [String: (token: String, etag: String)] = [:]
+    /// 401 只广播一次，避免并发请求同时 401 时反复写盘与刷屏
+    private var hasNotifiedUnauthorized: Bool = false
+
+    public init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 120
+            config.waitsForConnectivity = true
+            config.httpMaximumConnectionsPerHost = 8
+            config.requestCachePolicy = .useProtocolCachePolicy
+            config.urlCache = URLCache(
+                memoryCapacity: 8 * 1024 * 1024,
+                diskCapacity: 64 * 1024 * 1024,
+                diskPath: "com.looseleaf.apicache"
+            )
+            self.session = URLSession(configuration: config)
+        }
     }
 
     // MARK: - Hub 地址与媒体路径解析
 
+    /// 中枢地址缓存：避免每次请求都跨进程读取 UserDefaults
+    nonisolated(unsafe) private static var cachedBaseURL: String = ""
+
     public nonisolated var baseURLString: String {
+        if !Self.cachedBaseURL.isEmpty {
+            return Self.cachedBaseURL
+        }
         let saved = UserDefaults.standard.string(forKey: Self.hubURLDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let resolved: String
         if saved.isEmpty {
-            return "http://localhost:8088"
+            resolved = "http://localhost:8088"
+        } else {
+            resolved = saved.hasSuffix("/") ? String(saved.dropLast()) : saved
         }
-        return saved.hasSuffix("/") ? String(saved.dropLast()) : saved
+        Self.cachedBaseURL = resolved
+        return resolved
     }
 
     public nonisolated func setBaseURL(_ urlString: String) {
@@ -65,10 +98,19 @@ public actor APIClient {
         }
         let previous = UserDefaults.standard.string(forKey: Self.hubURLDefaultsKey) ?? ""
         UserDefaults.standard.set(cleaned, forKey: Self.hubURLDefaultsKey)
+        Self.cachedBaseURL = cleaned
         if !previous.isEmpty, previous != cleaned {
             // 换中枢后旧设备令牌对新节点无效；继续携带只会让配对/探针请求 401
             CredentialStore.deleteToken()
+            // ETag 必须随中枢一起失效：旧节点的 ETag 发往新节点会换来 304，导致拉不到任何数据
+            Task { await APIClient.shared.invalidateCaches() }
         }
+    }
+
+    /// 清空 ETag 等协商缓存（换中枢 / 重新配对 / 手动强制刷新后调用）
+    public func invalidateCaches() {
+        etagCache.removeAll()
+        hasNotifiedUnauthorized = false
     }
 
     /// 将后端返回的相对媒体路径 (如 /media/...) 补全为可访问的完整 URL。
@@ -133,23 +175,32 @@ public actor APIClient {
             request.setValue(token, forHTTPHeaderField: "X-Device-Token")
         }
 
-        if useETag, method == "GET", let cachedETag = etagCache[cacheKey] {
-            request.setValue(cachedETag, forHTTPHeaderField: "If-None-Match")
+        // ETag 必须与当前设备令牌匹配：换了令牌（重新配对）后旧 ETag 会让服务端回 304
+        if useETag, method == "GET",
+           let cached = etagCache[cacheKey],
+           cached.token == (CredentialStore.getToken() ?? "") {
+            request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match")
         }
 
         return (request, cacheKey)
     }
 
-    /// 仅对幂等 GET 做一次轻量重试；POST/PUT/DELETE 绝不自动重放
+    /// 仅对幂等 GET 做一次轻量重试；POST/PUT/DELETE 绝不自动重放。
+    /// 重试必须尊重取消信号：取消后不得再发请求，且退避需指数化 + 抖动以避免多端惊群。
     private func dataWithRetry(for request: URLRequest, attempts: Int) async throws -> (Data, URLResponse) {
         var lastError: Error?
         for attempt in 0..<max(1, attempts) {
             do {
                 return try await session.data(for: request)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let urlError as URLError where urlError.code == .cancelled {
+                throw CancellationError()
             } catch {
                 lastError = error
                 if attempt < attempts - 1 {
-                    try? await Task.sleep(for: .milliseconds(350))
+                    let delay = pow(2.0, Double(attempt)) * 0.35 + Double.random(in: 0...0.2)
+                    try await Task.sleep(for: .seconds(delay))
                 }
             }
         }
@@ -165,7 +216,7 @@ public actor APIClient {
     ) async throws -> T {
         let bodyData: Data?
         if let body {
-            bodyData = try JSONEncoder().encode(body)
+            bodyData = try Self.encoder.encode(body)
         } else {
             bodyData = nil
         }
@@ -195,19 +246,38 @@ public actor APIClient {
         }
 
         if http.statusCode == 401 {
-            let errEnvelope = try? JSONDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
+            let errEnvelope = try? Self.decoder.decode(APIEnvelope<EmptyPayload>.self, from: data)
             Self.logger.warning("Received 401 unauthorized from \(path, privacy: .public)")
-            NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
+            if !hasNotifiedUnauthorized {
+                hasNotifiedUnauthorized = true
+                NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
+            }
             throw APIError.unauthorized(errEnvelope?.message ?? "")
         }
 
-        if let newETag = http.value(forHTTPHeaderField: "ETag"), !newETag.isEmpty {
-            etagCache[cacheKey] = newETag
+        // 关键：ETag 只在确认 2xx 之后写入。
+        // 若在状态码校验之前写入，服务端 5xx 附带的错误 ETag 会覆盖正确值，
+        // 下次请求带上错误 If-None-Match 可能换来 304 —— 客户端会认为「数据未变更」，造成静默数据丢失。
+        if (200..<300).contains(http.statusCode),
+           let newETag = http.value(forHTTPHeaderField: "ETag"),
+           !newETag.isEmpty {
+            etagCache[cacheKey] = (token: CredentialStore.getToken() ?? "", etag: newETag)
         }
 
+        if http.statusCode >= 400 {
+            let errEnvelope = try? Self.decoder.decode(APIEnvelope<EmptyPayload>.self, from: data)
+            throw APIError.serverError(
+                code: errEnvelope?.code ?? http.statusCode,
+                message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+            )
+        }
+
+        // 解码是同步的，放到独立任务中执行，避免阻塞 actor 串行化其他请求
         do {
-            let envelope = try JSONDecoder().decode(APIEnvelope<T>.self, from: data)
-            if http.statusCode >= 400 || envelope.code >= 400 {
+            let envelope: APIEnvelope<T> = try await Task.detached(priority: .userInitiated) {
+                try Self.decoder.decode(APIEnvelope<T>.self, from: data)
+            }.value
+            if envelope.code >= 400 {
                 throw APIError.serverError(code: envelope.code, message: envelope.message)
             }
             guard let payload = envelope.data else {
@@ -231,11 +301,23 @@ public actor APIClient {
 
     public func checkHealth() async throws -> HealthCheckResponse {
         let (request, _) = try buildRequest(path: "/api/health")
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw APIError.networkFailure("健康探针状态异常")
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await dataWithRetry(for: request, attempts: 2)
+        } catch {
+            throw APIError.networkFailure(error.localizedDescription)
         }
-        return try JSONDecoder().decode(HealthCheckResponse.self, from: data)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.networkFailure("健康探针响应无效")
+        }
+        // 保留真实状态码，便于排障（原先一律吞成「健康探针状态异常」）
+        guard http.statusCode == 200 else {
+            throw APIError.serverError(
+                code: http.statusCode,
+                message: "健康探针状态异常 (HTTP \(http.statusCode))"
+            )
+        }
+        return try Self.decoder.decode(HealthCheckResponse.self, from: data)
     }
 
     public func fetchSystemStatus() async throws -> SystemStatus {
@@ -740,11 +822,20 @@ public actor APIClient {
         folder: String = "entries"
     ) async throws -> Attachment {
         let boundary = "Boundary-\(UUID().uuidString)"
-        var body = Data()
+
+        // multipart 请求体写入临时文件后用 upload(for:fromFile:) 发送，
+        // 避免把整张图片在内存中再复制一份（峰值内存从 2× 降到 1×）。
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("looseleaf-upload-\(UUID().uuidString).multipart")
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+        guard let handle = try? FileHandle(forWritingTo: bodyURL) else {
+            throw APIError.networkFailure("无法创建上传临时文件")
+        }
+        defer { try? handle.close() }
 
         func appendString(_ str: String) {
             if let d = str.data(using: .utf8) {
-                body.append(d)
+                handle.write(d)
             }
         }
 
@@ -755,18 +846,24 @@ public actor APIClient {
         appendString("--\(boundary)\r\n")
         appendString("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
         appendString("Content-Type: \(mimeType)\r\n\r\n")
-        body.append(fileData)
+        handle.write(fileData)
         appendString("\r\n--\(boundary)--\r\n")
+        try? handle.synchronize()
 
         let (request, _) = try buildRequest(
             path: "/api/v1/files/upload",
             method: "POST",
-            bodyData: body,
+            bodyData: nil,
             contentType: "multipart/form-data; boundary=\(boundary)",
             timeout: 180
         )
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.upload(for: request, fromFile: bodyURL)
+        } catch {
+            throw APIError.networkFailure(error.localizedDescription)
+        }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.networkFailure("上传响应无效")
         }
@@ -774,8 +871,24 @@ public actor APIClient {
             NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
             throw APIError.unauthorized("上传需要设备授权凭据")
         }
-        let envelope = try JSONDecoder().decode(APIEnvelope<UnifiedUploadResponse>.self, from: data)
-        guard http.statusCode == 200, let res = envelope.data else {
+        // 关键：先判状态码再解码。否则服务端返回 502 HTML 错误页会抛裸 DecodingError，
+        // 上层无法识别为 APIError，会误判为「应回退到本地存储」并把整张图重传一次。
+        guard http.statusCode == 200 else {
+            let errEnvelope = try? Self.decoder.decode(APIEnvelope<EmptyPayload>.self, from: data)
+            throw APIError.serverError(
+                code: errEnvelope?.code ?? http.statusCode,
+                message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+            )
+        }
+        let envelope: APIEnvelope<UnifiedUploadResponse>
+        do {
+            envelope = try await Task.detached(priority: .userInitiated) {
+                try Self.decoder.decode(APIEnvelope<UnifiedUploadResponse>.self, from: data)
+            }.value
+        } catch {
+            throw APIError.decodingFailure(error.localizedDescription)
+        }
+        guard let res = envelope.data else {
             throw APIError.serverError(code: envelope.code, message: envelope.message)
         }
         return Attachment(
@@ -821,7 +934,14 @@ public actor APIClient {
             method: "GET",
             timeout: 180
         )
-        let (data, response) = try await session.data(for: request)
+        // 先用 download(for: 拿到临时文件（流式落盘，避免整包驻留内存），再读入 Data 交给既有调用方
+        let (tempURL, response): (URL, URLResponse)
+        do {
+            (tempURL, response) = try await session.download(for: request)
+        } catch {
+            throw APIError.networkFailure(error.localizedDescription)
+        }
+        defer { try? FileManager.default.removeItem(at: tempURL) }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.networkFailure("下载响应无效")
         }
@@ -832,6 +952,7 @@ public actor APIClient {
         guard http.statusCode == 200 else {
             throw APIError.serverError(code: http.statusCode, message: "下载备份失败 (HTTP \(http.statusCode))")
         }
+        let data = try Data(contentsOf: tempURL, options: .mappedIfSafe)
         return (data, filename)
     }
 

@@ -435,31 +435,9 @@ public struct StreamView: View {
                             }
                             TimelineEntryCardView(
                                 entry: entry,
-                                appState: appState,
-                                onEditEntry: { editingEntry = entry },
-                                onDeleteEntry: {
-                                    appState.askConfirm(
-                                        title: "确认删除该条生活手稿？",
-                                        message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
-                                        confirmText: "删除手稿",
-                                        danger: true
-                                    ) {
-                                        deleteEntryAction(entry)
-                                    }
-                                },
-                                onEditTransaction: { tx in editingTransaction = tx },
-                                onDeleteTransaction: { tx in
-                                    appState.askConfirm(
-                                        title: "确认删除该笔流水账目？",
-                                        message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
-                                        confirmText: "删除账目",
-                                        danger: true
-                                    ) {
-                                        deleteTransactionAction(tx)
-                                    }
-                                },
-                                onToggleFeatured: { toggleFeatured(entry) },
-                                onOpenDetail: { appState.highlightedEntry = entry}
+                                transaction: matchingTransaction(for: entry),
+                                isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
+                                actions: timelineActions(for: entry)
                             )
                             .id(entry.id)
                         }
@@ -487,6 +465,49 @@ public struct StreamView: View {
                 keyboardScrollPosition = id
             }
         }
+    }
+
+    /// 条目卡片的行为集合
+    private func timelineActions(for entry: LifeEntry) -> TimelineEntryActions {
+        TimelineEntryActions(
+            onEditEntry: { editingEntry = entry },
+            onDeleteEntry: {
+                appState.askConfirm(
+                    title: "确认删除该条生活手稿？",
+                    message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
+                    confirmText: "删除手稿",
+                    danger: true
+                ) {
+                    deleteEntryAction(entry)
+                }
+            },
+            onEditTransaction: { tx in editingTransaction = tx },
+            onDeleteTransaction: { tx in
+                appState.askConfirm(
+                    title: "确认删除该笔流水账目？",
+                    message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
+                    confirmText: "删除账目",
+                    danger: true
+                ) {
+                    deleteTransactionAction(tx)
+                }
+            },
+            onToggleFeatured: { toggleFeatured(entry) },
+            onOpenDetail: { appState.highlightedEntry = entry },
+            onOpenLightbox: { appState.lightboxAttachment = $0 },
+            onToast: { appState.showTemporaryBanner($0) }
+        )
+    }
+
+    /// 查出条目关联的账目（伴生条目的 id 可能是合成的负数，需归一）
+    private func matchingTransaction(for entry: LifeEntry) -> Transaction? {
+        if let associated = entry.associatedTransactionId {
+            return appState.transactionById[Int(associated)]
+        }
+        if entry.type == "transaction" {
+            return appState.transactionById[entry.id]
+        }
+        return nil
     }
 
     // MARK: - 单条散页卡片渲染组件 (TimelineEntryCardView)

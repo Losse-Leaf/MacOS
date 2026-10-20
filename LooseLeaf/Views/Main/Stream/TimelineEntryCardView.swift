@@ -1,15 +1,34 @@
 import SwiftUI
 import AppKit
 
+    /// 时间流条目卡片。
+    ///
+    /// **纯值输入**：卡片不再持有 `@Bindable appState`。
+    /// 原实现让每一行都成为一个 AppState 观察者 —— N 行 = N 个观察者，
+    /// 任一状态变更都会唤醒全部卡片；且卡片内部还要现查账目（O(N) 遍历）。
+    /// 现在账目由父层按 id 查好后作为值传入，交互一律通过闭包回传。
+    /// 时间流卡片的行为集合（把 8 个闭包打包成一个值类型，
+    /// 既让卡片初始化表达式保持简短，也降低 SwiftUI 类型检查器的负担）
+    struct TimelineEntryActions {
+        var onEditEntry: () -> Void = {}
+        var onDeleteEntry: () -> Void = {}
+        var onEditTransaction: (Transaction) -> Void = { _ in }
+        var onDeleteTransaction: (Transaction) -> Void = { _ in }
+        var onToggleFeatured: () -> Void = {}
+        var onOpenDetail: () -> Void = {}
+        /// 打开灯箱
+        var onOpenLightbox: (Attachment) -> Void = { _ in }
+        /// 顶部提示条
+        var onToast: (String) -> Void = { _ in }
+    }
+
     struct TimelineEntryCardView: View {
         let entry: LifeEntry
-        @Bindable var appState: AppState
-        var onEditEntry: () -> Void
-        var onDeleteEntry: () -> Void
-        var onEditTransaction: (Transaction) -> Void
-        var onDeleteTransaction: (Transaction) -> Void
-        var onToggleFeatured: () -> Void
-        var onOpenDetail: () -> Void
+        /// 关联账目（由父层按 id 查好后传入，避免卡片内全量遍历）
+        let transaction: Transaction?
+        /// 是否为键盘流当前聚焦项
+        var isKeyboardFocused: Bool = false
+        var actions: TimelineEntryActions = TimelineEntryActions()
 
         @State private var isHovering: Bool = false
 
@@ -95,10 +114,9 @@ import AppKit
                         HStack(spacing: 6) {
                             if isHovering {
                                 if entry.type == "transaction" {
-                                    let txId = entry.associatedTransactionId ?? Int64(entry.id)
-                                    if let tx = appState.transactionById[Int(txId)] {
+                                    if let tx = transaction {
                                         Button {
-                                            onEditTransaction(tx)
+                                            actions.onEditTransaction(tx)
                                         } label: {
                                             Image(systemName: "pencil")
                                                 .font(.system(size: 11))
@@ -112,7 +130,7 @@ import AppKit
                                         .accessibilityLabel("编辑账目")
 
                                         Button {
-                                            onDeleteTransaction(tx)
+                                            actions.onDeleteTransaction(tx)
                                         } label: {
                                             Image(systemName: "trash")
                                                 .font(.system(size: 11))
@@ -127,7 +145,7 @@ import AppKit
                                     }
                                 } else {
                                     Button {
-                                        onToggleFeatured()
+                                        actions.onToggleFeatured()
                                     } label: {
                                         Image(systemName: entry.featured == true ? "star.fill" : "star")
                                             .font(.system(size: 11))
@@ -141,7 +159,7 @@ import AppKit
                                         .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
 
                                     Button {
-                                        onEditEntry()
+                                        actions.onEditEntry()
                                     } label: {
                                         Image(systemName: "pencil")
                                             .font(.system(size: 11))
@@ -155,7 +173,7 @@ import AppKit
                                         .accessibilityLabel("编辑手稿")
 
                                     Button {
-                                        onDeleteEntry()
+                                        actions.onDeleteEntry()
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.system(size: 11))
@@ -171,7 +189,7 @@ import AppKit
                             }
 
                             Button {
-                                onOpenDetail()
+                                actions.onOpenDetail()
                             } label: {
                                 Image(systemName: "arrow.up.right.square")
                                     .font(.system(size: 11.5))
@@ -211,7 +229,7 @@ import AppKit
                                             metaText: parsed.dotDate,
                                             maxHeight: 220
                                         ) {
-                                            appState.lightboxAttachment = att
+                                            actions.onOpenLightbox(att)
                                         }
                                         .frame(width: 260)
                                     }
@@ -229,26 +247,25 @@ import AppKit
             .overlay(
                 RoundedRectangle(cornerRadius: ArchiveRadius.md)
                     .stroke(
-                        appState.keyboardFocusedEntryId == entry.id ? ArchivePalette.accentWarm : Color.clear,
+                        isKeyboardFocused ? ArchivePalette.accentWarm : Color.clear,
                         lineWidth: 1.0
                     )
             )
             .onHover { isHovering = $0 }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
-                onOpenDetail()
+                actions.onOpenDetail()
             }
             .contextMenu {
                 if entry.type == "transaction" {
-                    let txId = entry.associatedTransactionId ?? Int64(entry.id)
-                    if let tx = appState.transactionById[Int(txId)] {
+                    if let tx = transaction {
                         Button {
-                            onEditTransaction(tx)
+                            actions.onEditTransaction(tx)
                         } label: {
                             Label("编辑账目", systemImage: "pencil")
                         }
                         Button(role: .destructive) {
-                            onDeleteTransaction(tx)
+                            actions.onDeleteTransaction(tx)
                         } label: {
                             Label("删除账目", systemImage: "trash")
                         }
@@ -256,36 +273,36 @@ import AppKit
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
-                            appState.showTemporaryBanner("已拷贝金额至剪贴板")
+                            actions.onToast("已拷贝金额至剪贴板")
                         } label: {
                             Label("拷贝金额", systemImage: "doc.on.doc")
                         }
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
-                            appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
+                            actions.onToast("已拷贝账目摘要至剪贴板")
                         } label: {
                             Label("拷贝账目摘要", systemImage: "text.quote")
                         }
                     }
                 } else {
                     Button {
-                        onOpenDetail()
+                        actions.onOpenDetail()
                     } label: {
                         Label("查看手稿详情", systemImage: "book.pages")
                     }
                     Button {
-                        onToggleFeatured()
+                        actions.onToggleFeatured()
                     } label: {
                         Label(entry.featured == true ? "取消精选印记" : "标记为精选印记", systemImage: entry.featured == true ? "star.slash" : "star")
                     }
                     Button {
-                        onEditEntry()
+                        actions.onEditEntry()
                     } label: {
                         Label("编辑手稿", systemImage: "pencil")
                     }
                     Button(role: .destructive) {
-                        onDeleteEntry()
+                        actions.onDeleteEntry()
                     } label: {
                         Label("删除手稿", systemImage: "trash")
                     }
@@ -293,14 +310,14 @@ import AppKit
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(entry.content, forType: .string)
-                        appState.showTemporaryBanner("已拷贝手稿正文至剪贴板")
+                        actions.onToast("已拷贝手稿正文至剪贴板")
                     } label: {
                         Label("拷贝手稿正文", systemImage: "doc.on.doc")
                     }
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(parsed.dotDateTime, forType: .string)
-                        appState.showTemporaryBanner("已拷贝时间戳至剪贴板")
+                        actions.onToast("已拷贝时间戳至剪贴板")
                     } label: {
                         Label("拷贝时间戳", systemImage: "clock")
                     }

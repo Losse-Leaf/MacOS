@@ -292,7 +292,7 @@ public final class SyncManager {
 
         var current = snapshot
         // 乐观记录按发生时间归位，而不是无条件插到列表顶部
-        current.entries = Self.sortedEntries(current.entries + [optimistic])
+        current.entries = Self.sortedEntries(current.entries, inserting: optimistic)
         current.outbox.append(OutboxItem(
             kind: .createEntry,
             localTempId: tempId,
@@ -338,7 +338,7 @@ public final class SyncManager {
         )
 
         var current = snapshot
-        current.transactions = Self.sortedTransactions(current.transactions + [optimistic])
+        current.transactions = Self.sortedTransactions(current.transactions, inserting: optimistic)
         if req.type == "expense" {
             current.transactionSummary.totalExpense += req.amount
             current.transactionSummary.categoryBreakdown[req.category, default: 0] += req.amount
@@ -503,16 +503,21 @@ public final class SyncManager {
 
     /// 时间流统一排序（全量与增量共用）：北京时间倒序，同刻按服务端 id 倒序。
     /// 排序前一次性提取时间戳 (O(N))，避免比较器内部重复 DateFormatter 解析。
-    nonisolated static func sortedEntries(_ entries: [LifeEntry]) -> [LifeEntry] {
+    /// - Parameter inserting: 需要一并插入的乐观记录（避免调用方先 `+ [extra]` 多复制一份数组）。
+    nonisolated static func sortedEntries(_ entries: [LifeEntry], inserting extra: LifeEntry? = nil) -> [LifeEntry] {
         ArchivePerformance.metric(.sync, "sortEntryCount", entries.count)
         return ArchivePerformance.measure(.sync, "sortEntries") {
-            let itemsWithDate: [(entry: LifeEntry, date: Date)] = entries.map {
+            var itemsWithDate: [(entry: LifeEntry, date: Date)] = entries.map {
                 ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
             }
-            return itemsWithDate.sorted {
+            if let extra {
+                itemsWithDate.append((extra, FormatUtils.parseFlexDate(extra.occurredAt) ?? .distantPast))
+            }
+            itemsWithDate.sort {
                 if $0.date != $1.date { return $0.date > $1.date }
                 return $0.entry.id > $1.entry.id
-            }.map(\.entry)
+            }
+            return itemsWithDate.map(\.entry)
         }
     }
 
@@ -546,13 +551,17 @@ public final class SyncManager {
     }
 
     /// 账目统一排序：语义与 `sortedEntries` 一致。
-    nonisolated static func sortedTransactions(_ transactions: [Transaction]) -> [Transaction] {
-        let itemsWithDate: [(tx: Transaction, date: Date)] = transactions.map {
+    nonisolated static func sortedTransactions(_ transactions: [Transaction], inserting extra: Transaction? = nil) -> [Transaction] {
+        var itemsWithDate: [(tx: Transaction, date: Date)] = transactions.map {
             ($0, FormatUtils.parseFlexDate($0.occurredAt) ?? .distantPast)
         }
-        return itemsWithDate.sorted {
+        if let extra {
+            itemsWithDate.append((extra, FormatUtils.parseFlexDate(extra.occurredAt) ?? .distantPast))
+        }
+        itemsWithDate.sort {
             if $0.date != $1.date { return $0.date > $1.date }
             return $0.tx.id > $1.tx.id
-        }.map(\.tx)
+        }
+        return itemsWithDate.map(\.tx)
     }
 }

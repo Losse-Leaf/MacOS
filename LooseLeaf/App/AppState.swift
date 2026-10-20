@@ -242,6 +242,11 @@ public final class AppState {
     public var highlightedEntry: LifeEntry?
     /// 在**独立窗口**中打开的条目（深链 / 「在新窗口打开」使用，与主窗口的弹层互不影响）
     public var detailWindowEntry: LifeEntry?
+
+    /// 接力活动类型（与 Info.plist 的 NSUserActivityTypes 对应）
+    public static let userActivityType = "com.looseleaf.entry"
+    /// 当前接力活动（把最近浏览的散页暴露给其它设备接力）
+    private var currentUserActivity: NSUserActivity?
     public var lightboxAttachment: Attachment?
     public var activeConfirmDialog: ConfirmDialogRequest? = nil
 
@@ -879,6 +884,7 @@ public final class AppState {
 
         if let found = entries.first(where: { $0.id == entryId }) {
             self.detailWindowEntry = found
+            publishHandoffActivity(for: found)
         } else {
             // 若当前本地快照中尚未载入该条目，异步刷新后再次尝试查找
             Task { @MainActor in
@@ -941,6 +947,40 @@ public final class AppState {
             }
         }
         #endif
+    }
+
+    // MARK: - 接力 (Handoff / NSUserActivity)
+
+    /// 把某条散页发布为当前接力活动（其它 Mac / iPhone 可在同一 Apple ID 下接力继续浏览）
+    public func publishHandoffActivity(for entry: LifeEntry) {
+        let activity = NSUserActivity(activityType: Self.userActivityType)
+        // NSUserActivity 没有 subtitle；地点信息并入 title 的说明文案
+        let baseTitle = entry.title.isEmpty ? "散页手稿" : entry.title
+        if let place = entry.cityName ?? entry.location, !place.isEmpty {
+            activity.title = "\(baseTitle) · \(place)"
+        } else {
+            activity.title = baseTitle
+        }
+        activity.userInfo = ["entryId": entry.id]
+        activity.isEligibleForHandoff = true
+        activity.isEligibleForSearch = false
+        activity.becomeCurrent()
+        currentUserActivity = activity
+    }
+
+    /// 结束接力活动
+    public func endHandoffActivity() {
+        currentUserActivity?.resignCurrent()
+        currentUserActivity = nil
+    }
+
+    /// 处理接力过来的活动（来自其它设备的「继续浏览」）
+    public func handleHandoffActivity(_ activity: NSUserActivity) {
+        guard activity.activityType == Self.userActivityType else { return }
+        let raw = activity.userInfo?["entryId"] as? NSNumber
+        let id = raw?.intValue ?? activity.userInfo?["entryId"] as? Int ?? -1
+        guard id >= 0 else { return }
+        navigateToEntry(id: id)
     }
 
     // MARK: - 撤销栈 (Undo)

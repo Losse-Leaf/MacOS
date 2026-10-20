@@ -98,6 +98,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 接力：从同一 Apple ID 的其它设备继续浏览某条散页
+    public func application(_ application: NSApplication, continue userActivity: NSUserActivity) -> Bool {
+        guard userActivity.activityType == AppState.userActivityType else { return false }
+        Task { @MainActor in
+            AppState.shared.handleHandoffActivity(userActivity)
+        }
+        return true
+    }
+
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             // 优先唤回主工作台窗口，避免把浮动捕捉面板当成主窗口

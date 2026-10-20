@@ -50,6 +50,8 @@ public struct DarkroomDropZone: View {
     @State private var isFeatured: Bool = true
 
     @State private var isProcessing: Bool = false
+    /// 批量装裱进度（0~1）
+    @State private var processingProgress: Double = 0
     @State private var isUploading: Bool = false
     @State private var uploadProgress: Double = 0.0
     @State private var errorMessage: String?
@@ -181,6 +183,16 @@ public struct DarkroomDropZone: View {
                     Text("自动提取相机型号、镜头焦段与曝光 EXIF")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
+
+                    // 批量装裱进度（原先只有一个布尔量，用户不知道还要等多久）
+                    if isProcessing {
+                        ProgressView(value: processingProgress)
+                            .progressViewStyle(.linear)
+                            .frame(maxWidth: 220)
+                            .padding(.top, 4)
+                            .accessibilityLabel("正在装裱底片")
+                            .accessibilityValue("\(Int(processingProgress * 100))%")
+                    }
                 }
 
                 Spacer()
@@ -210,7 +222,7 @@ public struct DarkroomDropZone: View {
             .padding(16)
         }
         .frame(minHeight: 76)
-        .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
+        .onDrop(of: [.fileURL, .image, .rawImage], isTargeted: $isDragTargeted) { providers in
             handleImageDrop(providers: providers)
             return true
         }
@@ -261,7 +273,7 @@ public struct DarkroomDropZone: View {
                 }
             }
             .frame(minHeight: 380)
-            .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
+            .onDrop(of: [.fileURL, .image, .rawImage], isTargeted: $isDragTargeted) { providers in
                 handleImageDrop(providers: providers)
                 return true
             }
@@ -795,31 +807,77 @@ public struct DarkroomDropZone: View {
         }
     }
 
+    /// 批量装裱底片。
+    /// 关键：原先逐张串行处理（每张 EXIF 解析 + 4K 解码 + JPEG 编码约 0.5~2 秒），
+    /// 拖入 20 张需要 10~40 秒且毫无进度反馈。
+    /// 现在改为**受限并发**（最多 3 张同时处理，避免 CPU 争抢）并展示整体进度。
     private func loadPhotos(from urls: [URL]) async {
         isProcessing = true
         errorMessage = nil
-        for url in urls {
-            do {
-                let result = try await ImageProcessor.processImageFileInBackground(at: url)
-                if let img = NSImage(data: result.compressedData) {
-                    let item = DarkroomPhotoItem(photo: result, preview: img, originalURL: url)
-                    items.append(item)
-                    if entryTitle.isEmpty {
-                        entryTitle = (url.lastPathComponent as NSString).deletingPathExtension
-                    }
-                    if entryContent.isEmpty && !result.exifMetadata.formattedCameraLine.isEmpty {
-                        entryContent = result.exifMetadata.formattedCameraLine
-                    }
-                    if let capAt = result.exifMetadata.capturedAt, let date = FormatUtils.parseFlexDate(capAt) {
-                        entryOccurredAt = date
+        let total = urls.count
+        var finished = 0
+
+        // 并发度上限：图片压制是 CPU 密集型，过高并发只会互相抢核
+        let maxConcurrent = 3
+        var index = 0
+
+        while index < urls.count {
+            let batch = urls[index..<min(index + maxConcurrent, urls.count)]
+            index += maxConcurrent
+
+            let results = await withTaskGroup(of: (URL, Result<DarkroomPhotoItem, Error>).self) { group -> [(URL, Result<DarkroomPhotoItem, Error>)] in
+                for url in batch {
+                    group.addTask {
+                        do {
+                            let result = try await ImageProcessor.processImageFileInBackground(at: url)
+                            if let img = NSImage(data: result.compressedData) {
+                                let item = DarkroomPhotoItem(photo: result, preview: img, originalURL: url)
+                                return (url, .success(item))
+                            }
+                            return (url, .failure(APIError.decodingFailure("无法解码图像预览")))
+                        } catch {
+                            return (url, .failure(error))
+                        }
                     }
                 }
-            } catch {
-                self.errorMessage = "载入「\(url.lastPathComponent)」失败：\(error.localizedDescription)"
+                var collected: [(URL, Result<DarkroomPhotoItem, Error>)] = []
+                for await outcome in group {
+                    collected.append(outcome)
+                }
+                return collected
+            }
+
+            // 保持拖拽顺序
+            for (_, outcome) in results.sorted(by: { a, b in
+                let ia = urls.firstIndex(of: a.0) ?? 0
+                let ib = urls.firstIndex(of: b.0) ?? 0
+                return ia < ib
+            }) {
+                switch outcome {
+                case .success(let item):
+                    items.append(item)
+                    if entryTitle.isEmpty {
+                        if let originalURL = item.originalURL {
+                            entryTitle = (originalURL.lastPathComponent as NSString).deletingPathExtension
+                        }
+                    }
+                    if entryContent.isEmpty && !item.photo.exifMetadata.formattedCameraLine.isEmpty {
+                        entryContent = item.photo.exifMetadata.formattedCameraLine
+                    }
+                    if let capAt = item.photo.exifMetadata.capturedAt, let date = FormatUtils.parseFlexDate(capAt) {
+                        entryOccurredAt = date
+                    }
+                case .failure(let error):
+                    self.errorMessage = "载入失败：\(error.localizedDescription)"
+                }
+                finished += 1
+                processingProgress = total > 0 ? Double(finished) / Double(total) : 1
             }
         }
+
         selectedIndex = max(0, items.count - 1)
         isProcessing = false
+        processingProgress = 0
     }
 
     private func removePhoto(at index: Int) {

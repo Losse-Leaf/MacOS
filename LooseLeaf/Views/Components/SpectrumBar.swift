@@ -14,26 +14,32 @@ public struct ExpenseSpectrumBar: View {
 
     public var body: some View {
         let items = summary.sortedSpectrum
-        VStack(alignment: .leading, spacing: 8) {
-            GeometryReader { geo in
-                if items.isEmpty {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(ArchivePalette.borderSubtle)
-                        .frame(height: 6)
-                } else {
-                    let totalSpacing = CGFloat(max(0, items.count - 1)) * 1.5
-                    let availableWidth = max(0, geo.size.width - totalSpacing)
-                    HStack(spacing: 1.5) {
-                        ForEach(items, id: \.category) { item in
-                            Rectangle()
-                                .fill(ArchivePalette.categoryColor(for: item.category))
-                                .frame(width: max(2, availableWidth * item.ratio), height: 6)
-                        }
+        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+            if items.isEmpty {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(ArchivePalette.borderSubtle)
+                    .frame(height: 6)
+            } else {
+                // 比例布局：改用 Canvas 直接按 ratio 分配宽度，
+                // 避免 GeometryReader 在 LazyVGrid 父容器中多触发一遍布局测量
+                Canvas { context, size in
+                    let spacing: CGFloat = 1.5
+                    let totalSpacing = CGFloat(max(0, items.count - 1)) * spacing
+                    let availableWidth = max(0, size.width - totalSpacing)
+                    var x: CGFloat = 0
+                    for item in items {
+                        let width = max(2, availableWidth * item.ratio)
+                        let rect = CGRect(x: x, y: 0, width: width, height: size.height)
+                        context.fill(
+                            Path(rect),
+                            with: .color(ArchivePalette.categoryColor(for: item.category))
+                        )
+                        x += width + spacing
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
                 }
+                .frame(height: 6)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
             }
-            .frame(height: 6)
 
             if showLegend && !items.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), spacing: 8)], alignment: .leading, spacing: 6) {
@@ -43,7 +49,7 @@ public struct ExpenseSpectrumBar: View {
                                 .fill(ArchivePalette.categoryColor(for: item.category))
                                 .frame(width: 6, height: 6)
                             Text(item.category)
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                                 .lineLimit(1)
                             Spacer(minLength: 2)

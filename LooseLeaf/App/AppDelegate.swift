@@ -36,6 +36,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationWillTerminate(_ notification: Notification) {
         // 防抖窗口内的最后一次修改必须落盘
         SyncManager.shared.flushSnapshotToDiskIfNeeded()
+        // Spotlight 索引有 1.5 秒防抖，退出前必须立即提交，否则最近变更的条目搜不到
+        SpotlightIndexer.flushNow()
         if let hotKeyRef {
             UnregisterEventHotKey(hotKeyRef)
         }
@@ -253,26 +255,28 @@ private final class KeyableFloatingPanel: NSPanel {
         // 延迟短暂检测，避免系统 DatePicker 弹层、下拉菜单或文件选择弹窗短暂抢焦点导致面板误收起
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self else { return }
-            if !self.isKeyWindow {
-                // 如果当前激活窗口是 Popover、Picker、或者本面板的子窗口，不自动收起
-                if let keyWin = NSApp.keyWindow, keyWin != self {
-                    let className = keyWin.className
-                    let isTransient = className.contains("Popover") || className.contains("Picker") || className.contains("Menu")
-                    let isOwned = self.childWindows?.contains(keyWin) == true
-                        || keyWin.sheetParent === self
-                        || keyWin.parent === self
-                        || NSApp.modalWindow != nil
-                    if isTransient || isOwned {
-                        return
-                    }
+            guard !self.isKeyWindow else { return }
+            if let keyWin = NSApp.keyWindow, keyWin !== self {
+                // 只依赖**公开 API** 判断子窗口/附属窗口关系；
+                // 原先通过 className.contains("Popover") 之类的私有类名判断，
+                // 系统升级改名即失效，且 NSApp.modalWindow != nil 过于宽松。
+                let isOwned = self.childWindows?.contains(where: { $0 === keyWin }) == true
+                    || keyWin.sheetParent === self
+                    || keyWin.parent === self
+                if isOwned {
+                    return
                 }
-                self.onResignKey?()
+                // 本面板自己的弹出层（Popover / DatePicker）其 parent 就是本面板，
+                // 已被上面的 isOwned 覆盖；系统模态窗口（文件选择框等）打开期间也不应收起。
+                if NSApp.modalWindow != nil {
+                    return
+                }
             }
+            self.onResignKey?()
         }
     }
 
-    override func cancelOperation(_ sender: Any?) {
-        orderOut(sender)
-        onResignKey?()
-    }
+    // 说明：原先在此覆写 cancelOperation 处理 ESC 收起，与 SwiftUI 视图层的
+    // `.onExitCommand` 形成双重处理（ESC 可能被消费两次）。
+    // 现统一由视图层负责 ESC，此处不再拦截。
 }

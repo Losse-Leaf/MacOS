@@ -9,38 +9,38 @@ extension View {
         footer: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
             if let title = title {
                 HStack {
                     Text(title)
-                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                     Spacer()
                     if let caption = caption {
                         Text(caption)
-                            .font(ArchiveTypography.monoScale(size: 10))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, ArchiveSpacing.xs)
             }
 
             VStack(spacing: 0) {
                 content()
             }
             .background(ArchivePalette.archiveSubtle.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius)
                     .stroke(ArchivePalette.borderSubtle.opacity(0.7), lineWidth: 0.5)
             )
 
             if let footer = footer {
                 Text(footer)
-                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkMuted)
-                    .padding(.horizontal, 6)
-                    .padding(.top, 2)
+                    .padding(.horizontal, ArchiveSpacing.s)
+                    .padding(.top, ArchiveSpacing.xxs)
             }
         }
     }
@@ -53,70 +53,77 @@ extension View {
         subtitle: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: ArchiveSpacing.m) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                     .fill(iconColor.opacity(0.12))
-                    .frame(width: 28, height: 28)
+                    .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(iconColor)
+                    .accessibilityHidden(true)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                 Text(title)
-                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 if let subtitle = subtitle {
                     Text(subtitle)
-                        .font(ArchiveTypography.bodySans(size: 10.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
             }
 
-            Spacer(minLength: 16)
+            Spacer(minLength: ArchiveSpacing.l)
 
             trailing()
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, ArchiveCardMetrics.padding)
         .padding(.vertical, 11)
     }
 
     /// 卡片内部分隔线（左侧留出图标槽位）
     var settingsRowDivider: some View {
         Divider()
-            .padding(.leading, 54)
+            .padding(.leading, ArchiveSpacing.xl + ArchiveSpacing.m)
             .overlay(ArchivePalette.borderSubtle.opacity(0.5))
     }
 }
 
-    /// 设置页统一操作反馈条：错误（朱砂）优先、成功（苔绿）其次，同位互斥展示
-    func settingsFeedbackBanner(feedback: String?, error: String?) -> some View {
-        Group {
-            if let error, !error.isEmpty {
-                feedbackRow(text: error, icon: "exclamationmark.octagon.fill", tint: ArchivePalette.accentWarm)
-            } else if let feedback, !feedback.isEmpty {
-                feedbackRow(text: feedback, icon: "checkmark.seal.fill", tint: ArchivePalette.accentMoss)
-            }
-        }
-    }
+// MARK: - 设置页统一操作反馈条
 
-    private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-            Text(text)
-                .font(ArchiveTypography.bodySans(size: 11.5))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+/// 设置页统一操作反馈条：错误（朱砂）优先、成功（苔绿）其次，同位互斥展示。
+/// 全局函数（非 View 扩展方法），便于在任意 `body` 内作为独立节点插入。
+public func settingsFeedbackBanner(feedback: String?, error: String?) -> some View {
+    Group {
+        if let error, !error.isEmpty {
+            feedbackRow(text: error, icon: "exclamationmark.octagon.fill", tint: ArchivePalette.accentWarm)
+        } else if let feedback, !feedback.isEmpty {
+            feedbackRow(text: feedback, icon: "checkmark.seal.fill", tint: ArchivePalette.accentMoss)
         }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(tint.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(tint.opacity(0.4), lineWidth: 0.5)
-        )
     }
+    .accessibilityElement(children: .combine)
+}
+
+/// 反馈条内部单行：图标 + 文案
+private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
+    HStack(spacing: ArchiveSpacing.s) {
+        Image(systemName: icon)
+            .font(.system(size: 12))
+            .accessibilityHidden(true)
+        Text(text)
+            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+            .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 0)
+    }
+    .foregroundStyle(tint)
+    .padding(.horizontal, ArchiveSpacing.m)
+    .padding(.vertical, ArchiveSpacing.s)
+    .background(tint.opacity(0.08))
+    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+    .overlay(
+        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+            .stroke(tint.opacity(0.4), lineWidth: 0.5)
+    )
+}

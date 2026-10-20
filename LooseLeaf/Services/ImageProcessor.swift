@@ -116,10 +116,18 @@ public enum ImageProcessor {
     }
 
     private static func extractEXIF(from source: CGImageSource) -> EXIFSummary {
-        guard let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+        guard let metadata = copyProperties(from: source) else {
             return EXIFSummary()
         }
+        return exifSummary(from: metadata)
+    }
 
+    /// 读取并缓存 ImageIO 属性字典（同一份数据只读一次，避免重复拷贝）
+    private static func copyProperties(from source: CGImageSource) -> [CFString: Any]? {
+        CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    }
+
+    private static func exifSummary(from metadata: [CFString: Any]) -> EXIFSummary {
         let exif = metadata[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiff = metadata[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
 
@@ -189,24 +197,40 @@ public enum ImageProcessor {
         maxPixelSize: Int = 3840,
         quality: Double = 0.85
     ) throws -> ProcessedPhoto {
-        let exifSummary = extractEXIF(from: source)
+        // 属性只读一次：既用于 EXIF 摘要，也用于写入 JPEG 的 EXIF/TIFF 字典
+        let originalProperties = copyProperties(from: source)
+        let exifSummary = originalProperties.map(exifSummary(from:)) ?? EXIFSummary()
 
         let thumbOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
         ]
 
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary)
-                ?? CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        // 关键：解码失败时**不得**回退到全分辨率解码。
+        // 5000×4000 原图全量解码约 80MB，12000×9000 约 432MB —— 直接把应用推向 OOM。
+        // 改为以更小尺寸重试一次，仍失败则明确报错。
+        var cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary)
+        if cgImage == nil {
+            let retryOptions: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: max(512, maxPixelSize / 4)
+            ]
+            cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, retryOptions as CFDictionary)
+        }
+        guard let cgImage else {
             throw APIError.decodingFailure("无法解码图像像素: \(originalFilename)")
         }
 
         let width = cgImage.width
         let height = cgImage.height
 
-        let mutableData = CFDataCreateMutable(nil, 0)!
+        // 预估输出容量，避免 CFMutableData 从 0 容量开始反复 realloc
+        let estimatedCapacity = max(64 * 1024, width * height / 8)
+        guard let mutableData = CFDataCreateMutable(nil, estimatedCapacity) else {
+            throw APIError.decodingFailure("无法创建图像输出缓冲区")
+        }
         let destType = UTType.jpeg.identifier as CFString
         guard let destination = CGImageDestinationCreateWithData(mutableData, destType, 1, nil) else {
             throw APIError.decodingFailure("创建 JPEG 编码器失败")
@@ -215,7 +239,7 @@ public enum ImageProcessor {
         var destProps: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: quality
         ]
-        if let origProps = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+        if let origProps = originalProperties {
             if let exif = origProps[kCGImagePropertyExifDictionary] as? [CFString: Any] {
                 var cleanExif = exif
                 cleanExif.removeValue(forKey: kCGImagePropertyOrientation)
@@ -239,7 +263,13 @@ public enum ImageProcessor {
 
         let compressedData = mutableData as Data
         let baseName = (originalFilename as NSString).deletingPathExtension
-        let cleanBase = baseName.isEmpty ? "darkroom-\(Int(Date().timeIntervalSince1970))" : baseName
+        // 文件名清洗：剔除路径分隔符与非法字符，避免生成 "../../etc/passwd.jpg" 这类名字
+        let sanitized = baseName
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanBase = sanitized.isEmpty ? "darkroom-\(Int(Date().timeIntervalSince1970))" : sanitized
         let outputFilename = "\(cleanBase).jpg"
 
         return ProcessedPhoto(
@@ -263,7 +293,8 @@ public enum ImageProcessor {
         quality: Double = 0.85
     ) async throws -> ProcessedPhoto {
         try await Task.detached(priority: .userInitiated) {
-            try processImageFile(at: fileURL, maxPixelSize: maxPixelSize, quality: quality)
+            try Task.checkCancellation()
+            return try processImageFile(at: fileURL, maxPixelSize: maxPixelSize, quality: quality)
         }.value
     }
 
@@ -275,7 +306,8 @@ public enum ImageProcessor {
         quality: Double = 0.85
     ) async throws -> ProcessedPhoto {
         try await Task.detached(priority: .userInitiated) {
-            try processImageData(rawData, originalFilename: originalFilename, maxPixelSize: maxPixelSize, quality: quality)
+            try Task.checkCancellation()
+            return try processImageData(rawData, originalFilename: originalFilename, maxPixelSize: maxPixelSize, quality: quality)
         }.value
     }
 }

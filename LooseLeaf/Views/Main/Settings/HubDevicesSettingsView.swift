@@ -16,26 +16,29 @@ struct HubDevicesSettingsView: View {
     // 设备重命名与吊销状态
     @State private var renamingDevice: TrustedDevice?
     @State private var newDeviceNameInput: String = ""
+    @State private var isRenamingDevice: Bool = false
+    @State private var renameError: String?
 
     public init(appState: AppState) {
         self.appState = appState
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             settingsFeedbackBanner(feedback: authFeedback, error: authError)
             // 中枢连接状态
             settingsCardSection(title: "数据中枢连接", caption: appState.isPaired ? "已接入中枢网络" : "尚未配对") {
-                HStack(spacing: 12) {
+                HStack(spacing: ArchiveSpacing.m) {
                     Circle()
                         .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 2) {
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                         Text(appState.isPaired ? "数据中枢已连接" : "未配对中枢节点")
-                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                         Text(appState.isPaired ? appState.hubURLString : "配对后可跨设备多端实时同步散页与财务资产")
-                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
 
@@ -47,30 +50,31 @@ struct HubDevicesSettingsView: View {
                                 issuedPairTicket = try? await APIClient.shared.initPairing()
                             }
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: ArchiveSpacing.xs) {
                                 Image(systemName: "qrcode")
                                     .font(.system(size: 11))
+                                    .accessibilityHidden(true)
                                 Text("签发新设备配对凭证")
                             }
                         }
-                        .font(ArchiveTypography.bodySans(size: 11))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     }
                 }
-                .padding(14)
+                .padding(ArchiveCardMetrics.padding)
 
                 // 未配对时的凭证导入行
                 if !appState.isPaired {
                     Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
                     unpairedInputBar
-                        .padding(12)
+                        .padding(ArchiveCardMetrics.padding)
                 }
 
                 // 配对工单二维码卡片 (若已生成)
                 if let ticket = issuedPairTicket {
                     Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
                     pairTicketBanner(ticket: ticket)
-                        .padding(12)
+                        .padding(ArchiveCardMetrics.padding)
                 }
             }
 
@@ -78,31 +82,32 @@ struct HubDevicesSettingsView: View {
             let currentDeviceId = CredentialStore.getDeviceId()
             let selfDev = appState.trustedDevices.first(where: { $0.deviceId == currentDeviceId })
             settingsCardSection(title: "当前使用的设备") {
-                HStack(spacing: 12) {
+                HStack(spacing: ArchiveSpacing.m) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                             .fill(ArchivePalette.accentMoss.opacity(0.12))
                             .frame(width: 32, height: 32)
                         Image(systemName: "laptopcomputer")
                             .font(.system(size: 16))
                             .foregroundStyle(ArchivePalette.accentMoss)
+                            .accessibilityHidden(true)
                     }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
+                        HStack(spacing: ArchiveSpacing.s) {
                             Text(selfDev?.name ?? "我的 Mac")
-                                .font(ArchiveTypography.bodySans(size: 13, weight: .semibold))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
                             Text("本机 · 当前客户端")
-                                .font(ArchiveTypography.monoScale(size: 9.5))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                 .foregroundStyle(ArchivePalette.accentMoss)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
                                 .background(ArchivePalette.accentMoss.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         }
                         Text("macOS 原生客户端 · 刚刚活跃")
-                            .font(ArchiveTypography.monoScale(size: 10))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
 
@@ -113,7 +118,7 @@ struct HubDevicesSettingsView: View {
                             renamingDevice = selfDev
                             newDeviceNameInput = selfDev.name
                         }
-                        .font(ArchiveTypography.bodySans(size: 11))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .buttonStyle(.plain)
                     }
@@ -121,7 +126,7 @@ struct HubDevicesSettingsView: View {
                     Button("解除配对") {
                         appState.askConfirm(
                             title: "确认解除本机配对？",
-                            message: "解除配对将清空保存在本机的受保护凭据档案 (credentials.json)，需重新扫码配对才能接入中枢。",
+                            message: "解除配对将删除本机以 0600 权限保存的凭据档案 (credentials.json)，需重新扫码配对才能接入中枢。",
                             confirmText: "解除配对并退出",
                             danger: true
                         ) {
@@ -130,61 +135,54 @@ struct HubDevicesSettingsView: View {
                             }
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 11))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.accentWarm)
                     .buttonStyle(.plain)
                 }
-                .padding(14)
+                .padding(ArchiveCardMetrics.padding)
             }
 
             // 受信任伴生设备组
             let otherDevices = appState.trustedDevices.filter { $0.deviceId != currentDeviceId }
             settingsCardSection(title: "已授权伴生设备 (\(otherDevices.count))", footer: "所有已配对伴生设备享有端到端生活档案同步权限，可随时吊销授权。") {
                 if otherDevices.isEmpty {
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 6) {
-                            Image(systemName: "iphone.and.arrow.forward")
-                                .font(.system(size: 20))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                            Text("暂无其他已配对伴生设备，点击上方「签发新设备配对凭证」可在手机或 Web 端扫码接入。")
-                                .font(ArchiveTypography.bodySans(size: 11))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-                        .padding(.vertical, 20)
-                        Spacer()
-                    }
+                    ArchiveEmptyState(
+                        systemName: "iphone.and.arrow.forward",
+                        title: "暂无其他已配对伴生设备",
+                        message: "点击上方「签发新设备配对凭证」，即可在手机或 Web 端扫码接入中枢。"
+                    )
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(otherDevices.enumerated()), id: \.element.id) { index, dev in
                             if index > 0 {
                                 settingsRowDivider
                             }
-                            HStack(spacing: 12) {
+                            HStack(spacing: ArchiveSpacing.m) {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                                         .fill(ArchivePalette.inkSecondary.opacity(0.1))
-                                        .frame(width: 28, height: 28)
+                                        .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                                     Image(systemName: devicePlatformIcon(dev.platform, isSelf: false))
                                         .font(.system(size: 13))
                                         .foregroundStyle(ArchivePalette.inkSecondary)
+                                        .accessibilityHidden(true)
                                 }
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 6) {
+                                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
+                                    HStack(spacing: ArchiveSpacing.s) {
                                         Text(dev.name)
-                                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                                             .foregroundStyle(ArchivePalette.inkPrimary)
                                         Text(dev.platform)
-                                            .font(ArchiveTypography.monoScale(size: 9))
+                                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                             .foregroundStyle(ArchivePalette.inkSecondary)
-                                            .padding(.horizontal, 4)
+                                            .padding(.horizontal, ArchiveSpacing.xs)
                                             .padding(.vertical, 1)
                                             .background(ArchivePalette.archivePaper)
-                                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                                     }
                                     Text("最近活跃：\(FormatUtils.parseOccurredDate(dev.lastActiveAt).dotDateTime)")
-                                        .font(ArchiveTypography.monoScale(size: 9.5))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                 }
 
@@ -194,7 +192,7 @@ struct HubDevicesSettingsView: View {
                                     renamingDevice = dev
                                     newDeviceNameInput = dev.name
                                 }
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                                 .buttonStyle(.plain)
 
@@ -208,11 +206,11 @@ struct HubDevicesSettingsView: View {
                                         revokeDeviceAction(dev)
                                     }
                                 }
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.accentWarm)
                                 .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 14)
+                            .padding(.horizontal, ArchiveCardMetrics.padding)
                             .padding(.vertical, 10)
                         }
                     }
@@ -240,53 +238,63 @@ struct HubDevicesSettingsView: View {
 
 
     private var unpairedInputBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: ArchiveSpacing.s) {
             TextField("输入或粘贴配对工单号 (Ticket) 或深链…", text: $ticketURIInput)
                 .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: 12))
-                .padding(6)
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archivePaper)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                .accessibilityLabel("配对工单号或深链输入框")
 
-            Button("立即免密配对") {
+            Button {
                 performTicketPairing()
+            } label: {
+                HStack(spacing: ArchiveSpacing.xs) {
+                    if isSubmittingAuth {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(isSubmittingAuth ? "正在配对…" : "立即免密配对")
+                }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             .disabled(ticketURIInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingAuth)
+            .help("使用工单号免密接入中枢")
         }
     }
 
 
     private func pairTicketBanner(ticket: PairTicketResponse) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
             HStack {
                 Text("新设备配对凭证（5 分钟内有效）")
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
                 Button("收起") {
                     issuedPairTicket = nil
                 }
-                .font(ArchiveTypography.bodySans(size: 11))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: ArchiveSpacing.m) {
                 if let qrImg = decodeDataURLImage(ticket.qrCodeDataUrl) {
                     Image(nsImage: qrImg)
                         .interpolation(.none)
                         .resizable()
                         .scaledToFit()
                         .frame(width: 88, height: 88)
-                        .padding(4)
+                        .padding(ArchiveSpacing.xs)
                         .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                        .accessibilityLabel("新设备配对二维码")
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                     Text(ticket.qrPayload)
-                        .font(ArchiveTypography.monoScale(size: 10))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .lineLimit(2)
                         .textSelection(.enabled)
@@ -296,9 +304,10 @@ struct HubDevicesSettingsView: View {
                         NSPasteboard.general.setString(ticket.qrPayload, forType: .string)
                         appState.showTemporaryBanner("已复制配对链接")
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 10))
+                                .accessibilityHidden(true)
                             Text("复制配对链接")
                         }
                     }
@@ -306,48 +315,58 @@ struct HubDevicesSettingsView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(ArchiveSpacing.s)
         .background(ArchivePalette.archivePaper)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
     }
 
+    /// 设备重命名弹窗：统一 Sheet 骨架，错误就地渲染
     private func renameDeviceSheetView(dev: TrustedDevice) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("重命名设备")
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        PaperSheetScaffold(
+            title: "重命名设备",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isRenamingDevice,
+            submitTitle: "保存修改",
+            onCancel: {
+                renamingDevice = nil
+                renameError = nil
+            },
+            onSubmit: {
+                performRename(dev)
+            }
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                TextField("设备名称", text: $newDeviceNameInput)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .accessibilityLabel("设备名称")
 
-            TextField("设备名称", text: $newDeviceNameInput)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: 12.5))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            HStack {
-                Button("取消") { renamingDevice = nil }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                Spacer()
-                Button("保存修改") {
-                    let targetId = dev.deviceId
-                    let newName = newDeviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    renamingDevice = nil
-                    Task { @MainActor in
-                        do {
-                            _ = try await APIClient.shared.updateDeviceName(id: targetId, name: newName)
-                            await refreshDevicesList()
-                        } catch {
-                            authError = "重命名失败: \(error.localizedDescription)"
-                        }
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .disabled(newDeviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                settingsFeedbackBanner(feedback: nil, error: renameError)
             }
         }
-        .padding(18)
-        .frame(width: 300)
-        .background(ArchivePalette.archivePaper)
+    }
+
+    /// 提交设备重命名（错误就地展示在弹窗内，避免被弹窗遮挡）
+    private func performRename(_ dev: TrustedDevice) {
+        let targetId = dev.deviceId
+        let newName = newDeviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else { return }
+        isRenamingDevice = true
+        renameError = nil
+        Task { @MainActor in
+            defer { isRenamingDevice = false }
+            do {
+                _ = try await APIClient.shared.updateDeviceName(id: targetId, name: newName)
+                renamingDevice = nil
+                authFeedback = "设备「\(newName)」已重命名"
+                await refreshDevicesList()
+            } catch {
+                renameError = "重命名失败: \(error.localizedDescription)"
+            }
+        }
     }
 
 

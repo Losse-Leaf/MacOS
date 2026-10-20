@@ -13,6 +13,8 @@ public enum APIError: LocalizedError, Equatable, Sendable {
     case serverError(code: Int, message: String)
     case networkFailure(String)
     case decodingFailure(String)
+    /// 对象存储直传错误（与中枢业务错误区分：4xx 为永久错误，不应重试）
+    case storageError(statusCode: Int, message: String)
 
     public var errorDescription: String? {
         switch self {
@@ -28,6 +30,8 @@ public enum APIError: LocalizedError, Equatable, Sendable {
             return "网络连接异常: \(detail)"
         case .decodingFailure(let detail):
             return "响应数据解析失败: \(detail)"
+        case .storageError(_, let msg):
+            return "对象存储直传失败: \(msg)"
         }
     }
 }

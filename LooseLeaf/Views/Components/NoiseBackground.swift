@@ -85,18 +85,45 @@ private struct PaperGrainCanvas: View {
 }
 
 /// 纸纹 256x256 硬件瓦片缓存（同透明度只生成一次，内存占用 < 0.25MB）
+/// 并发策略：
+/// - 命中路径：只做一次字典查询（临界区极短），不进入绘制队列、不发生阻塞
+/// - 未命中路径：在专用串行队列上生成瓦片（双检），绘制期间**不持有缓存锁**，
+///   其它等待者不会被 CGContext 绘制阻塞；生成完成后再写回缓存
 private enum PaperGrainTileCache {
-    private static var tileCache: [String: CGImage] = [:]
-    private static let lock = NSLock()
+    /// 缓存容器：锁只保护极短的读写片段，绝不包裹 CGContext 绘制
+    private static let store = TileStore()
+
+    /// 专用串行队列：瓦片生成串行执行，避免同一 key 被重复绘制
+    private static let renderQueue = DispatchQueue(
+        label: "com.looseleaf.paper.grain.render",
+        qos: .userInitiated
+    )
 
     static func tileImage(opacity: Double, isDark: Bool = false) -> CGImage? {
-        lock.lock()
-        defer { lock.unlock() }
-        let key = "\(isDark ? "dark" : "light")_\((opacity * 1000).rounded() / 1000)"
-        if let hit = tileCache[key] {
+        let key = cacheKey(opacity: opacity, isDark: isDark)
+
+        // 快路径：命中即返回，不触碰绘制队列
+        if let hit = store.image(forKey: key) {
             return hit
         }
 
+        // 慢路径：双检后在专用队列生成（绘制全程不持锁）
+        return renderQueue.sync {
+            if let hit = store.image(forKey: key) {
+                return hit
+            }
+            guard let image = renderTile(opacity: opacity, isDark: isDark) else { return nil }
+            store.setImage(image, forKey: key)
+            return image
+        }
+    }
+
+    private static func cacheKey(opacity: Double, isDark: Bool) -> String {
+        "\(isDark ? "dark" : "light")_\((opacity * 1000).rounded() / 1000)"
+    }
+
+    /// 瓦片绘制：仅在专用串行队列上调用，禁止在持锁状态下执行
+    private static func renderTile(opacity: Double, isDark: Bool) -> CGImage? {
         let tileSize: CGFloat = 256
         let renderScale: CGFloat = 2
         let pixelSize = Int(tileSize * renderScale)
@@ -138,8 +165,24 @@ private enum PaperGrainTileCache {
             }
         }
 
-        guard let image = ctx.makeImage() else { return nil }
-        tileCache[key] = image
-        return image
+        return ctx.makeImage()
+    }
+
+    /// 瓦片缓存容器：读写片段极短，绘制不经过此处
+    private final class TileStore: @unchecked Sendable {
+        private let lock = NSLock()
+        private var images: [String: CGImage] = [:]
+
+        func image(forKey key: String) -> CGImage? {
+            lock.lock()
+            defer { lock.unlock() }
+            return images[key]
+        }
+
+        func setImage(_ image: CGImage, forKey key: String) {
+            lock.lock()
+            images[key] = image
+            lock.unlock()
+        }
     }
 }

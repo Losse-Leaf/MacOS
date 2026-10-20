@@ -73,6 +73,8 @@ public struct NewEntryModal: View {
     @State private var extractedCameraLine: String = ""
     @State private var isUploadingMedia: Bool = false
     @State private var uploadProgress: Double = 0.0
+    /// 拖拽悬停高亮
+    @State private var isMediaDropTargeted: Bool = false
 
     // 游历专有
     @State private var selectedFootprintId: Int?
@@ -142,19 +144,6 @@ public struct NewEntryModal: View {
                         .font(ArchiveTypography.editorialSerif(size: 12))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(.horizontal, 4)
-
-                    if let err = errorMessage {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 11))
-                            Text(err)
-                                .font(ArchiveTypography.bodySans(size: 11))
-                        }
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                        .padding(8)
-                        .background(ArchivePalette.accentWarm.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
 
                     // 表单主体切换
                     Group {
@@ -261,6 +250,31 @@ public struct NewEntryModal: View {
 
     // MARK: - 底栏动作按钮
     private var footerActionBar: some View {
+        VStack(spacing: 8) {
+            // 错误提示固定在操作栏正上方：原先放在表单顶部，长表单提交失败时错误在屏幕外
+            if let err = errorMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 11))
+                    Text(err)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(ArchivePalette.accentWarm)
+                .padding(8)
+                .background(ArchivePalette.accentWarm.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                .accessibilityLabel("错误：\(err)")
+            }
+
+            footerButtons
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    private var footerButtons: some View {
         HStack {
             if hasSavedDraft() {
                 Button("清空草稿") {
@@ -296,8 +310,6 @@ public struct NewEntryModal: View {
             .disabled(isSubmitting)
             .keyboardShortcut(.return, modifiers: [.command])
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
     }
 
     private var submitButtonTitle: String {
@@ -637,7 +649,7 @@ public struct NewEntryModal: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("胶片与图档装裱 (\(attachments.count))")
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkSecondary)
 
                 Spacer()
@@ -649,11 +661,44 @@ public struct NewEntryModal: View {
                         Image(systemName: "photo.badge.plus")
                             .font(.system(size: 10.5))
                         Text(isUploadingMedia ? "正在装裱…" : "添加相纸照片")
-                            .font(ArchiveTypography.bodySans(size: 11))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 .disabled(isUploadingMedia)
+                .help("从「照片」App 或访达拖拽照片到此处亦可装裱")
+            }
+
+            // 拖拽装裱：与暗房保持一致的拖入体验
+            .onDrop(of: [.image, .fileURL, .rawImage], isTargeted: $isMediaDropTargeted) { providers in
+                handleDrop(providers: providers)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                    .stroke(isMediaDropTargeted ? ArchivePalette.accentWarm : .clear, lineWidth: 1.5)
+                    .padding(.vertical, 4)
+                    .allowsHitTesting(false)
+            )
+
+            // 上传进度（原先 uploadProgress 是死状态，从不展示）
+            if isUploadingMedia {
+                HStack(spacing: 8) {
+                    ProgressView(value: uploadProgress)
+                        .progressViewStyle(.linear)
+                        .frame(maxWidth: 180)
+                    Text("正在装裱 \(Int(uploadProgress * 100))%")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .accessibilityLabel("正在装裱相片")
+            }
+
+            // 相机底款信息（原先只写不读，用户看不到 EXIF 相机信息）
+            if !extractedCameraLine.isEmpty {
+                Text(extractedCameraLine)
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .accessibilityLabel("相机信息：\(extractedCameraLine)")
             }
 
             if !attachments.isEmpty {
@@ -733,7 +778,9 @@ public struct NewEntryModal: View {
                 }
                 clearDraft()
                 didSubmitSuccessfully = true
-                await appState.refreshAll(forceFull: true)
+                // 不再全量重拉：提交结果已经通过 SyncManager 乐观写入本地快照，
+                // 全量 refreshAll 会带来数秒等待与整页重绘。
+                await appState.loadConfigAndProfile()
                 onDismiss()
             } catch {
                 errorMessage = error.localizedDescription
@@ -868,14 +915,27 @@ public struct NewEntryModal: View {
 
     private func pickAndUploadMedia() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image, .jpeg, .png, .heic]
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            isUploadingMedia = true
-            Task { @MainActor in
-                defer { isUploadingMedia = false }
+        panel.allowedContentTypes = [.image, .jpeg, .png, .heic, .rawImage]
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK, !panel.urls.isEmpty {
+            uploadMediaFiles(panel.urls)
+        }
+    }
+
+    /// 批量装裱相片：逐张后台压制 + 上传，单张失败不影响其余
+    private func uploadMediaFiles(_ urls: [URL]) {
+        isUploadingMedia = true
+        uploadProgress = 0
+        Task { @MainActor in
+            defer {
+                isUploadingMedia = false
+                uploadProgress = 0
+            }
+            var failures: [String] = []
+            for (index, url) in urls.enumerated() {
                 do {
-                    let processed = try ImageProcessor.processImageFile(at: url)
+                    // 关键：4K 解码 + JPEG 重编码必须离开主线程，否则选图后 UI 冻结数秒
+                    let processed = try await ImageProcessor.processImageFileInBackground(at: url)
                     let att = try await APIClient.shared.uploadUnifiedMultipart(
                         fileData: processed.compressedData,
                         filename: processed.filename,
@@ -888,10 +948,27 @@ public struct NewEntryModal: View {
                         extractedCameraLine = camera
                     }
                 } catch {
-                    errorMessage = "相纸上传失败: \(error.localizedDescription)"
+                    failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
                 }
+                uploadProgress = Double(index + 1) / Double(max(urls.count, 1))
+            }
+            if !failures.isEmpty {
+                errorMessage = failures.count == 1
+                    ? "相纸上传失败：\(failures[0])"
+                    : "\(failures.count) 张相纸上传失败：\(failures.prefix(3).joined(separator: "；"))"
             }
         }
+    }
+
+    /// 拖拽装裱：支持多文件同时拖入
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty else { return false }
+        Task { @MainActor in
+            let urls = await DropLoader.loadDroppablePhotoURLs(from: providers)
+            guard !urls.isEmpty else { return }
+            uploadMediaFiles(urls)
+        }
+        return true
     }
 
     // MARK: - 草稿持久化
@@ -913,13 +990,22 @@ public struct NewEntryModal: View {
     private func restoreDraft() {
         guard let data = UserDefaults.standard.data(forKey: draftStorageKey),
               let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        if let k = dict["kind"] as? String, let kind = Kind(rawValue: k) {
+        // 关键：调用方显式指定的形态 / 项目 / 城市优先于草稿。
+        // 原先草稿无条件覆盖 selectedKind，导致用户从「造物」入口打开却落到「日常」。
+        if initialKind == nil,
+           let k = dict["kind"] as? String,
+           let kind = Kind(rawValue: k) {
             selectedKind = kind
+        }
+        if initialProjectId == nil, let pid = dict["projectId"] as? Int {
+            selectedProjectId = pid
         }
         if let t = dict["title"] as? String { title = t }
         if let c = dict["content"] as? String { content = c }
-        if let code = dict["cityCode"] as? String { cityCode = code }
-        if let name = dict["cityName"] as? String { cityName = name }
+        if initialCityCode == nil || initialCityCode?.isEmpty == true {
+            if let code = dict["cityCode"] as? String { cityCode = code }
+            if let name = dict["cityName"] as? String { cityName = name }
+        }
         if let feat = dict["isFeatured"] as? Bool { isFeatured = feat }
     }
 

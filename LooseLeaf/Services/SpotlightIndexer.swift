@@ -105,6 +105,19 @@ enum SpotlightIndexer {
         stateLock.unlock()
     }
 
+    /// 立即提交一次索引（应用退出前调用，避免 1.5 秒防抖窗口内的变更丢失）
+    @MainActor
+    static func flushNow() {
+        stateLock.lock()
+        debounceTask?.cancel()
+        debounceTask = nil
+        generation &+= 1
+        let currentGeneration = generation
+        stateLock.unlock()
+        // 立即执行一次重建（不等待防抖）
+        performReindex(entries: AppState.shared.entries, generation: currentGeneration)
+    }
+
     private static func fingerprint(_ entry: LifeEntry) -> String {
         // 只取会影响搜索结果的字段，避免为纯排序变化付出重建成本
         "\(entry.updatedAt ?? "")|\(entry.title)|\(entry.content.count)|\(entry.cityName ?? "")|\(entry.location ?? "")"

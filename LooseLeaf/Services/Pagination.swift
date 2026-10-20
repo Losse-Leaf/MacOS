@@ -6,6 +6,9 @@ import Foundation
 enum Pagination {
     /// 单次同步最多翻多少页，防止后端 total 异常导致死循环
     static let maxPages = 200
+    /// 单次同步最多拉多少条记录（防止后端返回异常时把整机内存吃光）
+    static let maxEntries = 50_000
+    static let maxTransactions = 20_000
 
     static func fetchAllEntries(
         since: String?,
@@ -14,7 +17,10 @@ enum Pagination {
     ) async throws -> [LifeEntry] {
         var page = 1
         var all: [LifeEntry] = []
+        all.reserveCapacity(pageSize)
         while page <= maxPages {
+            // 取消检查：用户切页 / 退出时必须能停下，而不是继续跑完 200 页
+            try Task.checkCancellation()
             let response = try await APIClient.shared.fetchEntries(
                 page: page,
                 pageSize: pageSize,
@@ -25,6 +31,7 @@ enum Pagination {
             if response.entries.count < pageSize || all.count >= response.total {
                 break
             }
+            if all.count >= maxEntries { break }
             page += 1
         }
         return all
@@ -38,7 +45,9 @@ enum Pagination {
         var offset = 0
         var batchIndex = 0
         var all: [Transaction] = []
+        all.reserveCapacity(batchLimit)
         while batchIndex < maxPages {
+            try Task.checkCancellation()
             let batch = try await APIClient.shared.fetchTransactions(
                 since: since,
                 limit: batchLimit,
@@ -51,6 +60,7 @@ enum Pagination {
             }
             offset += batch.count
             batchIndex += 1
+            if all.count >= maxTransactions { break }
         }
         return all
     }
@@ -62,7 +72,9 @@ enum Pagination {
     ) async throws -> [Wish] {
         var page = 1
         var all: [Wish] = []
+        all.reserveCapacity(pageSize)
         while page <= maxPages {
+            try Task.checkCancellation()
             let response = try await APIClient.shared.fetchWishes(
                 page: page,
                 pageSize: pageSize,

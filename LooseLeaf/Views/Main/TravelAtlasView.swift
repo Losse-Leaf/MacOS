@@ -85,14 +85,15 @@ public struct TravelAtlasView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            // LazyVStack 作为 ScrollView 直接子视图，长列表才具备懒加载能力
+            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
                 headerSection
 
                 viewModePillsSection
 
                 if let err = errorMessage {
                     Text(err)
-                        .font(ArchiveTypography.bodySans(size: 12))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
@@ -109,7 +110,7 @@ public struct TravelAtlasView: View {
                 .id(viewMode)
                 .transition(.opacity)
             }
-            .padding(24)
+            .padding(ArchiveSpacing.xl)
         }
         .sheet(isPresented: $showNewFootprintSheet) {
             NewFootprintSheet(appState: appState) {
@@ -137,12 +138,12 @@ public struct TravelAtlasView: View {
     private var headerSection: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+                HStack(spacing: ArchiveSpacing.s) {
                     Text("山川印谱")
                         .font(ArchiveTypography.editorialSerif(size: 24, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                     Text("行迹百宝格与典藏票根")
-                        .font(ArchiveTypography.monoScale(size: 12))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
@@ -160,7 +161,7 @@ public struct TravelAtlasView: View {
                     Image(systemName: "location.fill.viewfinder")
                         .font(.system(size: 11, weight: .medium))
                     Text("点亮城市足迹")
-                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
@@ -169,7 +170,7 @@ public struct TravelAtlasView: View {
 
     // MARK: - 2. 模式切换
     private var viewModePillsSection: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: ArchiveSpacing.s) {
             PaperPillButton(title: "百宝格印谱", isSelected: viewMode == 0) {
                 guard viewMode != 0 else { return }
                 viewMode = 0
@@ -187,7 +188,7 @@ public struct TravelAtlasView: View {
 
             if viewMode == 0 {
                 // 仅看已点亮切换
-                HStack(spacing: 4) {
+                HStack(spacing: ArchiveSpacing.xs) {
                     PaperPillButton(title: "全谱 34 省", isSelected: sealFilter == "all") {
                         sealFilter = "all"
                     }
@@ -217,12 +218,13 @@ public struct TravelAtlasView: View {
                     }
                 }
             }
+            .horizontalFadeMask()
 
             let displayRegions = selectedRegion == "all" ? Self.regions : Self.regions.filter { $0.name == selectedRegion }
             let byProvince = footprintsByProvince
 
             ForEach(displayRegions, id: \.name) { reg in
-                VStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     Text(reg.name)
                         .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
                         .foregroundStyle(ArchivePalette.accentWarm)
@@ -256,153 +258,179 @@ public struct TravelAtlasView: View {
     private func provinceStampCell(prov: (name: String, short: String, adcode: String), footprints: [Footprint]) -> some View {
         let isLit = !footprints.isEmpty
         let litCount = footprints.count
-        return HStack(spacing: 10) {
-            // 朱砂方印
-            ZStack {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(isLit ? ArchivePalette.accentWarm.opacity(0.12) : ArchivePalette.archiveSubtle)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 3)
-                            .stroke(isLit ? ArchivePalette.accentWarm : ArchivePalette.borderDivider, lineWidth: 1)
-                    )
-                Text(prov.short)
-                    .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                    .foregroundStyle(isLit ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-            }
-            .frame(width: 38, height: 38)
+        // 使用 Button 而非 onTapGesture：键盘可达、可被 VoiceOver 朗读
+        return Button {
+            guard isLit else { return }
+            selectedDrawerProvince = DrawerProvinceSelection(adcode: prov.adcode, name: prov.name)
+        } label: {
+            HStack(spacing: 10) {
+                // 朱砂方印
+                ZStack {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(isLit ? ArchivePalette.accentWarm.opacity(0.12) : ArchivePalette.archiveSubtle)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(isLit ? ArchivePalette.accentWarm : ArchivePalette.borderDivider, lineWidth: 1)
+                        )
+                    Text(prov.short)
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
+                        .foregroundStyle(isLit ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                }
+                .frame(width: 38, height: 38)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(prov.name)
-                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                Text(isLit ? "已钤印 \(litCount) 程" : "待踏访")
-                    .font(ArchiveTypography.monoScale(size: 10))
-                    .foregroundStyle(isLit ? ArchivePalette.accentMoss : ArchivePalette.inkMuted)
-            }
+                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
+                    Text(prov.name)
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text(isLit ? "已钤印 \(litCount) 程" : "待踏访")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                        .foregroundStyle(isLit ? ArchivePalette.accentMoss : ArchivePalette.inkMuted)
+                }
 
-            Spacer()
+                Spacer()
 
-            if isLit {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10))
-                    .foregroundStyle(ArchivePalette.inkMuted)
+                if isLit {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
             }
+            .padding(10)
+            .background(ArchivePalette.archiveSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(10)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isLit {
-                selectedDrawerProvince = DrawerProvinceSelection(adcode: prov.adcode, name: prov.name)
-            }
-        }
+        .buttonStyle(.plain)
+        .disabled(!isLit)
+        .accessibilityLabel(isLit ? "\(prov.name)，已钤印 \(litCount) 程" : "\(prov.name)，待踏访")
+        .accessibilityHint(isLit ? "打开该省份的山河回忆抽屉" : "")
         .paperHover()
     }
 
     // MARK: - 4. 典藏票根架
     private var ticketsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if appState.footprints.isEmpty {
+        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
+            if appState.isLoading {
+                // 加载中：与「真的为空」区分，避免用户误以为行迹被清空
+                ProgressView("正在打捞行迹票根…")
+                    .frame(maxWidth: .infinity, minHeight: 180)
+            } else if appState.footprints.isEmpty {
                 emptyPlaceholder
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: ArchiveCardMetrics.padding), GridItem(.flexible(), spacing: ArchiveCardMetrics.padding)], spacing: ArchiveCardMetrics.padding) {
                     ForEach(appState.footprints) { fp in
-                        HStack(spacing: 0) {
-                            // 左联：目的地存根
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(fp.cityName)
-                                    .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                                Text(FormatUtils.parseOccurredDate(fp.visitedAt).dotDate)
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                Spacer(minLength: 4)
-                                Text("散页 \(max(1, fp.entriesCount ?? 1)) 篇")
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
-                                    .foregroundStyle(ArchivePalette.accentMoss)
-                            }
-                            .frame(width: 105, alignment: .leading)
-                            .padding(12)
-
-                            // 齿孔虚线
-                            Rectangle()
-                                .fill(ArchivePalette.borderDivider)
-                                .frame(width: 0.5)
-                                .padding(.vertical, 8)
-
-                            // 右联：游记正券
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text((fp.title?.isEmpty == false) ? fp.title! : "\(fp.cityName) · 行旅手记")
-                                        .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
-                                        .foregroundStyle(ArchivePalette.inkPrimary)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Button {
-                                        editingFootprint = fp
-                                    } label: {
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Button {
-                                        appState.askConfirm(
-                                            title: "确认删除该座城市足迹票根？",
-                                            message: "删除后将移除该次漫游记录，关联游记散页不受影响。",
-                                            confirmText: "删除足迹票根",
-                                            danger: true
-                                        ) {
-                                            deleteFootprint(fp)
-                                        }
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                Text((fp.note?.isEmpty == false) ? fp.note! : "行至此处，留下一纸驻足印记。")
-                                    .font(ArchiveTypography.bodySans(size: 12))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                                    .lineLimit(2)
-
-                                Spacer(minLength: 4)
-
-                                HStack {
-                                    if let spent = fp.totalSpent, spent > 0 {
-                                        Text("旅途花销 \(FormatUtils.formattedYuan(cents: spent, includeSymbol: true))")
+                        // 票根本体是按钮（键盘可达），编辑/删除按钮以浮层形式叠放其上，
+                        // 避免「按钮嵌套按钮」导致的点击歧义。
+                        ZStack(alignment: .topTrailing) {
+                            Button {
+                                selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
+                            } label: {
+                                HStack(spacing: 0) {
+                                    // 左联：目的地存根
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(fp.cityName)
+                                            .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                        Text(FormatUtils.parseOccurredDate(fp.visitedAt).dotDate)
                                             .font(ArchiveTypography.monoScale(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                        Spacer(minLength: 4)
+                                        Text("散页 \(max(1, fp.entriesCount ?? 1)) 篇")
+                                            .font(ArchiveTypography.monoScale(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.accentMoss)
                                     }
-                                    Spacer()
-                                    Text("城市抽屉 →")
-                                        .font(ArchiveTypography.monoScale(size: 10))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                    .frame(width: 105, alignment: .leading)
+                                    .padding(ArchiveSpacing.m)
+
+                                    // 齿孔虚线
+                                    Rectangle()
+                                        .fill(ArchivePalette.borderDivider)
+                                        .frame(width: 0.5)
+                                        .padding(.vertical, ArchiveSpacing.s)
+
+                                    // 右联：游记正券
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text((fp.title?.isEmpty == false) ? fp.title! : "\(fp.cityName) · 行旅手记")
+                                                .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                                .lineLimit(1)
+                                                // 为右上角浮层的操作按钮预留位置，避免标题被压住
+                                                .padding(.trailing, 60)
+                                            Spacer()
+                                        }
+
+                                        Text((fp.note?.isEmpty == false) ? fp.note! : "行至此处，留下一纸驻足印记。")
+                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .lineLimit(2)
+
+                                        Spacer(minLength: 4)
+
+                                        HStack {
+                                            if let spent = fp.totalSpent, spent > 0 {
+                                                Text("旅途花销 \(FormatUtils.formattedYuan(cents: spent, includeSymbol: true))")
+                                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                                    .foregroundStyle(ArchivePalette.accentWarm)
+                                            }
+                                            Spacer()
+                                            Text("城市抽屉 →")
+                                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                        }
+                                    }
+                                    .padding(ArchiveSpacing.m)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(minHeight: 115)
+                                .background(ArchivePalette.archiveSubtle)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                                        .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(fp.cityName) 票根，\(fp.title ?? "行旅手记")")
+                            .accessibilityHint("打开该城市的回忆抽屉")
+                            .paperHover()
+
+                            HStack(spacing: ArchiveSpacing.xs) {
+                                PaperIconButton(
+                                    systemName: "pencil",
+                                    label: "修订该座城市足迹票根",
+                                    help: "修订票根",
+                                    size: 10.5,
+                                    tint: ArchivePalette.inkMuted
+                                ) {
+                                    editingFootprint = fp
+                                }
+
+                                PaperIconButton(
+                                    systemName: ArchiveIcon.delete.systemName,
+                                    label: "删除该座城市足迹票根",
+                                    help: "删除票根",
+                                    size: 10.5,
+                                    tint: ArchivePalette.inkMuted
+                                ) {
+                                    appState.askConfirm(
+                                        title: "确认删除该座城市足迹票根？",
+                                        message: "删除后将移除该次漫游记录，关联游记散页不受影响。",
+                                        confirmText: "删除足迹票根",
+                                        danger: true
+                                    ) {
+                                        deleteFootprint(fp)
+                                    }
                                 }
                             }
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
+                            .padding(.trailing, 8)
                         }
-                        .frame(minHeight: 115)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
-                        }
-                        .paperHover()
                     }
                 }
             }
@@ -417,17 +445,14 @@ public struct TravelAtlasView: View {
     }
 
     private var emptyPlaceholder: some View {
-        VStack(spacing: 8) {
-            Text("行迹票根架尚待启程")
-                .font(ArchiveTypography.editorialSerif(size: 14, weight: .medium))
-                .foregroundStyle(ArchivePalette.inkSecondary)
-            Text("在时间流记录带城市的游记或点击上方「点亮城市足迹」，均会自动沉淀特种纸票根")
-                .font(ArchiveTypography.bodySans(size: 11.5))
-                .foregroundStyle(ArchivePalette.inkMuted)
-        }
-        .frame(maxWidth: .infinity, minHeight: 180)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        ArchiveEmptyState(
+            systemName: ArchiveIcon.atlas.systemName,
+            title: "行迹票根架尚待启程",
+            message: "在时间流记录带城市的游记或点击上方「点亮城市足迹」，均会自动沉淀特种纸票根。",
+            primaryTitle: "点亮城市足迹",
+            primaryAction: { showNewFootprintSheet = true }
+        )
+        .frame(minHeight: 180)
     }
 
     private func deleteFootprint(_ fp: Footprint) {
@@ -440,4 +465,11 @@ public struct TravelAtlasView: View {
             }
         }
     }
+}
+
+// MARK: - 预览 (Preview)
+
+#Preview("山川印谱") {
+    TravelAtlasView(appState: ArchivePreviewFixtures.makeAppState())
+        .frame(width: 1100, height: 760)
 }

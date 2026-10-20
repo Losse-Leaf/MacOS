@@ -24,23 +24,23 @@ public final class R2DirectUploader: NSObject, Sendable {
         onProgress?(0.08)
 
         do {
-            return try await withRetry {
-                try await performDirectUpload(photo, onProgress: onProgress)
-            }
+            return try await performDirectUpload(photo, onProgress: onProgress)
         } catch {
-            // 当后端未配置 R2 (503) 或直传存储桶出现网络阻断时，平滑降级至中枢本地统一上传通道 (/api/v1/files/upload)
+            // 仅在「后端明确未配置 R2 (503)」时回退到中枢本地统一上传通道。
+            // 关键：网络抖动（.networkFailure）**不**回退 —— 否则同一张图会在两个存储后端各留一份，
+            // 且 R2 上可能已有半成品对象，造成数据分散与孤儿对象。
             let shouldFallback: Bool
             if let apiError = error as? APIError {
                 switch apiError {
                 case .serverError(let code, _):
                     shouldFallback = (code == 503)
-                case .networkFailure:
-                    shouldFallback = true
+                case .storageError(_, _):
+                    shouldFallback = false
                 default:
                     shouldFallback = false
                 }
             } else {
-                shouldFallback = true
+                shouldFallback = false
             }
 
             if shouldFallback {
@@ -70,6 +70,7 @@ public final class R2DirectUploader: NSObject, Sendable {
             contentType: photo.mimeType,
             size: photo.compressedSize
         )
+        // 1. presign：**不重试**。重试会生成新的 uploadId，导致旧对象成为孤儿。
         let presigned = try await APIClient.shared.presignUpload(presignReq)
         onProgress?(0.20)
 
@@ -81,24 +82,36 @@ public final class R2DirectUploader: NSObject, Sendable {
         putRequest.httpMethod = "PUT"
         putRequest.setValue(photo.mimeType, forHTTPHeaderField: "Content-Type")
         putRequest.setValue(String(photo.compressedSize), forHTTPHeaderField: "Content-Length")
+        // 大图在弱网下可能上传数分钟，默认 60s 会误判超时
+        putRequest.timeoutInterval = 300
 
         let delegate = UploadProgressDelegate { fraction in
             let mapped = 0.20 + (fraction * 0.68)
             onProgress?(mapped)
         }
 
-        let (_, response) = try await URLSession.shared.upload(
-            for: putRequest,
-            from: photo.compressedData,
-            delegate: delegate
-        )
+        // 2. PUT：可重试（同一 uploadId，幂等）
+        let response: URLResponse = try await withRetry {
+            let (_, resp) = try await Self.uploadSession.upload(
+                for: putRequest,
+                from: photo.compressedData,
+                delegate: delegate
+            )
+            return resp
+        }
 
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw APIError.networkFailure("R2 存储桶直传响应状态异常")
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.storageError(statusCode: 0, message: "R2 存储桶直传响应无效")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            // 关键：4xx（桶不存在 404 / 签名过期 403 / CORS 拒绝 400）属于**永久错误**，
+            // 不得包装成可重试的 networkFailure —— 否则整张图会被白白重传 3 次。
+            throw APIError.storageError(statusCode: http.statusCode, message: "R2 存储桶直传失败 (HTTP \(http.statusCode))")
         }
 
         onProgress?(0.92)
 
+        // 3. complete：按 uploadId 幂等重试（服务端按 uploadId 去重，不会产生重复对象）
         let completeReq = CompleteUploadRequest(
             uploadId: presigned.uploadId,
             objectKey: presigned.objectKey,
@@ -108,19 +121,34 @@ public final class R2DirectUploader: NSObject, Sendable {
             width: photo.width,
             height: photo.height
         )
-        let attachment = try await APIClient.shared.completeUpload(completeReq)
+        let attachment = try await withRetry {
+            try await APIClient.shared.completeUpload(completeReq)
+        }
         onProgress?(1.0)
         Self.logger.info("R2 direct upload finished: \(photo.filename, privacy: .public)")
         return attachment
     }
 
+    /// 直传专用会话：长超时 + 等待网络恢复
+    private static let uploadSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 600
+        config.waitsForConnectivity = true
+        config.httpMaximumConnectionsPerHost = 4
+        return URLSession(configuration: config)
+    }()
+
     /// 网络类失败自动退避重试（最多 3 次尝试；4xx 业务错误不重试）
+    /// 退避改为指数 + 抖动，避免多端同时失败时形成惊群；并尊重取消信号。
     private func withRetry<T>(_ operation: () async throws -> T) async throws -> T {
         let maxAttempts = 3
         var lastError: Error = APIError.networkFailure("未知上传错误")
         for attempt in 0..<maxAttempts {
             do {
                 return try await operation()
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 lastError = error
                 let retryable: Bool
@@ -130,6 +158,9 @@ public final class R2DirectUploader: NSObject, Sendable {
                         retryable = true
                     case .serverError(let code, _):
                         retryable = code >= 500
+                    case .storageError(let statusCode, _):
+                        // 存储桶 4xx 是永久错误（桶不存在 / 签名过期 / CORS 拒绝）
+                        retryable = statusCode >= 500 || statusCode == 0
                     default:
                         retryable = false
                     }
@@ -137,9 +168,9 @@ public final class R2DirectUploader: NSObject, Sendable {
                     retryable = true
                 }
                 guard retryable, attempt < maxAttempts - 1 else { break }
-                let delaySeconds = Double(attempt + 1) * 0.8
+                let delaySeconds = pow(2.0, Double(attempt)) * 0.8 + Double.random(in: 0...0.3)
                 Self.logger.warning("Upload attempt \(attempt + 1) failed, retrying in \(delaySeconds) s")
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                try await Task.sleep(for: .seconds(delaySeconds))
             }
         }
         throw lastError

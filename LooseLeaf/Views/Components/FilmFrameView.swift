@@ -43,6 +43,7 @@ public struct FilmFrameView: View {
                         .scaledToFit()
                         .frame(maxHeight: maxHeight)
                         .clipped()
+                        .accessibilityLabel(caption ?? "相纸影像")
                 } else if let imageURL {
                     CachedFilmImageView(url: imageURL, maxHeight: maxHeight)
                 }
@@ -84,6 +85,10 @@ public struct FilmFrameView: View {
         .onTapGesture {
             onTap?()
         }
+        // 可点击的相纸需显式声明为按钮语义
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(onTap != nil ? .isButton : AccessibilityTraits())
+        .accessibilityLabel(caption ?? "相纸")
         .contextMenu {
             Button {
                 copyFilmImage()
@@ -399,11 +404,14 @@ public struct CachedFilmImageView: View {
                     Image(systemName: "photo.artframe")
                         .font(.system(size: 22))
                         .foregroundStyle(ArchivePalette.inkMuted)
+                        .accessibilityHidden(true)
                     Text("相纸载入暂缓")
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 .frame(maxWidth: .infinity, minHeight: 140)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("相纸载入失败")
             } else {
                 VStack(spacing: 8) {
                     ProgressView()
@@ -413,6 +421,8 @@ public struct CachedFilmImageView: View {
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 .frame(maxWidth: .infinity, minHeight: 140)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("相纸载入中")
                 .task(id: url) {
                     await loadImage()
                 }

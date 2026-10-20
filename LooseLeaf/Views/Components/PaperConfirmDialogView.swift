@@ -12,6 +12,14 @@ public struct PaperConfirmDialogView: View {
 
     @State private var isHoveringCancel: Bool = false
     @State private var isHoveringConfirm: Bool = false
+    /// 键盘焦点所在按钮（用于绘制纸本焦点环）
+    @FocusState private var focusedAction: FocusAction?
+
+    /// 对话框内可获焦点的操作
+    private enum FocusAction: Hashable {
+        case cancel
+        case confirm
+    }
 
     public init(request: ConfirmDialogRequest, onDismiss: @escaping () -> Void) {
         self.request = request
@@ -36,24 +44,24 @@ public struct PaperConfirmDialogView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(ArchivePalette.accentWarm)
+                            .accessibilityHidden(true)
                     }
 
                     Text(request.title)
-                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
                     Spacer()
 
-                    Button {
-                        cancelAction()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(4)
-                    }
-                    .buttonStyle(.plain)
-                    .help("取消关闭 (Esc)")
+                    // 统一图标按钮：命中区不小于指针可点下限
+                    PaperIconButton(
+                        systemName: ArchiveIcon.close.systemName,
+                        label: "关闭确认对话框",
+                        help: "取消关闭 (Esc)",
+                        size: 11,
+                        tint: ArchivePalette.inkMuted,
+                        action: cancelAction
+                    )
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
@@ -62,10 +70,10 @@ public struct PaperConfirmDialogView: View {
                 Divider()
                     .overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-                // 2. 正文提示词
+                // 2. 正文提示词（危险态以朱砂色强调，确保一眼可辨）
                 Text(request.message)
-                    .font(ArchiveTypography.editorialSerif(size: 13.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: request.danger ? .medium : .regular))
+                    .foregroundStyle(request.danger ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 20)
@@ -80,24 +88,30 @@ public struct PaperConfirmDialogView: View {
                         cancelAction()
                     } label: {
                         Text(request.cancelText)
-                            .font(ArchiveTypography.monoScale(size: 12))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                             .foregroundStyle(isHoveringCancel ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
+                            .frame(minHeight: ArchiveHitTarget.minPointer)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .onHover { isHoveringCancel = $0 }
+                    .focused($focusedAction, equals: .cancel)
+                    .paperFocusRing(isFocused: focusedAction == .cancel, cornerRadius: ArchiveRadius.xs)
+                    .accessibilityLabel(request.cancelText)
+                    .accessibilityHint("按 Esc 键亦可取消")
 
                     // 确认按钮 (主操作)
                     Button {
                         confirmAction()
                     } label: {
                         Text(request.confirmText)
-                            .font(ArchiveTypography.monoScale(size: 12, weight: .medium))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body, weight: .medium))
                             .foregroundStyle(ArchivePalette.archivePaper)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 6.5)
+                            .frame(minHeight: ArchiveHitTarget.minPointer)
                             .background(
                                 RoundedRectangle(cornerRadius: 3.5)
                                     .fill(request.danger ? ArchivePalette.accentWarm : ArchivePalette.inkPrimary)
@@ -106,6 +120,10 @@ public struct PaperConfirmDialogView: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { isHoveringConfirm = $0 }
+                    .focused($focusedAction, equals: .confirm)
+                    .paperFocusRing(isFocused: focusedAction == .confirm, cornerRadius: 3.5)
+                    .accessibilityLabel(request.confirmText)
+                    .accessibilityHint("按回车键确认")
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
@@ -121,6 +139,8 @@ public struct PaperConfirmDialogView: View {
             .onTapGesture {
                 // 吸收点击，阻止遮罩冒泡
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(request.title)
             .transition(.asymmetric(
                 insertion: .scale(scale: 0.96).combined(with: .opacity),
                 removal: .scale(scale: 0.96).combined(with: .opacity)
@@ -131,6 +151,10 @@ public struct PaperConfirmDialogView: View {
             return .handled
         }
         .onKeyPress(.return) {
+            // 焦点落在按钮上时交由按钮自身处理，避免「确认」被触发两次
+            if focusedAction != nil {
+                return .ignored
+            }
             confirmAction()
             return .handled
         }

@@ -17,7 +17,8 @@ public struct GlobalSearchModalView: View {
     @State private var isSearchingRemote: Bool = false
     @State private var searchTask: Task<Void, Never>? = nil
     @FocusState private var isFieldFocused: Bool
-    @State private var highlightedIndex: Int = 0
+    /// 当前键盘高亮的命中项（用稳定的 scrollId 追踪，而不是数组索引）
+    @State private var highlightedHitId: String? = nil
 
     /// 扁平化检索结果：供 ↑/↓/Return 键盘导航使用
     private enum SearchResultHit {
@@ -36,19 +37,28 @@ public struct GlobalSearchModalView: View {
         }
     }
 
-    private var flatSections: [(title: String, icon: String, tint: Color, hits: [SearchResultHit])] {
-        var sections: [(title: String, icon: String, tint: Color, hits: [SearchResultHit])] = []
+    /// 检索结果分组（带稳定 id，避免用数组索引做 ForEach 标识）
+    private struct SearchSection: Identifiable {
+        let id: String
+        let title: String
+        let icon: String
+        let tint: Color
+        let hits: [SearchResultHit]
+    }
+
+    private var flatSections: [SearchSection] {
+        var sections: [SearchSection] = []
         if !mergedEntries.isEmpty {
-            sections.append(("生活印记 (\(mergedEntries.count))", "book.pages", ArchivePalette.inkMuted, mergedEntries.map { .entry($0) }))
+            sections.append(SearchSection(id: "section-entries", title: "生活印记 (\(mergedEntries.count))", icon: "book.pages", tint: ArchivePalette.inkMuted, hits: mergedEntries.map { .entry($0) }))
         }
         if !remoteFootprints.isEmpty {
-            sections.append(("山川足迹 (\(remoteFootprints.count))", "map", ArchivePalette.accentWarm, remoteFootprints.map { .footprint($0) }))
+            sections.append(SearchSection(id: "section-footprints", title: "山川足迹 (\(remoteFootprints.count))", icon: "map", tint: ArchivePalette.accentWarm, hits: remoteFootprints.map { .footprint($0) }))
         }
         if !remoteWishes.isEmpty {
-            sections.append(("心愿清单 (\(remoteWishes.count))", "sparkles", ArchivePalette.accentWarm, remoteWishes.map { .wish($0) }))
+            sections.append(SearchSection(id: "section-wishes", title: "心愿清单 (\(remoteWishes.count))", icon: "sparkles", tint: ArchivePalette.accentWarm, hits: remoteWishes.map { .wish($0) }))
         }
         if !remoteProjects.isEmpty {
-            sections.append(("造物项目 (\(remoteProjects.count))", "hammer", ArchivePalette.accentMoss, remoteProjects.map { .project($0) }))
+            sections.append(SearchSection(id: "section-projects", title: "造物项目 (\(remoteProjects.count))", icon: "hammer", tint: ArchivePalette.accentMoss, hits: remoteProjects.map { .project($0) }))
         }
         return sections
     }
@@ -146,17 +156,18 @@ public struct GlobalSearchModalView: View {
                         handleQueryChange(newQ)
                     }
                     .onKeyPress(keys: [.upArrow, .downArrow, .return]) { press in
-                        let total = allHits.count
-                        guard total > 0 else { return .ignored }
+                        let hits = allHits
+                        guard !hits.isEmpty else { return .ignored }
+                        let current = highlightedHitId.flatMap { id in hits.firstIndex { $0.scrollId == id } } ?? 0
                         switch press.key {
                         case .upArrow:
-                            highlightedIndex = (highlightedIndex - 1 + total) % total
+                            highlightedHitId = hits[(current - 1 + hits.count) % hits.count].scrollId
                             return .handled
                         case .downArrow:
-                            highlightedIndex = (highlightedIndex + 1) % total
+                            highlightedHitId = hits[(current + 1) % hits.count].scrollId
                             return .handled
                         case .return:
-                            activateHit(allHits[min(highlightedIndex, total - 1)])
+                            activateHit(hits[current])
                             return .handled
                         default:
                             return .ignored
@@ -233,9 +244,7 @@ public struct GlobalSearchModalView: View {
                         .padding(.vertical, 60)
                     } else {
                         let sections = flatSections
-                        ForEach(Array(sections.indices), id: \.self) { sectionIndex in
-                            let section = sections[sectionIndex]
-                            let baseIndex = sections.prefix(sectionIndex).reduce(0) { $0 + $1.hits.count }
+                        ForEach(sections) { section in
 
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 6) {
@@ -248,18 +257,16 @@ public struct GlobalSearchModalView: View {
                                 .padding(.horizontal, 4)
 
                                 // 生活印记为纵向单列；足迹 / 心愿 / 项目保持双列网格
-                                if sectionIndex == 0 {
+                                if section.id == "section-entries" {
                                     VStack(spacing: 6) {
-                                        ForEach(section.hits.indices, id: \.self) { hitIndex in
-                                            let hit = section.hits[hitIndex]
-                                            searchResultCard(hit, isHighlighted: baseIndex + hitIndex == highlightedIndex)
+                                        ForEach(section.hits, id: \.scrollId) { hit in
+                                            searchResultCard(hit, isHighlighted: hit.scrollId == highlightedHitId)
                                         }
                                     }
                                 } else {
                                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                                        ForEach(section.hits.indices, id: \.self) { hitIndex in
-                                            let hit = section.hits[hitIndex]
-                                            searchResultCard(hit, isHighlighted: baseIndex + hitIndex == highlightedIndex)
+                                        ForEach(section.hits, id: \.scrollId) { hit in
+                                            searchResultCard(hit, isHighlighted: hit.scrollId == highlightedHitId)
                                         }
                                     }
                                 }
@@ -269,10 +276,10 @@ public struct GlobalSearchModalView: View {
                 }
                 .padding(16)
             }
-            .onChange(of: highlightedIndex) { _, newIndex in
-                guard allHits.indices.contains(newIndex) else { return }
+            .onChange(of: highlightedHitId) { _, newId in
+                guard let newId else { return }
                 withAnimation(.easeOut(duration: 0.14)) {
-                    proxy.scrollTo(allHits[newIndex].scrollId, anchor: .center)
+                    proxy.scrollTo(newId, anchor: .center)
                 }
             }
             }
@@ -305,7 +312,8 @@ public struct GlobalSearchModalView: View {
             .padding(.vertical, 8)
             .background(ArchivePalette.archiveSubtle.opacity(0.4))
         }
-        .frame(width: 660, height: 500)
+        .frame(minWidth: ArchiveSheetWidth.wide * 0.86, idealWidth: ArchiveSheetWidth.wide, maxWidth: ArchiveSheetWidth.wide)
+        .frame(minHeight: 420, idealHeight: 500, maxHeight: 640)
         .background(ArchivePalette.archivePaper)
         .onAppear {
             isFieldFocused = true
@@ -314,7 +322,8 @@ public struct GlobalSearchModalView: View {
 
     private func handleQueryChange(_ newQ: String) {
         searchTask?.cancel()
-        highlightedIndex = 0
+        // 关键词变化后重置键盘高亮（改为按稳定 scrollId 追踪）
+        highlightedHitId = nil
         let trimmed = newQ.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             debouncedQuery = ""

@@ -10,15 +10,19 @@ struct PreferencesSettingsView: View {
     @State private var hotKeyLabel: String = AppDelegate.hotKeyDisplayName
     @State private var isRecordingHotKey: Bool = false
 
+    /// 默认全局快捷键：⌘ + ⇧ + L（与 AppDelegate 的默认值严格一致）
+    private static let defaultHotKeyCode: Int = Int(kVK_ANSI_L)
+    private static let defaultHotKeyModifiers: Int = Int(cmdKey | shiftKey)
+
     public init(appState: AppState) {
         self.appState = appState
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             // 纸本外观主题
             settingsCardSection(title: "纸本外观主题", caption: "自适应色彩与排版") {
-                HStack(spacing: 12) {
+                HStack(spacing: ArchiveSpacing.m) {
                     themeSwatchCard(
                         mode: .system,
                         title: "跟随系统",
@@ -38,7 +42,7 @@ struct PreferencesSettingsView: View {
                         icon: "moon.fill"
                     )
                 }
-                .padding(12)
+                .padding(ArchiveCardMetrics.padding)
             }
 
             // 全局快捷键
@@ -49,19 +53,20 @@ struct PreferencesSettingsView: View {
                     title: "全局呼出极速手账悬浮窗",
                     subtitle: "在任意应用程序窗口下随手唤起闪念录入与随行记账"
                 ) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: ArchiveSpacing.s) {
                         Text(hotKeyLabel)
-                            .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, ArchiveSpacing.s)
+                            .padding(.vertical, ArchiveSpacing.xs)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(ArchivePalette.borderSubtle, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                            .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.sm).stroke(ArchivePalette.borderSubtle, lineWidth: 1))
+                            .accessibilityLabel("当前全局快捷键：\(hotKeyLabel)")
 
                         if isRecordingHotKey {
                             Text("按下新组合键…")
-                                .font(ArchiveTypography.monoScale(size: 11))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.accentWarm)
 
                             HotKeyRecorderView(isRecording: $isRecordingHotKey) { keyCode, modifiers in
@@ -75,20 +80,51 @@ struct PreferencesSettingsView: View {
                             Button("修改按键") {
                                 isRecordingHotKey = true
                             }
-                            .font(ArchiveTypography.bodySans(size: 11))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .help("按下新的组合键以替换全局唤出快捷键")
+
+                            // 恢复默认：仅当当前快捷键已被改动时可用
+                            Button("恢复默认") {
+                                restoreDefaultHotKey()
+                            }
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .disabled(isHotKeyAtDefault)
+                            .help("恢复为默认快捷键 ⌘ + ⇧ + L")
                         }
                     }
                 }
             }
         }
     }
+
+    // MARK: - 全局快捷键
+
+    /// 当前快捷键是否仍为默认值（⌘ + ⇧ + L）
+    private var isHotKeyAtDefault: Bool {
+        let code = UserDefaults.standard.object(forKey: AppDelegate.hotKeyCodeKey) as? Int ?? Self.defaultHotKeyCode
+        let mods = UserDefaults.standard.object(forKey: AppDelegate.hotKeyModifiersKey) as? Int ?? Self.defaultHotKeyModifiers
+        return code == Self.defaultHotKeyCode && mods == Self.defaultHotKeyModifiers
+    }
+
+    /// 将全局快捷键恢复为出厂默认（⌘ + ⇧ + L）并立即生效
+    private func restoreDefaultHotKey() {
+        (NSApp.delegate as? AppDelegate)?.applyHotKey(
+            keyCode: Self.defaultHotKeyCode,
+            carbonModifiers: Self.defaultHotKeyModifiers
+        )
+        hotKeyLabel = AppDelegate.hotKeyDisplayName
+    }
+
+    // MARK: - 外观主题卡片
+
     private func themeSwatchCard(mode: AppearanceMode, title: String, subtitle: String, icon: String) -> some View {
         let isSelected = appState.appearanceMode == mode
         return Button {
             appState.appearanceMode = mode
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                 HStack {
                     ZStack {
                         Circle()
@@ -97,39 +133,45 @@ struct PreferencesSettingsView: View {
                         Image(systemName: icon)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
+                            .accessibilityHidden(true)
                     }
                     Spacer()
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 14))
                             .foregroundStyle(ArchivePalette.accentWarm)
+                            .accessibilityHidden(true)
                     } else {
                         Circle()
                             .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
                             .frame(width: 14, height: 14)
+                            .accessibilityHidden(true)
                     }
                 }
                 Text(title)
-                    .font(ArchiveTypography.bodySans(size: 12.5, weight: isSelected ? .semibold : .medium))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Text(subtitle)
-                    .font(ArchiveTypography.bodySans(size: 10))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(12)
+            .padding(ArchiveCardMetrics.padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? ArchivePalette.archivePaper : ArchivePalette.archiveSubtle.opacity(0.4))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius)
                     .stroke(isSelected ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.7), lineWidth: isSelected ? 1.5 : 0.5)
             )
             .shadow(color: isSelected ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(title)外观主题")
+        .accessibilityValue(isSelected ? "已选中" : "未选中")
     }
+}
 
 // MARK: - 全局热键录制控件 (HotKeyRecorder)
 
@@ -179,5 +221,4 @@ final class RecorderNSView: NSView {
         guard carbonModifiers != 0 else { return }
         onCaptured?(Int(event.keyCode), carbonModifiers)
     }
-}
 }

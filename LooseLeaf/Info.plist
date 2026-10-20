@@ -26,13 +26,28 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!-- 关闭「突然终止」与「自动终止」：本应用依赖 applicationWillTerminate 做最后一次快照落盘，
+         允许系统静默杀进程会导致用户刚录入的记录凭空消失。 -->
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>com.looseleaf.entry</string>
+    </array>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>用于在记录散页时识别当前所在城市并自动填入地点。坐标仅在本机用于省市反查，不会上传。</string>
     <key>NSLocationUsageDescription</key>
     <string>用于在记录散页时识别当前所在城市并自动填入地点。坐标仅在本机用于省市反查，不会上传。</string>
     <key>NSAppTransportSecurity</key>
     <dict>
-        <!-- 允许连接本地网络中的 http:// 数据中枢（局域网 IP）；远程部署建议改用 HTTPS -->
+        <!-- 允许连接本地网络中的 http:// 数据中枢（局域网 IP）；远程部署建议改用 HTTPS。
+             客户端会在「中枢与设备」页对明文 HTTP 连接给出明确风险提示。 -->
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>

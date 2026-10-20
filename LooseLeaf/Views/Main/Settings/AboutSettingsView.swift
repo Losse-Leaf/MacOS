@@ -14,49 +14,27 @@ struct AboutSettingsView: View {
         let currentBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         let checker = UpdateChecker.shared
 
-        return VStack(spacing: 24) {
+        return VStack(spacing: ArchiveSpacing.l) {
             // 顶部 App 英雄刊头 (Hero Banner)
-            VStack(spacing: 12) {
-                // 精致纸墨拟物 App 图标
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    ArchivePalette.accentMoss.opacity(0.9),
-                                    ArchivePalette.accentMoss
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 76, height: 76)
-                        .shadow(color: ArchivePalette.accentMoss.opacity(0.25), radius: 8, y: 4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(ArchivePalette.archivePaper.opacity(0.2), lineWidth: 1)
-                        )
+            VStack(spacing: ArchiveSpacing.m) {
+                // 真实 App 图标：与 Dock / 访达中展示的 AppIcon 完全一致
+                appIconView
+                    .padding(.top, ArchiveSpacing.s)
 
-                    Image(systemName: "leaf.fill")
-                        .font(.system(size: 38))
-                        .foregroundStyle(ArchivePalette.archivePaper)
-                }
-                .padding(.top, 8)
-
-                VStack(spacing: 4) {
+                VStack(spacing: ArchiveSpacing.xs) {
                     Text("Loose-Leaf · 活页集")
-                        .font(ArchiveTypography.editorialSerif(size: 22, weight: .bold))
+                        .font(ArchiveTypography.editorialSerif(size: Self.heroTitleSize, weight: .bold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
                     Text("以纸为介，散页成卷 · 生活原色，自当留存")
-                        .font(ArchiveTypography.editorialSerif(size: 12))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkSecondary)
 
                     // 100% 动态读取 Bundle 信息，绝不硬编码！
                     Text("版本 \(currentVersion) (Build \(currentBuild)) · 原生 Apple Silicon")
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.top, 2)
+                        .padding(.top, ArchiveSpacing.xxs)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -65,38 +43,38 @@ struct AboutSettingsView: View {
             settingsCardSection(title: "软件更新") {
                 VStack(spacing: 0) {
                     if checker.isChecking {
-                        HStack(spacing: 12) {
+                        HStack(spacing: ArchiveSpacing.m) {
                             ProgressView().controlSize(.small)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                 Text("正在检查最新版本…")
-                                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                 Text("正在连接 GitHub Releases 官方源查询最新发布包")
-                                    .font(ArchiveTypography.bodySans(size: 10.5))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
                             Spacer()
                         }
-                        .padding(14)
+                        .padding(ArchiveCardMetrics.padding)
                     } else if checker.isUpdating {
-                        HStack(spacing: 12) {
+                        HStack(spacing: ArchiveSpacing.m) {
                             ProgressView().controlSize(.small)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                 Text("正在下载并应用最新版本…")
-                                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                                     .foregroundStyle(ArchivePalette.accentWarm)
                                 Text("正在下载更新归档并替换 /Applications/LooseLeaf.app")
-                                    .font(ArchiveTypography.bodySans(size: 10.5))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
                             Spacer()
                         }
-                        .padding(14)
+                        .padding(ArchiveCardMetrics.padding)
                     } else if let update = checker.availableUpdate {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                            HStack(spacing: ArchiveSpacing.m) {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                                         .fill(ArchivePalette.accentWarm.opacity(0.15))
                                         .frame(width: 28, height: 28)
                                     Image(systemName: "arrow.down.circle.fill")
@@ -104,12 +82,12 @@ struct AboutSettingsView: View {
                                         .foregroundStyle(ArchivePalette.accentWarm)
                                 }
 
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                     Text("发现新版本 \(update.tagName)")
-                                        .font(ArchiveTypography.bodySans(size: 12.5, weight: .semibold))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .semibold))
                                         .foregroundStyle(ArchivePalette.inkPrimary)
                                     Text("发布于 \(update.publishedAt)")
-                                        .font(ArchiveTypography.monoScale(size: 10))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                 }
 
@@ -120,26 +98,26 @@ struct AboutSettingsView: View {
                                         await checker.performInAppUpdate()
                                     }
                                 }
-                                .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                             }
 
                             if !update.body.isEmpty {
                                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
                                 Text("更新日志：")
-                                    .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkSecondary)
                                 Text(update.body)
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                     .lineLimit(6)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(8)
+                                    .padding(ArchiveSpacing.s)
                                     .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             }
                         }
-                        .padding(14)
+                        .padding(ArchiveCardMetrics.padding)
                     } else {
                         settingsCardRow(
                             icon: "checkmark.seal.fill",
@@ -152,24 +130,16 @@ struct AboutSettingsView: View {
                                     await checker.checkForUpdates(isUserInitiated: true)
                                 }
                             }
-                            .font(ArchiveTypography.bodySans(size: 11))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         }
                     }
 
                     if let updateError = checker.updateError, !updateError.isEmpty {
                         Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "exclamationmark.octagon.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                            Text(updateError)
-                                .font(ArchiveTypography.bodySans(size: 11))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 4)
+                        // 更新失败原因（沙箱拦截 / 无 /Applications 写权限等）必须可见
+                        settingsFeedbackBanner(feedback: nil, error: updateError)
+                            .padding(ArchiveCardMetrics.padding)
                     }
                 }
             }
@@ -194,12 +164,12 @@ struct AboutSettingsView: View {
                     subtitle: appState.isPaired ? appState.hubURLString : "未配对中枢 (单机离线状态)"
                 ) {
                     Text(appState.isPaired ? "已连接" : "离线")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                 }
 
                 settingsRowDivider
@@ -217,7 +187,7 @@ struct AboutSettingsView: View {
                             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: looseLeafDir.path)
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 }
             }
@@ -228,20 +198,21 @@ struct AboutSettingsView: View {
                     icon: "chevron.left.forwardslash.chevron.right",
                     iconColor: ArchivePalette.inkSecondary,
                     title: "GitHub 开源仓库",
-                    subtitle: "github.com/Losse-Leaf/MacOS"
+                    subtitle: "github.com/\(UpdateChecker.repo)"
                 ) {
                     Button {
-                        if let url = URL(string: "https://github.com/Losse-Leaf/MacOS") {
+                        if let url = URL(string: "https://github.com/\(UpdateChecker.repo)") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             Text("访问仓库")
                             Image(systemName: "arrow.up.forward.app")
-                                .font(.system(size: 9))
+                                .font(.system(size: 10))
+                                .accessibilityHidden(true)
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 }
 
@@ -254,32 +225,84 @@ struct AboutSettingsView: View {
                     subtitle: "报告 Bug、提出改进建议或参与功能讨论"
                 ) {
                     Button {
-                        if let url = URL(string: "https://github.com/Losse-Leaf/MacOS/issues") {
+                        if let url = URL(string: "https://github.com/\(UpdateChecker.repo)/issues") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             Text("提交反馈")
                             Image(systemName: "arrow.up.forward.app")
-                                .font(.system(size: 9))
+                                .font(.system(size: 10))
+                                .accessibilityHidden(true)
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 }
             }
 
             // 底部版权信息
-            VStack(spacing: 4) {
+            VStack(spacing: ArchiveSpacing.xs) {
                 Text("Local-First 本地优先 · SQLite + R2 冗余热备")
-                    .font(ArchiveTypography.monoScale(size: 10))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Text("Copyright © 2024-2026 Loose-Leaf Contributors · MIT License")
-                    .font(ArchiveTypography.monoScale(size: 9.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                     .foregroundStyle(ArchivePalette.inkMuted.opacity(0.8))
             }
-            .padding(.top, 4)
-            .padding(.bottom, 24)
+            .padding(.top, ArchiveSpacing.xs)
+            .padding(.bottom, ArchiveSpacing.xl)
         }
+    }
+
+    // MARK: - 真实 App 图标
+
+    /// 刊头主标题字号（介于 Scale.title 与 Scale.display 之间的英雄级排版）
+    private static let heroTitleSize: CGFloat = 22
+
+    /// 真实 App 图标：与 Dock / 访达中展示的 AppIcon 完全一致。
+    /// 优先取资产目录中的 `AppIcon`；若运行环境下不可用则回退到系统提供的应用图标。
+    private var appIconView: some View {
+        Group {
+            if Self.hasBundledAppIcon {
+                Image("AppIcon", bundle: ArchiveResourceBundle.bundle)
+                    .resizable()
+                    .interpolation(.high)
+            } else if let fallbackIcon = NSApp.applicationIconImage {
+                Image(nsImage: fallbackIcon)
+                    .resizable()
+                    .interpolation(.high)
+            } else {
+                // 兜底：极简纸墨叶形，避免出现空白方块
+                ZStack {
+                    ArchivePalette.accentMoss
+                    Image(systemName: "leaf.fill")
+                        .resizable()
+                        .interpolation(.high)
+                        .padding(Self.appIconSize * 0.28)
+                        .foregroundStyle(ArchivePalette.archivePaper)
+                }
+            }
+        }
+        .aspectRatio(contentMode: .fit)
+        .frame(width: Self.appIconSize, height: Self.appIconSize)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.lg))
+        .shadow(color: ArchivePalette.accentMoss.opacity(0.25), radius: 8, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.lg)
+                .stroke(ArchivePalette.archivePaper.opacity(0.2), lineWidth: 1)
+        )
+        .accessibilityLabel("Loose-Leaf 应用图标")
+    }
+
+    /// App 图标边长
+    private static let appIconSize: CGFloat = 76
+
+    /// 缓存的 AppIcon 资源（避免每次布局都做一次资源查找）
+    private static let bundledAppIcon: NSImage? = ArchiveResourceBundle.bundle.image(forResource: "AppIcon")
+
+    /// 运行环境下是否存在可用的 AppIcon 资源
+    private static var hasBundledAppIcon: Bool {
+        bundledAppIcon != nil
     }
 }

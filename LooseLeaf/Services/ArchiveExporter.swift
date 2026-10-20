@@ -128,13 +128,15 @@ public enum ArchiveExporter {
         return "\u{FEFF}" + rows.joined(separator: "\n")
     }
 
-    /// 生成全量档案 Pretty-Printed JSON 备份数据
+    /// 生成全量档案 JSON 备份数据。
+    /// - Throws: 编码失败时抛出错误（原先返回 nil，调用方无法区分「无内容」与「编码失败」，
+    ///   用户点击导出只会得到一个空文件且没有任何提示）。
     public static func makeFullArchiveJSON(
         snapshot: LocalArchiveSnapshot,
         projects: [Project],
         wishes: [Wish],
         footprints: [Footprint]
-    ) -> Data? {
+    ) throws -> Data {
         let payload = FullArchiveExportPayload(
             exportedAt: FormatUtils.beijingISOString(),
             snapshot: snapshot,
@@ -143,8 +145,9 @@ public enum ArchiveExporter {
             footprints: footprints
         )
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try? encoder.encode(payload)
+        // 不用 .prettyPrinted：会让体积膨胀 2~3 倍；.sortedKeys 每层字典 O(n log n)
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        return try encoder.encode(payload)
     }
 
     private static func escapeCSVField(_ raw: String) -> String {
@@ -153,22 +156,51 @@ public enum ArchiveExporter {
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
 
-        // 阻断 Excel / Numbers 公式注入：= + @ 与制表符开头一律前置单引号；
-        // 负号只在「后面不是合法数字」时处理，避免把 -12.50 变成文本。
-        let startsDangerously = cleaned.hasPrefix("=")
-            || cleaned.hasPrefix("+")
-            || cleaned.hasPrefix("@")
-            || cleaned.hasPrefix("\t")
-        let minusWithoutNumber = cleaned.hasPrefix("-") && Double(cleaned) == nil
+        // 阻断 Excel / Numbers 公式注入。
+        // 关键：必须先去掉**前导空格与制表符**再判定 —— Excel 会 trim 后再执行公式，
+        // 原实现只看首字符，" =cmd|..." 这类以空格开头的载荷会被漏判。
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let startsDangerously = trimmed.hasPrefix("=")
+            || trimmed.hasPrefix("+")
+            || trimmed.hasPrefix("@")
+            || trimmed.hasPrefix("\t")
+        let minusWithoutNumber = trimmed.hasPrefix("-") && Double(trimmed) == nil
         if startsDangerously || minusWithoutNumber {
             cleaned = "'" + cleaned
         }
 
-        if cleaned.contains(",") || cleaned.contains("\"") || cleaned.contains(" ") {
+        // 含分隔符、引号、空格或制表符的字段必须加引号（原实现漏了 \t，会被 Excel 错切）
+        if cleaned.contains(",")
+            || cleaned.contains("\"")
+            || cleaned.contains(" ")
+            || cleaned.contains("\t")
+            || cleaned.contains("\n") {
             let escaped = cleaned.replacingOccurrences(of: "\"", with: "\"\"")
             return "\"\(escaped)\""
         }
         return cleaned
+    }
+
+    /// 把 Markdown / CSV 导出结果流式写入文件（避免在内存中再拼一份完整副本）
+    public static func writeTextToFile(_ text: String, to url: URL) throws {
+        try Data(text.utf8).write(to: url, options: .atomic)
+    }
+
+    /// 把 JSON 导出结果写入文件
+    public static func writeJSONToFile(
+        snapshot: LocalArchiveSnapshot,
+        projects: [Project],
+        wishes: [Wish],
+        footprints: [Footprint],
+        to url: URL
+    ) throws {
+        let data = try makeFullArchiveJSON(
+            snapshot: snapshot,
+            projects: projects,
+            wishes: wishes,
+            footprints: footprints
+        )
+        try data.write(to: url, options: .atomic)
     }
 
     private static func entryTypeName(_ raw: String) -> String {

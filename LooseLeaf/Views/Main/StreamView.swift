@@ -15,7 +15,8 @@ public struct StreamView: View {
 
     // 键盘流与检索状态
     @State private var keyboardScrollPosition: Int?
-    @State private var isSystemGroupCollapsed: Bool = false
+    /// 系统配置分组折叠状态（持久化，避免每次启动都要重新展开 12 项）
+    @State private var isSystemGroupCollapsed: Bool = UserDefaults.standard.bool(forKey: "looseleaf_ui_system_group_collapsed")
     @State private var localSearchText: String = ""
     @FocusState private var isSearchFocused: Bool
     @State private var isOnThisDayExpanded: Bool = true
@@ -49,14 +50,6 @@ public struct StreamView: View {
 
                 // 右侧主画布区
                 VStack(spacing: 0) {
-                    if let warning = appState.localDataWarning {
-                        topNoticeStrip(text: warning, isError: true)
-                    } else if let banner = appState.statusBanner {
-                        topNoticeStrip(text: banner, isError: false)
-                    } else if let err = appState.errorBanner {
-                        topNoticeStrip(text: err, isError: true)
-                    }
-
                     ZStack {
                         // 仅时间流常驻（保留滚动位置与键盘流焦点）；其余板块按需挂载，
                         // 避免 12 个板块同时存活导致任意 AppState 变更触发全量隐藏视图重算
@@ -78,7 +71,25 @@ public struct StreamView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .animation(.easeInOut(duration: 0.12), value: appState.activeSection)
+                    .archiveAnimation(.easeInOut(duration: 0.12), value: appState.activeSection)
+                    // 通知条改为浮层：不参与主画布布局，出现/消失不再导致内容跳动；
+                    // 且三类提示可叠加（原先互斥，错误会被信息条遮住）。
+                    .overlay(alignment: .top) {
+                        VStack(spacing: 4) {
+                            if let err = appState.errorBanner {
+                                topNoticeStrip(text: err, isError: true)
+                            }
+                            if let warning = appState.localDataWarning {
+                                topNoticeStrip(text: warning, isError: true)
+                            }
+                            if let banner = appState.statusBanner {
+                                topNoticeStrip(text: banner, isError: false)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .allowsHitTesting(true)
+                    }
 
                 }
             }
@@ -93,43 +104,16 @@ public struct StreamView: View {
                 }
             }
 
-            // 全局快捷悬浮发布按钮（配置类页面隐藏：低频页面无需高频记一笔，⌘N 随时可用）
-            if !WorkbenchSection.configurationSections.contains(appState.activeSection) {
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button {
-                        appState.showNewEntrySheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.archivePaper)
-                            .frame(width: 44, height: 44)
-                            .background(ArchivePalette.inkPrimary)
-                            .clipShape(Circle())
-                            .shadow(color: Color.black.opacity(0.18), radius: 6, x: 0, y: 3)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(24)
-                    .help("记一笔 (⌘N)")
-                    .accessibilityLabel("新建散页")
-                }
-            }
-            .allowsHitTesting(!appState.showNewEntrySheet && !appState.showSearchModal && !appState.showStatsSheet)
-            }
+            // 说明：原先此处有一个右下角悬浮「+」按钮（FAB）。
+            // FAB 是移动端范式，在 macOS 上会随窗口尺寸漂移并遮挡右下角内容，
+            // 现已改为窗口右上角的原生工具栏按钮（⌘N 快捷键保持不变）。
 
             if appState.showNewEntrySheet {
-                ZStack {
-                    Color.black.opacity(0.38)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                appState.showNewEntrySheet = false
-                            }
-                        }
-
+                PaperModalOverlay(onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        appState.showNewEntrySheet = false
+                    }
+                }) {
                     NewEntryModal(
                         appState: appState,
                         initialKind: appState.newEntryInitialKind,
@@ -145,35 +129,17 @@ public struct StreamView: View {
                             appState.newEntryInitialCityName = nil
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
-                    )
-                    .onTapGesture {
-                        // 吸收点击
-                    }
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.96).combined(with: .opacity),
-                        removal: .scale(scale: 0.96).combined(with: .opacity)
-                    ))
                 }
                 .zIndex(110)
             }
 
             // 全局聚光灯档案检索 (⌘K Spotlight)
             if appState.showSearchModal {
-                ZStack {
-                    Color.black.opacity(0.38)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                appState.showSearchModal = false
-                            }
-                        }
-
+                PaperModalOverlay(onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        appState.showSearchModal = false
+                    }
+                }) {
                     GlobalSearchModalView(
                         appState: appState,
                         onDismiss: {
@@ -194,53 +160,22 @@ public struct StreamView: View {
                             inspectingSearchProject = proj
                         }
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
-                    )
-                    .onTapGesture {
-                        // 吸收点击
-                    }
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.96).combined(with: .opacity),
-                        removal: .scale(scale: 0.96).combined(with: .opacity)
-                    ))
                 }
                 .zIndex(120)
             }
 
             // 生活刻度统计弹窗 (⌘⌥S)
             if appState.showStatsSheet {
-                ZStack {
-                    Color.black.opacity(0.38)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                appState.showStatsSheet = false
-                            }
-                        }
-
+                PaperModalOverlay(onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        appState.showStatsSheet = false
+                    }
+                }) {
                     StatsModalView(appState: appState) {
                         withAnimation(.easeInOut(duration: 0.16)) {
                             appState.showStatsSheet = false
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
-                    )
-                    .onTapGesture {
-                        // 吸收点击
-                    }
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.96).combined(with: .opacity),
-                        removal: .scale(scale: 0.96).combined(with: .opacity)
-                    ))
                 }
                 .zIndex(115)
             }
@@ -286,6 +221,21 @@ public struct StreamView: View {
         }
         .onChange(of: appState.activeSection) { _, newSec in
             visitedSections.insert(newSec)
+        }
+        // ESC 统一在最外层处理：按「最上层优先」关闭自定义弹层，
+        // 避免每个弹窗各自实现一套 ESC 逻辑而产生不一致。
+        .onExitCommand {
+            if appState.activeConfirmDialog != nil {
+                appState.dismissConfirm()
+            } else if appState.showSearchModal {
+                withAnimation(.easeInOut(duration: 0.16)) { appState.showSearchModal = false }
+            } else if appState.showStatsSheet {
+                withAnimation(.easeInOut(duration: 0.16)) { appState.showStatsSheet = false }
+            } else if appState.showNewEntrySheet {
+                withAnimation(.easeInOut(duration: 0.16)) { appState.showNewEntrySheet = false }
+            } else if appState.lightboxAttachment != nil {
+                appState.lightboxAttachment = nil
+            }
         }
     }
 
@@ -358,38 +308,8 @@ public struct StreamView: View {
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 全局档案检索快捷按钮 (⌘K)
-            Button {
-                appState.showSearchModal = true
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Text("全局档案检索…")
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Spacer()
-                    Text("⌘K")
-                        .font(ArchiveTypography.monoScale(size: 9.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1.5)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(ArchivePalette.archiveSubtle.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                )
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 2)
+            // 说明：原先此处有一个「⌘K 全局档案检索」按钮，与画布内的 ⌘F 搜索框
+            // 视觉上高度相似，用户难以分辨两者关系；⌘K 已提升至原生窗口工具栏。
 
             // 导航菜单项：6 大内容板块 + 5 个配置条目（扁平化后原「配置中心」tab 直接进侧栏）
             // 12 行在 640pt 最小窗口高度下会贴边，故外层包 ScrollView 兜底
@@ -421,6 +341,7 @@ public struct StreamView: View {
                     Button {
                         withAnimation(.easeInOut(duration: 0.16)) {
                             isSystemGroupCollapsed.toggle()
+                            UserDefaults.standard.set(isSystemGroupCollapsed, forKey: "looseleaf_ui_system_group_collapsed")
                         }
                     } label: {
                         HStack(spacing: 3) {
@@ -507,17 +428,6 @@ public struct StreamView: View {
             .padding(.bottom, 12)
         }
         .background(ArchivePalette.archivePaper.opacity(0.65))
-    }
-
-    private func metricMiniItem(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(ArchiveTypography.monoScale(size: 13.5, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-            Text(label)
-                .font(ArchiveTypography.bodySans(size: 10.5))
-                .foregroundStyle(ArchivePalette.inkMuted)
-        }
     }
 
     /// 侧边导航行：整行可点（contentShape 修透明背景不参与命中测试的问题），
@@ -658,41 +568,6 @@ public struct StreamView: View {
                         .paperElevation(1)
 
                         Spacer()
-
-                        Button {
-                            Task { @MainActor in
-                                await appState.refreshAll(forceFull: true)
-                            }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                .frame(width: 32, height: 32)
-                        }
-                        .buttonStyle(.plain)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                        .paperElevation(1)
-                        .help("全量同步中枢档案 (⌘R)")
-                        .accessibilityLabel("同步全部档案")
-
-                        Button {
-                            appState.showNewEntrySheet = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.system(size: 11))
-                                Text("记一笔")
-                                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(height: 32)
-                            .foregroundStyle(ArchivePalette.archivePaper)
-                            .background(ArchivePalette.inkPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                        }
-                        .buttonStyle(.plain)
-                        .paperElevation(1)
                     }
                 }
                 .padding(.bottom, 6)
@@ -1125,84 +1000,6 @@ public struct StreamView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-        )
-    }
-
-    private func updateAvailableStrip(update: UpdateChecker.ReleaseInfo) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Text("发现新版本 \(update.tagName)（当前版本 v\(UpdateChecker.shared.currentVersion)）")
-                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-
-                Spacer()
-
-                if UpdateChecker.shared.isUpdating {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("正在下载更新 (\(Int(UpdateChecker.shared.updateProgress * 100))%)…")
-                            .font(ArchiveTypography.monoScale(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                    }
-                } else {
-                    Button("浏览器下载") {
-                        UpdateChecker.shared.openDownloadInBrowser()
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .help("在浏览器直接下载新版 DMG / ZIP 安装包")
-
-                    Button("终端极速更新") {
-                        UpdateChecker.shared.copyInstallCommandToClipboard()
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .help("复制终端一键全自动安装更新命令")
-
-                    Button("应用内更新") {
-                        Task { @MainActor in
-                            await UpdateChecker.shared.performInAppUpdate()
-                        }
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-
-                    Button("稍后提醒") {
-                        UpdateChecker.shared.availableUpdate = nil
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(ArchivePalette.inkMuted)
-
-                    Button("忽略此版本") {
-                        UpdateChecker.shared.ignoreCurrentUpdate()
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                }
-            }
-
-            if let err = UpdateChecker.shared.updateError {
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    Text(err)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
-                .padding(.top, 2)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        .background(ArchivePalette.accentWarm.opacity(0.12))
-        .overlay(
-            Rectangle()
-                .fill(ArchivePalette.accentWarm.opacity(0.3))
-                .frame(height: 0.5),
-            alignment: .bottom
         )
     }
 
@@ -2342,17 +2139,11 @@ public struct EditEntrySheetView: View {
                             ForEach(editAttachments) { att in
                                 ZStack(alignment: .topTrailing) {
                                     if let url = APIClient.shared.resolveMediaURL(att.url) {
-                                        AsyncImage(url: url) { phase in
-                                            if let image = phase.image {
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                            } else {
-                                                ArchivePalette.archiveSubtle
-                                            }
-                                        }
-                                        .frame(width: 68, height: 68)
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        // 关键：AsyncImage 不走 PaperImageCache，也不做降采样，
+                                        // 一张 4K 原图会在 68×68 的方框里解码出约 39MB 位图。
+                                        CachedFilmImageView(url: url, maxHeight: 68)
+                                            .frame(width: 68, height: 68)
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 4)
                                                 .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)

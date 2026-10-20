@@ -12,11 +12,11 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
 
     public var iconName: String {
         switch self {
-        case .general: return "slider.horizontal.3"
-        case .devices: return "laptopcomputer.and.iphone"
-        case .backup: return "archivebox"
-        case .categories: return "tag"
-        case .about: return "info.circle"
+        case .general: return ArchiveIcon.preferences.systemName
+        case .devices: return ArchiveIcon.hub.systemName
+        case .backup: return ArchiveIcon.storage.systemName
+        case .categories: return ArchiveIcon.categories.systemName
+        case .about: return ArchiveIcon.about.systemName
         }
     }
 
@@ -36,6 +36,10 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
 /// 各 tab 的完整实现拆分在 `Views/Main/Settings/` 下：
 /// PreferencesSettingsView / HubDevicesSettingsView / StorageBackupSettingsView /
 /// CategoriesSettingsView / AboutSettingsView
+///
+/// 结构约定（避免多层嵌套滚动）：
+/// 本文件是**唯一**持有 `ScrollView` 与外层留白的一层；
+/// 各子视图只输出纯粹的 `VStack(alignment:.leading, spacing: ArchiveSpacing.l)`。
 @MainActor
 public struct SettingsView: View {
     @Bindable var appState: AppState
@@ -57,9 +61,9 @@ public struct SettingsView: View {
             pinnedSectionHeader
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
 
-            // 居中黄金比例设置面板 (680~720pt centered, standard macOS HIG)
+            // 居中黄金比例设置面板 (maxWidth 720pt centered, standard macOS HIG)
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                     Group {
                         switch selectedTab {
                         case .general:
@@ -77,9 +81,10 @@ public struct SettingsView: View {
                     .id(selectedTab)
                     .transition(.opacity)
                 }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 24)
-                .frame(maxWidth: 720)
+                // 外层留白统一在此处施加，子视图不再重复内边距
+                .padding(.horizontal, SettingsLayout.horizontalGutter)
+                .padding(.vertical, ArchiveSpacing.xl)
+                .frame(maxWidth: ArchiveSheetWidth.form)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .background(ArchivePalette.archivePaper)
@@ -90,32 +95,41 @@ public struct SettingsView: View {
 
     // MARK: - 扁平化后的精简页眉（tab 已由侧栏承担，这里只做身份标识）
     private var pinnedSectionHeader: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: ArchiveSpacing.s) {
             Image(systemName: selectedTab.iconName)
-                .font(.system(size: 13))
+                .font(.system(size: ArchiveTypography.Scale.heading))
                 .foregroundStyle(ArchivePalette.accentWarm)
+                .accessibilityHidden(true)
             Text(selectedTab.rawValue)
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             Spacer()
 
-            HStack(spacing: 6) {
+            HStack(spacing: ArchiveSpacing.s) {
                 Circle()
                     .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                     .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
                 Text(appState.isPaired ? "中枢在线" : "未配对")
-                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                 Text("v\(UpdateChecker.shared.currentVersion)")
-                    .font(ArchiveTypography.monoScale(size: 9.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(appState.isPaired ? "中枢在线" : "未配对")
             .help(appState.isPaired ? "数据中枢已连接: \(appState.hubURLString)" : "尚未配对生活数据中枢")
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, ArchiveSpacing.l)
         .frame(height: 46)
         .background(ArchivePalette.archivePaper)
     }
+}
 
+/// 配置中心外层布局常量（唯一留白来源）
+public enum SettingsLayout {
+    /// 设置面板左右留白：比 ArchiveSpacing.xl 更宽，形成杂志版心
+    public static let horizontalGutter: CGFloat = 32
 }

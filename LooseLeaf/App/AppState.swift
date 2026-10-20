@@ -269,6 +269,15 @@ public final class AppState {
     /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
     public var searchFocusRequest: Int = 0
 
+    /// 当前是否存在需要关闭的自定义浮层（供 ⌘W 菜单项启用/禁用）
+    public var hasOpenOverlay: Bool {
+        activeConfirmDialog != nil
+            || showSearchModal
+            || showStatsSheet
+            || showNewEntrySheet
+            || lightboxAttachment != nil
+    }
+
     public func requestStreamSearchFocus() {
         activeSection = .stream
         searchFocusRequest += 1

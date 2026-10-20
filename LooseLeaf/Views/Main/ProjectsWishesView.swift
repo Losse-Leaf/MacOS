@@ -3,6 +3,64 @@ import SwiftUI
 // 原「造物 / 心愿 / 行迹」聚合主视图已拆分为 WishlistView / ProjectsView / TravelAtlasView，
 // 本文件只保留多端共用的卡片、编辑 Sheet 与城市/省份回忆抽屉。
 
+// MARK: - 造物项目状态语义 (Project Status)
+
+/// 造物项目状态语义字典（全应用唯一真源）。
+/// 新建 / 修订项目与 `ProjectsView` 的状态筛选共用同一套取值，
+/// 避免「默认写入的状态」与「筛选匹配的状态」不一致导致项目在筛选下消失。
+enum ProjectStatus: String, CaseIterable, Identifiable {
+    /// 进行中
+    case active = "Active"
+    /// 已归档
+    case archived = "Archived"
+    /// 持续维护（兼容旧数据的表述，语义上等同于进行中）
+    case ongoing = "持续维护"
+
+    var id: String { rawValue }
+
+    /// 面向用户的中文展示名
+    var displayName: String {
+        switch self {
+        case .active: return "进行中"
+        case .archived: return "已归档"
+        case .ongoing: return "持续维护"
+        }
+    }
+
+    /// 是否属于「进行中」语义（含旧数据表述 active / 持续维护 等大小写变体）
+    var isActiveLike: Bool {
+        switch self {
+        case .active, .ongoing: return true
+        case .archived: return false
+        }
+    }
+
+    /// 将任意来源的状态字符串归一化为语义枚举（无法识别时按进行中处理）
+    static func normalize(_ raw: String?) -> ProjectStatus {
+        guard let raw, !raw.isEmpty else { return .active }
+        if let matched = ProjectStatus(rawValue: raw) {
+            return matched
+        }
+        // 兼容后端可能返回的小写形式（如 active / archived）
+        let lowered = raw.lowercased()
+        if lowered == ProjectStatus.archived.rawValue.lowercased() { return .archived }
+        return .active
+    }
+
+    /// 判断给定状态是否命中指定筛选值（`all` 表示不限）
+    static func matches(_ raw: String?, selected: String) -> Bool {
+        if selected == "all" { return true }
+        let normalized = normalize(raw)
+        if selected == ProjectStatus.active.rawValue {
+            return normalized.isActiveLike
+        }
+        if selected == ProjectStatus.archived.rawValue {
+            return normalized == .archived
+        }
+        return false
+    }
+}
+
 /// 城市 / 省份回忆抽屉的选择载荷（TravelAtlasView 与抽屉 Sheet 共用）
 struct DrawerCitySelection: Identifiable, Equatable {
     var id: String { code }
@@ -27,32 +85,32 @@ struct WishCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 1. 顶栏：分类标签徽章 + 状态微胶囊
             HStack(alignment: .center) {
-                HStack(spacing: 4) {
+                HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: kindIcon)
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 10))
                     Text(kindTitle)
-                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                 }
                 .foregroundStyle(kindColor)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .background(kindColor.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
                 Spacer()
 
-                HStack(spacing: 4) {
+                HStack(spacing: ArchiveSpacing.xs) {
                     Circle()
                         .fill(statusDotColor)
                         .frame(width: 5.5, height: 5.5)
                     Text(statusTitle)
-                        .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                         .foregroundStyle(statusTextColor)
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .background(statusBgColor)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
             }
             .padding(.bottom, 10)
 
@@ -64,11 +122,11 @@ struct WishCardView: View {
 
             // 3. 规格
             if let spec = wish.spec, !spec.isEmpty {
-                HStack(spacing: 4) {
+                HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: "slider.horizontal.2")
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                     Text(spec)
-                        .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .medium))
                 }
                 .foregroundStyle(ArchivePalette.inkSecondary)
                 .padding(.top, 3)
@@ -78,7 +136,7 @@ struct WishCardView: View {
             // 4. 手记备注
             if let note = wish.note, !note.isEmpty {
                 Text(LocalizedStringKey(note))
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.88))
                     .lineLimit(2)
                     .lineSpacing(2)
@@ -99,16 +157,16 @@ struct WishCardView: View {
                 if wish.status == "fulfilled" && wish.actualCost > 0 {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("圆满实付")
-                            .font(ArchiveTypography.bodySans(size: 10))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkMuted)
                         Text(FormatUtils.formattedYuan(cents: wish.actualCost, includeSymbol: true))
-                            .font(ArchiveTypography.monoScale(size: 13, weight: .bold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading, weight: .bold))
                             .foregroundStyle(ArchivePalette.accentMoss)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("意向预算")
-                            .font(ArchiveTypography.bodySans(size: 10))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkMuted)
                         Text(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))
                             .font(ArchiveTypography.monoScale(size: 12.5, weight: .semibold))
@@ -122,7 +180,7 @@ struct WishCardView: View {
                 HStack(spacing: 6) {
                     if wish.status != "fulfilled" {
                         Button(action: onResolve) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: ArchiveSpacing.xs) {
                                 Image(systemName: "sparkles")
                                     .font(.system(size: 10))
                                 Text("圆满心愿")
@@ -132,9 +190,9 @@ struct WishCardView: View {
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4.5)
                             .background(ArchivePalette.accentMoss.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                     .stroke(ArchivePalette.accentMoss.opacity(0.3), lineWidth: 0.5)
                             )
                         }
@@ -144,13 +202,13 @@ struct WishCardView: View {
                             Image(systemName: "checkmark.seal.fill")
                                 .font(.system(size: 10))
                             Text("已归册")
-                                .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                         }
                         .foregroundStyle(ArchivePalette.accentMoss)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3.5)
                         .background(ArchivePalette.accentMoss.opacity(0.10))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                     }
 
                     Button(action: onEdit) {
@@ -159,33 +217,38 @@ struct WishCardView: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(6)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                             )
+                            // 命中区下限：图标视觉保持 11pt，可点区域不小于 28pt
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
                     .buttonStyle(.plain)
                     .help("修订心愿")
+                    .accessibilityLabel("修订心愿")
 
                     Button(action: onDelete) {
-                        Image(systemName: "trash")
+                        Image(systemName: ArchiveIcon.delete.systemName)
                             .font(.system(size: 11))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(6)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                             )
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
                     .buttonStyle(.plain)
                     .help("删除心愿")
+                    .accessibilityLabel("删除心愿")
                 }
             }
         }
-        .padding(14)
+        .padding(ArchiveCardMetrics.padding)
         .frame(minHeight: 195)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 7))
@@ -273,17 +336,18 @@ struct ProjectCardView: View {
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(ArchivePalette.accentWarm.opacity(0.10))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                 }
                 Spacer()
                 if let status = proj.status, !status.isEmpty {
-                    Text(status)
+                    // 语义化展示：已知状态给出中文名，未知取值按「进行中」语义归一化
+                    Text(ProjectStatus.normalize(status).displayName)
                         .font(ArchiveTypography.monoScale(size: 10.5))
                         .foregroundStyle(ArchivePalette.accentMoss)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(ArchivePalette.accentMoss.opacity(0.10))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                 }
             }
             .padding(.bottom, 8)
@@ -295,7 +359,7 @@ struct ProjectCardView: View {
 
             if let sub = proj.subtitle, !sub.isEmpty {
                 Text(sub)
-                    .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                     .padding(.top, 3)
                     .lineLimit(1)
@@ -303,7 +367,7 @@ struct ProjectCardView: View {
 
             if !proj.description.isEmpty {
                 Text(LocalizedStringKey(proj.description))
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                     .lineLimit(3)
                     .lineSpacing(2)
@@ -320,11 +384,11 @@ struct ProjectCardView: View {
             HStack {
                 if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
                     Link(destination: url) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             Image(systemName: "arrow.up.right.square")
                             Text("源码仓库")
                         }
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.accentWarm)
                     }
                 } else {
@@ -340,33 +404,37 @@ struct ProjectCardView: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(6)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                             )
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
                     .buttonStyle(.plain)
                     .help("修订项目")
+                    .accessibilityLabel("修订项目")
 
                     Button(action: onDelete) {
-                        Image(systemName: "trash")
+                        Image(systemName: ArchiveIcon.delete.systemName)
                             .font(.system(size: 11))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .padding(6)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                             )
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
                     .buttonStyle(.plain)
                     .help("删除项目")
+                    .accessibilityLabel("删除项目")
                 }
             }
         }
-        .padding(14)
+        .padding(ArchiveCardMetrics.padding)
         .frame(minHeight: 195)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 7))
@@ -397,9 +465,9 @@ public struct NewWishSheet: View {
     @State private var errorText: String?
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             Text("许下新心愿")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             HStack(spacing: 6) {
@@ -410,9 +478,9 @@ public struct NewWishSheet: View {
 
             TextField("心愿名称", text: $title)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if kind == "travel" {
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
@@ -420,24 +488,24 @@ public struct NewWishSheet: View {
 
             TextField("规格参数或目的地补充", text: $spec)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("预期预算金额（元）", text: $budgetYuan)
                 .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 13))
-                .padding(8)
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
-                .font(ArchiveTypography.bodySans(size: 12))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(3...5)
                 .padding(10)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if let errorText {
                 Text(errorText)
@@ -457,7 +525,11 @@ public struct NewWishSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(
+            minWidth: ArchiveSheetWidth.compact,
+            idealWidth: ArchiveSheetWidth.compact,
+            maxWidth: ArchiveSheetWidth.compact
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -519,9 +591,9 @@ public struct EditWishSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             Text("修订心愿")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             HStack(spacing: 6) {
@@ -532,9 +604,9 @@ public struct EditWishSheet: View {
 
             TextField("心愿名称", text: $title)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if kind == "travel" {
                 PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
@@ -542,24 +614,24 @@ public struct EditWishSheet: View {
 
             TextField("规格参数或目的地补充", text: $spec)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("意向预算金额（元）", text: $budgetYuan)
                 .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 13))
-                .padding(8)
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
-                .font(ArchiveTypography.bodySans(size: 12))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(3...5)
                 .padding(10)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if let errorText {
                 Text(errorText)
@@ -579,7 +651,11 @@ public struct EditWishSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(
+            minWidth: ArchiveSheetWidth.compact,
+            idealWidth: ArchiveSheetWidth.compact,
+            maxWidth: ArchiveSheetWidth.compact
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -637,13 +713,13 @@ public struct ResolveWishSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
             Text("圆满心愿 · 载入典藏")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             Text("达成目标：\(wish.title)")
-                .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkSecondary)
 
             // 达成方式单选
@@ -654,49 +730,49 @@ public struct ResolveWishSheet: View {
             }
 
             // 实付金额
-            HStack(spacing: 4) {
+            HStack(spacing: ArchiveSpacing.xs) {
                 Text("实付金额 ¥")
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 TextField("0.00", text: $actualCostYuan)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
                     .padding(6)
                     .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
             // 联动联动伴生复选
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                 Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
                     .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
 
                 if wish.kind == "item" {
                     Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
                         .toggleStyle(.paperCheckbox)
-                        .font(ArchiveTypography.bodySans(size: 12))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 }
 
                 if wish.kind == "travel" {
                     Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
                         .toggleStyle(.paperCheckbox)
-                        .font(ArchiveTypography.bodySans(size: 12))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 }
 
                 Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
                     .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
             }
 
             if createLifeEntry {
                 TextField("圆梦感言手记", text: $entryContent)
                     .textFieldStyle(.plain)
-                    .padding(8)
+                    .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
             }
 
             if let errorText {
@@ -717,7 +793,11 @@ public struct ResolveWishSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(
+            minWidth: ArchiveSheetWidth.standard,
+            idealWidth: ArchiveSheetWidth.standard,
+            maxWidth: ArchiveSheetWidth.standard
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -769,9 +849,9 @@ public struct NewFootprintSheet: View {
     @State private var errorText: String?
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             Text("点亮城市行迹票根")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "选择行政区划城市…")
@@ -780,15 +860,15 @@ public struct NewFootprintSheet: View {
 
             TextField("旅程标题", text: $title)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("行迹随笔手记", text: $note)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if let errorText {
                 Text(errorText)
@@ -808,7 +888,11 @@ public struct NewFootprintSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(
+            minWidth: ArchiveSheetWidth.compact,
+            idealWidth: ArchiveSheetWidth.compact,
+            maxWidth: ArchiveSheetWidth.compact
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -866,9 +950,9 @@ public struct EditFootprintSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             Text("修订行迹票根")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
@@ -877,15 +961,15 @@ public struct EditFootprintSheet: View {
 
             TextField("旅程标题", text: $title)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("随笔手记", text: $note)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if let errorText {
                 Text(errorText)
@@ -905,7 +989,11 @@ public struct EditFootprintSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 400)
+        .frame(
+            minWidth: ArchiveSheetWidth.compact,
+            idealWidth: ArchiveSheetWidth.compact,
+            maxWidth: ArchiveSheetWidth.compact
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -945,55 +1033,68 @@ public struct NewProjectSheet: View {
     @State private var subtitle: String = ""
     @State private var description: String = ""
     @State private var category: String = "开源造物"
-    @State private var status: String = "持续维护"
+    // 默认状态与 ProjectsView 的状态筛选共用同一套语义常量（进行中 = "Active"）
+    @State private var status: String = ProjectStatus.active.rawValue
     @State private var githubUrl: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             Text("新建造物与项目")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             TextField("项目名称", text: $title)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("副标题或一句话定义", text: $subtitle)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
-            HStack(spacing: 8) {
+            HStack(spacing: ArchiveSpacing.s) {
                 TextField("分类", text: $category)
                     .textFieldStyle(.plain)
-                    .padding(8)
+                    .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
                 TextField("状态", text: $status)
                     .textFieldStyle(.plain)
-                    .padding(8)
+                    .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
+
+            // 状态快选：与 ProjectsView 的筛选胶囊共用同一套语义常量
+            HStack(spacing: 6) {
+                Text("状态快选：")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                ForEach(ProjectStatus.allCases) { st in
+                    PaperPillButton(title: st.displayName, isSelected: status == st.rawValue) {
+                        status = st.rawValue
+                    }
+                }
             }
 
             TextField("项目详细背景与设计手记", text: $description)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("GitHub 源码仓库链接", text: $githubUrl)
                 .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 12))
-                .padding(8)
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if let errorText {
                 Text(errorText)
@@ -1013,7 +1114,11 @@ public struct NewProjectSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(
+            minWidth: ArchiveSheetWidth.standard,
+            idealWidth: ArchiveSheetWidth.standard,
+            maxWidth: ArchiveSheetWidth.standard
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -1068,54 +1173,66 @@ public struct EditProjectSheet: View {
         _subtitle = State(initialValue: project.subtitle ?? "")
         _description = State(initialValue: project.description)
         _category = State(initialValue: project.category ?? "开源造物")
-        _status = State(initialValue: project.status ?? "持续维护")
+        _status = State(initialValue: project.status ?? ProjectStatus.active.rawValue)
         _githubUrl = State(initialValue: project.githubUrl ?? "")
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             Text("修订造物与项目")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             TextField("项目名称", text: $title)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("副标题或一句话定义", text: $subtitle)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
-            HStack(spacing: 8) {
+            HStack(spacing: ArchiveSpacing.s) {
                 TextField("分类", text: $category)
                     .textFieldStyle(.plain)
-                    .padding(8)
+                    .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
                 TextField("状态", text: $status)
                     .textFieldStyle(.plain)
-                    .padding(8)
+                    .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
+
+            // 状态快选：与 ProjectsView 的筛选胶囊共用同一套语义常量
+            HStack(spacing: 6) {
+                Text("状态快选：")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                ForEach(ProjectStatus.allCases) { st in
+                    PaperPillButton(title: st.displayName, isSelected: status == st.rawValue) {
+                        status = st.rawValue
+                    }
+                }
             }
 
             TextField("项目详细背景手记", text: $description)
                 .textFieldStyle(.plain)
-                .padding(8)
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("GitHub 源码仓库链接", text: $githubUrl)
                 .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 12))
-                .padding(8)
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             if let errorText {
                 Text(errorText)
@@ -1135,7 +1252,11 @@ public struct EditProjectSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(
+            minWidth: ArchiveSheetWidth.standard,
+            idealWidth: ArchiveSheetWidth.standard,
+            maxWidth: ArchiveSheetWidth.standard
+        )
         .background(ArchivePalette.archivePaper)
     }
 
@@ -1167,6 +1288,34 @@ public struct EditProjectSheet: View {
 
 // MARK: - 山川经纬星野图谱 (CelestialAtlasCanvasView - RC-98)
 
+/// 经纬度 → 星野画布的归一化投影参数。
+/// 原先散落在视图体内的魔法数（60 / 530 / 45 / 485）在此具名化，
+/// 便于日后微调投影窗口而不必通读整段布局代码。
+struct CelestialProjection {
+    /// 经度起点（画布左缘对应的经度值）
+    static let longitudeOrigin: Double = 60.0
+    /// 经度跨度（画布横向覆盖的经度值）
+    static let longitudeSpan: Double = 530.0
+    /// 纬度起点（画布上缘对应的纬度值）
+    static let latitudeOrigin: Double = 45.0
+    /// 纬度跨度（画布纵向覆盖的纬度值）
+    static let latitudeSpan: Double = 485.0
+    /// 横向归一化取值范围（留出边缘余量，避免节点贴边）
+    static let xRange: ClosedRange<Double> = 0.05...0.95
+    /// 纵向归一化取值范围
+    static let yRange: ClosedRange<Double> = 0.08...0.92
+
+    /// 经度 → 画布横向比例
+    static func normalizedX(longitude: Double) -> Double {
+        min(max((longitude - longitudeOrigin) / longitudeSpan, xRange.lowerBound), xRange.upperBound)
+    }
+
+    /// 纬度 → 画布纵向比例
+    static func normalizedY(latitude: Double) -> Double {
+        min(max((latitude - latitudeOrigin) / latitudeSpan, yRange.lowerBound), yRange.upperBound)
+    }
+}
+
 @MainActor
 public struct CelestialAtlasCanvasView: View {
     let footprints: [Footprint]
@@ -1181,7 +1330,9 @@ public struct CelestialAtlasCanvasView: View {
         let y: Double
     }
 
-    private var clusters: [CityCluster] {
+    /// 城市聚合（按行政代码归并足迹并取坐标）
+    /// 下沉为普通方法，由 body 一次性求值后复用，避免同一份聚合在 body 内被反复计算。
+    private func makeClusters() -> [CityCluster] {
         var map: [String: (name: String, count: Int)] = [:]
         for fp in footprints {
             let cur = map[fp.cityCode] ?? (name: fp.cityName, count: 0)
@@ -1194,7 +1345,10 @@ public struct CelestialAtlasCanvasView: View {
     }
 
     public var body: some View {
-        GeometryReader { geo in
+        // 一次性聚合并复用：ForEach 与统计文案共用同一份结果
+        let clusters = makeClusters()
+
+        return GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
             ZStack {
@@ -1218,14 +1372,14 @@ public struct CelestialAtlasCanvasView: View {
                 }
 
                 ForEach(clusters) { item in
-                    let normX = CGFloat(min(max((item.x - 60.0) / 530.0, 0.05), 0.95))
-                    let normY = CGFloat(min(max((item.y - 45.0) / 485.0, 0.08), 0.92))
+                    let normX = CGFloat(CelestialProjection.normalizedX(longitude: item.x))
+                    let normY = CGFloat(CelestialProjection.normalizedY(latitude: item.y))
                     let nodeColor = item.count >= 3 ? ArchivePalette.accentWarm : (item.count == 2 ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
 
                     Button {
                         onSelectCity(item.code, item.name)
                     } label: {
-                        VStack(spacing: 2) {
+                        VStack(spacing: ArchiveSpacing.xxs) {
                             ZStack {
                                 Circle()
                                     .fill(nodeColor.opacity(0.18))
@@ -1235,36 +1389,40 @@ public struct CelestialAtlasCanvasView: View {
                                     .frame(width: 7, height: 7)
                             }
                             Text(item.name)
-                                .font(ArchiveTypography.editorialSerif(size: 11, weight: .medium))
+                                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.caption, weight: .medium))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
-                                .padding(.horizontal, 4)
+                                .padding(.horizontal, ArchiveSpacing.xs)
                                 .padding(.vertical, 1)
                                 .background(ArchivePalette.archivePaper.opacity(0.88))
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(item.name)，\(item.count) 程足迹")
+                    .accessibilityHint("打开该城市的回忆抽屉")
+                    // 悬停反馈：指针滑过时给出可点击的视觉暗示
+                    .paperHover()
                     .position(x: w * normX, y: h * normY)
                 }
 
                 // 右下角古典罗盘玫瑰 (Compass Rose) 与四角星野裁切标
                 VStack(spacing: 1) {
                     Text("N")
-                        .font(ArchiveTypography.editorialSerif(size: 10, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.micro, weight: .semibold))
                         .foregroundStyle(ArchivePalette.accentWarm)
                     Image(systemName: "safari")
                         .font(.system(size: 20, weight: .light))
                         .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.65))
                 }
-                .padding(12)
+                .padding(ArchiveSpacing.m)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                     Text("CELESTIAL VOYAGE TOPOLOGY · 85°E — 125°E / 18°N — 50°N")
-                        .font(ArchiveTypography.monoScale(size: 9.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     Text("已点亮 \(clusters.count) 座城市")
-                        .font(ArchiveTypography.bodySans(size: 11))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                 }
                 .padding(10)
@@ -1273,9 +1431,9 @@ public struct CelestialAtlasCanvasView: View {
         }
         .frame(height: 360)
         .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                 .stroke(ArchivePalette.borderDivider, lineWidth: 0.7)
         )
     }
@@ -1294,14 +1452,14 @@ public struct CityMemoryDrawerSheet: View {
     @State private var errorText: String?
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(cityName) · 城市回忆抽屉")
                         .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                     Text("行政代码 \(cityCode)")
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 Spacer()
@@ -1316,34 +1474,34 @@ public struct CityMemoryDrawerSheet: View {
                     .frame(maxWidth: .infinity, minHeight: 200)
             } else if let errorText {
                 Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
             } else if let d = drawer {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                         HStack(spacing: 20) {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                 Text("到访次数")
-                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                 Text("\(d.visitStats.totalVisits) 次")
                                     .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.accentWarm)
                             }
                             if !d.visitStats.firstVisitedAt.isEmpty {
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                     Text("首访日期")
-                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                     Text(d.visitStats.firstVisitedAt)
-                                        .font(ArchiveTypography.monoScale(size: 13))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
                                         .foregroundStyle(ArchivePalette.inkPrimary)
                                 }
                             }
                             if d.ledgerSummary.totalSpent > 0 {
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                     Text("属地开销")
-                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                     Text(FormatUtils.formattedYuan(cents: d.ledgerSummary.totalSpent, includeSymbol: true))
                                         .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
@@ -1357,7 +1515,7 @@ public struct CityMemoryDrawerSheet: View {
                                 .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
                             ForEach(d.entries) { entry in
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                                     HStack {
                                         Text(entry.title.isEmpty ? "散页手记" : entry.title)
                                             .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
@@ -1368,7 +1526,7 @@ public struct CityMemoryDrawerSheet: View {
                                             .foregroundStyle(ArchivePalette.inkMuted)
                                     }
                                     Text(entry.content)
-                                        .font(ArchiveTypography.bodySans(size: 12))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                                         .foregroundStyle(ArchivePalette.inkSecondary)
                                         .lineLimit(3)
                                 }
@@ -1380,10 +1538,22 @@ public struct CityMemoryDrawerSheet: View {
                     }
                 }
                 .frame(maxHeight: 360)
+            } else {
+                // 兜底分支：抽屉为空且无错误时给出明确说明，避免内容区整片空白
+                ArchiveEmptyState(
+                    systemName: ArchiveIcon.detail.systemName,
+                    title: "暂无该城市的回忆抽屉",
+                    message: "这座城市尚未沉淀公开或私密散页，可在时间流中补记一段漫游手记。"
+                )
+                .frame(minHeight: 200)
             }
         }
         .padding(22)
-        .frame(width: 520)
+        .frame(
+            minWidth: ArchiveSheetWidth.wide,
+            idealWidth: ArchiveSheetWidth.wide,
+            maxWidth: ArchiveSheetWidth.wide
+        )
         .background(ArchivePalette.archivePaper)
         .task {
             do {
@@ -1410,14 +1580,14 @@ public struct ProvinceMemoryDrawerSheet: View {
     @State private var errorText: String?
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(provinceName) · 省级山河回忆抽屉")
                         .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                     Text("行政代码前缀 \(adcode)")
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 Spacer()
@@ -1432,32 +1602,32 @@ public struct ProvinceMemoryDrawerSheet: View {
                     .frame(maxWidth: .infinity, minHeight: 200)
             } else if let errorText {
                 Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
             } else if let d = drawer {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                         HStack(spacing: 20) {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                 Text("点亮城邑")
-                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                 Text("\(d.visitedCities.count) 座城")
                                     .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.accentWarm)
                             }
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                 Text("总履迹篇幅")
-                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                 Text("\(d.footprints.count) 次")
                                     .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                             }
                             if d.ledgerSummary.totalSpent > 0 {
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                     Text("省内花销")
-                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                     Text(FormatUtils.formattedYuan(cents: d.ledgerSummary.totalSpent, includeSymbol: true))
                                         .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
@@ -1465,37 +1635,37 @@ public struct ProvinceMemoryDrawerSheet: View {
                                 }
                             }
                         }
-                        .padding(12)
+                        .padding(ArchiveSpacing.m)
                         .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
 
                         if !d.visitedCities.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("到访城市分布")
-                                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                 HStack(spacing: 6) {
                                     ForEach(d.visitedCities) { city in
                                         Text("\(city.cityName) (\(city.visitCount))")
-                                            .font(ArchiveTypography.monoScale(size: 11))
+                                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                             .foregroundStyle(ArchivePalette.inkPrimary)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
+                                            .padding(.horizontal, ArchiveSpacing.s)
+                                            .padding(.vertical, ArchiveSpacing.xs)
                                             .background(ArchivePalette.archiveSubtle)
-                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                                     }
                                 }
                             }
                         }
 
                         if !d.entries.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                                 Text("属地散页手记 (\(d.entries.count))")
-                                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                                 ForEach(d.entries) { entry in
-                                    VStack(alignment: .leading, spacing: 4) {
+                                    VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                                         HStack {
                                             Text(entry.title.isEmpty ? "散页随笔" : entry.title)
                                                 .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
@@ -1506,7 +1676,7 @@ public struct ProvinceMemoryDrawerSheet: View {
                                                 .foregroundStyle(ArchivePalette.inkMuted)
                                         }
                                         Text(entry.content)
-                                            .font(ArchiveTypography.bodySans(size: 12))
+                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                                             .foregroundStyle(ArchivePalette.inkSecondary)
                                             .lineLimit(3)
                                     }
@@ -1519,10 +1689,22 @@ public struct ProvinceMemoryDrawerSheet: View {
                     }
                 }
                 .frame(maxHeight: 380)
+            } else {
+                // 兜底分支：抽屉为空且无错误时给出明确说明，避免内容区整片空白
+                ArchiveEmptyState(
+                    systemName: ArchiveIcon.detail.systemName,
+                    title: "暂无该省份的山河回忆抽屉",
+                    message: "这片山河尚未沉淀行迹票根与属地手记，可在山川印谱中继续点亮城市。"
+                )
+                .frame(minHeight: 200)
             }
         }
         .padding(22)
-        .frame(width: 520)
+        .frame(
+            minWidth: ArchiveSheetWidth.wide,
+            idealWidth: ArchiveSheetWidth.wide,
+            maxWidth: ArchiveSheetWidth.wide
+        )
         .background(ArchivePalette.archivePaper)
         .task {
             do {
@@ -1558,9 +1740,9 @@ public struct AnnualAlmanacSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                     Text("《散页 · \(selectedYear) 年度生活年鉴》")
                         .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
@@ -1588,11 +1770,11 @@ public struct AnnualAlmanacSheet: View {
                     .frame(maxWidth: .infinity, minHeight: 240)
             } else if let errorText {
                 Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
             } else if let a = almanac {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                         // 第一幕：岁月卷首
                         HStack(spacing: 20) {
                             almanacStat("散页篇幅", "\(a.prologue.totalEntries) 篇")
@@ -1600,9 +1782,9 @@ public struct AnnualAlmanacSheet: View {
                             almanacStat("圆满心愿", "\(a.prologue.wishesFulfilled) 愿")
                             almanacStat("记账笔数", "\(a.prologue.txCount) 笔")
                         }
-                        .padding(12)
+                        .padding(ArchiveSpacing.m)
                         .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
 
                         // 第二幕：山川行迹
                         if !a.atlas.cities.isEmpty {
@@ -1621,7 +1803,7 @@ public struct AnnualAlmanacSheet: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("第四幕 · 浮光掠影 · 四季流转")
                                 .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.s) {
                                 seasonCard(title: "春生 · 春季篇", entry: a.highlights.spring, tint: ArchivePalette.accentMoss)
                                 seasonCard(title: "夏长 · 夏季篇", entry: a.highlights.summer, tint: ArchivePalette.accentWarm)
                                 seasonCard(title: "秋收 · 秋季篇", entry: a.highlights.autumn, tint: Color(red: 0.83, green: 0.53, blue: 0.02))
@@ -1636,13 +1818,13 @@ public struct AnnualAlmanacSheet: View {
                                     .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
                                 HStack(spacing: 18) {
                                     Text("总支出 \(FormatUtils.formattedYuan(cents: a.finances.totalExpense, includeSymbol: true))")
-                                        .font(ArchiveTypography.monoScale(size: 12))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                                         .foregroundStyle(ArchivePalette.accentWarm)
                                     Text("总收入 \(FormatUtils.formattedYuan(cents: a.finances.totalIncome, includeSymbol: true))")
-                                        .font(ArchiveTypography.monoScale(size: 12))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                                         .foregroundStyle(ArchivePalette.accentMoss)
                                     Text(String(format: "取悦自己占比 %.1f%%", a.finances.wishSpendingRatio))
-                                        .font(ArchiveTypography.monoScale(size: 12))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                                         .foregroundStyle(ArchivePalette.inkSecondary)
                                 }
                             }
@@ -1653,7 +1835,11 @@ public struct AnnualAlmanacSheet: View {
             }
         }
         .padding(22)
-        .frame(width: 560)
+        .frame(
+            minWidth: ArchiveSheetWidth.wide,
+            idealWidth: ArchiveSheetWidth.wide,
+            maxWidth: ArchiveSheetWidth.wide
+        )
         .background(ArchivePalette.archivePaper)
         .task {
             await loadAlmanac()
@@ -1663,11 +1849,11 @@ public struct AnnualAlmanacSheet: View {
     private func seasonCard(title: String, entry: LifeEntry?, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(ArchiveTypography.monoScale(size: 10))
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                 .foregroundStyle(tint)
             if let entry {
                 Text(entry.title.isEmpty ? "无题随笔" : entry.title)
-                    .font(ArchiveTypography.editorialSerif(size: 12, weight: .medium))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                     .lineLimit(1)
                 if !entry.content.isEmpty {
@@ -1682,16 +1868,16 @@ public struct AnnualAlmanacSheet: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
         }
-        .padding(8)
+        .padding(ArchiveSpacing.s)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
     }
 
     private func almanacStat(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
             Text(label)
-                .font(ArchiveTypography.bodySans(size: 11))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 .foregroundStyle(ArchivePalette.inkMuted)
             Text(value)
                 .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
@@ -1710,4 +1896,27 @@ public struct AnnualAlmanacSheet: View {
             isLoading = false
         }
     }
+}
+
+// MARK: - 预览 (Preview)
+
+#Preview("心愿典藏卡片") {
+    WishCardView(
+        wish: ArchivePreviewFixtures.wishes()[0],
+        onResolve: {},
+        onEdit: {},
+        onDelete: {}
+    )
+    .frame(width: 360)
+    .padding(ArchiveSpacing.l)
+}
+
+#Preview("造物项目卡片") {
+    ProjectCardView(
+        proj: ArchivePreviewFixtures.projects()[0],
+        onEdit: {},
+        onDelete: {}
+    )
+    .frame(width: 360)
+    .padding(ArchiveSpacing.l)
 }

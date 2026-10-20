@@ -38,9 +38,9 @@ struct StorageBackupSettingsView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             // 次级选项卡切换胶囊 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
-            HStack(spacing: 8) {
+            HStack(spacing: ArchiveSpacing.s) {
                 PaperPillButton(
                     title: "全量快照与灾备 (\(serverBackups.count)/7)",
                     isSelected: backupSubTab == "backup"
@@ -76,52 +76,52 @@ struct StorageBackupSettingsView: View {
         }
     }
     private var serverBackupSubView: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             // 顶栏缓存体量与全量快照触发
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
+                    HStack(spacing: ArchiveSpacing.s) {
                         Text("中枢系统级全量热备")
-                            .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                            .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                         Text("\(serverBackups.count)/7 份")
-                            .font(ArchiveTypography.monoScale(size: 9.5))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(ArchivePalette.archiveSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                     }
                     Text("本地缓存：散页 \(appState.entries.count) 篇 · 账目 \(appState.transactions.count) 笔 · 待发 \(appState.outboxItems.count) 项 · 目的地：\(storageStatus?.configured == true ? "Cloudflare R2" : "中枢本地磁盘")")
-                        .font(ArchiveTypography.monoScale(size: 10))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
                 Spacer()
 
-                HStack(spacing: 8) {
+                HStack(spacing: ArchiveSpacing.s) {
                     Button {
                         Task { @MainActor in
                             await loadServerBackups()
                         }
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             if isLoadingServerBackups {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 10))
                             }
                             Text("刷新")
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                     Button {
                         createServerBackupAction()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             if isCreatingServerBackup {
                                 ProgressView().controlSize(.small)
                             } else {
@@ -138,59 +138,51 @@ struct StorageBackupSettingsView: View {
 
             // 极简备份策略说明
             Text("每日自动热备整库，保留最新 7 份快照，支持 Cloudflare R2 与本地存储双重冗余，可在任一时间节点一键回滚整库。")
-                .font(ArchiveTypography.bodySans(size: 11))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 .foregroundStyle(ArchivePalette.inkSecondary)
-                .padding(10)
+                .padding(ArchiveSpacing.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
 
-            if let fb = backupActionFeedback {
-                Text(fb)
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.accentMoss)
-            }
-            if let err = backupActionError {
-                Text(err)
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
+            // 快照操作反馈（成功 / 失败）统一以 banner 呈现
+            settingsFeedbackBanner(feedback: backupActionFeedback, error: backupActionError)
 
             // 历史快照清单
             Text("历史快照归档清单 (\(serverBackups.count)/7)")
-                .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
             if isLoadingServerBackups && serverBackups.isEmpty {
-                ProgressView().padding(.vertical, 12)
+                ProgressView().padding(.vertical, ArchiveSpacing.m)
             } else if serverBackups.isEmpty {
                 Text("暂无中枢备份快照，您可以点击右上角「立即生成快照」创建首个全量热备。")
-                    .font(ArchiveTypography.bodySans(size: 11))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkMuted)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, ArchiveSpacing.m)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: ArchiveSpacing.s) {
                     ForEach(serverBackups) { backup in
-                        HStack(spacing: 10) {
+                        HStack(spacing: ArchiveSpacing.s) {
                             Image(systemName: "archivebox")
                                 .font(.system(size: 13))
                                 .foregroundStyle(ArchivePalette.accentMoss)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
+                                HStack(spacing: ArchiveSpacing.s) {
                                     Text("\(backup.formattedDate) 快照")
-                                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                                         .foregroundStyle(ArchivePalette.inkPrimary)
                                     Text(backup.storageTypeBadge)
-                                        .font(ArchiveTypography.monoScale(size: 9))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                         .foregroundStyle(ArchivePalette.inkSecondary)
-                                        .padding(.horizontal, 4)
+                                        .padding(.horizontal, ArchiveSpacing.xs)
                                         .padding(.vertical, 1)
                                         .background(ArchivePalette.archivePaper)
-                                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                                 }
                                 Text("\(backup.formattedSize) · \(backup.filename)")
-                                    .font(ArchiveTypography.monoScale(size: 9.5))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                     .lineLimit(1)
                             }
@@ -200,13 +192,14 @@ struct StorageBackupSettingsView: View {
                             Button {
                                 downloadServerBackupAction(backup)
                             } label: {
-                                HStack(spacing: 3) {
+                                HStack(spacing: ArchiveSpacing.xs) {
                                     Image(systemName: "arrow.down.to.line")
-                                        .font(.system(size: 9))
+                                        .font(.system(size: 10))
+                                        .accessibilityHidden(true)
                                     Text("下载至 Mac")
                                 }
                             }
-                            .font(ArchiveTypography.bodySans(size: 10.5))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
                             Button {
@@ -219,17 +212,25 @@ struct StorageBackupSettingsView: View {
                                     restoreServerBackupAction(backup)
                                 }
                             } label: {
-                                HStack(spacing: 3) {
+                                HStack(spacing: ArchiveSpacing.xs) {
                                     Image(systemName: "arrow.counterclockwise")
-                                        .font(.system(size: 9))
+                                        .font(.system(size: 10))
+                                        .accessibilityHidden(true)
                                     Text("回滚还原")
                                 }
                             }
-                            .font(ArchiveTypography.bodySans(size: 10.5))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
 
-                            Button {
+                            // 删除快照：图标按钮 + 无障碍标签
+                            PaperIconButton(
+                                systemName: "trash",
+                                label: "删除快照「\(backup.filename)」",
+                                help: "删除该快照",
+                                size: 10,
+                                tint: ArchivePalette.inkMuted
+                            ) {
                                 appState.askConfirm(
                                     title: "确认从中枢删除该备份快照？",
                                     message: "删除后将从中枢永久移除该备份文件，无法再回滚至此时间节点。",
@@ -238,16 +239,11 @@ struct StorageBackupSettingsView: View {
                                 ) {
                                     deleteServerBackupAction(backup)
                                 }
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
                             }
-                            .buttonStyle(.plain)
                         }
-                        .padding(10)
+                        .padding(ArchiveSpacing.s)
                         .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius))
                     }
                 }
             }
@@ -256,16 +252,16 @@ struct StorageBackupSettingsView: View {
 
 
     private var objectStorageSubView: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             // 状态概览卡片
-            HStack(spacing: 12) {
-                HStack(spacing: 6) {
+            HStack(spacing: ArchiveSpacing.m) {
+                HStack(spacing: ArchiveSpacing.s) {
                     Image(systemName: storageStatus?.configured == true ? "cloud.fill" : "internaldrive")
                         .foregroundStyle(storageStatus?.configured == true ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                         .font(.system(size: 14))
 
                     Text(storageStatus?.configured == true ? "当前接入：\(storageStatus?.provider ?? "Cloudflare R2") (已挂载)" : "当前接入：中枢本地磁盘存储 (/media)")
-                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                 }
 
@@ -273,7 +269,7 @@ struct StorageBackupSettingsView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 Text("媒体文件 \(storageStatus?.localFileCount ?? 0) 件 (\(formatByteCount(storageStatus?.localTotalBytes ?? 0)))")
-                    .font(ArchiveTypography.monoScale(size: 11))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkSecondary)
 
                 Spacer()
@@ -282,7 +278,7 @@ struct StorageBackupSettingsView: View {
                     Button {
                         migrateStorageAction()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             if isMigratingStorage {
                                 ProgressView().controlSize(.small)
                             } else {
@@ -292,113 +288,113 @@ struct StorageBackupSettingsView: View {
                             Text(isMigratingStorage ? "正在同步…" : "双向同步媒体")
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .disabled(isMigratingStorage)
                 }
             }
-            .padding(12)
+            .padding(ArchiveSpacing.m)
             .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
 
             // 模式切换与凭据表单卡片
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
                 HStack {
                     Text("对象存储接入凭据")
-                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
                     Spacer()
 
-                    HStack(spacing: 2) {
+                    HStack(spacing: ArchiveSpacing.xxs) {
                         Button("Cloudflare R2") {
                             storageProviderType = "r2"
                         }
-                        .font(ArchiveTypography.bodySans(size: 11, weight: storageProviderType == "r2" ? .semibold : .regular))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: storageProviderType == "r2" ? .semibold : .regular))
+                        .padding(.horizontal, ArchiveSpacing.s)
+                        .padding(.vertical, ArchiveSpacing.xs)
                         .background(storageProviderType == "r2" ? ArchivePalette.inkPrimary : Color.clear)
                         .foregroundStyle(storageProviderType == "r2" ? ArchivePalette.archivePaper : ArchivePalette.inkSecondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         .buttonStyle(.plain)
 
                         Button("S3 兼容协议") {
                             storageProviderType = "s3"
                         }
-                        .font(ArchiveTypography.bodySans(size: 11, weight: storageProviderType == "s3" ? .semibold : .regular))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: storageProviderType == "s3" ? .semibold : .regular))
+                        .padding(.horizontal, ArchiveSpacing.s)
+                        .padding(.vertical, ArchiveSpacing.xs)
                         .background(storageProviderType == "s3" ? ArchivePalette.inkPrimary : Color.clear)
                         .foregroundStyle(storageProviderType == "s3" ? ArchivePalette.archivePaper : ArchivePalette.inkSecondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         .buttonStyle(.plain)
                     }
-                    .padding(2)
+                    .padding(ArchiveSpacing.xxs)
                     .background(ArchivePalette.archivePaper)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                    .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.sm).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                 }
 
                 // 表单网格
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                Grid(alignment: .leading, horizontalSpacing: ArchiveSpacing.l, verticalSpacing: ArchiveSpacing.s) {
                     GridRow {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             Text(storageProviderType == "r2" ? "Cloudflare 账户 ID *" : "S3 服务端点 (Endpoint) *")
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                             TextField(
                                 storageProviderType == "r2" ? "32 位 Cloudflare Account ID" : "https://s3.ap-northeast-1.amazonaws.com",
                                 text: storageProviderType == "r2" ? $storageAccountId : $storageEndpoint
                             )
                             .textFieldStyle(.plain)
-                            .font(ArchiveTypography.monoScale(size: 11.5))
-                            .padding(7)
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                            .padding(ArchiveSpacing.s)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                         }
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             Text("存储桶名称 (Bucket Name) *")
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                             TextField("looseleaf-bucket", text: $storageBucketName)
                                 .textFieldStyle(.plain)
-                                .font(ArchiveTypography.monoScale(size: 11.5))
-                                .padding(7)
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                                .padding(ArchiveSpacing.s)
                                 .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                         }
                     }
 
                     GridRow {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             Text("访问密钥 ID (Access Key ID) *")
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                             TextField("Access Key ID", text: $storageAccessKeyId)
                                 .textFieldStyle(.plain)
-                                .font(ArchiveTypography.monoScale(size: 11.5))
-                                .padding(7)
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                                .padding(ArchiveSpacing.s)
                                 .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                         }
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             HStack {
                                 Text("私有访问密钥 (Secret Access Key)")
-                                    .font(ArchiveTypography.bodySans(size: 11))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkSecondary)
                                 if storageStatus?.hasSecretKey == true {
                                     Text("已配置")
-                                        .font(ArchiveTypography.monoScale(size: 9))
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                         .foregroundStyle(ArchivePalette.accentMoss)
                                 }
                             }
 
-                            HStack(spacing: 4) {
+                            HStack(spacing: ArchiveSpacing.xs) {
                                 if showSecretKey {
                                     TextField(storageStatus?.hasSecretKey == true ? "留空保持已存密钥" : "Secret Access Key", text: $storageSecretAccessKey)
                                         .textFieldStyle(.plain)
@@ -407,40 +403,42 @@ struct StorageBackupSettingsView: View {
                                         .textFieldStyle(.plain)
                                 }
 
-                                Button {
+                                // 密钥显隐切换：命中区不小于 ArchiveHitTarget.minPointer，VoiceOver 可朗读
+                                PaperIconButton(
+                                    systemName: showSecretKey ? "eye.slash" : "eye",
+                                    label: showSecretKey ? "隐藏私有访问密钥" : "显示私有访问密钥",
+                                    help: showSecretKey ? "隐藏私有访问密钥" : "显示私有访问密钥",
+                                    size: 11,
+                                    tint: ArchivePalette.inkMuted
+                                ) {
                                     showSecretKey.toggle()
-                                } label: {
-                                    Image(systemName: showSecretKey ? "eye.slash" : "eye")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
                                 }
-                                .buttonStyle(.plain)
                             }
-                            .font(ArchiveTypography.monoScale(size: 11.5))
-                            .padding(7)
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                            .padding(ArchiveSpacing.s)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                         }
                     }
 
                     GridRow {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             Text("公网访问加速域名 (可选)")
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                             TextField("https://media.example.com", text: $storagePublicDomain)
                                 .textFieldStyle(.plain)
-                                .font(ArchiveTypography.monoScale(size: 11.5))
-                                .padding(7)
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                                .padding(ArchiveSpacing.s)
                                 .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                         }
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             Text("临时下载链接有效时长")
-                                .font(ArchiveTypography.bodySans(size: 11))
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
 
                             let presignOptions: [PaperSelectOption<Int>] = [
@@ -457,31 +455,9 @@ struct StorageBackupSettingsView: View {
                 }
 
                 // 提示与反馈信息
-                if let fb = storageFeedback {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.accentMoss)
-                        Text(fb)
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.accentMoss)
-                    }
-                    .padding(.top, 2)
-                }
+                settingsFeedbackBanner(feedback: storageFeedback, error: storageError)
 
-                if let err = storageError {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(err)
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                    }
-                    .padding(.top, 2)
-                }
-
-                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6)).padding(.vertical, 4)
+                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6)).padding(.vertical, ArchiveSpacing.xs)
 
                 // 操作按钮栏
                 HStack {
@@ -496,17 +472,17 @@ struct StorageBackupSettingsView: View {
                                 resetStorageAction()
                             }
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: ArchiveSpacing.xs) {
                                 if isResettingStorage {
                                     ProgressView().controlSize(.small)
                                 } else {
                                     Image(systemName: "arrow.counterclockwise")
-                                        .font(.system(size: 9))
+                                        .font(.system(size: 10))
                                 }
                                 Text(isResettingStorage ? "正在切换…" : "恢复为本地磁盘存储")
                             }
                         }
-                        .font(ArchiveTypography.bodySans(size: 11))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.accentWarm)
                         .buttonStyle(.plain)
                         .disabled(isResettingStorage || isSavingStorage || isTestingStorage)
@@ -517,24 +493,24 @@ struct StorageBackupSettingsView: View {
                     Button {
                         testStorageAction()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             if isTestingStorage {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Image(systemName: "bolt.fill")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 10))
                             }
                             Text(isTestingStorage ? "握手测试中…" : "测试连通性")
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 11))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .disabled(isTestingStorage || isSavingStorage)
 
                     Button {
                         saveStorageAction()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: ArchiveSpacing.xs) {
                             if isSavingStorage {
                                 ProgressView().controlSize(.small)
                             } else {
@@ -544,14 +520,14 @@ struct StorageBackupSettingsView: View {
                             Text(isSavingStorage ? "保存中…" : "保存并挂载配置")
                         }
                     }
-                    .font(ArchiveTypography.bodySans(size: 11))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                     .disabled(isSavingStorage || isTestingStorage)
                 }
             }
-            .padding(14)
+            .padding(ArchiveCardMetrics.padding)
             .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
         }
     }
 
@@ -627,6 +603,8 @@ struct StorageBackupSettingsView: View {
 
     // MARK: - 云端对象存储灾备动作 (Storage Management Actions)
 
+    /// 字节数格式化（本文件内的统一实现，命名与 DarkroomDropZone 保持一致）。
+    /// 注意：DarkroomDropZone 内的同款实现归其它模块维护，此处不重复改动。
     private func formatByteCount(_ bytes: Int64) -> String {
         guard bytes > 0 else { return "0 B" }
         let kb = Double(bytes) / 1024.0

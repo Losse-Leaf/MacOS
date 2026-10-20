@@ -49,6 +49,15 @@ public enum DropLoader {
         return nil
     }
 
+    /// 异步读取系统通用剪贴板中的图像二进制数据。
+    /// 关键：整个读取过程（文件 IO + PNG 重编码）都在后台线程执行，
+    /// 原先的同步版本会让「⌘V 粘贴截图」在主线程卡住数百毫秒。
+    public static func readImageFromPasteboardAsync() async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            readImageFromPasteboard()
+        }.value
+    }
+
     /// 清理暗房拖拽历史遗留的临时文件（应用启动与暗房重置时调用；olderThan <= 0 表示全清）
     public static func cleanupStaleDropFiles(olderThan interval: TimeInterval = 3600) {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
@@ -93,27 +102,50 @@ public enum DropLoader {
         // 降级：若从系统照片.app 或浏览器拖拽，未能提供直接 fileURL 时，提取图像流并暂存
         if let data = await loadImageData(from: provider) {
             let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
-            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            let tempFile = tempDir.appendingPathComponent("drop-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).jpg")
-            do {
-                try data.write(to: tempFile, options: .atomic)
-                return tempFile
-            } catch {
-                return nil
-            }
+            // 扩展名按实际数据类型推断（硬编码 .jpg 会让 PNG/HEIC/TIFF 文件名误导）
+            let ext = Self.preferredExtension(for: data)
+            let tempFile = tempDir.appendingPathComponent("drop-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).\(ext)")
+            // 写盘必须离开主线程（continuation 恢复到调用方的 @MainActor 上下文）
+            return await Task.detached(priority: .userInitiated) { () -> URL? in
+                try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                do {
+                    try data.write(to: tempFile, options: .atomic)
+                    return tempFile
+                } catch {
+                    return nil
+                }
+            }.value
         }
         return nil
     }
 
+    /// 依据文件头魔数推断图片扩展名
+    private static func preferredExtension(for data: Data) -> String {
+        guard data.count >= 12 else { return "jpg" }
+        let bytes = [UInt8](data.prefix(12))
+        if bytes[0] == 0xFF, bytes[1] == 0xD8 { return "jpg" }
+        if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 { return "png" }
+        if bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46 { return "gif" }
+        if bytes[0] == 0x42, bytes[1] == 0x4D { return "tif" }
+        if bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 { return "heic" }
+        return "jpg"
+    }
+
     /// 批量提取可处理的图片 URL（支持 Finder、系统照片.app 与浏览器混合多选拖拽）
+    /// 关键：并发提取而非逐个 await。原先串行处理 20 张图需要 10~40 秒。
     static func loadDroppablePhotoURLs(from providers: [NSItemProvider]) async -> [URL] {
-        var urls: [URL] = []
-        for provider in providers {
-            if let url = await loadDroppablePhotoURL(from: provider) {
-                urls.append(url)
+        guard !providers.isEmpty else { return [] }
+        return await withTaskGroup(of: (Int, URL?).self) { group -> [URL] in
+            for (index, provider) in providers.enumerated() {
+                group.addTask { (index, await loadDroppablePhotoURL(from: provider)) }
             }
+            var collected: [(Int, URL)] = []
+            for await (index, url) in group {
+                if let url { collected.append((index, url)) }
+            }
+            // 保持拖拽提供的原始顺序
+            return collected.sorted { $0.0 < $1.0 }.map(\.1)
         }
-        return urls
     }
 
     /// 从单个 provider 提取图像二进制数据（支持 JPEG、PNG、HEIC、TIFF、通用图像）

@@ -35,10 +35,10 @@ struct CategoriesSettingsView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             settingsFeedbackBanner(feedback: nil, error: authError)
             // 类目分类范围切换
-            HStack(spacing: 6) {
+            HStack(spacing: ArchiveSpacing.s) {
                 ForEach([
                     ("expense", "支出类目"),
                     ("income", "收入类目"),
@@ -58,86 +58,100 @@ struct CategoriesSettingsView: View {
             }
 
             settingsCardSection(title: "字典词条管理", caption: "共 \(currentDisplayCategories.count) 个词条") {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
                     // 纸墨流式标签云
-                    FlowTagLayout(spacing: 8) {
+                    FlowTagLayout(spacing: ArchiveSpacing.s) {
                         ForEach(currentDisplayCategories) { cat in
-                            HStack(spacing: 5) {
+                            HStack(spacing: ArchiveSpacing.xs) {
                                 Text(cat.name)
-                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                                 if cat.id > 0 {
-                                    Button {
+                                    // 删除图标按钮：命中区不小于 ArchiveHitTarget.minPointer
+                                    PaperIconButton(
+                                        systemName: "xmark",
+                                        label: "删除分类「\(cat.name)」",
+                                        help: "删除分类「\(cat.name)」",
+                                        size: 9,
+                                        tint: ArchivePalette.inkMuted
+                                    ) {
                                         deleteCategoryAction(cat)
-                                    } label: {
-                                        Image(systemName: "xmark")
-                                            .font(.system(size: 8, weight: .semibold))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, ArchiveSpacing.s)
+                            .frame(minHeight: ArchiveHitTarget.minPointer, alignment: .leading)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                             )
                         }
 
                         // 行内即时添加新分类
                         if isAddingCategoryInline {
-                            HStack(spacing: 4) {
+                            HStack(spacing: ArchiveSpacing.xs) {
                                 TextField("新分类…", text: $inlineCategoryName)
                                     .textFieldStyle(.plain)
-                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                                     .frame(width: 80)
+                                    .accessibilityLabel("新分类名称")
                                     .onSubmit { submitInlineNewCategory() }
 
-                                Button { submitInlineNewCategory() } label: {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                // 确认图标按钮：命中区不小于 ArchiveHitTarget.minPointer
+                                PaperIconButton(
+                                    systemName: "checkmark",
+                                    label: "确认添加新分类",
+                                    help: "确认添加新分类",
+                                    size: 9,
+                                    tint: ArchivePalette.accentWarm
+                                ) {
+                                    submitInlineNewCategory()
                                 }
-                                .buttonStyle(.plain)
 
-                                Button { isAddingCategoryInline = false } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                // 取消图标按钮：命中区不小于 ArchiveHitTarget.minPointer
+                                PaperIconButton(
+                                    systemName: "xmark",
+                                    label: "取消添加新分类",
+                                    help: "取消添加新分类",
+                                    size: 9,
+                                    tint: ArchivePalette.inkMuted
+                                ) {
+                                    isAddingCategoryInline = false
+                                    inlineCategoryName = ""
                                 }
-                                .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, ArchiveSpacing.xs)
+                            .frame(minHeight: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.accentWarm, lineWidth: 0.8))
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.accentWarm, lineWidth: 0.8))
                         } else {
                             Button {
                                 isAddingCategoryInline = true
                                 inlineCategoryName = ""
                             } label: {
-                                HStack(spacing: 3) {
+                                HStack(spacing: ArchiveSpacing.xs) {
                                     Image(systemName: "plus")
-                                        .font(.system(size: 8, weight: .medium))
+                                        .font(.system(size: 9, weight: .medium))
+                                        .accessibilityHidden(true)
                                     Text("添加分类")
-                                        .font(ArchiveTypography.bodySans(size: 11))
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                 }
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, ArchiveSpacing.s)
+                                .padding(.vertical, ArchiveSpacing.xs)
                                 .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("添加分类")
                         }
                     }
                 }
-                .padding(14)
+                .padding(ArchiveCardMetrics.padding)
             }
         }
         .task {

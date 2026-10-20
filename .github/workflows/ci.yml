@@ -29,6 +29,24 @@ jobs:
       - name: Build Debug Target
         run: swift build -Xswiftc -warnings-as-errors
 
+      - name: Swift 6 Strict Concurrency Check
+        run: |
+          # Swift 6 语言模式下的并发违规会以 error 级别暴露。
+          # 当前工程仍锁定 Swift 5 语言模式，因此用独立检查项确保技术债不继续累积。
+          swift build -Xswiftc -strict-concurrency=complete \
+            -Xswiftc -warnings-as-errors || {
+            echo "Swift 6 strict concurrency violations detected. Please fix the reported issues."
+            exit 1
+          }
+
+      - name: Validate Info.plist Required Keys
+        run: |
+          python3 scripts/check_info_plist.py LooseLeaf/Info.plist
+
+      - name: Verify Color Contrast (WCAG AA)
+        run: |
+          python3 scripts/check_color_contrast.py LooseLeaf/Resources/Assets.xcassets
+
       - name: Run Unit Tests
         run: swift test --verbose
 

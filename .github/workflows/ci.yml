@@ -47,10 +47,17 @@ jobs:
         run: |
           python3 scripts/check_color_contrast.py LooseLeaf/Resources/Assets.xcassets
 
+      - name: Checkout Web Repository (for city dictionary cross-check)
+        uses: actions/checkout@v5
+        with:
+          repository: Losse-Leaf/web
+          ref: main
+          path: ${{ runner.temp }}/web
+
       - name: Verify City Dictionary Consistency (macOS vs Web)
         run: |
           python3 scripts/check_city_dictionary.py \
-            LooseLeaf/Models/CityDictionary.swift ../web/src/utils/cities.ts
+            LooseLeaf/Models/CityDictionary.swift "${{ runner.temp }}/web/src/utils/cities.ts"
 
       - name: Run Unit Tests
         run: swift test --verbose

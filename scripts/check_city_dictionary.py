@@ -46,6 +46,12 @@ def main() -> int:
         return 2
     mac_path, web_path = sys.argv[1], sys.argv[2]
 
+    import os
+    if not os.path.exists(web_path):
+        print(f"⚠️  未找到 Web 端城市字典（{web_path}），跳过双端一致性比对。")
+        print("   在完整工作区中该检查会自动生效；CI 会检出 web 仓库后强制执行。")
+        return 0
+
     web = parse_web(web_path)
     mac = parse_mac(mac_path)
 

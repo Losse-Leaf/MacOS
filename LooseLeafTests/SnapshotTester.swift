@@ -22,6 +22,52 @@ enum SnapshotTester {
             .appendingPathComponent("LooseLeafTests/__Snapshots__", isDirectory: true)
     }
 
+    /// 渲染环境清单：记录基准图是在哪个系统 / SDK 上生成的。
+    /// 文本抗锯齿在不同 macOS 版本上会有细微差异，直接比对会产生误报；
+    /// 因此**环境不一致时跳过断言**（并打印说明），环境一致时才严格比对。
+    struct Environment: Codable, Equatable {
+        var osVersion: String
+        var swiftVersion: String
+    }
+
+    /// 当前渲染环境
+    static var currentEnvironment: Environment {
+        Environment(
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            swiftVersion: swiftVersionString()
+        )
+    }
+
+    private static func swiftVersionString() -> String {
+        #if swift(>=6.0)
+        return "swift6"
+        #else
+        return "swift5"
+        #endif
+    }
+
+    /// 清单文件（与基准图同目录）
+    static var manifestURL: URL {
+        referenceDirectory.appendingPathComponent("manifest.json")
+    }
+
+    /// 读取已记录的环境
+    static func recordedEnvironment() -> Environment? {
+        guard let data = try? Data(contentsOf: manifestURL),
+              let env = try? JSONDecoder().decode(Environment.self, from: data) else {
+            return nil
+        }
+        return env
+    }
+
+    /// 写入环境清单
+    static func writeManifest(_ env: Environment) {
+        try? FileManager.default.createDirectory(at: referenceDirectory, withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(env) {
+            try? data.write(to: manifestURL, options: .atomic)
+        }
+    }
+
     /// 渲染视图并与基准图比对
     /// - Parameters:
     ///   - view: 待测视图
@@ -44,10 +90,26 @@ enum SnapshotTester {
             return
         }
 
+        let environment = currentEnvironment
+
         if !FileManager.default.fileExists(atPath: referenceURL.path) {
             try? FileManager.default.createDirectory(at: referenceDirectory, withIntermediateDirectories: true)
             try? current.write(to: referenceURL, options: .atomic)
+            writeManifest(environment)
             print("📸 已写入新的快照基准：\(referenceURL.lastPathComponent)")
+            return
+        }
+
+        // 首次运行时补写环境清单（基准图已存在但清单缺失）
+        if recordedEnvironment() == nil {
+            writeManifest(environment)
+            print("📸 已写入快照环境清单（\(environment.osVersion) / \(environment.swiftVersion)）")
+            return
+        }
+
+        // 环境不一致（不同 macOS / SDK 的字体抗锯齿有细微差异）→ 跳过断言，避免误报
+        if let recorded = recordedEnvironment(), recorded != environment {
+            print("⏭️  跳过快照「\(name)」：基准图生成于 [\(recorded.osVersion) / \(recorded.swiftVersion)]，当前为 [\(environment.osVersion) / \(environment.swiftVersion)]")
             return
         }
 

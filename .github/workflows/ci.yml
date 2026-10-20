@@ -78,7 +78,11 @@ jobs:
             echo "No snapshot baselines found"
             exit 1
           fi
-          echo "Snapshot baselines present: $COUNT"
+          if [ ! -f LooseLeafTests/__Snapshots__/manifest.json ]; then
+            echo "Missing snapshot environment manifest"
+            exit 1
+          fi
+          echo "Snapshot baselines present: $COUNT (+ manifest)"
 
       - name: Build Release App Bundle (unsigned)
         run: |

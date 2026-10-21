@@ -218,6 +218,96 @@ public final class UpdateChecker {
     }
 
     /// 执行一键无感下载、脱离主进程守护替换并重启
+    /// 生成「守护替换脚本」内容 (可被测试直接调用验证回滚语义)
+    ///
+    /// 关键设计：**绝不**先 `rm -rf` 目标再拷贝。流程是
+    /// 「拷到同卷暂存 → 旧版移作备份 → 原子 rename → 失败回滚」，
+    /// 因此拷贝失败时用户的旧 App 毫发无损。
+    /// 生成「守护替换脚本」内容 (可被测试直接调用验证回滚语义)
+    ///
+    /// 关键设计：**绝不**先 `rm -rf` 目标再拷贝。流程是
+    /// 「拷到同卷暂存 → 旧版移作备份 → 原子 rename → 失败回滚」，
+    /// 因此拷贝失败时用户的旧 App 毫发无损。
+    static func swapScript(target: String, source: String, oldPID: Int32, workDir: String) -> String {
+        """
+        #!/bin/bash
+        TARGET="{{TARGET}}"
+        SOURCE="{{SOURCE}}"
+        OLD_PID="{{OLD_PID}}"
+        WORK_DIR="{{WORK_DIR}}"
+
+        # 1. 严格轮询等待旧进程彻底安全退出（至多轮询 15 秒）
+        #    只接受合法的正数 PID：kill 把 0 当作当前进程组、-1 当作所有进程，
+        #    传入 -1 会让下面的补杀变成 kill -9 -1，清空整个登录会话。
+        if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && [ "$OLD_PID" -gt 1 ]; then
+            COUNT=0
+            while kill -0 "$OLD_PID" 2>/dev/null; do
+                sleep 0.2
+                COUNT=$((COUNT + 1))
+                if [ $COUNT -ge 75 ]; then
+                    kill -9 "$OLD_PID" 2>/dev/null || true
+                    break
+                fi
+            done
+        fi
+
+        # 稍等 0.3 秒确保系统文件句柄释放
+        sleep 0.3
+
+        INSTALL_DIR="$(dirname "$TARGET")"
+        STAGING_PATH="${INSTALL_DIR}/.LooseLeaf.installing.$$"
+        BACKUP_PATH="${INSTALL_DIR}/.LooseLeaf.backup.$$"
+
+        # 2. 先把新版本拷到**目标同目录**下的暂存路径
+        #    关键：绝不能先 `rm -rf "$TARGET"` 再 `cp`。
+        #    那样一旦 cp 中途失败（磁盘满 / 权限变动 / 目标被占用），
+        #    用户的 App 就此消失，且没有任何东西可以回滚 —— 只能重新下载安装。
+        #    「拷到暂存 → 原子 rename」保证拷贝失败时旧 App 毫发无损。
+        rm -rf "$STAGING_PATH"
+        if ! cp -R "$SOURCE" "$STAGING_PATH"; then
+            # 新版本拷贝失败：旧 App 原封不动，用户无感
+            rm -rf "$STAGING_PATH"
+            rm -rf "$WORK_DIR"
+            exit 1
+        fi
+        xattr -cr "$STAGING_PATH" 2>/dev/null || true
+
+        # 3. 把旧版本移走作为备份
+        #    移不动就**直接放弃**（旧 App 保持原位），绝不硬来
+        if [ -d "$TARGET" ]; then
+            if ! mv "$TARGET" "$BACKUP_PATH"; then
+                rm -rf "$STAGING_PATH"
+                rm -rf "$WORK_DIR"
+                exit 1
+            fi
+        fi
+
+        # 4. 原子替换（同一卷内的 rename，瞬时生效）
+        if mv "$STAGING_PATH" "$TARGET"; then
+            # 成功：删备份 + 兜底清隔离属性 + 重新拉起
+            rm -rf "$BACKUP_PATH"
+            xattr -cr "$TARGET" 2>/dev/null || true
+            open "$TARGET"
+            rm -rf "$WORK_DIR"
+            exit 0
+        fi
+
+        # 5. 替换失败 → 回滚：把旧版本原样放回去并重新拉起，用户无感
+        if [ -d "$BACKUP_PATH" ]; then
+            mv "$BACKUP_PATH" "$TARGET"
+            open "$TARGET"
+        fi
+        rm -rf "$STAGING_PATH"
+        rm -rf "$WORK_DIR"
+        exit 1
+        """
+            .replacingOccurrences(of: "{{TARGET}}", with: target)
+            .replacingOccurrences(of: "{{SOURCE}}", with: source)
+            .replacingOccurrences(of: "{{OLD_PID}}", with: String(oldPID))
+            .replacingOccurrences(of: "{{WORK_DIR}}", with: workDir)
+    }
+
+
     public func performInAppUpdate() async {
         guard let update = availableUpdate, !isUpdating else { return }
         isUpdating = true
@@ -313,40 +403,14 @@ public final class UpdateChecker {
             // 7. 生成独立于当前主进程生命周期的守护替换脚本 (脱离会话组，安全等待主进程 PID 退出)
             let currentPID = ProcessInfo.processInfo.processIdentifier
             let scriptURL = workDir.appendingPathComponent("swap_updater.sh")
-            let scriptContent = """
-            #!/bin/bash
-            TARGET="\(targetAppURL.path)"
-            SOURCE="\(extractedApp.path)"
-            OLD_PID="\(currentPID)"
-            WORK_DIR="\(workDir.path)"
+            let scriptContent = Self.swapScript(
+                target: targetAppURL.path,
+                source: extractedApp.path,
+                oldPID: currentPID,
+                workDir: workDir.path
+            )
 
-            # 1. 严格轮询等待旧进程彻底安全退出（至多轮询 15 秒）
-            COUNT=0
-            while kill -0 "$OLD_PID" 2>/dev/null; do
-                sleep 0.2
-                COUNT=$((COUNT + 1))
-                if [ $COUNT -ge 75 ]; then
-                    kill -9 "$OLD_PID" 2>/dev/null || true
-                    break
-                fi
-            done
-
-            # 稍等 0.3 秒确保系统文件句柄释放
-            sleep 0.3
-
-            # 2. 覆盖替换安装
-            rm -rf "$TARGET"
-            cp -R "$SOURCE" "$TARGET"
-
-            # 3. 再次确保隔离属性清除
-            xattr -cr "$TARGET" 2>/dev/null || true
-
-            # 4. 重新拉起应用
-            open "$TARGET"
-
-            # 5. 清理临时解压工作目录
-            rm -rf "$WORK_DIR"
-            """
+            try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
 
             try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)

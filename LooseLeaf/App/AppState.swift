@@ -348,6 +348,18 @@ public final class AppState {
         }
     }
 
+    /// UI 测试用中枢地址（启动参数 `-UITestHubURL <url>` 或环境变量 `LOOSELEAF_HUB_URL`）
+    nonisolated static var uiTestHubURL: String? {
+        if let idx = CommandLine.arguments.firstIndex(of: "-UITestHubURL"),
+           idx + 1 < CommandLine.arguments.count {
+            return CommandLine.arguments[idx + 1]
+        }
+        if let env = ProcessInfo.processInfo.environment["LOOSELEAF_HUB_URL"], !env.isEmpty {
+            return env
+        }
+        return nil
+    }
+
     /// 冷启动引导是否已执行（防止重复拉取）
     @ObservationIgnored private var hasBootstrapped: Bool = false
 
@@ -378,6 +390,13 @@ public final class AppState {
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
         self.appearanceMode = AppearanceMode(rawValue: savedAppearance) ?? .system
+
+        // UI 自动化测试钩子：允许用启动参数把中枢指向本地实例，
+        // 使测试可以自由造数据而不污染真实中枢。
+        if let hubURL = Self.uiTestHubURL {
+            APIClient.shared.setBaseURL(hubURL)
+        }
+
         self.isPaired = (CredentialStore.getToken()?.isEmpty == false)
         self.showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
         self.launchesAtLogin = UserDefaults.standard.object(forKey: "looseleaf_launches_at_login") as? Bool ?? false
@@ -390,25 +409,23 @@ public final class AppState {
 
         // 2. 先注册回调，再读取快照：若后台解码已完成则直接拿到完整快照，
         //    否则后续 onSnapshotUpdated 回调会把注水后的快照推给 UI（两条路径都覆盖）。
+        // 关键：这三个回调**同步**应用，不要包一层 Task。
+        // SyncManager 与 AppState 同在 MainActor，直接调用即可；
+        // 若经 Task 派发，乐观写入的条目要等到下一个 runloop 才出现在时间流里 ——
+        // 这正是「提交后感觉慢了一拍」的来源之一。
         SyncManager.shared.onSnapshotUpdated = { [weak self] snap in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.isOnline = SyncManager.shared.isOnline
-                self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
-                self.applySnapshot(snap)
-            }
+            guard let self else { return }
+            self.isOnline = SyncManager.shared.isOnline
+            self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
+            self.applySnapshot(snap)
         }
 
         SyncManager.shared.onLocalDataWarning = { [weak self] message in
-            Task { @MainActor [weak self] in
-                self?.localDataWarning = message
-            }
+            self?.localDataWarning = message
         }
 
         SyncManager.shared.onNetworkStatusChanged = { [weak self] online in
-            Task { @MainActor [weak self] in
-                self?.isOnline = online
-            }
+            self?.isOnline = online
         }
 
         applySnapshot(SyncManager.shared.currentSnapshot())

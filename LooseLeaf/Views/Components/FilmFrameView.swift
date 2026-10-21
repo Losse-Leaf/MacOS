@@ -227,10 +227,37 @@ public enum PaperImageCache {
         return dir
     }
 
-    /// 稳定缓存键：SHA256(URL) 截断。
+    /// **稳定身份标识**：剥掉预签名参数后的 URL。
+    ///
+    /// 关键：后端每次返回附件列表都会**重新签发**预签名 URL
+    /// （R2 的 `X-Amz-Signature` / `X-Amz-Date` 每次都不同）。
+    /// 若拿完整 URL 当缓存身份，键每次都变 —— 内存缓存与磁盘缓存**永远不命中**，
+    /// 于是每次点开卡片都要把图片重新下一遍，表现为「点一下转一会儿圈」；
+    /// 滚动时新卡片不断进入视口，网络请求与解码直接把主线程打满，滑动就卡。
+    ///
+    /// 这里只保留「协议 + 主机 + 路径 + 非签名查询参数」作为身份，
+    /// 不同主机仍是不同资源（不会被误合并）。
+    public static func stableKeyURL(for url: URL) -> URL {
+        /// 常见的预签名 / 临时令牌参数名（小写比较）
+        let volatileParams: Set<String> = [
+            "x-amz-signature", "x-amz-credential", "x-amz-date", "x-amz-expires",
+            "x-amz-algorithm", "x-amz-security-token", "x-amz-signedheaders",
+            "signature", "expires", "token", "t", "ts", "time"
+        ]
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = comps.queryItems else {
+            return url
+        }
+        let kept = items.filter { !volatileParams.contains($0.name.lowercased()) }
+        guard kept.count != items.count else { return url }
+        comps.queryItems = kept.isEmpty ? nil : kept
+        return comps.url ?? url
+    }
+
+    /// 稳定缓存键：SHA256(剥掉签名参数后的 URL) 截断。
     /// 不能用 Swift `Hasher`——它每进程随机加盐，重启后 key 全变，磁盘缓存永不命中且旧文件永久堆积。
     private static func cacheKey(for url: URL) -> String {
-        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        let digest = SHA256.hash(data: Data(stableKeyURL(for: url).absoluteString.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
         let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
         return "cache_\(hex.prefix(32)).\(ext)"
@@ -242,12 +269,14 @@ public enum PaperImageCache {
 
     /// 仅查内存（可在 View init 中安全调用，不触发磁盘 I/O）
     public static func memoryImage(for url: URL) -> NSImage? {
-        originalMemoryCache.object(forKey: url as NSURL)
+        originalMemoryCache.object(forKey: stableKeyURL(for: url) as NSURL)
     }
 
     /// 缩略图内存键：与原图内存缓存共存（磁盘始终只存原图）
+    /// 关键：一律基于**稳定身份**（剥掉签名参数），否则预签名 URL 每次都变 → 缓存永不命中。
     private static func thumbKey(_ url: URL, maxPixel: Int) -> NSURL {
-        NSURL(string: "\(url.absoluteString)#thumb-\(maxPixel)") ?? url as NSURL
+        let stable = stableKeyURL(for: url).absoluteString
+        return NSURL(string: "\(stable)#thumb-\(maxPixel)") ?? stableKeyURL(for: url) as NSURL
     }
 
     /// 仅查降采样缩略图内存（列表/网格 init 专用，零 I/O）
@@ -313,7 +342,7 @@ public enum PaperImageCache {
 
     /// 同步两级命中：仅供详情灯箱、导出、复制等允许阻塞的路径使用
     public static func image(for url: URL) -> NSImage? {
-        if let memoryHit = originalMemoryCache.object(forKey: url as NSURL) {
+        if let memoryHit = originalMemoryCache.object(forKey: stableKeyURL(for: url) as NSURL) {
             return memoryHit
         }
         return loadFromDisk(url)

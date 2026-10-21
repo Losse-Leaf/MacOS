@@ -137,6 +137,37 @@ final class ArchiveSyncIntegrityTests: XCTestCase {
         XCTAssertTrue(combinations.contains("⌘,"))
     }
 
+    // MARK: - 伴生散页（器物 / 心愿）契约
+
+    /// 器物伴生散页必须能被识别、筛选与解码
+    func testGearCompanionEntryIsRecognised() throws {
+        let json = """
+        {
+          "id": 900,
+          "type": "gear",
+          "title": "添置器物 · 测试相机",
+          "content": "添置随身器物「测试相机」。",
+          "occurred_at": "2026-03-01T10:00:00+08:00",
+          "gear_id": "gear_ab12cd34"
+        }
+        """.data(using: .utf8)!
+
+        let entry = try JSONDecoder().decode(LifeEntry.self, from: json)
+        XCTAssertEqual(entry.gearId, "gear_ab12cd34")
+        XCTAssertEqual(entry.type, "gear")
+        XCTAssertTrue(entry.matches(category: .gear), "器物伴生散页必须能被「器物」分类命中")
+        XCTAssertTrue(entry.matches(category: .all))
+        XCTAssertFalse(entry.matches(category: .wish))
+    }
+
+    /// 分类枚举必须覆盖全部六类（含新增的器物）
+    func testArchiveCategoryCoversEveryType() {
+        let labels = Set(ArchiveCategory.allCases.map(\.label))
+        XCTAssertTrue(labels.contains("器物"))
+        XCTAssertEqual(ArchiveCategory.allCases.count, 7)
+        XCTAssertEqual(EntryType.allCases.count, 6, "EntryType 应包含 life/travel/project/wish/transaction/gear")
+    }
+
     // MARK: - 日期解析矩阵
 
     func testFlexDateHandlesAllSupportedLayouts() {

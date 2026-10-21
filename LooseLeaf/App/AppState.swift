@@ -787,26 +787,20 @@ public final class AppState {
 
     public func loadCategories() async {
         guard let list = try? await APIClient.shared.fetchCategories() else { return }
+        // 关键：**无条件覆盖**。
+        // 原先是 `if !exp.isEmpty { ... }` —— 于是把某一类**全部删光**时，
+        // 旧列表会被保留下来，用户明明在字典里删干净了，表单里还照旧显示。
+        // 请求失败已经由上面的 guard 兜住了，这里拿到的是服务端的权威列表。
         let exp = list.filter { $0.scope == "expense" }.map(\.name)
-        if !exp.isEmpty {
-            self.expenseCategories = exp
-        }
+        self.expenseCategories = exp
         let inc = list.filter { $0.scope == "income" }.map(\.name)
-        if !inc.isEmpty {
-            self.incomeCategories = inc
-        }
+        self.incomeCategories = inc
         let gear = list.filter { $0.scope == "gear" }.map(\.name)
-        if !gear.isEmpty {
-            self.gearCategories = gear
-        }
+        self.gearCategories = gear
         let proj = list.filter { $0.scope == "project" }.map(\.name)
-        if !proj.isEmpty {
-            self.projectCategories = proj
-        }
+        self.projectCategories = proj
         let pay = list.filter { $0.scope == "payment" }.map(\.name)
-        if !pay.isEmpty {
-            self.paymentMethods = pay
-        }
+        self.paymentMethods = pay
     }
 
     /// 「首屏只投递一次」的一次性闸门（跨隔离域安全）
@@ -1001,9 +995,23 @@ public final class AppState {
             occurredAt: occurredAt ?? FormatUtils.beijingISOString()
         )
 
-        // 乐观更新：账目立刻出现在账本与时间流，后台静默同步
-        SyncManager.shared.submitTransactionInBackground(req)
-        showTemporaryBanner("已记入账本：\(FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true))")
+        // 乐观更新：账目立刻出现在账本与时间流，后台静默同步。
+        //
+        // 关键：**如实回传**同步结果。
+        // 早先这里 fire-and-forget，调用方拿到的 `queuedOffline` 恒为 false ——
+        // 于是离线时也照弹「已记入账本」，用户完全不知道这条账只是躺在发件箱里。
+        let amountText = FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true)
+        SyncManager.shared.submitTransactionInBackground(req) { result in
+            switch result {
+            case .success(true):
+                // 已进发件箱，等网络恢复后自动补传
+                self.showTemporaryBanner("已暂存至本地发件箱：\(amountText)（网络恢复后自动上传）")
+            case .success(false):
+                self.showTemporaryBanner("已记入账本：\(amountText)")
+            case .failure:
+                self.showTemporaryBanner("记账失败：\(amountText) 未能上传，请检查中枢连接")
+            }
+        }
         Task { @MainActor in
             await loadTransactionsAndAssets(forceFull: false)
             await loadConfigAndProfile()
@@ -1159,6 +1167,80 @@ public final class AppState {
     }
 
     // MARK: - 同步失败重试
+
+    /// 统计「需要重新上传」的条目数（待同步 + 同步失败）
+    public var entriesNeedingUpload: Int {
+        entries.filter { ($0.syncStatus ?? "synced") != "synced" }.count
+    }
+
+    /// 统计「需要重新上传」的账目数
+    public var transactionsNeedingUpload: Int {
+        transactions.filter { ($0.syncStatus ?? "synced") != "synced" }.count
+    }
+
+    /// **重新上传**一条散页（无论它是「待同步」还是「同步失败」）
+    ///
+    /// 关键：早先只有「同步失败」才有重试入口，
+    /// 而「待同步」的条目同样可能**卡住不动**（例如发件箱死信被丢弃、
+    /// 或进程在同步途中被杀）—— 那时用户没有任何办法让它重新上去。
+    /// 「待同步」与「同步失败」只是同一件事的两个阶段，重传入口应当一致。
+    public func reuploadEntry(id: Int) {
+        guard let entry = entries.first(where: { $0.id == id }) else { return }
+        let req = CreateEntryRequest(
+            type: entry.type,
+            title: entry.title,
+            content: entry.content,
+            occurredAt: entry.occurredAt,
+            location: entry.location,
+            cityCode: entry.cityCode,
+            cityName: entry.cityName,
+            projectId: entry.projectId,
+            wishId: entry.wishId,
+            footprintId: entry.footprintId,
+            attachmentIds: entry.attachments.map(\.id)
+        )
+        SyncManager.shared.markEntryRetrying(id: id)
+        SyncManager.shared.submitEntryInBackground(req, attachments: entry.attachments)
+    }
+
+    /// **重新上传**一条账目
+    public func reuploadTransaction(id: Int) {
+        guard let tx = transactions.first(where: { $0.id == id }) else { return }
+        let req = CreateTransactionRequest(
+            amount: tx.amount,
+            type: tx.type,
+            category: tx.category,
+            title: tx.title,
+            note: tx.note,
+            paymentMethod: tx.paymentMethod,
+            cityCode: tx.cityCode,
+            occurredAt: tx.occurredAt
+        )
+        SyncManager.shared.markTransactionRetrying(id: id)
+        SyncManager.shared.submitTransactionInBackground(req)
+    }
+
+    /// **批量重新上传**：把所有待同步 / 同步失败的内容重新推一遍
+    ///
+    /// 关键：断一次网就会积压几十条，靠逐条点「重试」不现实。
+    /// 同时把发件箱里已到重试上限的**死信**重新放回队列
+    /// （`resetPausedOutboxItems`），否则它们永远不会被尝试。
+    @discardableResult
+    public func reuploadAllPending() -> Int {
+        let pendingEntries = entries.filter { ($0.syncStatus ?? "synced") != "synced" }
+        let pendingTransactions = transactions.filter { ($0.syncStatus ?? "synced") != "synced" }
+        let count = pendingEntries.count + pendingTransactions.count
+        guard count > 0 else { return 0 }
+
+        // 死信重新排队（否则自动同步永远跳过它们）
+        SyncManager.shared.resetPausedOutboxItems()
+
+        for entry in pendingEntries { reuploadEntry(id: entry.id) }
+        for tx in pendingTransactions { reuploadTransaction(id: tx.id) }
+
+        showTemporaryBanner("已重新上传 \(count) 条待同步内容")
+        return count
+    }
 
     /// 重试一条标记为 failed 的散页
     public func retryFailedEntry(id: Int) {

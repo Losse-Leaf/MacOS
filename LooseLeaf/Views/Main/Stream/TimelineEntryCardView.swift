@@ -75,11 +75,12 @@ import AppKit
             onOpenLightbox = { attachment in state.lightboxAttachment = attachment }
             onToast = { message in state.showTemporaryBanner(message) }
             onRetrySync = { id in state.retryFailedEntry(id: id) }
+            onReuploadEntry = { entry in state.reuploadEntry(id: entry.id) }
             onDeleteEntry = { entry in
                 state.askConfirm(
-                    title: "确认删除该条生活手稿？",
-                    message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
-                    confirmText: "删除手稿",
+                    title: ArchiveSharedCopy.entryDeleteTitle,
+                    message: ArchiveSharedCopy.entryDeleteMessage,
+                    confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
                     danger: true
                 ) {
                     state.deleteEntryAction(entry)
@@ -87,9 +88,9 @@ import AppKit
             }
             onDeleteTransaction = { tx in
                 state.askConfirm(
-                    title: "确认删除该笔流水账目？",
-                    message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
-                    confirmText: "删除账目",
+                    title: ArchiveSharedCopy.transactionDeleteTitle,
+                    message: ArchiveSharedCopy.transactionDeleteMessage,
+                    confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
                     danger: true
                 ) {
                     state.deleteTransactionAction(tx)
@@ -114,6 +115,8 @@ import AppKit
         var onToast: (String) -> Void = { _ in }
         /// 重试同步失败的记录
         var onRetrySync: (Int) -> Void = { _ in }
+        /// 重新上传一条「待同步」的散页
+        var onReuploadEntry: (LifeEntry) -> Void = { _ in }
     }
 
     struct TimelineEntryCardView: View {
@@ -198,12 +201,27 @@ import AppKit
                         }
 
                         // 同步状态：待同步（网络未通）/ 同步失败（可重试）
+                        //
+                        // 关键：两种状态都给出「重传」入口。
+                        // 「待同步」的条目同样可能卡住不动（发件箱死信被丢弃、
+                        // 进程在同步途中被杀）—— 没有重传入口的话，用户只能干等。
                         let syncState = entry.syncStatus ?? "synced"
                         if syncState == "pending_create" {
                             Text("待同步")
                                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                 .foregroundStyle(ArchivePalette.accentWarm)
                                 .accessibilityLabel("待同步到中枢")
+
+                            Button {
+                                actions.onReuploadEntry(entry)
+                            } label: {
+                                Text("重传")
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .help("重新上传这条记录到中枢")
+                            .accessibilityLabel("重新上传到中枢")
                         } else if syncState == "failed" {
                             HStack(spacing: 3) {
                                 Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")

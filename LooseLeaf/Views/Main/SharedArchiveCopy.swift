@@ -11,6 +11,14 @@ enum ArchiveSharedCopy {
     static let gearDeleteMessage = "删除后该项设备将从固资货架中移除。"
     static let gearDeleteConfirmText = "删除器材"
 
+    // 删除生活手稿
+    //
+    // 关键：这里曾是**唯一真源**，而时间流卡片与详情页各自硬编码了一份 ——
+    // 文案一旦要改就会漏改一处，用户在两个界面看到不同的说法。
+    static let entryDeleteTitle = "确认删除该条生活手稿？"
+    static let entryDeleteMessage = "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。"
+    static let entryDeleteConfirmText = "删除手稿"
+
     // 删除流水账目
     static let transactionDeleteTitle = "确认删除该笔流水账目？"
     static let transactionDeleteMessage = "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。"

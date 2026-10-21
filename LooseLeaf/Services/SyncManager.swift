@@ -450,12 +450,25 @@ public final class SyncManager {
     }
 
     /// **非阻塞提交**账目：立刻乐观写入并返回，后台静默同步。
+    ///
+    /// 关键：必须把结果**如实回传**给调用方。
+    /// 早先这里是 `try? await` 一把梭 —— 离线暂存、永久失败全部被吞掉，
+    /// 调用方的 `queuedOffline` 恒为 false，于是「已记入账本」的提示
+    /// 在离线时也照弹，用户根本不知道这条账只是躺在发件箱里。
     @discardableResult
-    public func submitTransactionInBackground(_ req: CreateTransactionRequest) -> Transaction {
+    public func submitTransactionInBackground(
+        _ req: CreateTransactionRequest,
+        completion: (@MainActor (Result<Bool, Error>) -> Void)? = nil
+    ) -> Transaction {
         let optimistic = submitTransactionOptimistically(req)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.syncPendingTransaction(req, tempId: optimistic.id, optimistic: optimistic)
+            do {
+                let outcome = try await self.syncPendingTransaction(req, tempId: optimistic.id, optimistic: optimistic)
+                completion?(.success(outcome.queuedOffline))
+            } catch {
+                completion?(.failure(error))
+            }
         }
         return optimistic
     }
@@ -517,7 +530,15 @@ public final class SyncManager {
     public func flushOutbox() async {
         guard !isFlushingOutbox, !snapshot.outbox.isEmpty else { return }
         isFlushingOutbox = true
-        defer { isFlushingOutbox = false }
+        defer {
+            isFlushingOutbox = false
+            // 关键：必须把「排空结束」这件事**通知到 UI**。
+            // AppState 的 `isFlushingOutbox` 是在 `onSnapshotUpdated` 回调里镜像的，
+            // 而排空结束时往往不会再有 `saveSnapshot` —— 于是 UI 拿到的永远是
+            // 循环中那个 true，侧栏就**永久**卡在「同步中…」，
+            // 直到下一次任意快照写入才恢复。
+            onSnapshotUpdated?(snapshot)
+        }
 
         Self.logger.info("Flushing outbox: \(self.snapshot.outbox.count) item(s) queued")
 

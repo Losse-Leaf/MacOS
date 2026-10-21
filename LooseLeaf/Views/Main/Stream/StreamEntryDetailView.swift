@@ -40,9 +40,9 @@ struct StreamEntryDetailView: View {
 
                             Button("删除账目") {
                                 appState.askConfirm(
-                                    title: "确认删除该笔流水账目？",
-                                    message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
-                                    confirmText: "删除账目",
+                                    title: ArchiveSharedCopy.transactionDeleteTitle,
+                                    message: ArchiveSharedCopy.transactionDeleteMessage,
+                                confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
                                     danger: true
                                 ) {
                                     onDeleteTransaction(tx)
@@ -64,17 +64,20 @@ struct StreamEntryDetailView: View {
                         .buttonStyle(.plain)
 
                         Button("删除记录") {
+                            // 统一走 AppState 的删除入口。
+                            // 关键：原先这里自己 `try? await APIClient.deleteEntry` ——
+                            // 失败被静默吞掉、界面照常关闭、条目留在原地，
+                            // 而且没有 ⌘Z 撤销、没有错误横幅。
+                            // 时间流卡片走的是 AppState.deleteEntryAction（横幅 + 撤销栈），
+                            // 同一操作两套实现，体验不一致。
                             appState.askConfirm(
-                                title: "确认删除该条生活手稿？",
-                                message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
-                                confirmText: "删除手稿",
+                                title: ArchiveSharedCopy.entryDeleteTitle,
+                                message: ArchiveSharedCopy.entryDeleteMessage,
+                                confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
                                 danger: true
                             ) {
-                                Task { @MainActor in
-                                    try? await APIClient.shared.deleteEntry(id: entry.id)
-                                    await appState.loadEntries(forceFull: false)
-                                    appState.highlightedEntry = nil
-                                }
+                                appState.highlightedEntry = nil
+                                appState.deleteEntryAction(entry)
                             }
                         }
                         .font(ArchiveTypography.bodySans(size: 12))

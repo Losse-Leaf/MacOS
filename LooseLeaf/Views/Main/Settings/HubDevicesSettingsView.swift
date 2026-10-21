@@ -47,7 +47,16 @@ struct HubDevicesSettingsView: View {
                     if appState.isPaired {
                         Button {
                             Task { @MainActor in
-                                issuedPairTicket = try? await APIClient.shared.initPairing()
+                                // 关键：失败必须**说出来**。
+                                // 原先是 `try?` —— 网络或鉴权失败时票据保持 nil，
+                                // 界面毫无变化，按钮像坏了一样，用户完全不知道发生了什么。
+                                do {
+                                    issuedPairTicket = try await APIClient.shared.initPairing()
+                                    authError = nil
+                                } catch {
+                                    issuedPairTicket = nil
+                                    authError = "签发配对凭证失败：\(error.localizedDescription)"
+                                }
                             }
                         } label: {
                             HStack(spacing: ArchiveSpacing.xs) {
@@ -400,7 +409,8 @@ struct HubDevicesSettingsView: View {
 
 
     private func refreshDevicesList() async {
-        if let list = try? await APIClient.shared.fetchTrustedDevices() {
+        do {
+            let list = try await APIClient.shared.fetchTrustedDevices()
             appState.trustedDevices = list
 
             // 自愈机制：若当前 Mac 客户端在历史版本中被后端误登记为 "web"，自动修正为 "macos"
@@ -420,6 +430,9 @@ struct HubDevicesSettingsView: View {
                     }
                 }
             }
+        } catch {
+            // 拉不到设备列表也要说清楚，而不是静默留着一份旧列表
+            authError = "获取设备列表失败：\(error.localizedDescription)"
         }
     }
 

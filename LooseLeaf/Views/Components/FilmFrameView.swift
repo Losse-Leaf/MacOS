@@ -368,7 +368,11 @@ public enum PaperImageCache {
         }
         normalizePixelSize(diskImage)
         // cost 用真实位图内存（4K 原图解码后约 39MB，而压缩文件只有 2MB）
-        originalMemoryCache.setObject(diskImage, forKey: url as NSURL, cost: bitmapByteCost(of: diskImage))
+        // 关键：写入键必须与 `image(for:)` 的读取键**一致**。
+        // 读取用 `stableKeyURL(for: url)`（剥掉预签名参数），
+        // 而写入却用了原始 URL —— 预签名 URL 每次都变，
+        // 于是原图缓存**永远命中不了**，每次都重新全尺寸解码 4K 图（约 39MB）。
+        originalMemoryCache.setObject(diskImage, forKey: stableKeyURL(for: url) as NSURL, cost: bitmapByteCost(of: diskImage))
         touchDiskFile(at: diskPath)
         return diskImage
     }
@@ -390,7 +394,8 @@ public enum PaperImageCache {
     public static func setImage(_ image: NSImage, rawData: Data? = nil, for url: URL, cost: Int = 0) {
         normalizePixelSize(image)
         let resolvedCost = cost > 0 ? cost : bitmapByteCost(of: image)
-        originalMemoryCache.setObject(image, forKey: url as NSURL, cost: resolvedCost)
+        // 同上：写入键要与读取键一致
+        originalMemoryCache.setObject(image, forKey: stableKeyURL(for: url) as NSURL, cost: resolvedCost)
 
         // 异步写入磁盘缓存，避免主线程 I/O 阻塞
         let diskURL = diskFileURL(for: url)

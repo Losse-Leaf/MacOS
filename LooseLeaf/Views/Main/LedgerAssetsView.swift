@@ -1241,16 +1241,11 @@ public struct LedgerAssetsView: View {
     }
 
     private func deleteTransaction(_ tx: Transaction) {
-        Task { @MainActor in
-            do {
-                try await APIClient.shared.deleteTransaction(id: tx.id)
-                // 账目在时间流里是合成条目，删除后时间流也要同步消失
-                await appState.loadTransactionsAndAssets(forceFull: false)
-                await appState.loadEntries(forceFull: false)
-            } catch {
-                errorNotice = error.localizedDescription
-            }
-        }
+        // 统一走 AppState 的删除入口。
+        // 关键：原先这里自己调 API ——
+        // 于是「删账目」在时间流卡片有 ⌘Z 撤销与错误横幅，在账本列表却没有。
+        // 同一个操作两套体验，用户会以为账本页的删除不能撤销。
+        appState.deleteTransactionAction(tx)
     }
 
     private func deleteGear(_ gear: GearItem) {

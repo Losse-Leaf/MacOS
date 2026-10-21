@@ -172,6 +172,13 @@ struct CategoriesSettingsView: View {
                 inlineCategoryName = ""
                 isAddingCategoryInline = false
                 await appState.loadConfigAndProfile()
+                // 关键：必须刷新 AppState 的分类数组。
+                // `loadConfigAndProfile` 只拉站点配置与档案，不碰分类；
+                // 而 `loadCategories` 才写 `expenseCategories / incomeCategories …`，
+                // 且它原先只在 `refreshAll` 里被调用 ——
+                // 于是新增一个「咖啡」后，账本页的类目胶囊仍是旧列表，
+                // 必须按 ⌘R 才生效。
+                await appState.loadCategories()
                 allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
             } catch {
                 authError = "添加分类失败: \(error.localizedDescription)"
@@ -184,6 +191,8 @@ struct CategoriesSettingsView: View {
             do {
                 try await APIClient.shared.deleteCategoryOption(id: cat.id)
                 await appState.loadConfigAndProfile()
+                // 同上：删掉分类后也要刷新 AppState 的分类数组
+                await appState.loadCategories()
                 allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
             } catch {
                 authError = "删除分类失败: \(error.localizedDescription)"

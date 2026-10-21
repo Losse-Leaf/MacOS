@@ -134,6 +134,22 @@ struct WorkbenchSidebar: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .accessibilityLabel(statusLabel)
 
+                        // 关键：有待同步内容时，状态文字**可点**。
+                        // 早先它只是几个字 —— 用户看到「待同步 12 条」却没有任何办法
+                        // 把它们推上去，只能逐条点卡片里的「重试」。
+                        if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
+                            Button {
+                                appState.reuploadAllPending()
+                            } label: {
+                                Text("重新上传")
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .medium))
+                                    .foregroundStyle(ArchivePalette.accentWarm)
+                            }
+                            .buttonStyle(.plain)
+                            .help("把所有待同步 / 同步失败的内容重新上传到中枢")
+                            .accessibilityLabel("重新上传全部待同步内容")
+                        }
+
                         Spacer()
 
                         HStack(spacing: 3) {

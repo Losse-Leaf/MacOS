@@ -817,10 +817,14 @@ public struct UnifiedUploadResponse: Codable, Sendable {
     public var width: Int?
     public var height: Int?
     public var attachmentId: Int
+    /// 缩略图地址（中枢自己的路由）
+    /// 缺省时按 `url` 推导不出来，故为可选；老后端返回时为 nil，客户端会退回原图
+    public var thumbnailUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case objectKey = "object_key"
         case url
+        case thumbnailUrl = "thumbnail_url"
         case expiresIn = "expires_in"
         case filename
         case mimeType = "mime_type"

@@ -954,7 +954,10 @@ public actor APIClient {
             size: res.size,
             width: res.width,
             height: res.height,
-            url: res.url
+            url: res.url,
+            // 刚上传完的附件也要能立刻用缩略图展示，
+            // 否则在下次同步之前它仍会走原图（1.5MB / 4.4 秒）
+            thumbnailUrl: res.thumbnailUrl
         )
     }
 

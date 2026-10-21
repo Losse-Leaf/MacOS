@@ -116,6 +116,7 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         width: Int? = nil,
         height: Int? = nil,
         url: String,
+        thumbnailUrl: String? = nil,
         createdAt: String? = nil
     ) {
         self.id = id
@@ -129,6 +130,7 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         self.width = width
         self.height = height
         self.url = url
+        self.thumbnailUrl = thumbnailUrl
         self.createdAt = createdAt
     }
 }

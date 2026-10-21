@@ -338,10 +338,13 @@ public struct GlobalSearchModalView: View {
             guard !Task.isCancelled else { return }
             isSearchingRemote = true
             defer { isSearchingRemote = false }
-            if let res = try? await APIClient.shared.searchGlobalArchive(query: trimmed, limit: 30) {
-                guard !Task.isCancelled else { return }
-                appState.globalSearchResult = res
-            }
+            // 关键：改走 AppState 的统一检索入口。
+            // 原先弹窗**自己**发请求并直接写 `appState.globalSearchResult` ——
+            // 于是绕过了 `globalSearchGeneration` 代号机制：
+            // ⌘K 弹窗与顶栏搜索并发时，**旧请求可以覆盖新结果**；
+            // 而且 `defer { isSearchingRemote = false }` 会被旧任务执行，
+            // 新请求还在飞，spinner 却提前消失。
+            await appState.performGlobalSearch(query: trimmed)
         }
     }
 
@@ -379,7 +382,7 @@ public struct GlobalSearchModalView: View {
 
                     Spacer()
 
-                    Text(entry.occurredAt.prefix(10))
+                    Text(FormatUtils.formatDate(entry.occurredAt))
                         .font(ArchiveTypography.monoScale(size: 10.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -430,7 +433,7 @@ public struct GlobalSearchModalView: View {
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
                     Spacer()
-                    Text(fp.visitedAt.prefix(10))
+                    Text(FormatUtils.formatDate(fp.visitedAt))
                         .font(ArchiveTypography.monoScale(size: 10))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }

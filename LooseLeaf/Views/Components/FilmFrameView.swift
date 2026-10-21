@@ -504,6 +504,14 @@ public struct CachedFilmImageView: View {
     }
 
     private func loadImage() async {
+        // 关键：并发闸门必须在**最前面**。
+        // 原先把 `guard !isLoading` 放在两次 await 之后 —— 那时两个并发任务
+        // 早已双双通过检查，于是同一张图会被**下载两次**，
+        // 而 `isLoading` 这个状态写了却从不被读。
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
         let pixel = Self.thumbPixel(for: maxHeight)
         if let cached = PaperImageCache.memoryImage(for: url, maxPixel: pixel) {
             self.loadedImage = cached
@@ -514,9 +522,6 @@ public struct CachedFilmImageView: View {
             self.loadedImage = diskHit
             return
         }
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)

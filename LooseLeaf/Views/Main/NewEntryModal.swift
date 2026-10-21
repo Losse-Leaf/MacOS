@@ -526,6 +526,10 @@ public struct NewEntryModal: View {
             "content": draft.content,
             "cityCode": draft.cityCode,
             "cityName": draft.cityName,
+            // 关键：补写 projectId。
+            // `restoreDraft()` 一直在读 `dict["projectId"]`，而保存时从不写它 ——
+            // 于是「恢复到某个造物」的草稿永远拿不回项目。
+            "projectId": draft.selectedProjectId,
         ]
         if let data = try? JSONSerialization.data(withJSONObject: dict) {
             UserDefaults.standard.set(data, forKey: draftStorageKey)

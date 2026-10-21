@@ -111,7 +111,6 @@ public final class QuickCaptureDraft {
     public var entryType: EntryType = .life
     public var titleText: String = ""
     public var contentText: String = ""
-    public var customLocation: String = ""
     public var selectedCityCode: String = ""
     public var selectedCityName: String = ""
     public var uploadedAttachments: [Attachment] = []
@@ -122,7 +121,6 @@ public final class QuickCaptureDraft {
     public func reset() {
         titleText = ""
         contentText = ""
-        customLocation = ""
         selectedCityCode = ""
         selectedCityName = ""
         uploadedAttachments.removeAll()

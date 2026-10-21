@@ -518,7 +518,6 @@ public struct QuickCaptureView: View {
                     title: draft.titleText,
                     content: contentToSubmit,
                     type: draft.entryType,
-                    location: draft.customLocation.isEmpty ? nil : draft.customLocation,
                     cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
                     cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
                     attachmentIds: draft.uploadedAttachments.map(\.id),

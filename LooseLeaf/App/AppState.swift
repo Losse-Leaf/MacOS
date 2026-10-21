@@ -833,15 +833,14 @@ public final class AppState {
             occurredAt: occurredAt ?? FormatUtils.beijingISOString()
         )
 
-        let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
-        if queuedOffline {
-            showTemporaryBanner("账单已暂存至本地发件箱，网络恢复后自动同步")
-        } else {
-            showTemporaryBanner("已记入账本：\(FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true))")
-            await loadTransactionsAndAssets(forceFull: true)
+        // 乐观更新：账目立刻出现在账本与时间流，后台静默同步
+        SyncManager.shared.submitTransactionInBackground(req)
+        showTemporaryBanner("已记入账本：\(FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true))")
+        Task { @MainActor in
+            await loadTransactionsAndAssets(forceFull: false)
             await loadConfigAndProfile()
         }
-        return queuedOffline
+        return false
     }
 
     // MARK: - 设备配对与密钥授权 (Device Pairing & Credential Vault)
@@ -989,6 +988,47 @@ public final class AppState {
         let id = raw?.intValue ?? activity.userInfo?["entryId"] as? Int ?? -1
         guard id >= 0 else { return }
         navigateToEntry(id: id)
+    }
+
+    // MARK: - 同步失败重试
+
+    /// 重试一条标记为 failed 的散页
+    public func retryFailedEntry(id: Int) {
+        guard let entry = entries.first(where: { $0.id == id }) else { return }
+        let req = CreateEntryRequest(
+            type: entry.type,
+            title: entry.title,
+            content: entry.content,
+            occurredAt: entry.occurredAt,
+            location: entry.location,
+            featured: entry.featured ?? false,
+            cityCode: entry.cityCode,
+            cityName: entry.cityName,
+            projectId: entry.projectId,
+            wishId: entry.wishId,
+            footprintId: entry.footprintId,
+            attachmentIds: entry.attachments.map(\.id)
+        )
+        // 先把状态改回待同步，让用户立刻看到反馈
+        SyncManager.shared.markEntryRetrying(id: id)
+        SyncManager.shared.submitEntryInBackground(req, attachments: entry.attachments)
+    }
+
+    /// 重试一条标记为 failed 的账目
+    public func retryFailedTransaction(id: Int) {
+        guard let tx = transactions.first(where: { $0.id == id }) else { return }
+        let req = CreateTransactionRequest(
+            amount: tx.amount,
+            type: tx.type,
+            category: tx.category,
+            title: tx.title,
+            note: tx.note,
+            paymentMethod: tx.paymentMethod,
+            cityCode: tx.cityCode,
+            occurredAt: tx.occurredAt
+        )
+        SyncManager.shared.markTransactionRetrying(id: id)
+        SyncManager.shared.submitTransactionInBackground(req)
     }
 
     // MARK: - 撤销栈 (Undo)

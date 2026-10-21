@@ -252,26 +252,21 @@ public final class SyncManager {
 
     // MARK: - 写入流：在线直发 + 断网自动转入 Outbox 队列
 
-    /// 提交新生活记录（在线直接落库，离线或网络阻断时写入本地 Outbox 乐观更新）
+    /// 提交新生活记录。
+    ///
+    /// **乐观更新**：先把记录写进本地快照并立即通知 UI（时间流立刻出现这条散页），
+    /// 再在后台静默同步到服务端。同步失败时按错误性质分别处理：
+    /// - 网络类错误 → 转入 Outbox 待重试，记录保持 `pending_create`
+    /// - 4xx 永久错误 → 记录标记为 `failed` 并保留在本地，用户可重试
     public func submitEntry(_ req: CreateEntryRequest, attachments: [Attachment] = []) async throws -> (entry: LifeEntry, queuedOffline: Bool) {
-        if isOnline {
-            do {
-                let created = try await APIClient.shared.createEntry(req)
-                mergeEntries([created], isDelta: true)
-                return (created, false)
-            } catch let apiErr as APIError {
-                // 401 未授权或 400 参数错误直接抛出，不进离线队列
-                switch apiErr {
-                case .unauthorized, .serverError(code: 400, _):
-                    throw apiErr
-                default:
-                    break
-                }
-            } catch {
-                // 网络中断：降级转入本地 Outbox
-            }
-        }
+        let optimistic = submitEntryOptimistically(req, attachments: attachments)
+        return try await syncPendingEntry(req, tempId: optimistic.id, optimistic: optimistic)
+    }
 
+    /// **乐观写入**：立刻把记录写进本地快照并通知 UI（时间流立即可见），完全同步、无任何等待。
+    /// - Returns: 本地乐观实体（临时负数 id，状态 `pending_create`）
+    @discardableResult
+    public func submitEntryOptimistically(_ req: CreateEntryRequest, attachments: [Attachment] = []) -> LifeEntry {
         let tempId = Self.makeLocalTempId()
         let optimistic = LifeEntry(
             id: tempId,
@@ -289,38 +284,101 @@ public final class SyncManager {
             featured: req.featured,
             syncStatus: "pending_create"
         )
-
         var current = snapshot
         // 乐观记录按发生时间归位，而不是无条件插到列表顶部
         current.entries = Self.sortedEntries(current.entries, inserting: optimistic)
-        current.outbox.append(OutboxItem(
-            kind: .createEntry,
-            localTempId: tempId,
-            entryRequest: req
-        ))
         saveSnapshot(current)
-        return (optimistic, true)
+        return optimistic
+    }
+
+    /// 后台同步一条已乐观写入的记录：
+    /// 成功 → 用服务端正式实体替换；网络失败 → 转入 Outbox；4xx 永久失败 → 标记为 failed。
+    private func syncPendingEntry(
+        _ req: CreateEntryRequest,
+        tempId: Int,
+        optimistic: LifeEntry
+    ) async throws -> (entry: LifeEntry, queuedOffline: Bool) {
+        guard isOnline else {
+            appendOutbox(.createEntry, localTempId: tempId, entryRequest: req)
+            return (optimistic, true)
+        }
+        do {
+            let created = try await APIClient.shared.createEntry(req)
+            // 用服务端正式实体替换乐观记录（id 换成真实 id，状态转为已同步）
+            var latest = snapshot
+            latest.entries.removeAll { $0.id == tempId }
+            latest.entries = Self.sortedEntries(latest.entries + [created])
+            saveSnapshot(latest)
+            return (created, false)
+        } catch let apiErr as APIError {
+            switch apiErr {
+            case .unauthorized, .serverError(code: 400, _):
+                // 永久错误：记录保留在时间流并标记为失败，用户可重试
+                markEntryFailed(tempId: tempId, reason: apiErr.localizedDescription)
+                throw apiErr
+            default:
+                // 网络类错误：转入 Outbox，记录保持待同步
+                appendOutbox(.createEntry, localTempId: tempId, entryRequest: req)
+                return (optimistic, true)
+            }
+        } catch {
+            // 网络中断：降级转入本地 Outbox
+            appendOutbox(.createEntry, localTempId: tempId, entryRequest: req)
+            return (optimistic, true)
+        }
+    }
+
+    /// **非阻塞提交**：立刻乐观写入并返回，后台在独立任务里静默同步。
+    /// 调用方（例如创作弹窗）可以马上关闭界面，用户不必等待网络往返。
+    @discardableResult
+    public func submitEntryInBackground(_ req: CreateEntryRequest, attachments: [Attachment] = []) -> LifeEntry {
+        let optimistic = submitEntryOptimistically(req, attachments: attachments)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.syncPendingEntry(req, tempId: optimistic.id, optimistic: optimistic)
+        }
+        return optimistic
+    }
+
+    /// 追加一条待同步动作到 Outbox
+    private func appendOutbox(
+        _ kind: OutboxActionKind,
+        localTempId: Int,
+        entryRequest: CreateEntryRequest? = nil,
+        transactionRequest: CreateTransactionRequest? = nil
+    ) {
+        var latest = snapshot
+        latest.outbox.append(OutboxItem(
+            kind: kind,
+            localTempId: localTempId,
+            entryRequest: entryRequest,
+            transactionRequest: transactionRequest
+        ))
+        saveSnapshot(latest)
+    }
+
+    /// 把一条乐观记录标记为同步失败（保留在时间流，等待用户重试）
+    private func markEntryFailed(tempId: Int, reason: String) {
+        var latest = snapshot
+        var touched = false
+        for index in latest.entries.indices where latest.entries[index].id == tempId {
+            latest.entries[index].syncStatus = "failed"
+            touched = true
+        }
+        guard touched else { return }
+        saveSnapshot(latest)
+        Self.logger.error("Entry \(tempId) marked as failed: \(reason, privacy: .public)")
     }
 
     /// 提交新记账流水（在线直接落库，离线或网络阻断时写入本地 Outbox 乐观更新）
     public func submitTransaction(_ req: CreateTransactionRequest) async throws -> (transaction: Transaction, queuedOffline: Bool) {
-        if isOnline {
-            do {
-                let created = try await APIClient.shared.createTransaction(req)
-                mergeTransactions([created], isDelta: true)
-                return (created, false)
-            } catch let apiErr as APIError {
-                switch apiErr {
-                case .unauthorized, .serverError(code: 400, _):
-                    throw apiErr
-                default:
-                    break
-                }
-            } catch {
-                // 网络中断：降级转入本地 Outbox
-            }
-        }
+        let optimistic = submitTransactionOptimistically(req)
+        return try await syncPendingTransaction(req, tempId: optimistic.id, optimistic: optimistic)
+    }
 
+    /// **乐观写入**账目（同步完成，UI 立即可见）
+    @discardableResult
+    public func submitTransactionOptimistically(_ req: CreateTransactionRequest) -> Transaction {
         let tempId = Self.makeLocalTempId()
         let optimistic = Transaction(
             id: tempId,
@@ -346,13 +404,88 @@ public final class SyncManager {
             current.transactionSummary.totalIncome += req.amount
         }
         current.transactionSummary.balance = current.transactionSummary.totalIncome - current.transactionSummary.totalExpense
-        current.outbox.append(OutboxItem(
-            kind: .createTransaction,
-            localTempId: tempId,
-            transactionRequest: req
-        ))
         saveSnapshot(current)
-        return (optimistic, true)
+        return optimistic
+    }
+
+    /// 后台同步一条已乐观写入的账目
+    private func syncPendingTransaction(
+        _ req: CreateTransactionRequest,
+        tempId: Int,
+        optimistic: Transaction
+    ) async throws -> (transaction: Transaction, queuedOffline: Bool) {
+        guard isOnline else {
+            appendOutbox(.createTransaction, localTempId: tempId, transactionRequest: req)
+            return (optimistic, true)
+        }
+        do {
+            let created = try await APIClient.shared.createTransaction(req)
+            var latest = snapshot
+            latest.transactions.removeAll { $0.id == tempId }
+            latest.transactions = Self.sortedTransactions(latest.transactions + [created])
+            saveSnapshot(latest)
+            return (created, false)
+        } catch let apiErr as APIError {
+            switch apiErr {
+            case .unauthorized, .serverError(code: 400, _):
+                markTransactionFailed(tempId: tempId, reason: apiErr.localizedDescription)
+                throw apiErr
+            default:
+                appendOutbox(.createTransaction, localTempId: tempId, transactionRequest: req)
+                return (optimistic, true)
+            }
+        } catch {
+            appendOutbox(.createTransaction, localTempId: tempId, transactionRequest: req)
+            return (optimistic, true)
+        }
+    }
+
+    /// **非阻塞提交**账目：立刻乐观写入并返回，后台静默同步。
+    @discardableResult
+    public func submitTransactionInBackground(_ req: CreateTransactionRequest) -> Transaction {
+        let optimistic = submitTransactionOptimistically(req)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.syncPendingTransaction(req, tempId: optimistic.id, optimistic: optimistic)
+        }
+        return optimistic
+    }
+
+    /// 把一条失败的散页改回「待同步」（用户点击重试时）
+    public func markEntryRetrying(id: Int) {
+        var latest = snapshot
+        var touched = false
+        for index in latest.entries.indices where latest.entries[index].id == id {
+            latest.entries[index].syncStatus = "pending_create"
+            touched = true
+        }
+        guard touched else { return }
+        saveSnapshot(latest)
+    }
+
+    /// 把一条失败的账目改回「待同步」
+    public func markTransactionRetrying(id: Int) {
+        var latest = snapshot
+        var touched = false
+        for index in latest.transactions.indices where latest.transactions[index].id == id {
+            latest.transactions[index].syncStatus = "pending_create"
+            touched = true
+        }
+        guard touched else { return }
+        saveSnapshot(latest)
+    }
+
+    /// 把一条乐观账目标记为同步失败（保留在账本，等待用户重试）
+    private func markTransactionFailed(tempId: Int, reason: String) {
+        var latest = snapshot
+        var touched = false
+        for index in latest.transactions.indices where latest.transactions[index].id == tempId {
+            latest.transactions[index].syncStatus = "failed"
+            touched = true
+        }
+        guard touched else { return }
+        saveSnapshot(latest)
+        Self.logger.error("Transaction \(tempId) marked as failed: \(reason, privacy: .public)")
     }
 
     /// 用户主动同步（⌘R）时，把已暂停的死信重新放回队列。

@@ -20,6 +20,8 @@ import AppKit
         var onOpenLightbox: (Attachment) -> Void = { _ in }
         /// 顶部提示条
         var onToast: (String) -> Void = { _ in }
+        /// 重试同步失败的记录
+        var onRetrySync: (Int) -> Void = { _ in }
     }
 
     struct TimelineEntryCardView: View {
@@ -102,10 +104,34 @@ import AppKit
                                 )
                         }
 
-                        if (entry.syncStatus ?? "synced") != "synced" {
+                        // 同步状态：待同步（网络未通）/ 同步失败（可重试）
+                        let syncState = entry.syncStatus ?? "synced"
+                        if syncState == "pending_create" {
                             Text("待同步")
-                                .font(ArchiveTypography.monoScale(size: 10))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                 .foregroundStyle(ArchivePalette.accentWarm)
+                                .accessibilityLabel("待同步到中枢")
+                        } else if syncState == "failed" {
+                            HStack(spacing: 3) {
+                                Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                                    .font(.system(size: 9.5))
+                                Text("同步失败")
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                            }
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .help("该条记录未能同步到中枢，点击重试")
+                            .accessibilityLabel("同步失败")
+
+                            Button {
+                                actions.onRetrySync(entry.id)
+                            } label: {
+                                Text("重试")
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .help("重新同步到中枢")
+                            .accessibilityLabel("重试同步")
                         }
 
                         Spacer()

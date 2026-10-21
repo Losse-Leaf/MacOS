@@ -495,7 +495,8 @@ public struct StreamView: View {
             onToggleFeatured: { toggleFeatured(entry) },
             onOpenDetail: { appState.highlightedEntry = entry },
             onOpenLightbox: { appState.lightboxAttachment = $0 },
-            onToast: { appState.showTemporaryBanner($0) }
+            onToast: { appState.showTemporaryBanner($0) },
+            onRetrySync: { id in appState.retryFailedEntry(id: id) }
         )
     }
 

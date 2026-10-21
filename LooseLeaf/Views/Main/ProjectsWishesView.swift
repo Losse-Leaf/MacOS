@@ -337,6 +337,8 @@ struct WishCardView: View {
 /// 统一样式与等高对齐的造物项目卡片 (ProjectCardView)
 struct ProjectCardView: View {
     let proj: Project
+    /// 悬停态：次级动作（修订 / 删除）只在悬停时出现
+    @State private var isHovering: Bool = false
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -391,10 +393,14 @@ struct ProjectCardView: View {
 
             Spacer(minLength: 12)
 
-            Rectangle()
-                .fill(ArchivePalette.borderDivider)
-                .frame(height: 0.5)
-                .padding(.vertical, 9)
+            // 分隔线只在「底栏有东西」时才画 ——
+            // 次级按钮改为悬停才出之后，这条线就成了一条没人陪的孤儿线。
+            if isHovering || proj.githubUrl?.isEmpty == false {
+                Rectangle()
+                    .fill(ArchivePalette.borderDivider)
+                    .frame(height: 0.5)
+                    .padding(.vertical, 9)
+            }
 
             HStack {
                 if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
@@ -413,44 +419,52 @@ struct ProjectCardView: View {
                 Spacer()
 
                 HStack(spacing: 6) {
-                    Button(action: onEdit) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(6)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
-                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                    }
-                    .buttonStyle(.plain)
-                    .help("修订项目")
-                    .accessibilityLabel("修订项目")
+                    // 次级动作（修订 / 删除）改为悬停才出现，
+                    // 与时间流、心愿卡保持一致
+                    if isHovering {
+                        Button(action: onEdit) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(6)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                )
+                                .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        }
+                        .buttonStyle(.plain)
+                        .help("修订项目")
+                        .accessibilityLabel("修订项目")
 
-                    Button(action: onDelete) {
-                        Image(systemName: ArchiveIcon.delete.systemName)
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(6)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
-                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        Button(action: onDelete) {
+                            Image(systemName: ArchiveIcon.delete.systemName)
+                                .font(.system(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(6)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                )
+                                .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        }
+                        .buttonStyle(.plain)
+                        .help("删除项目")
+                        .accessibilityLabel("删除项目")
                     }
-                    .buttonStyle(.plain)
-                    .help("删除项目")
-                    .accessibilityLabel("删除项目")
                 }
             }
         }
         .padding(ArchiveCardMetrics.padding)
-        .frame(minHeight: 195)
+        // 与心愿卡同理：造物内容通常也只有「标题 + 一句描述」。
+        // 心愿卡底部有「预算 + 圆满心愿」撑着，150 还算匀；
+        // 造物卡没有底栏（次级按钮改为悬停才出），所以要再收一档，
+        // 否则下方空出一大片。
+        .frame(minHeight: 118)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
@@ -461,6 +475,7 @@ struct ProjectCardView: View {
         // 实测单张心愿/造物卡 22~27ms —— 列表里放 20 张就是半秒以上的滚动卡顿。
         // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
+        .onHover { isHovering = $0 }
     }
 }
 

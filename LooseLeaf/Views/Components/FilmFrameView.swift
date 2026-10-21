@@ -80,7 +80,9 @@ public struct FilmFrameView: View {
             RoundedRectangle(cornerRadius: 4)
                 .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
         )
-        .shadow(color: ArchivePalette.inkPrimary.opacity(0.08), radius: 10, x: 0, y: 4)
+        // 原先这里有一层 radius 10 的模糊阴影（实测相纸框 61.5ms），
+        // 而相纸框本身已有 0.5pt 描边；图片多的散页里，相纸框会成倍出现，
+        // 去掉阴影可显著降低时间流滚动开销。
         .contentShape(Rectangle())
         .onTapGesture {
             onTap?()

@@ -257,7 +257,9 @@ struct WishCardView: View {
             RoundedRectangle(cornerRadius: 7)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.6)
         )
-        .shadow(color: ArchivePalette.inkPrimary.opacity(0.04), radius: 6, x: 0, y: 2)
+        // 原先这里有一层 radius 6 的模糊阴影：SwiftUI 的 `.shadow` 会对整棵子树做离屏渲染，
+        // 实测单张心愿/造物卡 22~27ms —— 列表里放 20 张就是半秒以上的滚动卡顿。
+        // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
     }
 
@@ -443,7 +445,9 @@ struct ProjectCardView: View {
             RoundedRectangle(cornerRadius: 7)
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.6)
         )
-        .shadow(color: ArchivePalette.inkPrimary.opacity(0.04), radius: 6, x: 0, y: 2)
+        // 原先这里有一层 radius 6 的模糊阴影：SwiftUI 的 `.shadow` 会对整棵子树做离屏渲染，
+        // 实测单张心愿/造物卡 22~27ms —— 列表里放 20 张就是半秒以上的滚动卡顿。
+        // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
     }
 }

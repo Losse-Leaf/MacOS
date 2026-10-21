@@ -64,13 +64,18 @@ public struct PaperHoverModifier: ViewModifier {
         content
             .brightness(isHovering ? 0.015 : 0)
             // 悬停高亮：0.5pt 暖色描边（米白纸面上清晰可辨）
+            // 抬升：早期版本用 `.shadow(radius: 2→6)` 表达，但 SwiftUI 的 `.shadow`
+            // 会对整棵子树做离屏渲染 —— 即使不悬停（透明度为 0）该修饰符依然生效，
+            // 于是时间流里每一张卡片都要额外付一次离屏渲染。
+            // 改为**描边加粗 + 提亮**来表达抬升：零离屏渲染，悬停反馈依旧清晰。
             .overlay(
                 RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                    .stroke(isHovering ? ArchivePalette.accentWarm.opacity(0.45) : Color.clear, lineWidth: 0.5)
+                    .stroke(
+                        isHovering ? ArchivePalette.accentWarm.opacity(0.55) : Color.clear,
+                        lineWidth: isHovering ? 1.0 : 0.5
+                    )
                     .allowsHitTesting(false)
             )
-            // 抬升：阴影半径 2→6、纵向偏移 1→2
-            .shadow(color: Color.black.opacity(isHovering ? 0.05 : 0), radius: isHovering ? 6 : 2, y: isHovering ? 2 : 1)
             .onHover { hovering in
                 withAnimation(reduceMotion ? nil : ArchiveMotion.quick) {
                     isHovering = hovering

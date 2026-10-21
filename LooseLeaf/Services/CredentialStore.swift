@@ -31,6 +31,10 @@ public enum CredentialStore {
     /// 非隔离可变状态是安全的：所有读写都在同一把 `lock` 保护下完成
     /// （read/mutate 均持锁访问），Swift 6 语言模式下用 `nonisolated(unsafe)` 显式声明。
     nonisolated(unsafe) private static var cachedPayload: Payload?
+    /// 缓存对应的存储目录。
+    /// 关键：缓存必须与目录绑定。否则切换存储目录（例如测试注入 overrideDirectory）
+    /// 之后仍会返回**上一个目录**的旧凭据 —— 表现为「明明换了一套凭据，读出来还是旧的」。
+    nonisolated(unsafe) private static var cachedDirectory: URL?
 
     // MARK: - Device Token
 
@@ -70,8 +74,18 @@ public enum CredentialStore {
         lock.lock()
         let payload = Payload()
         cachedPayload = payload
+        cachedDirectory = storageDirectory
         lock.unlock()
         writePayload(payload)
+    }
+
+    /// 存储目录发生变化时丢弃旧缓存（调用方必须已持锁）
+    private static func invalidateCacheIfDirectoryChanged() {
+        let current = storageDirectory
+        if cachedDirectory != current {
+            cachedPayload = nil
+            cachedDirectory = current
+        }
     }
 
     // MARK: - 底层读写
@@ -83,6 +97,7 @@ public enum CredentialStore {
     private static func read<T>(_ transform: (Payload?) -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
+        invalidateCacheIfDirectoryChanged()
         if let cachedPayload {
             return transform(cachedPayload)
         }
@@ -94,6 +109,7 @@ public enum CredentialStore {
     /// 修改并落盘。锁内完成「读-改-写」，保证并发写不会互相覆盖。
     private static func mutate(_ change: (inout Payload) -> Void) -> Bool {
         lock.lock()
+        invalidateCacheIfDirectoryChanged()
         var payload = cachedPayload ?? loadFromDisk() ?? Payload()
         change(&payload)
         cachedPayload = payload

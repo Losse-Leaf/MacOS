@@ -184,8 +184,14 @@ public actor APIClient {
         request.httpMethod = method
         request.timeoutInterval = timeout
 
+        // 关键：Content-Type 必须**无条件**设置。
+        // 原先它被放在 `if let bodyData` 里，而 multipart 上传走的是
+        // `upload(for:fromFile:)`（httpBody 为 nil），于是 boundary 从未发给后端，
+        // 后端解析不出 file 字段 —— 表现为「图片怎么都传不上去」。
         if let bodyData {
             request.httpBody = bodyData
+        }
+        if !contentType.isEmpty {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
 
@@ -867,8 +873,15 @@ public actor APIClient {
         let bodyURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("looseleaf-upload-\(UUID().uuidString).multipart")
         defer { try? FileManager.default.removeItem(at: bodyURL) }
-        guard let handle = try? FileHandle(forWritingTo: bodyURL) else {
+        // 关键：必须先显式创建文件再打开写入句柄。
+        // `FileHandle(forWritingTo:)` 在文件不存在时**会抛错**（不会自动创建），
+        // 一旦漏掉这一步，multipart 上传会 100% 失败 —— 而 R2 未配置时的回退路径
+        // 正是走这里，于是表现为「本地中枢下图片根本传不上去」。
+        if !FileManager.default.createFile(atPath: bodyURL.path, contents: nil) {
             throw APIError.networkFailure("无法创建上传临时文件")
+        }
+        guard let handle = try? FileHandle(forWritingTo: bodyURL) else {
+            throw APIError.networkFailure("无法打开上传临时文件")
         }
         defer { try? handle.close() }
 

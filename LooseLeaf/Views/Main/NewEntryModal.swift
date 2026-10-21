@@ -520,17 +520,20 @@ public struct NewEntryModal: View {
     // MARK: - 草稿持久化
     private func saveDraft() {
         guard !draft.title.isEmpty || !draft.content.isEmpty else { return }
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "kind": selectedKind.rawValue,
             "title": draft.title,
             "content": draft.content,
             "cityCode": draft.cityCode,
             "cityName": draft.cityName,
-            // 关键：补写 projectId。
-            // `restoreDraft()` 一直在读 `dict["projectId"]`，而保存时从不写它 ——
-            // 于是「恢复到某个造物」的草稿永远拿不回项目。
-            "projectId": draft.selectedProjectId,
         ]
+        // 关键：补写 projectId。
+        // `restoreDraft()` 一直在读 `dict["projectId"]`，而保存时从不写它 ——
+        // 于是「恢复到某个造物」的草稿永远拿不回项目。
+        // （JSONSerialization 不接受 nil，所以只在有值时写入。）
+        if let projectId = draft.selectedProjectId {
+            dict["projectId"] = projectId
+        }
         if let data = try? JSONSerialization.data(withJSONObject: dict) {
             UserDefaults.standard.set(data, forKey: draftStorageKey)
         }

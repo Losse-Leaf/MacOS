@@ -141,8 +141,41 @@ public final class SyncManager {
                     return
                 }
                 guard let loaded = result.snapshot else { return }
-                self.snapshot = loaded
-                self.onSnapshotUpdated?(loaded)
+
+                // 关键：**不要**无条件用磁盘快照覆盖内存快照。
+                //
+                // 注水是后台异步解码（几千条 JSON 约 100~500ms）。在这段时间里
+                // 用户可能已经：提交了一条记录（乐观写入）、或把服务端首页
+                // 合并进了快照。此时若无条件 `self.snapshot = loaded`，
+                // 那些刚写进去的数据会被**整体抹掉**，并且之后的每次
+                // saveSnapshot 都以这个旧快照为基准 —— 磁盘上的新数据也被回滚覆盖。
+                //
+                // 正确做法：已经有本地写入时，注水只负责「填空」，
+                // 条目一律走增量合并。
+                if self.snapshotRevision > 0 {
+                    // 本地已被改写 → 增量合并，不覆盖
+                    var merged = self.snapshot
+                    merged.entries = Self.mergedEntries(
+                        current: self.snapshot.entries,
+                        incoming: loaded.entries,
+                        isDelta: true
+                    )
+                    // 发件箱以本地为准（本地可能有还没发出去的项）
+                    if loaded.outbox.isEmpty {
+                        merged.outbox = self.snapshot.outbox
+                    }
+                    if (merged.lastEntriesSyncCursor ?? "").isEmpty {
+                        merged.lastEntriesSyncCursor = loaded.lastEntriesSyncCursor
+                    }
+                    if merged.siteConfig == nil { merged.siteConfig = loaded.siteConfig }
+                    if merged.profile == nil { merged.profile = loaded.profile }
+                    if merged.stats == nil { merged.stats = loaded.stats }
+                    self.snapshot = merged
+                    self.onSnapshotUpdated?(merged)
+                } else {
+                    self.snapshot = loaded
+                    self.onSnapshotUpdated?(loaded)
+                }
             }
         }
     }
@@ -321,8 +354,16 @@ public final class SyncManager {
             return (created, false)
         } catch let apiErr as APIError {
             switch apiErr {
-            case .unauthorized, .serverError(code: 400, _):
+            case .unauthorized:
                 // 永久错误：记录保留在时间流并标记为失败，用户可重试
+                markEntryFailed(tempId: tempId, reason: apiErr.localizedDescription)
+                throw apiErr
+            case .serverError(let code, _) where (400..<500).contains(code):
+                // 关键：**所有 4xx** 都是永久错误，不只是 400。
+                // 原先只覆盖 400，于是 409 / 413 / 415 / 422 会落进下面的
+                // 「网络类错误」分支进发件箱重试 5 次，最终成为死信 ——
+                // 而本地条目始终是 `pending_create`，界面一直显示
+                // 「待同步 / 将自动重试」，实际**永远不会成功**。
                 markEntryFailed(tempId: tempId, reason: apiErr.localizedDescription)
                 throw apiErr
             default:
@@ -354,16 +395,82 @@ public final class SyncManager {
         _ kind: OutboxActionKind,
         localTempId: Int,
         entryRequest: CreateEntryRequest? = nil,
-        transactionRequest: CreateTransactionRequest? = nil
+        transactionRequest: CreateTransactionRequest? = nil,
+        targetServerId: Int? = nil
     ) {
         var latest = snapshot
+        // 关键：**同一个本地临时 id + 同一类动作，只保留一条待发项**。
+        // 原先是无条件 append —— 于是「提交 → 离线入队 → 用户点重试 →
+        // 又入队一条」会让发件箱里躺着两条同一个 tempId 的待发项，
+        // 网络恢复后**服务端会收到两份**，本地也多出两条重复条目。
+        // 后写覆盖先写：请求内容以最新一次为准。
+        latest.outbox.removeAll { $0.kind == kind && $0.localTempId == localTempId }
         latest.outbox.append(OutboxItem(
             kind: kind,
             localTempId: localTempId,
+            targetServerId: targetServerId,
             entryRequest: entryRequest,
             transactionRequest: transactionRequest
         ))
         saveSnapshot(latest)
+    }
+
+    /// 把一次「删除」排入发件箱（离线时网络恢复后自动补删）
+    ///
+    /// 关键：早先离线删除会**直接丢掉**删除请求 ——
+    /// 界面上只剩一句「删除失败」，网络恢复后也不会补删，
+    /// 而 `OutboxActionKind.deleteEntry` 这条链路形同虚设。
+    public func enqueueDelete(kind: OutboxActionKind, localTempId: Int, targetServerId: Int) {
+        appendOutbox(kind, localTempId: localTempId, targetServerId: targetServerId)
+    }
+
+    /// 移除一条**尚未同步**的乐观记录（连同它在发件箱里的待发项）
+    ///
+    /// 关键：乐观条目的本地 id 是负数，`guard entry.id > 0` 会直接 return ——
+    /// 于是用户**无法删除**一条还没同步上去的记录，只能等它同步成功或永远留着。
+    public func removeOptimisticEntry(localTempId: Int) {
+        var latest = snapshot
+        latest.entries.removeAll { $0.id == localTempId }
+        latest.outbox.removeAll { $0.localTempId == localTempId }
+        saveSnapshot(latest)
+    }
+
+    /// 移除一条尚未同步的乐观账目
+    public func removeOptimisticTransaction(localTempId: Int) {
+        var latest = snapshot
+        latest.transactions.removeAll { $0.id == localTempId }
+        latest.outbox.removeAll { $0.localTempId == localTempId }
+        saveSnapshot(latest)
+    }
+
+    /// **重传一条已存在的乐观记录**（复用它原本的本地 id）
+    ///
+    /// 关键：早先的「重试 / 重传」是走 `submitEntryOptimistically` ——
+    /// 它**无条件**生成一个新的临时 id 并插入列表。于是：
+    ///   1. 列表里同时存在两条内容相同的条目（旧条 + 新条）
+    ///   2. 同步成功时只移除**新**临时 id 那条 → **旧条永远留在时间流里**，
+    ///      而且状态还是「待同步」，会一直被计入待同步条数
+    ///   3. 批量重传时待同步集合 N → 2N，每点一次「全部重传」就翻一倍
+    ///
+    /// 现在改为**复用既有本地 id**：把原条目标回「待同步」，然后用同一个
+    /// tempId 走同步流程 —— 成功时 `syncPendingEntry` 会用服务端实体替换它。
+    public func resyncEntry(id: Int, req: CreateEntryRequest, attachments: [Attachment]) {
+        guard let existing = snapshot.entries.first(where: { $0.id == id }) else { return }
+        markEntryRetrying(id: id)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.syncPendingEntry(req, tempId: id, optimistic: existing)
+        }
+    }
+
+    /// **重传一条已存在的乐观账目**（复用它原本的本地 id）
+    public func resyncTransaction(id: Int, req: CreateTransactionRequest) {
+        guard let existing = snapshot.transactions.first(where: { $0.id == id }) else { return }
+        markTransactionRetrying(id: id)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.syncPendingTransaction(req, tempId: id, optimistic: existing)
+        }
     }
 
     /// 把一条乐观记录标记为同步失败（保留在时间流，等待用户重试）
@@ -436,7 +543,11 @@ public final class SyncManager {
             return (created, false)
         } catch let apiErr as APIError {
             switch apiErr {
-            case .unauthorized, .serverError(code: 400, _):
+            case .unauthorized:
+                markTransactionFailed(tempId: tempId, reason: apiErr.localizedDescription)
+                throw apiErr
+            case .serverError(let code, _) where (400..<500).contains(code):
+                // 同上：所有 4xx 都是永久错误
                 markTransactionFailed(tempId: tempId, reason: apiErr.localizedDescription)
                 throw apiErr
             default:
@@ -661,6 +772,34 @@ public final class SyncManager {
         if let latest = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] }) {
             current.lastEntriesSyncCursor = latest
         }
+        saveSnapshot(current)
+    }
+
+    /// **只增不删**地合并一批远端散页（用于「首屏优先」投递）
+    ///
+    /// 关键：首屏回调**不能**用全量语义。
+    /// `mergeEntries(_:isDelta: false)` 是「本地档案整体替换为远端列表」，
+    /// 而首屏只带了**第 1 页（100 条）** —— 于是本地 5000 条会被瞬间截断成 100 条，
+    /// 而且这个截断态还会被写进磁盘快照。
+    /// 更糟的是游标也被推进到首屏的最大时间戳：后续增量同步只会拉
+    /// 「比首屏更新的」，旧条目**永远回不来** —— 本地数据就此永久丢失。
+    ///
+    /// 所以首屏只做「只增不删」的合并，**且不推进游标**；
+    /// 游标要等全部分页拉完、由 `mergeEntries(_:isDelta:)` 统一推进。
+    public func mergeEntriesIncremental(_ incoming: [LifeEntry]) {
+        var current = snapshot
+        var map = Dictionary(current.entries.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        for entry in incoming {
+            if let deleted = entry.deletedAt, !deleted.isEmpty {
+                map.removeValue(forKey: entry.id)
+            } else {
+                var syncedEntry = entry
+                syncedEntry.syncStatus = "synced"
+                map[entry.id] = syncedEntry
+            }
+        }
+        current.entries = Self.sortedEntries(Array(map.values))
+        // 刻意**不**推进 lastEntriesSyncCursor（理由见上）
         saveSnapshot(current)
     }
 

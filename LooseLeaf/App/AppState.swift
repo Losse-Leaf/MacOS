@@ -247,6 +247,14 @@ public final class AppState {
 
 
     public func deleteEntryAction(_ entry: LifeEntry) {
+        // 关键：**尚未同步的乐观条目**（本地 id 是负数）要能删。
+        // 原先 `guard entry.id > 0` 直接 return —— 用户无法删除一条
+        // 还没同步上去的记录，只能等它同步成功或永远留着。
+        if entry.id < 0 {
+            SyncManager.shared.removeOptimisticEntry(localTempId: entry.id)
+            showTemporaryBanner("已删除该条待同步记录")
+            return
+        }
         guard entry.id > 0 else { return }
         // 登记撤销：删除后可在 5 秒内（或随时按 ⌘Z）恢复该条手稿
         let restoreRequest = CreateEntryRequest(
@@ -266,7 +274,20 @@ public final class AppState {
             do {
                 _ = try await APIClient.shared.deleteEntry(id: entry.id)
             } catch {
-                self.showTemporaryBanner("删除失败：\(error.localizedDescription)")
+                // 关键：**离线删除也要排队**，网络恢复后自动补删。
+                // 原先删除请求被直接丢掉 —— 界面上只剩一句「删除失败」，
+                // 而 `OutboxActionKind.deleteEntry` 这条链路形同虚设。
+                let offline = !SyncManager.shared.isOnline
+                if offline {
+                    SyncManager.shared.enqueueDelete(
+                        kind: .deleteEntry,
+                        localTempId: entry.id,
+                        targetServerId: entry.id
+                    )
+                    self.showTemporaryBanner("当前离线，删除请求已排入发件箱，网络恢复后自动执行")
+                } else {
+                    self.showTemporaryBanner("删除失败：\(error.localizedDescription)")
+                }
                 return
             }
             await self.loadEntries(forceFull: false)
@@ -287,6 +308,12 @@ public final class AppState {
     }
 
     public func deleteTransactionAction(_ tx: Transaction) {
+        // 同上：尚未同步的乐观账目要能删
+        if tx.id < 0 {
+            SyncManager.shared.removeOptimisticTransaction(localTempId: tx.id)
+            showTemporaryBanner("已删除该条待同步账目")
+            return
+        }
         guard tx.id > 0 else { return }
         let restoreRequest = CreateTransactionRequest(
             amount: tx.amount,
@@ -302,7 +329,17 @@ public final class AppState {
             do {
                 _ = try await APIClient.shared.deleteTransaction(id: tx.id)
             } catch {
-                self.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
+                // 同上：离线时把删除请求排入发件箱，网络恢复后自动补删
+                if !SyncManager.shared.isOnline {
+                    SyncManager.shared.enqueueDelete(
+                        kind: .deleteTransaction,
+                        localTempId: tx.id,
+                        targetServerId: tx.id
+                    )
+                    self.showTemporaryBanner("当前离线，删除请求已排入发件箱，网络恢复后自动执行")
+                } else {
+                    self.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
+                }
                 return
             }
             await self.loadTransactionsAndAssets(forceFull: false)
@@ -477,6 +514,8 @@ public final class AppState {
     @ObservationIgnored private var transactionIndexMemo: (Int, [Int: Transaction])?
     /// 全局检索代号：防止先发出的慢请求覆盖后发出的快请求结果
     @ObservationIgnored private var globalSearchGeneration: UInt64 = 0
+    /// 二级内容（造物 / 心愿 / 足迹）加载代号：同上
+    @ObservationIgnored private var secondaryLoadGeneration: UInt64 = 0
 
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
@@ -859,7 +898,11 @@ public final class AppState {
             ) { _, firstPage in
                 guard firstPageGate.claim(), !firstPage.isEmpty else { return }
                 await MainActor.run {
-                    SyncManager.shared.mergeEntries(firstPage, isDelta: cursor != nil)
+                    // 关键：首屏只做「只增不删」的合并。
+                    // 用全量语义（isDelta: false）会把本地档案整体替换成
+                    // 这一页的 100 条 —— 本地几千条瞬间没了，
+                    // 而且游标被推进后旧条目永远拉不回来。
+                    SyncManager.shared.mergeEntriesIncremental(firstPage)
                 }
             }
             SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
@@ -872,9 +915,11 @@ public final class AppState {
             // 「The operation couldn't be completed. (Swift.CancellationError error 1.)」
             // 这种天书般的红色横幅。
         } catch {
-            if entries.isEmpty {
-                self.errorBanner = error.localizedDescription
-            }
+            // 关键：**总是**提示。
+            // 原先只在「本地一条都没有」时才提示 ——
+            // 而分页中途失败恰恰发生在本地有内容的时候，
+            // 于是用户看到的是「数据少了一半」却**没有任何报错**。
+            self.errorBanner = error.localizedDescription
         }
 
         if let otd = try? await APIClient.shared.fetchOnThisDayEntries() {
@@ -924,14 +969,27 @@ public final class AppState {
     }
 
     public func loadProjectsWishesFootprints() async {
+        // 关键：**代号保护**。
+        // 这些 loader 会被多处并发触发（refreshAll 的 task group、
+        // refreshAfterSecondaryWrite、新建后的收尾、删除后的刷新）。
+        // 原先是「请求发出 → 直接赋值」，于是启动时的旧响应可能**晚于**
+        // 用户新建后的新响应落地 → 刚创建的心愿从界面上消失
+        // （服务端有、本地 UI 没有），直到下一次同步。
+        // 复用全局检索已有的 `globalSearchGeneration` 同款代号机制。
+        secondaryLoadGeneration &+= 1
+        let gen = secondaryLoadGeneration
+
         if let projs = try? await APIClient.shared.fetchProjects() {
+            guard gen == secondaryLoadGeneration else { return }
             self.projects = projs
         }
         // 只有"确实成功拉到数据"才覆盖；空数组是合法结果（删掉最后一枚心愿也必须生效）
         if let allWishes = try? await Pagination.fetchAllWishes() {
+            guard gen == secondaryLoadGeneration else { return }
             self.wishes = allWishes
         }
         if let fps = try? await APIClient.shared.fetchFootprints() {
+            guard gen == secondaryLoadGeneration else { return }
             self.footprints = fps
         }
     }
@@ -1230,8 +1288,10 @@ public final class AppState {
             footprintId: entry.footprintId,
             attachmentIds: entry.attachments.map(\.id)
         )
-        SyncManager.shared.markEntryRetrying(id: id)
-        SyncManager.shared.submitEntryInBackground(req, attachments: entry.attachments)
+        // 关键：**复用本地 id** 重传，而不是新建一条乐观条目。
+        // 新建的话旧条目会永远留在时间流里（同步成功只替换新那条），
+        // 列表里就会出现两条内容相同的记录。
+        SyncManager.shared.resyncEntry(id: id, req: req, attachments: entry.attachments)
     }
 
     /// **重新上传**一条账目
@@ -1247,8 +1307,8 @@ public final class AppState {
             cityCode: tx.cityCode,
             occurredAt: tx.occurredAt
         )
-        SyncManager.shared.markTransactionRetrying(id: id)
-        SyncManager.shared.submitTransactionInBackground(req)
+        // 同上：复用本地 id，避免留下一条永远同步不掉的旧账目
+        SyncManager.shared.resyncTransaction(id: id, req: req)
     }
 
     /// **批量重新上传**：把所有待同步 / 同步失败的内容重新推一遍
@@ -1266,6 +1326,9 @@ public final class AppState {
         // 死信重新排队（否则自动同步永远跳过它们）
         SyncManager.shared.resetPausedOutboxItems()
 
+        // 关键：先取**快照**再逐条重传。
+        // 边遍历边重传会边改集合（重传会把状态改回「待同步」），
+        // 遍历行为不可预期。
         for entry in pendingEntries { reuploadEntry(id: entry.id) }
         for tx in pendingTransactions { reuploadTransaction(id: tx.id) }
 
@@ -1289,9 +1352,8 @@ public final class AppState {
             footprintId: entry.footprintId,
             attachmentIds: entry.attachments.map(\.id)
         )
-        // 先把状态改回待同步，让用户立刻看到反馈
-        SyncManager.shared.markEntryRetrying(id: id)
-        SyncManager.shared.submitEntryInBackground(req, attachments: entry.attachments)
+        // 复用本地 id 重传（新建乐观条目会留下一条永远同步不掉的旧条目）
+        SyncManager.shared.resyncEntry(id: id, req: req, attachments: entry.attachments)
     }
 
     /// 重试一条标记为 failed 的账目
@@ -1307,8 +1369,7 @@ public final class AppState {
             cityCode: tx.cityCode,
             occurredAt: tx.occurredAt
         )
-        SyncManager.shared.markTransactionRetrying(id: id)
-        SyncManager.shared.submitTransactionInBackground(req)
+        SyncManager.shared.resyncTransaction(id: id, req: req)
     }
 
     // MARK: - 撤销栈 (Undo)

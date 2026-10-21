@@ -162,9 +162,34 @@ final class UpdateSwapScriptTests: XCTestCase {
         )
     }
 
-    // MARK: - 4. 关键：脚本里不允许出现「先删目标再拷贝」
+    // MARK: - 4. 安全护栏：OLD_PID 非法时绝不能发出 kill
 
-    func test04_SwapScriptNeverDeletesTargetBeforeCopying() throws {
+    /// `kill -0 -1` 在 bash 里返回 0（"成功"），而 `kill -9 -1` 会给
+    /// 当前用户的**所有**进程发 SIGKILL —— 直接清空登录会话。
+    /// 脚本因此必须先校验 OLD_PID 是大于 1 的正整数，非法就整段跳过等待。
+    ///
+    /// 这条测试钉住该护栏：一旦有人把校验删掉，测试必须立刻失败。
+    func test04_SwapScriptRefusesToKillWithInvalidPID() throws {
+        let script = UpdateChecker.swapScript(
+            target: "/Applications/LooseLeaf.app",
+            source: "/tmp/src/LooseLeaf.app",
+            oldPID: 12345,
+            workDir: "/tmp/work"
+        )
+
+        XCTAssertTrue(
+            script.contains("=~ ^[0-9]+$"),
+            "脚本必须校验 OLD_PID 是纯数字（否则 kill -9 会命中进程组）"
+        )
+        XCTAssertTrue(
+            script.contains("-gt 1"),
+            "脚本必须要求 OLD_PID > 1（0 是进程组，1 是 init）"
+        )
+    }
+
+    // MARK: - 5. 关键：脚本里不允许出现「先删目标再拷贝」
+
+    func test05_SwapScriptNeverDeletesTargetBeforeCopying() throws {
         let script = UpdateChecker.swapScript(
             target: "/Applications/LooseLeaf.app",
             source: "/tmp/src/LooseLeaf.app",

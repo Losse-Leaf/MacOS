@@ -170,7 +170,9 @@ public struct EditTransactionSheet: View {
                     // 于是**任何一次编辑（哪怕只改个标题）都会把分期账目
                     // 降级成一次性支出**：分期负债凭空消失、流动余额被整额冲减。
                     // 用户全程只在界面上看到「改了笔备注」。
-                    isInstallment: transaction.isInstallment == true,
+                    // 传**原始的可选值**（nil = 本次未携带 → 后端保持原值），
+                    // 而不是强转成 true/false —— 后者的语义是「显式降级」。
+                    isInstallment: transaction.isInstallment,
                     installmentChannelCode: transaction.installmentChannelCode,
                     installmentTotalAmount: transaction.installmentTotalAmount,
                     installmentMonths: transaction.installmentMonths,

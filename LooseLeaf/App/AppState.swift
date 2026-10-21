@@ -323,7 +323,17 @@ public final class AppState {
             note: tx.note,
             paymentMethod: tx.paymentMethod,
             cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt
+            occurredAt: tx.occurredAt,
+            // 关键：**完整透传分期字段**。
+            // 撤销 / 重传 / 重试都是「用原始参数重建这笔账」，
+            // 漏掉分期信息等于把分期负债悄悄抹掉。
+            isInstallment: tx.isInstallment,
+            installmentChannelCode: tx.installmentChannelCode,
+            installmentTotalAmount: tx.installmentTotalAmount,
+            installmentMonths: tx.installmentMonths,
+            installmentMonthlyPay: tx.installmentMonthlyPay,
+            installmentRemainMonths: tx.installmentRemainMonths,
+            repaymentDay: tx.repaymentDay
         )
         Task { @MainActor in
             do {
@@ -1305,7 +1315,16 @@ public final class AppState {
             note: tx.note,
             paymentMethod: tx.paymentMethod,
             cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt
+            occurredAt: tx.occurredAt,
+            // 关键：**完整透传分期字段** —— 重传若丢掉分期信息，
+            // 等于把一笔分期账目悄悄改成一次性支出。
+            isInstallment: tx.isInstallment,
+            installmentChannelCode: tx.installmentChannelCode,
+            installmentTotalAmount: tx.installmentTotalAmount,
+            installmentMonths: tx.installmentMonths,
+            installmentMonthlyPay: tx.installmentMonthlyPay,
+            installmentRemainMonths: tx.installmentRemainMonths,
+            repaymentDay: tx.repaymentDay
         )
         // 同上：复用本地 id，避免留下一条永远同步不掉的旧账目
         SyncManager.shared.resyncTransaction(id: id, req: req)
@@ -1367,7 +1386,15 @@ public final class AppState {
             note: tx.note,
             paymentMethod: tx.paymentMethod,
             cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt
+            occurredAt: tx.occurredAt,
+            // 关键：**完整透传分期字段** —— 重试同理
+            isInstallment: tx.isInstallment,
+            installmentChannelCode: tx.installmentChannelCode,
+            installmentTotalAmount: tx.installmentTotalAmount,
+            installmentMonths: tx.installmentMonths,
+            installmentMonthlyPay: tx.installmentMonthlyPay,
+            installmentRemainMonths: tx.installmentRemainMonths,
+            repaymentDay: tx.repaymentDay
         )
         SyncManager.shared.resyncTransaction(id: id, req: req)
     }

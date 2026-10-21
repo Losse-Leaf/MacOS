@@ -564,7 +564,16 @@ public struct CreateWishRequest: Codable, Sendable {
     public var targetDate: String?
     /// 许下心愿的时刻（可选，支持补录过去的心愿）
     public var plantedAt: String?
-    public var attachmentIds: [Int]
+    /// 附件 id 列表
+    ///
+    /// 关键：必须是**可选**。
+    /// 非可选 `[Int]`（默认 `[]`）会被 JSONEncoder 必定写出 `"attachment_ids": []`，
+    /// 而后端把「空数组」理解为「解除全部附件绑定」——
+    /// 于是在**没有附件 UI** 的编辑弹窗里改个标题，
+    /// 服务端也会把该心愿的照片 `wish_id` 置空（跨端更刺眼：
+    /// 用 web 传了图，再用 mac 改个字，图片就没了）。
+    /// nil = 本次不携带附件字段（保持原样）。
+    public var attachmentIds: [Int]?
 
     enum CodingKeys: String, CodingKey {
         case title

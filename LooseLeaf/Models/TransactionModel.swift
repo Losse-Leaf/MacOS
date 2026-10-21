@@ -221,7 +221,14 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     public var footprintId: Int?
     public var cityCode: String?
     public var occurredAt: String
-    public var isInstallment: Bool
+    /// 是否为分期账目
+    ///
+    /// 关键：必须是**可选**。
+    /// 非可选 `Bool` 会被 JSONEncoder 必定写进请求体（`"is_installment": false`），
+    /// 而后端的新契约是「nil = 本次未携带 → 保持原值」——
+    /// 非可选让这个契约在 mac 侧**根本无法表达**，
+    /// 于是「撤销删除 / 重传 / 重试」重建账目时都会丢分期信息。
+    public var isInstallment: Bool?
     public var installmentChannelCode: String?
     public var installmentTotalAmount: Int64?
     public var installmentMonths: Int?
@@ -266,7 +273,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         footprintId: Int? = nil,
         cityCode: String? = nil,
         occurredAt: String = FormatUtils.beijingISOString(),
-        isInstallment: Bool = false,
+        isInstallment: Bool? = nil,
         installmentChannelCode: String? = nil,
         installmentTotalAmount: Int64? = nil,
         installmentMonths: Int? = nil,

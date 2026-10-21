@@ -76,9 +76,21 @@ public enum PaperImageExport {
                 .appendingPathComponent("looseleaf-preview-\(UUID().uuidString)-\(url.lastPathComponent)")
             try data.write(to: tempPath, options: .atomic)
             NSWorkspace.shared.open(tempPath)
+            // 关键：**用完即删**。
+            // 原先每次预览一张 1.5MB 原图就在临时目录留一份，**从不删除** ——
+            // 只能靠系统临时目录的清理策略兜底。
+            // macOS 打开的文件句柄在文件被 unlink 后仍可读，所以这里可以安全删除。
+            scheduleCleanup(of: tempPath)
             return .success(message: "已在「预览」中打开相纸")
         } catch {
             return .failure(message: error.localizedDescription)
+        }
+    }
+
+    /// 延迟删除临时文件（给「预览」app 一点时间打开它）
+    private static func scheduleCleanup(of url: URL) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 60) {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 

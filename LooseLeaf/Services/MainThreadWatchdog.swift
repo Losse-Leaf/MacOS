@@ -135,6 +135,21 @@ final class MainThreadWatchdog: @unchecked Sendable {
         captureStack(delay: delay, action: action, stamp: stamp)
     }
 
+    /// 只保留最近 N 份栈快照
+    private static func pruneStacks(in directory: URL, keeping maxCount: Int) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let stacks = files
+            .filter { $0.lastPathComponent.hasPrefix("stall-") && $0.pathExtension == "txt" }
+            .sorted { lhs, rhs in
+                let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return l > r
+            }
+        for stale in stacks.dropFirst(maxCount) {
+            try? FileManager.default.removeItem(at: stale)
+        }
+    }
+
     /// 抓一份主线程调用栈
     private func captureStack(delay: TimeInterval, action: String, stamp: TimeInterval) {
         let outURL = logDirectory.appendingPathComponent(String(format: "stall-%.3f.txt", stamp))
@@ -147,6 +162,9 @@ final class MainThreadWatchdog: @unchecked Sendable {
             process.standardError = FileHandle.nullDevice
             try? process.run()
             process.waitUntilExit()
+            // 关键：**限制份数**。每次卡顿都会落一份数 MB 的栈快照，
+            // 而 PerfLogs 目录只增不减 —— 一次卡顿风暴就能堆出几百 MB。
+            Self.pruneStacks(in: self.logDirectory, keeping: 8)
             // 补一行说明，方便对照
             if let handle = try? FileHandle(forWritingTo: outURL) {
                 handle.seekToEndOfFile()

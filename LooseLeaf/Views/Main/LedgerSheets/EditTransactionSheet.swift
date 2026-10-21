@@ -165,7 +165,9 @@ public struct EditTransactionSheet: View {
                     occurredAt: FormatUtils.beijingISOString(from: occurredDate)
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                // 账目在时间流里是合成条目，账目变了时间流也要跟着变
+                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadEntries(forceFull: false)
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription

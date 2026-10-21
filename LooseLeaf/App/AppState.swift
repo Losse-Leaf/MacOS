@@ -718,6 +718,16 @@ public final class AppState {
         }
     }
 
+    /// 二级对象（心愿 / 器物 / 账目 / 足迹 / 造物）写操作后的**统一刷新**。
+    ///
+    /// 关键：这些对象在服务端都会落一条**伴生 LifeEntry**（时间流的一级数据），
+    /// 若只刷新二级集合，时间流就看不到变化 —— 这正是「创建心愿后时间流没反应」的原因。
+    /// 这里同时做一次**增量**拉取（带 cursor），把伴生散页并进时间流。
+    public func refreshAfterSecondaryWrite() async {
+        await loadProjectsWishesFootprints()
+        await loadEntries(forceFull: false)
+    }
+
     public func loadProjectsWishesFootprints() async {
         if let projs = try? await APIClient.shared.fetchProjects() {
             self.projects = projs

@@ -201,7 +201,9 @@ public struct StreamView: View {
             EditTransactionSheet(appState: appState, transaction: tx) {
                 editingTransaction = nil
                 Task { @MainActor in
-                    await appState.loadTransactionsAndAssets(forceFull: true)
+                    // 同样改为增量刷新（账目在时间流里是合成条目，需一并更新）
+                    await appState.loadTransactionsAndAssets(forceFull: false)
+                    await appState.loadEntries(forceFull: false)
                 }
             }
         }
@@ -724,7 +726,7 @@ public struct StreamView: View {
             )
             do {
                 _ = try await APIClient.shared.updateEntry(id: entry.id, req)
-                await appState.loadEntries(forceFull: true)
+                await appState.loadEntries(forceFull: false)
             } catch {
                 appState.showTemporaryBanner("精选状态更新失败：\(error.localizedDescription)")
             }
@@ -755,7 +757,7 @@ public struct StreamView: View {
                 appState.showTemporaryBanner("删除失败：\(error.localizedDescription)")
                 return
             }
-            await appState.loadEntries(forceFull: true)
+            await appState.loadEntries(forceFull: false)
             await appState.loadConfigAndProfile()
             if appState.highlightedEntry?.id == entry.id {
                 appState.highlightedEntry = nil
@@ -763,7 +765,7 @@ public struct StreamView: View {
             appState.registerUndo(label: "删除手稿「\(entry.title.isEmpty ? "未命名" : entry.title)」") {
                 do {
                     _ = try await APIClient.shared.createEntry(restoreRequest)
-                    await appState.loadEntries(forceFull: true)
+                    await appState.loadEntries(forceFull: false)
                 } catch {
                     appState.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
                 }
@@ -791,7 +793,8 @@ public struct StreamView: View {
                 appState.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
                 return
             }
-            await appState.loadTransactionsAndAssets(forceFull: true)
+            await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadEntries(forceFull: false)
             await appState.loadConfigAndProfile()
             if appState.highlightedEntry?.id == tx.id {
                 appState.highlightedEntry = nil
@@ -799,7 +802,7 @@ public struct StreamView: View {
             appState.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
                 do {
                     _ = try await APIClient.shared.createTransaction(restoreRequest)
-                    await appState.loadTransactionsAndAssets(forceFull: true)
+                    await appState.loadTransactionsAndAssets(forceFull: false)
                 } catch {
                     appState.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
                 }
@@ -812,7 +815,9 @@ public struct StreamView: View {
         EditEntrySheetView(entry: entry) { updated in
             // 不要 try?：失败必须抛回弹窗，由弹窗就地展示并保持打开。
             _ = try await APIClient.shared.updateEntry(id: entry.id, updated)
-            await appState.loadEntries(forceFull: true)
+            // 关键：改成**增量**刷新。原先 forceFull: true 会重新拉取并排序
+            // 全部条目，档案稍多时点一次「修改」就要等好几秒。
+            await appState.loadEntries(forceFull: false)
             await appState.loadConfigAndProfile()
             editingEntry = nil
         } onCancel: {

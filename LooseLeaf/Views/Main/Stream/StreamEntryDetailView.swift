@@ -72,7 +72,7 @@ struct StreamEntryDetailView: View {
                             ) {
                                 Task { @MainActor in
                                     try? await APIClient.shared.deleteEntry(id: entry.id)
-                                    await appState.loadEntries(forceFull: true)
+                                    await appState.loadEntries(forceFull: false)
                                     appState.highlightedEntry = nil
                                 }
                             }

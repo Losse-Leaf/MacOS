@@ -85,7 +85,7 @@ public struct NewFootprintSheet: View {
                 )
                 _ = try await APIClient.shared.createFootprint(req)
                 await appState.loadProjectsWishesFootprints()
-                await appState.loadEntries(forceFull: true)
+                await appState.loadEntries(forceFull: false)
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription

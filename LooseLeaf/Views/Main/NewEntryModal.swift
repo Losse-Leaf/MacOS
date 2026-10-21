@@ -791,12 +791,12 @@ public struct NewEntryModal: View {
                 case .project:
                     await appState.loadProjectsWishesFootprints()
                     if projectMode == "entry" {
-                        await appState.loadEntries(forceFull: true)
+                        await appState.loadEntries(forceFull: false)
                     }
                 case .wish:
                     await appState.loadProjectsWishesFootprints()
                 case .transaction:
-                    await appState.loadTransactionsAndAssets(forceFull: true)
+                    await appState.loadTransactionsAndAssets(forceFull: false)
                 }
                 await appState.loadConfigAndProfile()
                 onDismiss()
@@ -955,7 +955,11 @@ public struct NewEntryModal: View {
             for (index, url) in urls.enumerated() {
                 do {
                     // 关键：4K 解码 + JPEG 重编码必须离开主线程，否则选图后 UI 冻结数秒
-                    let processed = try await ImageProcessor.processImageFileInBackground(at: url)
+                    // 沙箱：NSOpenPanel 选中的文件位于沙箱容器之外，
+                    // 必须取得安全作用域授权才能读取，否则读取会静默失败。
+                    let processed = try await SandboxFileAccess.withAccess(to: url) { scopedURL in
+                        try await ImageProcessor.processImageFileInBackground(at: scopedURL)
+                    }
                     let att = try await APIClient.shared.uploadUnifiedMultipart(
                         fileData: processed.compressedData,
                         filename: processed.filename,

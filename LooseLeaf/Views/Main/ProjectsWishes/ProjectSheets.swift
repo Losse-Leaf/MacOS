@@ -122,7 +122,8 @@ public struct NewProjectSheet: View {
                     githubUrl: githubUrl.isEmpty ? nil : githubUrl
                 )
                 _ = try await APIClient.shared.createProject(req)
-                await appState.loadProjectsWishesFootprints()
+                // 造物同样会落伴生散页，需连带刷新时间流
+                await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription

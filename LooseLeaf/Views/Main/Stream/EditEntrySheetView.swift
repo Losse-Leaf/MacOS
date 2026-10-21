@@ -200,7 +200,11 @@ public struct EditEntrySheetView: View {
                 var failures: [String] = []
                 for url in urls {
                     do {
-                        let processed = try await ImageProcessor.processImageFileInBackground(at: url)
+                        // 沙箱：NSOpenPanel 选中的文件位于沙箱容器之外，
+                        // 必须取得安全作用域授权才能读取，否则读取会静默失败。
+                        let processed = try await SandboxFileAccess.withAccess(to: url) { scopedURL in
+                            try await ImageProcessor.processImageFileInBackground(at: scopedURL)
+                        }
                         let att = try await R2DirectUploader.shared.uploadProcessedPhoto(processed)
                         editAttachments.append(att)
                     } catch {

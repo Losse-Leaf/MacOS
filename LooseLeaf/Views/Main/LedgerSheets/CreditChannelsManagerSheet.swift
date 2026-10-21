@@ -216,7 +216,7 @@ public struct CreditChannelsManagerSheet: View {
                 _ = try await APIClient.shared.createCreditChannel(req)
                 newName = ""
                 newCode = ""
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
             } catch {
                 errorText = error.localizedDescription
             }
@@ -239,7 +239,7 @@ public struct CreditChannelsManagerSheet: View {
                 )
                 _ = try await APIClient.shared.updateCreditChannel(id: ch.id, req)
                 editingChannelId = nil
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
             } catch {
                 errorText = error.localizedDescription
             }
@@ -253,7 +253,7 @@ public struct CreditChannelsManagerSheet: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteCreditChannel(id: ch.id)
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
             } catch {
                 errorText = error.localizedDescription
             }

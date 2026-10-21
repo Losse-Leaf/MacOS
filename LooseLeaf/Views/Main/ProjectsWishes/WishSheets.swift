@@ -109,7 +109,9 @@ public struct NewWishSheet: View {
                     budget: cents
                 )
                 _ = try await APIClient.shared.createWish(req)
-                await appState.loadProjectsWishesFootprints()
+                // 关键：心愿在服务端会落一条伴生散页（时间流的一级数据），
+                // 必须连带刷新时间流，否则「创建心愿后时间流没反应」。
+                await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription
@@ -235,7 +237,8 @@ public struct EditWishSheet: View {
                     budget: cents
                 )
                 _ = try await APIClient.shared.updateWish(id: wish.id, req)
-                await appState.loadProjectsWishesFootprints()
+                // 编辑心愿同样会改动伴生散页，需连带刷新时间流
+                await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription
@@ -380,9 +383,11 @@ public struct ResolveWishSheet: View {
                     entryContent: entryContent.isEmpty ? nil : entryContent
                 )
                 _ = try await APIClient.shared.resolveWish(id: wish.id, req)
+                // 心愿圆满会在时间流落一条新散页：这里用增量刷新即可，
+                // 不必再全量重拉（原先 forceFull: true 是「点一下卡好几秒」的元凶之一）。
                 await appState.loadProjectsWishesFootprints()
-                await appState.loadEntries(forceFull: true)
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadEntries(forceFull: false)
+                await appState.loadTransactionsAndAssets(forceFull: false)
                 await appState.loadConfigAndProfile()
                 onDismiss()
             } catch {

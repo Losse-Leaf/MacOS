@@ -1127,7 +1127,7 @@ public struct LedgerAssetsView: View {
                     Task { @MainActor in
                         do {
                             try await APIClient.shared.updateInitialLiquidBalance(cents: cents)
-                            await appState.loadTransactionsAndAssets(forceFull: true)
+                            await appState.loadTransactionsAndAssets(forceFull: false)
                             showCalibrateBalanceSheet = false
                         } catch {
                             errorNotice = error.localizedDescription
@@ -1163,7 +1163,7 @@ public struct LedgerAssetsView: View {
             sellingGear = nil
         } onSold: {
             Task { @MainActor in
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
                 await appState.loadConfigAndProfile()
             }
         }
@@ -1231,7 +1231,7 @@ public struct LedgerAssetsView: View {
                 formOccurredAt = Date()
                 formLinkGear = false
                 formIsInstallment = false
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
                 await appState.loadConfigAndProfile()
             } catch {
                 errorNotice = error.localizedDescription
@@ -1243,7 +1243,9 @@ public struct LedgerAssetsView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteTransaction(id: tx.id)
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                // 账目在时间流里是合成条目，删除后时间流也要同步消失
+                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadEntries(forceFull: false)
             } catch {
                 errorNotice = error.localizedDescription
             }
@@ -1254,8 +1256,10 @@ public struct LedgerAssetsView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteGearAsset(id: gear.id)
+                // 器物的伴生散页要一并从时间流移除
                 await appState.loadConfigAndProfile()
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadEntries(forceFull: false)
             } catch {
                 errorNotice = error.localizedDescription
             }

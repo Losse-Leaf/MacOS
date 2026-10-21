@@ -77,6 +77,13 @@ public enum DropLoader {
     }
 
     /// 从单个 provider 提取文件 URL（Finder 拖拽场景）
+    /// 读取用户拖入 / 选中的图片文件（沙箱下需取得安全作用域授权）
+    public static func loadImageData(fromAccessibleFile url: URL) async -> Data? {
+        await SandboxFileAccess.withAccess(to: url) { scopedURL in
+            try? Data(contentsOf: scopedURL, options: .mappedIfSafe)
+        }
+    }
+
     static func loadFileURL(from provider: NSItemProvider) async -> URL? {
         guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { return nil }
         // 关键：加超时兜底。少数第三方 NSItemProvider 会静默不回调，

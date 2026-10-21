@@ -121,8 +121,10 @@ public struct AddGearSheet: View {
                     paymentMethod: paymentMethod
                 )
                 _ = try await APIClient.shared.addGearAsset(req)
+                // 器物在服务端会落一条伴生散页（时间流的一级数据），需连带刷新
                 await appState.loadConfigAndProfile()
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadEntries(forceFull: false)
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription

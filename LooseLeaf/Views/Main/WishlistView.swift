@@ -290,7 +290,8 @@ public struct WishlistView: View {
         Task { @MainActor in
             do {
                 try await APIClient.shared.deleteWish(id: wish.id)
-                await appState.loadProjectsWishesFootprints()
+                // 心愿的伴生散页要一并从时间流移除
+                await appState.refreshAfterSecondaryWrite()
             } catch {
                 errorMessage = error.localizedDescription
             }

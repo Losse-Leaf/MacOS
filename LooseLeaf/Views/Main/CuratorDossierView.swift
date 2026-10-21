@@ -301,7 +301,7 @@ public struct CuratorDossierView: View {
             } onSold: {
                 Task { @MainActor in
                     await appState.loadConfigAndProfile()
-                    await appState.loadTransactionsAndAssets(forceFull: true)
+                    await appState.loadTransactionsAndAssets(forceFull: false)
                 }
             }
         }
@@ -457,7 +457,7 @@ public struct CuratorDossierView: View {
             do {
                 try await APIClient.shared.deleteGearAsset(id: gear.id)
                 await appState.loadConfigAndProfile()
-                await appState.loadTransactionsAndAssets(forceFull: true)
+                await appState.loadTransactionsAndAssets(forceFull: false)
             } catch {
                 dossierError = "删除器物失败：\(error.localizedDescription)"
             }
@@ -596,11 +596,15 @@ public struct CuratorDossierView: View {
             Task { @MainActor in
                 isUploadingAvatar = true
                 do {
-                    let processed = try await ImageProcessor.processImageFileInBackground(
-                        at: url,
-                        maxPixelSize: 1024,
-                        quality: 0.85
-                    )
+                    // 沙箱：NSOpenPanel 选中的文件位于沙箱容器之外，
+                    // 必须取得安全作用域授权才能读取，否则读取会静默失败。
+                    let processed = try await SandboxFileAccess.withAccess(to: url) { scopedURL in
+                        try await ImageProcessor.processImageFileInBackground(
+                            at: scopedURL,
+                            maxPixelSize: 1024,
+                            quality: 0.85
+                        )
+                    }
                     avatarPreviewImage = NSImage(data: processed.compressedData)
                     let att = try await APIClient.shared.uploadUnifiedMultipart(
                         fileData: processed.compressedData,

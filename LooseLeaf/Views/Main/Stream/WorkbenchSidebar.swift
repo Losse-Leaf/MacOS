@@ -8,8 +8,25 @@ struct WorkbenchSidebar: View {
     /// 底部状态文案：把「待同步 / 同步失败」的条数显性化，
     /// 否则用户只能靠猜为什么新内容没出现在中枢。
     private var statusLabel: String {
-        let pending = appState.entries.filter { ($0.syncStatus ?? "synced") == "pending_create" }.count
-        let failed = appState.entries.filter { ($0.syncStatus ?? "synced") == "failed" }.count
+        // 关键：**一次遍历**同时统计散页与账目。
+        // 原先是两个 `filter`（每次渲染 2×O(N)），而且**完全漏掉了账目** ——
+        // 于是账目同步失败时，侧栏仍显示「中枢就绪」。
+        var pending = 0
+        var failed = 0
+        for entry in appState.entries {
+            switch entry.syncStatus ?? "synced" {
+            case "pending_create": pending += 1
+            case "failed": failed += 1
+            default: break
+            }
+        }
+        for tx in appState.transactions {
+            switch tx.syncStatus ?? "synced" {
+            case "pending_create": pending += 1
+            case "failed": failed += 1
+            default: break
+            }
+        }
         if failed > 0 { return "同步失败 \(failed) 条" }
         if pending > 0 { return "待同步 \(pending) 条" }
         if appState.isFlushingOutbox { return "同步中…" }

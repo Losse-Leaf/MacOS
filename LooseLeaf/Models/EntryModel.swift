@@ -30,6 +30,22 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// 时间流 / 详情页上的**形态徽章文案**（全应用唯一真源）
+    ///
+    /// 关键：此前这份映射有四份实现（时间流卡片、详情页、StreamView 的死代码、
+    /// 导出器），其中详情页那份**漏了 gear 分支** ——
+    /// 于是器物条目在时间流上显示「器物印记」，在详情页却显示「日常随笔」。
+    public var badgeLabel: String {
+        switch self {
+        case .travel: return "山川游历"
+        case .project: return "造物演进"
+        case .wish: return "心愿印记"
+        case .transaction: return "柴米油盐"
+        case .gear: return "器物印记"
+        default: return "日常随笔"
+        }
+    }
+
     public var symbolName: String {
         switch self {
         case .life: return "leaf"

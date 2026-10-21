@@ -13,6 +13,8 @@ public struct FilmFrameView: View {
     public var metaText: String?
     public var maxHeight: CGFloat
     public var onTap: (() -> Void)?
+    /// 导出/拷贝结果反馈（成功或失败）—— 由调用方接到横幅上
+    public var onExportNotice: ((String) -> Void)?
 
     public init(
         imageURL: URL? = nil,
@@ -20,7 +22,8 @@ public struct FilmFrameView: View {
         caption: String? = nil,
         metaText: String? = nil,
         maxHeight: CGFloat = 280,
-        onTap: (() -> Void)? = nil
+        onTap: (() -> Void)? = nil,
+        onExportNotice: ((String) -> Void)? = nil
     ) {
         self.imageURL = imageURL
         self.localImage = localImage
@@ -28,6 +31,7 @@ public struct FilmFrameView: View {
         self.metaText = metaText
         self.maxHeight = maxHeight
         self.onTap = onTap
+        self.onExportNotice = onExportNotice
     }
 
     public var body: some View {
@@ -114,54 +118,42 @@ public struct FilmFrameView: View {
         }
     }
 
+    /// 拷贝相纸（统一走 `PaperImageExport`，失败要能说出来）
     private func copyFilmImage() {
         if let localImage {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([localImage])
+            onExportNotice?("已拷贝相纸至剪贴板")
             return
         }
-        if let imageURL {
-            if let cached = PaperImageCache.image(for: imageURL) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.writeObjects([cached])
-                return
-            }
-            Task { @MainActor in
-                if let (data, _) = try? await URLSession.shared.data(from: imageURL),
-                   let img = NSImage(data: data) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.writeObjects([img])
-                }
+        guard let imageURL else { return }
+        Task { @MainActor in
+            switch await PaperImageExport.copyToClipboard(url: imageURL) {
+            case .success(let message): onExportNotice?(message)
+            case .failure(let message): onExportNotice?("⚠️ \(message)")
             }
         }
     }
 
+    /// 在系统「预览」中打开（统一走 `PaperImageExport`）
     private func openInPreview(url: URL) {
         Task { @MainActor in
-            if let cached = PaperImageCache.image(for: url),
-               let tiffData = cached.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiffData),
-               let pngData = bitmap.representation(using: .png, properties: [:]) {
-                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                try? pngData.write(to: tempPath, options: .atomic)
-                NSWorkspace.shared.open(tempPath)
-                return
-            }
-            if let (data, _) = try? await URLSession.shared.data(from: url) {
-                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                try? data.write(to: tempPath, options: .atomic)
-                NSWorkspace.shared.open(tempPath)
+            switch await PaperImageExport.openInSystemPreview(url: url) {
+            case .success(let message): onExportNotice?(message)
+            case .failure(let message): onExportNotice?("⚠️ \(message)")
             }
         }
     }
 
+    /// 导出落盘（统一走 `PaperImageExport`）
     private func saveFilmImage(url: URL) {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = (caption?.isEmpty == false) ? "\(caption!).jpg" : url.lastPathComponent
         if panel.runModal() == .OK, let targetURL = panel.url {
             Task { @MainActor in
-                if let (data, _) = try? await URLSession.shared.data(from: url) {
-                    try? data.write(to: targetURL, options: .atomic)
+                switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
+                case .success(let message): onExportNotice?(message)
+                case .failure(let message): onExportNotice?("⚠️ \(message)")
                 }
             }
         }

@@ -191,37 +191,24 @@ public struct EditorialLightboxView: View {
         }
     }
 
+    // 关键：三件事统一走 `PaperImageExport`（原先在这里与相纸框里各写了一遍），
+    // 而且失败**必须给提示** —— 原先是 `try?` 一把梭，按钮点了毫无反应。
     private func openInSystemPreview(url: URL) {
         Task { @MainActor in
-            if let cached = PaperImageCache.image(for: url),
-               let tiffData = cached.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiffData),
-               let pngData = bitmap.representation(using: .png, properties: [:]) {
-                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                try? pngData.write(to: tempPath, options: .atomic)
-                NSWorkspace.shared.open(tempPath)
-                return
-            }
-            if let (data, _) = try? await URLSession.shared.data(from: url) {
-                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-                try? data.write(to: tempPath, options: .atomic)
-                NSWorkspace.shared.open(tempPath)
+            noticeText = nil
+            switch await PaperImageExport.openInSystemPreview(url: url) {
+            case .success(let message): noticeText = message
+            case .failure(let message): noticeText = "⚠️ \(message)"
             }
         }
     }
 
     private func copyImageToClipboard(url: URL) {
         Task { @MainActor in
-            if let cached = PaperImageCache.image(for: url) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.writeObjects([cached])
-                noticeText = "已拷贝相纸至剪贴板"
-                return
-            }
-            if let (data, _) = try? await URLSession.shared.data(from: url), let img = NSImage(data: data) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.writeObjects([img])
-                noticeText = "已拷贝相纸至剪贴板"
+            noticeText = nil
+            switch await PaperImageExport.copyToClipboard(url: url) {
+            case .success(let message): noticeText = message
+            case .failure(let message): noticeText = "⚠️ \(message)"
             }
         }
     }
@@ -231,9 +218,10 @@ public struct EditorialLightboxView: View {
         panel.nameFieldStringValue = filename.isEmpty ? "looseleaf-photo.jpg" : filename
         if panel.runModal() == .OK, let targetURL = panel.url {
             Task { @MainActor in
-                if let (data, _) = try? await URLSession.shared.data(from: url) {
-                    try? data.write(to: targetURL, options: .atomic)
-                    noticeText = "相纸已导出落盘"
+                noticeText = nil
+                switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
+                case .success(let message): noticeText = message
+                case .failure(let message): noticeText = "⚠️ \(message)"
                 }
             }
         }

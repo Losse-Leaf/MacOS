@@ -45,13 +45,12 @@ public struct SettingsView: View {
     @Bindable var appState: AppState
 
     /// 扁平化后由侧栏直接进入时锁定的 tab；nil 时退化为「偏好设置」
-    private let pinnedTab: SettingsTab?
+    /// 启动时钉住的标签页（仅用于初始化选中项，存下来后不再读取）
 
     @State private var selectedTab: SettingsTab = .general
 
     public init(appState: AppState, pinnedTab: SettingsTab? = nil) {
         self.appState = appState
-        self.pinnedTab = pinnedTab
         _selectedTab = State(initialValue: pinnedTab ?? .general)
     }
 

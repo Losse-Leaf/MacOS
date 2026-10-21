@@ -193,9 +193,8 @@ public struct CuratorDossierView: View {
 
                     // 点击具体日期后展开当日手记速览抽屉 (严格 1:1 对标 Web 端 AboutView.vue)
                     if let dateKey = selectedHeatmapDate {
-                        let selectedDateEntries = appState.entries.filter {
-                            FormatUtils.parseOccurredDate($0.occurredAt).dateKey == dateKey
-                        }
+                        // 走记忆化的按日索引，不再每次 body 求值都全量解析一遍日期
+                        let selectedDateEntries = appState.entriesByDateKey[dateKey] ?? []
 
                         LazyVStack(alignment: .leading, spacing: 10) {
                             Divider().overlay(ArchivePalette.borderSubtle)

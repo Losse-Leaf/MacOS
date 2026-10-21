@@ -79,13 +79,19 @@ public struct StreamView: View {
                     .overlay(alignment: .top) {
                         VStack(spacing: 4) {
                             if let err = appState.errorBanner {
-                                topNoticeStrip(text: err, isError: true)
+                                topNoticeStrip(text: err, isError: true) {
+                                    appState.errorBanner = nil
+                                }
                             }
                             if let warning = appState.localDataWarning {
-                                topNoticeStrip(text: warning, isError: true)
+                                topNoticeStrip(text: warning, isError: true) {
+                                    appState.localDataWarning = nil
+                                }
                             }
                             if let banner = appState.statusBanner {
-                                topNoticeStrip(text: banner, isError: false)
+                                topNoticeStrip(text: banner, isError: false) {
+                                    appState.statusBanner = nil
+                                }
                             }
                         }
                         .padding(.horizontal, 20)
@@ -343,9 +349,13 @@ public struct StreamView: View {
                                 .frame(width: isSearchFocused ? 260 : 200)
                                 .animation(.easeOut(duration: 0.16), value: isSearchFocused)
                                 .onChange(of: localSearchText) { _, newVal in
+                                    // 关键：**任何**变化都要先清掉旧的跨模块命中。
+                                    // 原先只在清空时清，于是输入新词之后、
+                                    // 新结果返回之前，横幅里显示的还是**上一个关键词**
+                                    // 命中的足迹/心愿/项目。
+                                    appState.globalSearchResult = nil
                                     if newVal.isEmpty {
                                         appState.searchQuery = ""
-                                        appState.globalSearchResult = nil
                                     }
                                 }
                                 .task(id: localSearchText) {
@@ -524,7 +534,13 @@ public struct StreamView: View {
         )
     }
 
-    private func topNoticeStrip(text: String, isError: Bool) -> some View {
+    /// 顶部提示条
+    ///
+    /// 关键：`onDismiss` 由调用方传入，**每条只关自己那一条**。
+    /// 原先在这里一次清掉 statusBanner + errorBanner + localDataWarning 三条 ——
+    /// 而 localDataWarning 的定义是「需用户手动关闭」，
+    /// 于是点任意一条提示的「关闭」，把另两条也一并带走了。
+    private func topNoticeStrip(text: String, isError: Bool, onDismiss: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Image(systemName: isError ? "exclamationmark.triangle" : "checkmark.circle")
                 .foregroundStyle(isError ? ArchivePalette.accentWarm : ArchivePalette.accentMoss)
@@ -533,9 +549,7 @@ public struct StreamView: View {
                 .foregroundStyle(ArchivePalette.inkPrimary)
             Spacer()
             Button("关闭") {
-                appState.statusBanner = nil
-                appState.errorBanner = nil
-                appState.localDataWarning = nil
+                onDismiss()
             }
             .font(ArchiveTypography.bodySans(size: 11))
             .buttonStyle(.plain)
@@ -1100,14 +1114,4 @@ public struct StreamView: View {
     }
 
     // MARK: - 暗房全屏看图灯箱 (EditorialLightboxView)
-
-    private func entryTypeBadge(_ raw: String) -> String {
-        switch raw {
-        case "travel": return "山川游历"
-        case "project": return "造物演进"
-        case "wish": return "心愿印记"
-        case "transaction": return "柴米油盐"
-        default: return "日常随笔"
-        }
-    }
 }

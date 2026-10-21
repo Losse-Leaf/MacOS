@@ -44,9 +44,16 @@ public actor APIClient {
 
     private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "api")
 
-    /// 复用 JSON 编解码器实例，避免每次请求都新建（省去内部缓冲初始化开销）
-    nonisolated private static let decoder = JSONDecoder()
-    nonisolated private static let encoder = JSONEncoder()
+    /// JSON 编解码器实例
+    ///
+    /// 关键：**不能跨任务复用**。`JSONDecoder` 不是线程安全的 ——
+    /// 同一个实例被两个并发解码同时使用会破坏内部状态，
+    /// 表现为偶发的「数据解析失败」。本文件里上传路径已经改成
+    /// 「每次新建局部 decoder」（注释明确写了「不能复用 static decoder」），
+    /// 而普通请求路径却还在复用 —— 同一份文件里两套相反的做法。
+    /// 现在统一为**每次新建**（一次 JSONDecoder 的构造成本远低于竞态风险）。
+    private static func makeDecoder() -> JSONDecoder { JSONDecoder() }
+    private static func makeEncoder() -> JSONEncoder { JSONEncoder() }
 
     private let session: URLSession
     /// ETag 缓存：URL → (设备令牌指纹, ETag)
@@ -241,7 +248,7 @@ public actor APIClient {
     ) async throws -> T {
         let bodyData: Data?
         if let body {
-            bodyData = try Self.encoder.encode(body)
+            bodyData = try Self.makeEncoder().encode(body)
         } else {
             bodyData = nil
         }
@@ -271,7 +278,7 @@ public actor APIClient {
         }
 
         if http.statusCode == 401 {
-            let errEnvelope = try? Self.decoder.decode(APIEnvelope<EmptyPayload>.self, from: data)
+            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
             Self.logger.warning("Received 401 unauthorized from \(path, privacy: .public)")
             if !hasNotifiedUnauthorized {
                 hasNotifiedUnauthorized = true
@@ -290,7 +297,7 @@ public actor APIClient {
         }
 
         if http.statusCode >= 400 {
-            let errEnvelope = try? Self.decoder.decode(APIEnvelope<EmptyPayload>.self, from: data)
+            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
             throw APIError.serverError(
                 code: errEnvelope?.code ?? http.statusCode,
                 message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
@@ -300,7 +307,7 @@ public actor APIClient {
         // 解码是同步的，放到独立任务中执行，避免阻塞 actor 串行化其他请求
         do {
             let envelope: APIEnvelope<T> = try await Task.detached(priority: .userInitiated) {
-                try Self.decoder.decode(APIEnvelope<T>.self, from: data)
+                try Self.makeDecoder().decode(APIEnvelope<T>.self, from: data)
             }.value
             if envelope.code >= 400 {
                 throw APIError.serverError(code: envelope.code, message: envelope.message)
@@ -342,7 +349,7 @@ public actor APIClient {
                 message: "健康探针状态异常 (HTTP \(http.statusCode))"
             )
         }
-        return try Self.decoder.decode(HealthCheckResponse.self, from: data)
+        return try Self.makeDecoder().decode(HealthCheckResponse.self, from: data)
     }
 
     public func fetchSystemStatus() async throws -> SystemStatus {
@@ -926,7 +933,7 @@ public actor APIClient {
         // 关键：先判状态码再解码。否则服务端返回 502 HTML 错误页会抛裸 DecodingError，
         // 上层无法识别为 APIError，会误判为「应回退到本地存储」并把整张图重传一次。
         guard http.statusCode == 200 else {
-            let errEnvelope = try? Self.decoder.decode(APIEnvelope<EmptyPayload>.self, from: data)
+            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
             throw APIError.serverError(
                 code: errEnvelope?.code ?? http.statusCode,
                 message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)

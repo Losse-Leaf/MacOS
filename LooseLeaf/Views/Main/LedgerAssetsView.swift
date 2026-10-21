@@ -1172,8 +1172,13 @@ public struct LedgerAssetsView: View {
 
     // MARK: - 数据提交处理
 
+    /// 极速记账的解析结果（body 里算一次，供预览与按钮可用性共用）
+    private var quickParsed: FormatUtils.QuickLedgerParsed? {
+        FormatUtils.parseQuickLedgerInput(quickLine, knownCategories: appState.expenseCategories)
+    }
+
     private func submitQuickLine() {
-        guard let parsed = FormatUtils.parseQuickLedgerInput(quickLine, knownCategories: appState.expenseCategories) else { return }
+        guard let parsed = quickParsed else { return }
         errorNotice = nil
         Task { @MainActor in
             do {

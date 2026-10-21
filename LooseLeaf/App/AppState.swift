@@ -396,8 +396,6 @@ public final class AppState {
         }
     }
 
-    public var globalHotkeyLabel: String { AppDelegate.hotKeyDisplayName }
-
     /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
     public var searchFocusRequest: Int {
         get { navigation.searchFocusRequest }
@@ -458,6 +456,12 @@ public final class AppState {
             || showStatsSheet
             || showNewEntrySheet
             || lightboxAttachment != nil
+            // 关键：详情 / 编辑两个弹层也要算进去。
+            // 原先漏了它们，于是这些弹层打开时 ⌘W 菜单项是**禁用**的 ——
+            // 用户按 ⌘W 没反应，而其它浮层都能关。
+            || highlightedEntry != nil
+            || editingEntry != nil
+            || editingTransaction != nil
     }
 
     public func requestStreamSearchFocus() {
@@ -470,6 +474,7 @@ public final class AppState {
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
     @ObservationIgnored private var streamRowsMemo: (key: String, value: [StreamRow])?
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
+    @ObservationIgnored private var entriesByDateMemo: (key: String, value: [String: [LifeEntry]])?
     /// 账目索引（id -> 账目）：时间流卡片按 id 查账目时避免全量遍历
     @ObservationIgnored private var transactionIndexMemo: (Int, [Int: Transaction])?
     /// 全局检索代号：防止先发出的慢请求覆盖后发出的快请求结果
@@ -732,6 +737,28 @@ public final class AppState {
         return counts
     }
 
+    /// 按日期分组的散页索引（记忆化）
+    ///
+    /// 关键：主理人页面的「当日手记速览」原先在 body 里对**全部** entries
+    /// 做一次 `filter { parseOccurredDate(...).dateKey == dateKey }` ——
+    /// 每�� body 求值都要重跑一遍（5000 条 ≈ 5000 次日期解析），
+    /// 点选热力图日期、任意状态变更都会触发。
+    /// 改为复用这份记忆化索引。
+    public var entriesByDateKey: [String: [LifeEntry]] {
+        let key = "\(entriesRevision)"
+        if let memo = entriesByDateMemo, memo.key == key {
+            return memo.value
+        }
+        var grouped: [String: [LifeEntry]] = [:]
+        for entry in entries {
+            let parsed = entry.parsedDate
+            guard parsed.isValid else { continue }
+            grouped[parsed.dateKey, default: []].append(entry)
+        }
+        entriesByDateMemo = (key, grouped)
+        return grouped
+    }
+
     // MARK: - 远端全量与增量拉取
 
     /// 应用冷启动引导：全量刷新 + 检查更新。
@@ -840,6 +867,12 @@ public final class AppState {
             SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified: 本地缓存已是最新
+        } catch is CancellationError {
+            // 关键：取消**不是**网络错误。
+            // `APIClient` 在任务被取消时会抛 CancellationError，
+            // 而原先它落进下面的通用 catch —— 于是用户看到的是
+            // 「The operation couldn't be completed. (Swift.CancellationError error 1.)」
+            // 这种天书般的红色横幅。
         } catch {
             if entries.isEmpty {
                 self.errorBanner = error.localizedDescription

@@ -186,6 +186,8 @@ struct StreamEntryDetailView: View {
                                                 maxHeight: 200
                                             ) {
                                                 appState.lightboxAttachment = att
+                                            } onExportNotice: { message in
+                                                appState.showTemporaryBanner(message)
                                             }
                                             .frame(width: 240)
                                         }
@@ -204,14 +206,8 @@ struct StreamEntryDetailView: View {
         .background(ArchivePalette.archivePaper)
     }
 
-    /// 形态徽章文案（与时间流卡片保持一致）
+    /// 形态徽章文案（与时间流卡片保持一致 —— 统一走 EntryType.badgeLabel）
     static func entryTypeBadge(_ raw: String) -> String {
-        switch raw {
-        case "travel": return "山川游历"
-        case "project": return "造物演进"
-        case "wish": return "心愿印记"
-        case "transaction": return "柴米油盐"
-        default: return "日常随笔"
-        }
+        EntryType(rawValue: raw)?.badgeLabel ?? "日常随笔"
     }
 }

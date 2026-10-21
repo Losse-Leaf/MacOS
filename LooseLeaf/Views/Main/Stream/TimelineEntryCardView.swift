@@ -144,17 +144,9 @@ import AppKit
             default: return ArchivePalette.accentMoss
             }
         }
-
-        private var entryTypeBadgeName: String {
-            switch entry.type {
-            case "travel": return "山川游历"
-            case "project": return "造物演进"
-            case "wish": return "心愿印记"
-            case "transaction": return "柴米油盐"
-            case "gear": return "器物印记"
-            default: return "日常随笔"
-            }
-        }
+    private var entryTypeBadgeName: String {
+        EntryType(rawValue: entry.type)?.badgeLabel ?? "日常随笔"
+    }
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
@@ -361,7 +353,6 @@ import AppKit
                         .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
                         .lineSpacing(5)
                         .textSelection(.enabled)
-                        .textSelection(.enabled)
 
                     // 附件胶片相框画廊 (.film-frame)
                     if !entry.attachments.isEmpty {
@@ -380,6 +371,9 @@ import AppKit
                                             maxHeight: 220
                                         ) {
                                             actions.onOpenLightbox(att)
+                                        } onExportNotice: { message in
+                                            // 导出/拷贝失败也要有提示（原先静默失败）
+                                            actions.onToast(message)
                                         }
                                         .frame(width: 260)
                                     }
@@ -470,9 +464,5 @@ import AppKit
                     }
                 }
             }
-            // ��前这里还挂着 `.paperHover()`，与卡片自身的 `.onHover` 构成
-            // **两套**悬停状态机：每次指针扫过都要触发两次状态变更与两次重绘。
-            // 卡片本来就有自己的悬停底色与描边反馈，`.paperHover()` 是多余的。
-            // 去掉它。
         }
     }

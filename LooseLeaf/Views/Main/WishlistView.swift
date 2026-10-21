@@ -38,6 +38,10 @@ public struct WishlistView: View {
         var relinquishedSavedCents: Int64 = 0
     }
 
+    private func isWantingStatus(_ s: String) -> Bool {
+        s == "wanting" || s.isEmpty || s == "pending" || s == "shelved"
+    }
+
     private func makeStatistics() -> WishStatistics {
         var stats = WishStatistics()
         for wish in allWishes {
@@ -51,6 +55,7 @@ public struct WishlistView: View {
                 stats.relinquishedCount += 1
                 stats.relinquishedSavedCents += wish.budget
             default:
+                // wanting, pending, shelved 或未标记状态均统一归入向往中大盘口径
                 stats.wantingCount += 1
                 stats.wantingBudgetCents += wish.budget
             }
@@ -62,7 +67,14 @@ public struct WishlistView: View {
     private var filteredWishes: [Wish] {
         allWishes.filter { wish in
             let matchKind = (selectedKind == "all") || (wish.kind == selectedKind)
-            let matchStatus = (selectedStatus == "all") || (wish.status == selectedStatus)
+            let matchStatus: Bool
+            if selectedStatus == "all" {
+                matchStatus = true
+            } else if selectedStatus == "wanting" {
+                matchStatus = isWantingStatus(wish.status)
+            } else {
+                matchStatus = (wish.status == selectedStatus)
+            }
             return matchKind && matchStatus
         }
     }

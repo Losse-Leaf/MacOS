@@ -22,6 +22,14 @@ public struct AddGearSheet: View {
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
+    // 补档：购入日期可选过去任意一天（默认今天）
+    @State private var purchaseDate: Date = Date()
+    // 分期购入
+    @State private var isInstallment: Bool = false
+    @State private var installmentChannelCode: String = "huabei"
+    @State private var installmentMonths: Int = 12
+    @State private var repaymentDay: Int = 10
+
     public init(appState: AppState, onDismiss: @escaping () -> Void) {
         self.appState = appState
         self.onDismiss = onDismiss
@@ -68,9 +76,49 @@ public struct AddGearSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
             }
 
+            HStack(spacing: ArchiveSpacing.s) {
+                PaperDatePicker(selection: $purchaseDate, enableTime: false, label: "购入日期")
+                Text("（可选择过去的日期补录旧设备）")
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
+
             Toggle("伴生记录一笔支出流水", isOn: $createTransaction)
                 .toggleStyle(.paperCheckbox)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+
+            // 分期购入：与账目分期共用同一套渠道 / 期数 / 还款日语义
+            Toggle("按分期购入（生成分期账单）", isOn: $isInstallment)
+                .toggleStyle(.paperCheckbox)
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                .disabled(!createTransaction)
+
+            if isInstallment && createTransaction {
+                HStack(spacing: ArchiveSpacing.s) {
+                    PaperSelect(
+                        selection: $installmentChannelCode,
+                        options: (appState.creditChannels.isEmpty
+                                   ? [CreditChannel(id: 1, code: "huabei", name: "花呗", repaymentDay: 10, isBuiltin: true)]
+                                   : appState.creditChannels
+                        ).map { PaperSelectOption(value: $0.code, label: "\($0.name) (每月\($0.repaymentDay)日)") },
+                        label: "分期渠道："
+                    )
+
+                    PaperSelect(
+                        selection: $installmentMonths,
+                        options: ArchiveInstallmentOptions.installmentOptions.map {
+                            PaperSelectOption(value: $0, label: "\($0) 期")
+                        },
+                        label: "期数："
+                    )
+
+                    PaperSelect(
+                        selection: $repaymentDay,
+                        options: (1...31).map { PaperSelectOption(value: $0, label: "每月 \($0) 日") },
+                        label: "还款日："
+                    )
+                }
+            }
 
             TextField("手记", text: $note)
                 .textFieldStyle(.plain)
@@ -115,10 +163,15 @@ public struct AddGearSheet: View {
                     spec: spec.isEmpty ? nil : spec,
                     category: category,
                     priceCents: cents,
-                    purchaseDate: FormatUtils.beijingDateString(),
+                    purchaseDate: FormatUtils.beijingDateString(from: purchaseDate),
                     note: note.isEmpty ? nil : note,
                     createTransaction: createTransaction,
-                    paymentMethod: paymentMethod
+                    paymentMethod: paymentMethod,
+                    isInstallment: isInstallment,
+                    installmentChannelCode: isInstallment ? installmentChannelCode : nil,
+                    installmentTotalAmount: isInstallment ? cents : nil,
+                    installmentMonths: isInstallment ? installmentMonths : nil,
+                    repaymentDay: isInstallment ? repaymentDay : nil
                 )
                 _ = try await APIClient.shared.addGearAsset(req)
                 // 器物在服务端会落一条伴生散页（时间流的一级数据），需连带刷新

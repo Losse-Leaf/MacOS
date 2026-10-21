@@ -23,6 +23,8 @@ public struct NewWishSheet: View {
     @State private var cityName: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
+    /// 补档：许下日期可选过去任意一天（默认今天）
+    @State private var plantedAt: Date = Date()
 
     public var body: some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
@@ -58,6 +60,13 @@ public struct NewWishSheet: View {
                 .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+            HStack(spacing: ArchiveSpacing.s) {
+                PaperDatePicker(selection: $plantedAt, enableTime: false, label: "许下日期")
+                Text("（可选择过去的日期补录旧心愿）")
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+            }
 
             TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
@@ -106,7 +115,8 @@ public struct NewWishSheet: View {
                     spec: spec.isEmpty ? nil : spec,
                     cityCode: cityCode.isEmpty ? nil : cityCode,
                     cityName: cityName.isEmpty ? nil : cityName,
-                    budget: cents
+                    budget: cents,
+                    plantedAt: FormatUtils.beijingDateString(from: plantedAt)
                 )
                 _ = try await APIClient.shared.createWish(req)
                 // 关键：心愿在服务端会落一条伴生散页（时间流的一级数据），

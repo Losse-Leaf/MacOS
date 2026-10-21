@@ -362,6 +362,12 @@ public struct AddGearAssetRequest: Codable, Sendable {
     public var note: String?
     public var createTransaction: Bool
     public var paymentMethod: String?
+    /// 是否按分期购入（与账目分期同一套协议）
+    public var isInstallment: Bool
+    public var installmentChannelCode: String?
+    public var installmentTotalAmount: Int64?
+    public var installmentMonths: Int?
+    public var repaymentDay: Int?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -372,6 +378,11 @@ public struct AddGearAssetRequest: Codable, Sendable {
         case note
         case createTransaction = "create_transaction"
         case paymentMethod = "payment_method"
+        case isInstallment = "is_installment"
+        case installmentChannelCode = "installment_channel_code"
+        case installmentTotalAmount = "installment_total_amount"
+        case installmentMonths = "installment_months"
+        case repaymentDay = "repayment_day"
     }
 
     public init(
@@ -382,7 +393,12 @@ public struct AddGearAssetRequest: Codable, Sendable {
         purchaseDate: String = FormatUtils.beijingDateString(),
         note: String? = nil,
         createTransaction: Bool = true,
-        paymentMethod: String? = nil
+        paymentMethod: String? = nil,
+        isInstallment: Bool = false,
+        installmentChannelCode: String? = nil,
+        installmentTotalAmount: Int64? = nil,
+        installmentMonths: Int? = nil,
+        repaymentDay: Int? = nil
     ) {
         self.name = name
         self.spec = spec
@@ -392,6 +408,11 @@ public struct AddGearAssetRequest: Codable, Sendable {
         self.note = note
         self.createTransaction = createTransaction
         self.paymentMethod = paymentMethod
+        self.isInstallment = isInstallment
+        self.installmentChannelCode = installmentChannelCode
+        self.installmentTotalAmount = installmentTotalAmount
+        self.installmentMonths = installmentMonths
+        self.repaymentDay = repaymentDay
     }
 }
 

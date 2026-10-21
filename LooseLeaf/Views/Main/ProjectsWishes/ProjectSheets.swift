@@ -42,11 +42,12 @@ public struct NewProjectSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             HStack(spacing: ArchiveSpacing.s) {
-                TextField("分类", text: $category)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                // 项目类型是**选择**而非手填：选项来自后端动态分类字典
+                PaperSelect(
+                    selection: $category,
+                    options: appState.projectCategories.map { PaperSelectOption(value: $0, label: $0) },
+                    label: "项目类型："
+                )
 
                 TextField("状态", text: $status)
                     .textFieldStyle(.plain)
@@ -181,11 +182,15 @@ public struct EditProjectSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             HStack(spacing: ArchiveSpacing.s) {
-                TextField("分类", text: $category)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                // 项目类型是**选择**而非手填；已有值若不在字典中则补入，避免历史数据丢失
+                PaperSelect(
+                    selection: $category,
+                    options: (appState.projectCategories.contains(category)
+                               ? appState.projectCategories
+                               : ([category] + appState.projectCategories)
+                    ).map { PaperSelectOption(value: $0, label: $0) },
+                    label: "项目类型："
+                )
 
                 TextField("状态", text: $status)
                     .textFieldStyle(.plain)

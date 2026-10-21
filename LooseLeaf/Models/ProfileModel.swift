@@ -453,6 +453,8 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
     public var resolutionType: String?
     public var actualTitle: String?
     public var targetDate: String?
+    /// 许下心愿的时刻（可回填为过去日期以支撑「补档」）
+    public var plantedAt: String?
     public var status: String // "wanting" | "fulfilled" | "relinquished" | "shelved"
     public var fulfilledAt: String?
     public var transactionId: Int?
@@ -476,6 +478,7 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         case resolutionType = "resolution_type"
         case actualTitle = "actual_title"
         case targetDate = "target_date"
+        case plantedAt = "planted_at"
         case status
         case fulfilledAt = "fulfilled_at"
         case transactionId = "transaction_id"
@@ -501,6 +504,7 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         resolutionType = try? container.decodeIfPresent(String.self, forKey: .resolutionType)
         actualTitle = try? container.decodeIfPresent(String.self, forKey: .actualTitle)
         targetDate = try? container.decodeIfPresent(String.self, forKey: .targetDate)
+        plantedAt = try? container.decodeIfPresent(String.self, forKey: .plantedAt)
         status = (try? container.decode(String.self, forKey: .status)) ?? "wanting"
         fulfilledAt = try? container.decodeIfPresent(String.self, forKey: .fulfilledAt)
         transactionId = try? container.decodeIfPresent(Int.self, forKey: .transactionId)
@@ -562,6 +566,8 @@ public struct CreateWishRequest: Codable, Sendable {
     public var cityName: String?
     public var budget: Int64
     public var targetDate: String?
+    /// 许下心愿的时刻（可选，支持补录过去的心愿）
+    public var plantedAt: String?
     public var attachmentIds: [Int]
 
     enum CodingKeys: String, CodingKey {
@@ -573,6 +579,7 @@ public struct CreateWishRequest: Codable, Sendable {
         case cityName = "city_name"
         case budget
         case targetDate = "target_date"
+        case plantedAt = "planted_at"
         case attachmentIds = "attachment_ids"
     }
 
@@ -585,6 +592,7 @@ public struct CreateWishRequest: Codable, Sendable {
         cityName: String? = nil,
         budget: Int64 = 0,
         targetDate: String? = nil,
+        plantedAt: String? = nil,
         attachmentIds: [Int] = []
     ) {
         self.title = title
@@ -595,6 +603,7 @@ public struct CreateWishRequest: Codable, Sendable {
         self.cityName = cityName
         self.budget = budget
         self.targetDate = targetDate
+        self.plantedAt = plantedAt
         self.attachmentIds = attachmentIds
     }
 }

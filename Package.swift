@@ -19,7 +19,9 @@ let package = Package(
             path: "LooseLeaf",
             exclude: [
                 "Info.plist",
-                "LooseLeaf.entitlements"
+                "LooseLeaf.entitlements",
+                // UI 自动化测试专用权限文件，仅供 xcodebuild test 使用
+                "LooseLeafUITest.entitlements"
             ],
             resources: [
                 .process("Resources")

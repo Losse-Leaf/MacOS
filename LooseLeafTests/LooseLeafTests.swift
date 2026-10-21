@@ -721,9 +721,12 @@ final class LooseLeafTests: XCTestCase {
             .deletingLastPathComponent()          // mac
             .appendingPathComponent("LooseLeaf/Resources/Assets.xcassets")
         var assetsURL: URL? = FileManager.default.fileExists(atPath: sourceRoot.path) ? sourceRoot : nil
+        #if SWIFT_PACKAGE
+        // Bundle.module 是 SPM 专属 API，在 Xcode target 下不存在，需条件编译隔离
         if assetsURL == nil {
             assetsURL = Bundle.module.url(forResource: "Assets", withExtension: "xcassets")
         }
+        #endif
         let root = try XCTUnwrap(assetsURL, "无法定位 Assets.xcassets")
 
         func luminance(_ rgb: (Double, Double, Double)) -> Double {

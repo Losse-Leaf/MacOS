@@ -23,8 +23,9 @@ public struct StreamView: View {
     @State private var isOnThisDayExpanded: Bool = true
 
     // 管理模式：编辑与删除状态
-    @State private var editingEntry: LifeEntry?
-    @State private var editingTransaction: Transaction?
+    // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
+    // 行为闭包只捕获 AppState 单例 → 整轮时间流共享同一份 actions 引用
+    // → SwiftUI 能跳过内容没变的卡片。
     // 全局检索关联发现弹窗
     @State private var inspectingSearchFootprint: Footprint?
     @State private var inspectingSearchWish: Wish?
@@ -194,12 +195,12 @@ public struct StreamView: View {
 
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
 
-        .sheet(item: $editingEntry) { entry in
+        .sheet(item: $appState.editingEntry) { entry in
             editEntrySheet(entry: entry)
         }
-        .sheet(item: $editingTransaction) { tx in
+        .sheet(item: $appState.editingTransaction) { tx in
             EditTransactionSheet(appState: appState, transaction: tx) {
-                editingTransaction = nil
+                appState.editingTransaction = nil
                 Task { @MainActor in
                     // 同样改为增量刷新（账目在时间流里是合成条目，需一并更新）
                     await appState.loadTransactionsAndAssets(forceFull: false)
@@ -437,7 +438,7 @@ public struct StreamView: View {
                                 entry: entry,
                                 transaction: matchingTransaction(for: entry),
                                 isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
-                                actions: timelineActions(for: entry)
+                                actions: timelineActions
                             )
                             .id(entry.id)
                         }
@@ -468,37 +469,18 @@ public struct StreamView: View {
     }
 
     /// 条目卡片的行为集合
-    private func timelineActions(for entry: LifeEntry) -> TimelineEntryActions {
-        TimelineEntryActions(
-            onEditEntry: { editingEntry = entry },
-            onDeleteEntry: {
-                appState.askConfirm(
-                    title: "确认删除该条生活手稿？",
-                    message: "删除后记录将从时间流中移除，关联的附件与下渗足迹将一并清理。",
-                    confirmText: "删除手稿",
-                    danger: true
-                ) {
-                    deleteEntryAction(entry)
-                }
-            },
-            onEditTransaction: { tx in editingTransaction = tx },
-            onDeleteTransaction: { tx in
-                appState.askConfirm(
-                    title: "确认删除该笔流水账目？",
-                    message: "删除后将从本地账本与中枢中移除，月度收支与资产大盘将即刻重新核算。",
-                    confirmText: "删除账目",
-                    danger: true
-                ) {
-                    deleteTransactionAction(tx)
-                }
-            },
-            onToggleFeatured: { toggleFeatured(entry) },
-            onOpenDetail: { appState.highlightedEntry = entry },
-            onOpenLightbox: { appState.lightboxAttachment = $0 },
-            onToast: { appState.showTemporaryBanner($0) },
-            onRetrySync: { id in appState.retryFailedEntry(id: id) }
-        )
-    }
+    ///
+    /// **整轮时间流共享同一个实例**（引用类型）。
+    /// 早先这里是 `timelineActions(for:)` 逐卡构造值类型闭包集合，
+    /// 于是每次父视图重算，每张卡拿到的都是一份全新闭包 → 视图值必变 →
+    /// SwiftUI 无法跳过任何一张卡 → 点一下与时间流无关的弹窗，
+    /// 整列 60 张卡全部重绘（实测 192ms）。
+    /// 共享引用后，只有真正变化的卡片才重绘。
+    ///
+    /// 必须用 `@State` 持有：`let` 存储属性会随 View 结构体的每次重建而
+    /// 重新初始化，引用一变，SwiftUI 依旧要重绘全部卡片。
+    /// `@State` 持有引用类型时，SwiftUI 会跨重建保留**同一个实例**。
+    @State private var timelineActions = TimelineEntryActions()
 
     /// 查出条目关联的账目（伴生条目的 id 可能是合成的负数，需归一）
     private func matchingTransaction(for entry: LifeEntry) -> Transaction? {
@@ -711,106 +693,8 @@ public struct StreamView: View {
         }
     }
 
-    private func toggleFeatured(_ entry: LifeEntry) {
-        guard entry.id > 0 else { return }
-        let newFeatured = !(entry.featured ?? false)
-        Task { @MainActor in
-            let req = UpdateEntryRequest(
-                type: entry.type,
-                title: entry.title,
-                content: entry.content,
-                occurredAt: entry.occurredAt,
-                location: entry.location,
-                featured: newFeatured,
-                cityCode: entry.cityCode,
-                cityName: entry.cityName
-            )
-            do {
-                _ = try await APIClient.shared.updateEntry(id: entry.id, req)
-                await appState.loadEntries(forceFull: false)
-            } catch {
-                appState.showTemporaryBanner("精选状态更新失败：\(error.localizedDescription)")
-            }
-        }
-    }
 
-    private func deleteEntryAction(_ entry: LifeEntry) {
-        guard entry.id > 0 else { return }
-        // 登记撤销：删除后可在 5 秒内（或随时按 ⌘Z）恢复该条手稿
-        let restoreRequest = CreateEntryRequest(
-            type: entry.type,
-            title: entry.title,
-            content: entry.content,
-            occurredAt: entry.occurredAt,
-            location: entry.location,
-            featured: entry.featured ?? false,
-            cityCode: entry.cityCode,
-            cityName: entry.cityName,
-            projectId: entry.projectId,
-            wishId: entry.wishId,
-            footprintId: entry.footprintId,
-            attachmentIds: entry.attachments.map(\.id)
-        )
-        Task { @MainActor in
-            do {
-                _ = try await APIClient.shared.deleteEntry(id: entry.id)
-            } catch {
-                appState.showTemporaryBanner("删除失败：\(error.localizedDescription)")
-                return
-            }
-            await appState.loadEntries(forceFull: false)
-            await appState.loadConfigAndProfile()
-            if appState.highlightedEntry?.id == entry.id {
-                appState.highlightedEntry = nil
-            }
-            appState.registerUndo(label: "删除手稿「\(entry.title.isEmpty ? "未命名" : entry.title)」") {
-                do {
-                    _ = try await APIClient.shared.createEntry(restoreRequest)
-                    await appState.loadEntries(forceFull: false)
-                } catch {
-                    appState.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
-                }
-            }
-            appState.showTemporaryBanner("已删除手稿 · 可按 ⌘Z 撤销")
-        }
-    }
 
-    private func deleteTransactionAction(_ tx: Transaction) {
-        guard tx.id > 0 else { return }
-        let restoreRequest = CreateTransactionRequest(
-            amount: tx.amount,
-            type: tx.type,
-            category: tx.category,
-            title: tx.title,
-            note: tx.note,
-            paymentMethod: tx.paymentMethod,
-            cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt
-        )
-        Task { @MainActor in
-            do {
-                _ = try await APIClient.shared.deleteTransaction(id: tx.id)
-            } catch {
-                appState.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
-                return
-            }
-            await appState.loadTransactionsAndAssets(forceFull: false)
-                await appState.loadEntries(forceFull: false)
-            await appState.loadConfigAndProfile()
-            if appState.highlightedEntry?.id == tx.id {
-                appState.highlightedEntry = nil
-            }
-            appState.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
-                do {
-                    _ = try await APIClient.shared.createTransaction(restoreRequest)
-                    await appState.loadTransactionsAndAssets(forceFull: false)
-                } catch {
-                    appState.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
-                }
-            }
-            appState.showTemporaryBanner("已删除账目 · 可按 ⌘Z 撤销")
-        }
-    }
 
     private func editEntrySheet(entry: LifeEntry) -> some View {
         EditEntrySheetView(entry: entry) { updated in
@@ -820,9 +704,9 @@ public struct StreamView: View {
             // 全部条目，档案稍多时点一次「修改」就要等好几秒。
             await appState.loadEntries(forceFull: false)
             await appState.loadConfigAndProfile()
-            editingEntry = nil
+            appState.editingEntry = nil
         } onCancel: {
-            editingEntry = nil
+            appState.editingEntry = nil
         }
     }
 
@@ -830,9 +714,9 @@ public struct StreamView: View {
         StreamEntryDetailView(
             entry: entry,
             appState: appState,
-            onEditEntry: { editingEntry = $0 },
-            onEditTransaction: { editingTransaction = $0 },
-            onDeleteTransaction: { deleteTransactionAction($0) }
+            onEditEntry: { appState.editingEntry = $0 },
+            onEditTransaction: { appState.editingTransaction = $0 },
+            onDeleteTransaction: { appState.deleteTransactionAction($0) }
         )
         .frame(width: 540)
         .background(ArchivePalette.archivePaper)

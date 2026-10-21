@@ -237,6 +237,119 @@ public final class AppState {
     public let globalSearchLoading = LoadingDebouncer()
     public var isGlobalSearching: Bool = false
     public var highlightedEntry: LifeEntry?
+
+    /// 正在编辑的散页（由时间流卡片的「编辑」动作置位）
+    ///
+    /// 关键：这两个编辑态**必须放在 AppState**（而不是 StreamView 的本地 @State）——
+    /// 时间流的行为闭包要能跨视图存续并只捕获 AppState 单例，
+    /// 这样闭包集合才能在整轮时间流里保持**同一个引用**，
+    /// SwiftUI 才能跳过内容没变的卡片（否则点一下弹窗就要重绘整列 60 张卡）。
+    public var editingEntry: LifeEntry?
+    /// 正在编辑的账目
+    public var editingTransaction: Transaction?
+    // MARK: - 时间流卡片行为（放在 AppState 是为了让行为闭包只捕获单例）
+
+    public func toggleFeatured(_ entry: LifeEntry) {
+        guard entry.id > 0 else { return }
+        let newFeatured = !(entry.featured ?? false)
+        Task { @MainActor in
+            let req = UpdateEntryRequest(
+                type: entry.type,
+                title: entry.title,
+                content: entry.content,
+                occurredAt: entry.occurredAt,
+                location: entry.location,
+                featured: newFeatured,
+                cityCode: entry.cityCode,
+                cityName: entry.cityName
+            )
+            do {
+                _ = try await APIClient.shared.updateEntry(id: entry.id, req)
+                await self.loadEntries(forceFull: false)
+            } catch {
+                self.showTemporaryBanner("精选状态更新失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    public func deleteEntryAction(_ entry: LifeEntry) {
+        guard entry.id > 0 else { return }
+        // 登记撤销：删除后可在 5 秒内（或随时按 ⌘Z）恢复该条手稿
+        let restoreRequest = CreateEntryRequest(
+            type: entry.type,
+            title: entry.title,
+            content: entry.content,
+            occurredAt: entry.occurredAt,
+            location: entry.location,
+            featured: entry.featured ?? false,
+            cityCode: entry.cityCode,
+            cityName: entry.cityName,
+            projectId: entry.projectId,
+            wishId: entry.wishId,
+            footprintId: entry.footprintId,
+            attachmentIds: entry.attachments.map(\.id)
+        )
+        Task { @MainActor in
+            do {
+                _ = try await APIClient.shared.deleteEntry(id: entry.id)
+            } catch {
+                self.showTemporaryBanner("删除失败：\(error.localizedDescription)")
+                return
+            }
+            await self.loadEntries(forceFull: false)
+            await self.loadConfigAndProfile()
+            if self.highlightedEntry?.id == entry.id {
+                self.highlightedEntry = nil
+            }
+            self.registerUndo(label: "删除手稿「\(entry.title.isEmpty ? "未命名" : entry.title)」") {
+                do {
+                    _ = try await APIClient.shared.createEntry(restoreRequest)
+                    await self.loadEntries(forceFull: false)
+                } catch {
+                    self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                }
+            }
+            self.showTemporaryBanner("已删除手稿 · 可按 ⌘Z 撤销")
+        }
+    }
+
+    public func deleteTransactionAction(_ tx: Transaction) {
+        guard tx.id > 0 else { return }
+        let restoreRequest = CreateTransactionRequest(
+            amount: tx.amount,
+            type: tx.type,
+            category: tx.category,
+            title: tx.title,
+            note: tx.note,
+            paymentMethod: tx.paymentMethod,
+            cityCode: tx.cityCode,
+            occurredAt: tx.occurredAt
+        )
+        Task { @MainActor in
+            do {
+                _ = try await APIClient.shared.deleteTransaction(id: tx.id)
+            } catch {
+                self.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
+                return
+            }
+            await self.loadTransactionsAndAssets(forceFull: false)
+            await self.loadEntries(forceFull: false)
+            await self.loadConfigAndProfile()
+            if self.highlightedEntry?.id == tx.id {
+                self.highlightedEntry = nil
+            }
+            self.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
+                do {
+                    _ = try await APIClient.shared.createTransaction(restoreRequest)
+                    await self.loadTransactionsAndAssets(forceFull: false)
+                } catch {
+                    self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                }
+            }
+            self.showTemporaryBanner("已删除账目 · 可按 ⌘Z 撤销")
+        }
+    }
+
     /// 在**独立窗口**中打开的条目（深链 / 「在新窗口打开」使用，与主窗口的弹层互不影响）
     public var detailWindowEntry: LifeEntry?
 

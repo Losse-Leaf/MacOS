@@ -380,7 +380,25 @@ public struct StreamView: View {
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         .paperElevation(1)
 
-                        Spacer()
+                        // 分类筛选与检索并排：
+                        // 早先它们分占两行 —— 左上角一个窄搜索框、右上一排胶囊，
+                        // 中间大片空白，视线没有落点。合成一行后，
+                        // 左侧「找」与右侧「筛」各占一头，中间留白反而成了呼吸。
+                        Spacer(minLength: 24)
+
+                        HStack(spacing: 4) {
+                            ForEach(ArchiveCategory.allCases) { cat in
+                                if cat != .transaction || appState.isPaired {
+                                    PaperPillButton(
+                                        title: cat.label,
+                                        isSelected: appState.selectedCategory == cat
+                                    ) {
+                                        guard appState.selectedCategory != cat else { return }
+                                        appState.selectedCategory = cat
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(.bottom, 6)
@@ -394,23 +412,6 @@ public struct StreamView: View {
 
                 // 3. 迷你山河印谱概览
                 miniAtlasWidgetCard
-
-                // 4. 四维母体分类切换栏与 #标签 筛选
-                HStack(spacing: 6) {
-                    ForEach(ArchiveCategory.allCases) { cat in
-                        if cat != .transaction || appState.isPaired {
-                            PaperPillButton(
-                                title: cat.label,
-                                isSelected: appState.selectedCategory == cat
-                            ) {
-                                guard appState.selectedCategory != cat else { return }
-                                appState.selectedCategory = cat
-                            }
-                        }
-                    }
-
-                    Spacer()
-                }
 
                 // 4.1 全库跨模块检索关联发现 (足迹 / 心愿 / 造物)
                 if !appState.searchQuery.isEmpty, let res = appState.globalSearchResult,
@@ -428,7 +429,10 @@ public struct StreamView: View {
                         emptyStreamPlaceholder
                     }
                 } else {
-                    LazyVStack(alignment: .leading, spacing: 14) {
+                    // 朋友圈式时间戳：每条自带一个短标签（同一分钟折叠、跨天才显日期），
+                    // 而不是另起一行放日期标题 ——
+                    // 一天只有一条时，日期标题反而成了主要噪音。
+                    LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(rows) { row in
                             let entry = row.entry
                             if row.gapDays >= 14 {
@@ -436,6 +440,7 @@ public struct StreamView: View {
                             }
                             TimelineEntryCardView(
                                 entry: entry,
+                                timeLabel: row.timeLabel,
                                 transaction: matchingTransaction(for: entry),
                                 isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
                                 actions: timelineActions

@@ -82,6 +82,9 @@ struct WishCardView: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
 
+    /// 悬停态：次级动作（修订 / 删除）只在悬停时出现
+    @State private var isHovering: Bool = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 1. 顶栏：分类标签徽章 + 状态微胶囊
@@ -212,45 +215,53 @@ struct WishCardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                     }
 
-                    Button(action: onEdit) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(6)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
-                            // 命中区下限：图标视觉保持 11pt，可点区域不小于 28pt
-                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                    }
-                    .buttonStyle(.plain)
-                    .help("修订心愿")
-                    .accessibilityLabel("修订心愿")
+                    // 次级动作（修订 / 删除）改为**悬停才出现** ——
+                    // 与时间流卡片一致：一排卡片里常驻一堆图标按钮，视觉噪音很大。
+                    // 主操作「圆满心愿」保持常驻，它是被扫到的主要动作。
+                    if isHovering {
+                        Button(action: onEdit) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(6)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                )
+                                // 命中区下限：图标视觉保持 11pt，可点区域不小于 28pt
+                                .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        }
+                        .buttonStyle(.plain)
+                        .help("修订心愿")
+                        .accessibilityLabel("修订心愿")
 
-                    Button(action: onDelete) {
-                        Image(systemName: ArchiveIcon.delete.systemName)
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(6)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
-                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        Button(action: onDelete) {
+                            Image(systemName: ArchiveIcon.delete.systemName)
+                                .font(.system(size: 11))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(6)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                )
+                                .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        }
+                        .buttonStyle(.plain)
+                        .help("删除心愿")
+                        .accessibilityLabel("删除心愿")
                     }
-                    .buttonStyle(.plain)
-                    .help("删除心愿")
-                    .accessibilityLabel("删除心愿")
                 }
             }
         }
         .padding(ArchiveCardMetrics.padding)
-        .frame(minHeight: 195)
+        // 关键：原先是 195 —— 心愿内容通常只有「标题 + 一句手记」，
+        // 底部又被 Spacer 推到底，于是中间空出一大片，比时间流的卡片还空。
+        // 收到 168 之后，卡片紧贴内容，底部预算栏不再悬在半空。
+        .frame(minHeight: 150)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
@@ -261,6 +272,7 @@ struct WishCardView: View {
         // 实测单张心愿/造物卡 22~27ms —— 列表里放 20 张就是半秒以上的滚动卡顿。
         // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
+        .onHover { isHovering = $0 }
     }
 
     private var kindIcon: String {

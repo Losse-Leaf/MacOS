@@ -900,12 +900,13 @@ public struct LedgerAssetsView: View {
 
             // 类目滚动筛选行 (自成一行，全宽平滑滚动，首尾渐隐提示可横向滚动)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部") {
+                HStack(spacing: 5) {
+                    // 紧凑模式：16 个类目挤一行，默认尺寸会像一堵墙
+                    PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部", isCompact: true) {
                         selectedCategoryFilter = "全部"
                     }
                     ForEach(categories, id: \.self) { cat in
-                        PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat) {
+                        PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat, isCompact: true) {
                             selectedCategoryFilter = cat
                         }
                     }

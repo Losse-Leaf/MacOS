@@ -33,10 +33,13 @@ public struct PaperElevationModifier: ViewModifier {
             content
         case 1:
             // 卡片：只用描边表达层级，不做模糊阴影（性能关键路径）
+            //
+            // 描边比原先略强一点：0.5pt 的 borderSubtle 在米白纸面上几乎看不见，
+            // 卡片与背景的边界发虚，一列卡片读下来像一块没有分栏的大板。
             content
                 .overlay(
                     RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius)
-                        .stroke(ArchivePalette.borderSubtle.opacity(0.9), lineWidth: 0.5)
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
         case 2:
             // 浮层 / 悬停态：描边 + 略强一点的描边色，**不用模糊阴影**。

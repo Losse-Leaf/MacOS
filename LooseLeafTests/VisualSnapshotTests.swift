@@ -102,6 +102,65 @@ final class VisualSnapshotTests: XCTestCase {
         }
     }
 
+    /// 整个主窗口（侧栏 + 时间流）：这是用户一天要看几百眼的地方
+    func test04_MainWindowAppearance() throws {
+        let appState = AppState.shared
+        let bodies = [
+            "把书架靠到窗边，下午的光正好落在书脊上。顺手拍了一张，纸的味道还没散。",
+            "今天走了很久的路，鞋底沾着傍晚的尘土。回来路上买了一支很便宜的钢笔。",
+            "雨下了一整个下午。屋里很安静，听得见雨点打在玻璃上的声音。",
+            "整理旧物，翻出来三年前的笔记本，字迹还很淡。",
+            "和朋友在街角的小店坐了很久，什么正经事也没聊，就是坐着。",
+            "清晨五点醒，窗外还是灰蓝色。给自己煮了咖啡，等天亮。",
+            "看完了一本很厚的书，合上的时候有点舍不得。",
+            "公园的银杏开始黄了，踩上去有很轻的脆响。"
+        ]
+        appState.entries = (0..<14).map { i in
+            LifeEntry(
+                id: i + 1,
+                type: EntryType.life.rawValue,
+                // 朋友圈式发布：没有独立标题，标题由正文首行派生
+                title: "",
+                content: bodies[i % bodies.count],
+                occurredAt: "2026-09-\(String(format: "%02d", (i % 28) + 1))T10:00:00+08:00",
+                cityCode: "330100",
+                cityName: "杭州市"
+            )
+        }
+        appState.transactions = (0..<6).map { i in
+            var tx = Transaction(id: i + 1, amount: Int64(2500 + i * 137),
+                                 type: "expense", category: "餐饮", title: "第 \(i + 1) 笔")
+            tx.occurredAt = "2026-09-\(String(format: "%02d", (i % 28) + 1))T12:00:00+08:00"
+            return tx
+        }
+        appState.wishes = (0..<5).map { i in
+            Wish(id: i + 1, title: "第 \(i + 1) 个心愿", kind: "item", note: "想要一支能日常写的中性笔")
+        }
+        appState.projects = (0..<4).map { i in
+            Project(id: i + 1, title: "第 \(i + 1) 个造物", description: "把每天的碎片收进一个地方")
+        }
+
+        snapshot("10-主窗口（侧栏+时间流）", size: CGSize(width: 1280, height: 820)) {
+            StreamView(appState: appState)
+                .frame(width: 1280, height: 820)
+        }
+        // 其它板块：确认时间流的改动没有波及它们
+        for section in [WorkbenchSection.ledger, .wishes, .projects] {
+            appState.activeSection = section
+            snapshot("12-板块-\(section.rawValue)", size: CGSize(width: 1280, height: 820)) {
+                StreamView(appState: appState)
+                    .frame(width: 1280, height: 820)
+            }
+        }
+        appState.activeSection = .stream
+
+        snapshot("11-侧栏单独", size: CGSize(width: 225, height: 820)) {
+            WorkbenchSidebar(appState: appState, isSystemGroupCollapsed: .constant(false), onSelect: { _ in })
+                .frame(width: 225, height: 820)
+                .background(ArchivePalette.archivePaper)
+        }
+    }
+
     /// 创作弹窗：确认各形态在无阴影下的层级与留白
     func test03_ComposerAppearance() {
         snapshot("06-创作弹窗-日常", size: CGSize(width: 760, height: 660)) {

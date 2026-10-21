@@ -120,6 +120,8 @@ import AppKit
 
     struct TimelineEntryCardView: View {
         let entry: LifeEntry
+        /// 紧凑时间戳（朋友圈式；空串表示与上一条同一分钟，折叠不显示）
+        var timeLabel: String = ""
         /// 关联账目（由父层按 id 查好后传入，避免卡片内全量遍历）
         let transaction: Transaction?
         /// 是否为键盘流当前聚焦项
@@ -155,27 +157,37 @@ import AppKit
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
-                // 左侧时光彩色印线 (2.5pt 细微边缘色标)
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(typeAccentColor.opacity(0.85))
-                    .frame(width: 3)
-                    .padding(.vertical, 8)
-                    .padding(.trailing, 14)
+                // 左侧时光节点：只陪元信息行，不再贯穿整张卡
+                //
+                // 早先是一根 3pt 宽的实心色条贴着卡片左边缘内侧 ——
+                // 看着像残留的装饰。现在收成「一枚节点 + 一小截引线」，
+                // 长度只够到元信息行下方，像时间轴上的一个刻度，
+                // 而不是一根从头贯到尾的栏杆。
+                VStack(spacing: 0) {
+                    Circle()
+                        .fill(typeAccentColor)
+                        .frame(width: 6, height: 6)
+                        .padding(.top, 5)
+                    Rectangle()
+                        .fill(typeAccentColor.opacity(0.22))
+                        .frame(width: 1, height: 12)
+                }
+                .padding(.trailing, 12)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    // 顶栏：形态印章 + 北京时间戳 + 地点 + 悬停优雅动作
-                    HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 9) {
+                    // 顶栏：形态印章 + 时刻 + 地点 + 悬停优雅动作
+                    //
+                    // 关键：**日期不再出现在卡片里** —— 它已由上方的「按天分组标题」承担。
+                    // 每张卡都重复一遍日期，既是噪音，也让卡片失去了「一页」的密度。
+                    HStack(spacing: 7) {
                         Text(entryTypeBadgeName)
-                            .font(ArchiveTypography.monoScale(size: 10.5, weight: .medium))
+                            .font(ArchiveTypography.monoScale(size: 10, weight: .medium))
                             .foregroundStyle(typeAccentColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(typeAccentColor.opacity(0.12))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(typeAccentColor.opacity(0.10))
                             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
-                        Text(parsed.dotDateTime)
-                            .font(ArchiveTypography.monoScale(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
 
                         if let loc = entry.location ?? entry.cityName, !loc.isEmpty {
                             HStack(spacing: 3) {
@@ -227,6 +239,15 @@ import AppKit
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .help("重新同步到中枢")
                             .accessibilityLabel("重试同步")
+                        }
+
+                        // 时间戳紧跟类型印章 —— 元信息聚成一团，
+                        // 而不是把时间孤零零甩到最右（那样眼睛要横跨整行去找它）
+                        if !timeLabel.isEmpty {
+                            Text(timeLabel)
+                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                .foregroundStyle(ArchivePalette.inkMuted.opacity(0.85))
+                                .monospacedDigit()
                         }
 
                         Spacer()
@@ -309,19 +330,24 @@ import AppKit
                                 }
                             }
 
-                            Button {
-                                actions.onOpenDetail(entry)
-                            } label: {
-                                Image(systemName: "arrow.up.right.square")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .frame(width: 24, height: 24)
-                                    .background(isHovering ? ArchivePalette.archiveSubtle.opacity(0.8) : Color.clear)
-                                    .clipShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .help("查看手稿完整详情")
+                            // 关键：这一枚此前是**常驻**的，而同行其它动作都只在悬停时出现 ——
+                            // 于是每张卡右上角都挂着一个孤零零的小方框，看着像没画完。
+                            // 现在统一：悬停时才淡入。
+                            if isHovering {
+                                Button {
+                                    actions.onOpenDetail(entry)
+                                } label: {
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(width: 24, height: 24)
+                                        .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                        .clipShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("查看手稿完整详情")
                                 .accessibilityLabel("查看手稿完整详情")
+                            }
                         }
                         // 关键：这里原本绑着一个 `value: isHovering` 的动画。
                         // 滚动时悬停被疯狂触发，每个悬停都会开启一次 Core Animation
@@ -335,14 +361,16 @@ import AppKit
                     let derived = FormatUtils.derivedTitle(from: entry.content)
                     if !entry.title.isEmpty && entry.title != derived {
                         Text(entry.title)
-                            .font(ArchiveTypography.editorialSerif(size: 17.5, weight: .semibold))
+                            .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
+                            .padding(.bottom, 1)
                     }
 
                     Text(entry.content)
                         .font(ArchiveTypography.bodySans(size: 13.5))
-                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.92))
+                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
                         .lineSpacing(5)
+                        .textSelection(.enabled)
                         .textSelection(.enabled)
 
                     // 附件胶片相框画廊 (.film-frame)
@@ -372,7 +400,8 @@ import AppKit
                     }
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 13)
             .background(ArchivePalette.archivePaper)
             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
             .paperElevation(isHovering ? 2 : 1)

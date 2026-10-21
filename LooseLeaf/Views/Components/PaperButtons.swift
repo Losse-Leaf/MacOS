@@ -11,33 +11,41 @@ public struct PaperPillButton: View {
     public let title: String
     public var icon: String?
     public let isSelected: Bool
+    /// 紧凑模式：用于「一整排」类目筛选这类密集场景
+    ///
+    /// 关键：资产页有 16 个类目胶囊横排一行，默认尺寸下它们读起来像一堵墙
+    /// （而且右端被裁掉）。紧凑版把字号与内边距各收一档，
+    /// 一行能多放几个，也不再喧宾夺主。
+    public var isCompact: Bool = false
     public let action: () -> Void
 
     public init(
         title: String,
         icon: String? = nil,
         isSelected: Bool,
+        isCompact: Bool = false,
         action: @escaping () -> Void
     ) {
         self.title = title
         self.icon = icon
         self.isSelected = isSelected
+        self.isCompact = isCompact
         self.action = action
     }
 
     public var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: isCompact ? 4 : 5) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+                        .font(.system(size: isCompact ? 9.5 : 10.5, weight: isSelected ? .semibold : .medium))
                 }
                 Text(title)
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: isSelected ? .semibold : .regular))
+                    .font(ArchiveTypography.bodySans(size: isCompact ? 11 : 11.5, weight: isSelected ? .semibold : .regular))
             }
             .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, isCompact ? 8 : 10)
+            .padding(.vertical, isCompact ? 3.5 : 5)
             // 命中区下限：胶囊视觉不变，纵向至少留出指针可点高度
             .frame(minHeight: ArchiveHitTarget.minPointer)
             .background(

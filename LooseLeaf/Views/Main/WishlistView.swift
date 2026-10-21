@@ -185,7 +185,9 @@ public struct WishlistView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(count)
                     .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(accentColor)
+                    // 关键：计数为 0 时用中性色。
+                    // 暖色的「0 项」看着像告警（红色数字），而它其实只是「还没有」。
+                    .foregroundStyle(count.hasPrefix("0") ? ArchivePalette.inkMuted : accentColor)
                 if let sub = subText {
                     Text("(\(sub))")
                         .font(ArchiveTypography.monoScale(size: 10.5))

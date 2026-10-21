@@ -164,11 +164,15 @@ struct WorkbenchSidebar: View {
 
             var body: some View {
                 Button(action: action) {
-                    HStack(spacing: 10) {
+                    // 图标与文字的间距：早先是 spacing 10 + 18pt 宽的图标框，
+                    // 12.5pt 的小图标居中在 18pt 框里，两侧各留 3pt ——
+                    // 视觉上图标与文字之间像隔了二十来点，整列读起来松散。
+                    // 收到 7 + 16pt 之后，图标与文字才像一组。
+                    HStack(spacing: 7) {
                         Image(systemName: section.icon)
                             .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
                             .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                            .frame(width: 18)
+                            .frame(width: 16)
                         Text(section.title)
                             .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
                             .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)

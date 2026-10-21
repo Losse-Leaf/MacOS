@@ -623,7 +623,50 @@ public final class AppState {
     public struct StreamRow: Identifiable, Sendable {
         public let entry: LifeEntry
         public let gapDays: Int
+        /// 分组键（YYYY-MM-DD）：同一天的记录归到同一个分组标题下
+        public let dayKey: String
+        /// 紧凑时间戳（朋友圈式）
+        ///
+        /// 规则（参照朋友圈）：
+        ///   - 与上一条**同一分钟** → 空串（折叠，不重复显示）
+        ///   - 与上一条**同一天** → "HH:mm"
+        ///   - 跨天、同一年     → "9月1日"
+        ///   - 跨年             → "2025年9月1日"
+        ///
+        /// 关键：早先每张卡都印着完整的 "YYYY.MM.DD HH:mm"，一行就占掉半行宽度；
+        /// 改成随跨度变化的短标签后，一屏能多看一倍的内容。
+        public let timeLabel: String
         public var id: Int { entry.id }
+    }
+
+
+    /// 紧凑时间戳文案（朋友圈式）
+    ///
+    /// - 与上一条同一分钟 → 空串（折叠）
+    /// - 同一天 → "HH:mm"
+    /// - 跨天同年 → "9月1日"
+    /// - 跨年     → "2025年9月1日"
+    nonisolated static func compactTimeLabel(
+        _ current: FormatUtils.ParsedBeijingDate,
+        previous: FormatUtils.ParsedBeijingDate?
+    ) -> String {
+        guard current.isValid else { return "" }
+        guard let previous, previous.isValid else {
+            // 第一条：给完整日期，让人知道这是什么时候的记录
+            if current.year.count >= 4 {
+                return "\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
+            }
+            return current.time
+        }
+        if current.dateKey == previous.dateKey {
+            // 同一分钟内的连续记录：折叠，不重复显示时间
+            if current.time == previous.time { return "" }
+            return current.time
+        }
+        if current.year == previous.year {
+            return "\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
+        }
+        return "\(current.year)年\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
     }
 
     // 账目 id → 账目 的索引（按 entriesRevision 记忆化）
@@ -654,7 +697,14 @@ public final class AppState {
             let gap = index == 0
                 ? 0
                 : FormatUtils.daysBetween(list[index - 1].occurredAt, entry.occurredAt)
-            rows.append(StreamRow(entry: entry, gapDays: gap))
+            let parsed = entry.parsedDate
+            let label: String
+            if index == 0 {
+                label = Self.compactTimeLabel(parsed, previous: nil)
+            } else {
+                label = Self.compactTimeLabel(parsed, previous: list[index - 1].parsedDate)
+            }
+            rows.append(StreamRow(entry: entry, gapDays: gap, dayKey: parsed.dateKey, timeLabel: label))
         }
         streamRowsMemo = (key, rows)
         return rows

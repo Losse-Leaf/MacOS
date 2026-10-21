@@ -114,7 +114,6 @@ public final class QuickCaptureDraft {
     public var customLocation: String = ""
     public var selectedCityCode: String = ""
     public var selectedCityName: String = ""
-    public var isFeatured: Bool = false
     public var uploadedAttachments: [Attachment] = []
     public var extractedCameraLine: String = ""
     public var occurredAt: Date = Date()
@@ -128,7 +127,6 @@ public final class QuickCaptureDraft {
         selectedCityName = ""
         uploadedAttachments.removeAll()
         extractedCameraLine = ""
-        isFeatured = false
         occurredAt = Date()
         showBackdatePicker = false
     }
@@ -249,28 +247,6 @@ public final class AppState {
     public var editingTransaction: Transaction?
     // MARK: - 时间流卡片行为（放在 AppState 是为了让行为闭包只捕获单例）
 
-    public func toggleFeatured(_ entry: LifeEntry) {
-        guard entry.id > 0 else { return }
-        let newFeatured = !(entry.featured ?? false)
-        Task { @MainActor in
-            let req = UpdateEntryRequest(
-                type: entry.type,
-                title: entry.title,
-                content: entry.content,
-                occurredAt: entry.occurredAt,
-                location: entry.location,
-                featured: newFeatured,
-                cityCode: entry.cityCode,
-                cityName: entry.cityName
-            )
-            do {
-                _ = try await APIClient.shared.updateEntry(id: entry.id, req)
-                await self.loadEntries(forceFull: false)
-            } catch {
-                self.showTemporaryBanner("精选状态更新失败：\(error.localizedDescription)")
-            }
-        }
-    }
 
     public func deleteEntryAction(_ entry: LifeEntry) {
         guard entry.id > 0 else { return }
@@ -281,7 +257,6 @@ public final class AppState {
             content: entry.content,
             occurredAt: entry.occurredAt,
             location: entry.location,
-            featured: entry.featured ?? false,
             cityCode: entry.cityCode,
             cityName: entry.cityName,
             projectId: entry.projectId,
@@ -966,7 +941,6 @@ public final class AppState {
         cityCode: String? = nil,
         cityName: String? = nil,
         attachmentIds: [Int] = [],
-        featured: Bool = false,
         occurredAt: String? = nil
     ) async throws -> Bool {
         let finalLocation = (location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
@@ -991,7 +965,6 @@ public final class AppState {
             content: content.trimmingCharacters(in: .whitespacesAndNewlines),
             occurredAt: occurredAt ?? FormatUtils.beijingISOString(),
             location: finalLocation,
-            featured: featured,
             cityCode: resolvedCode,
             cityName: resolvedCityName,
             attachmentIds: attachmentIds
@@ -1196,7 +1169,6 @@ public final class AppState {
             content: entry.content,
             occurredAt: entry.occurredAt,
             location: entry.location,
-            featured: entry.featured ?? false,
             cityCode: entry.cityCode,
             cityName: entry.cityName,
             projectId: entry.projectId,

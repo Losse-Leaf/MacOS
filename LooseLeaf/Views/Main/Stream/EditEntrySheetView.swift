@@ -13,7 +13,6 @@ public struct EditEntrySheetView: View {
     @State private var editContent: String
     @State private var editCityCode: String
     @State private var editCityName: String
-    @State private var editFeatured: Bool
     @State private var editAttachments: [Attachment]
     @State private var isUploading: Bool = false
     @State private var isSaving: Bool = false
@@ -31,7 +30,6 @@ public struct EditEntrySheetView: View {
         _editContent = State(initialValue: entry.content)
         _editCityCode = State(initialValue: entry.cityCode ?? "")
         _editCityName = State(initialValue: entry.cityName ?? entry.location ?? "")
-        _editFeatured = State(initialValue: entry.featured ?? false)
         _editAttachments = State(initialValue: entry.attachments)
     }
 
@@ -134,10 +132,6 @@ public struct EditEntrySheetView: View {
             }
 
             HStack {
-                Toggle("标记为精选印记", isOn: $editFeatured)
-                    .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: 12))
-
                 Spacer()
 
                 Button("取消") {
@@ -173,7 +167,6 @@ public struct EditEntrySheetView: View {
             content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
             occurredAt: entry.occurredAt,
             location: cleanCity.isEmpty ? nil : cleanCity,
-            featured: editFeatured,
             cityCode: code,
             cityName: cleanCity.isEmpty ? nil : cleanCity,
             attachmentIds: editAttachments.map(\.id)

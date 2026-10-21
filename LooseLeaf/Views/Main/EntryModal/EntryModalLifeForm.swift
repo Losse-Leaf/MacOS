@@ -48,9 +48,6 @@ struct EntryModalLifeForm: View {
             HStack(spacing: 12) {
                 PaperDatePicker(selection: $draft.occurredAt, enableTime: true, label: "发生时刻")
                 PaperCityPicker(selectedCode: $draft.cityCode, selectedName: $draft.cityName)
-                Toggle("精选散页", isOn: $draft.isFeatured)
-                    .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
             }
 
             EntryMediaAttachmentsSection(media: media)

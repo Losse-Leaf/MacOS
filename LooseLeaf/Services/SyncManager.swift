@@ -291,7 +291,6 @@ public final class SyncManager {
             wishId: req.wishId,
             footprintId: req.footprintId,
             attachments: attachments,
-            featured: req.featured,
             syncStatus: "pending_create"
         )
         var current = snapshot

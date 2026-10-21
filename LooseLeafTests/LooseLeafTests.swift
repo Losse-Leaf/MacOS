@@ -497,17 +497,14 @@ final class LooseLeafTests: XCTestCase {
         draft.reset()
         draft.titleText = "测试草稿"
         draft.contentText = "草稿正文"
-        draft.isFeatured = true
         draft.activeTab = .thought
 
         XCTAssertEqual(AppState.shared.quickDraft.titleText, "测试草稿")
         XCTAssertEqual(AppState.shared.quickDraft.contentText, "草稿正文")
-        XCTAssertTrue(AppState.shared.quickDraft.isFeatured)
 
         draft.reset()
         XCTAssertTrue(draft.titleText.isEmpty)
         XCTAssertTrue(draft.contentText.isEmpty)
-        XCTAssertFalse(draft.isFeatured)
     }
 
     // MARK: - 19. Two-Tier Disk Image Cache & International Coordinates Tests

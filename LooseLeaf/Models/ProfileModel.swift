@@ -391,7 +391,6 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
     public var category: String?
     public var githubUrl: String?
     public var status: String?
-    public var featured: Bool?
     public var order: Int?
     public var createdAt: String?
     public var updatedAt: String?
@@ -405,7 +404,6 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
         case category
         case githubUrl = "github_url"
         case status
-        case featured
         case order
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -420,7 +418,6 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
         category: String? = nil,
         githubUrl: String? = nil,
         status: String? = "Active",
-        featured: Bool? = false,
         order: Int? = 0,
         createdAt: String? = nil,
         updatedAt: String? = nil
@@ -433,7 +430,6 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
         self.category = category
         self.githubUrl = githubUrl
         self.status = status
-        self.featured = featured
         self.order = order
         self.createdAt = createdAt
         self.updatedAt = updatedAt

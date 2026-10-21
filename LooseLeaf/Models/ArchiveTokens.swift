@@ -172,7 +172,7 @@ public enum ArchiveIcon {
     case stream, ledger, wishes, atlas, projects, dossier
     case preferences, hub, storage, categories, about
     case entryLife, entryTravel, entryProject, entryWish, entryTransaction
-    case search, sync, add, edit, delete, featured, detail, close, location
+    case search, sync, add, edit, delete, detail, close, location
     case export, gear, camera, lock, cloud
 
     public var systemName: String {
@@ -198,7 +198,6 @@ public enum ArchiveIcon {
         case .add: return "plus"
         case .edit: return "square.and.pencil"
         case .delete: return "trash"
-        case .featured: return "star"
         case .detail: return "arrow.up.left.and.arrow.down.right"
         case .close: return "xmark"
         case .location: return "mappin"

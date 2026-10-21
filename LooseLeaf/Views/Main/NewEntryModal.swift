@@ -397,7 +397,6 @@ public struct NewEntryModal: View {
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
             attachmentIds: media.uploadedAttachments.map(\.id),
-            featured: draft.isFeatured,
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
         )
     }
@@ -414,7 +413,6 @@ public struct NewEntryModal: View {
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
             attachmentIds: media.uploadedAttachments.map(\.id),
-            featured: true,
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
         )
     }
@@ -443,7 +441,6 @@ public struct NewEntryModal: View {
                 content: draft.content,
                 occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
                 location: nil,
-                featured: false,
                 cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
                 cityName: draft.cityName.isEmpty ? nil : draft.cityName,
                 projectId: draft.selectedProjectId,
@@ -529,7 +526,6 @@ public struct NewEntryModal: View {
             "content": draft.content,
             "cityCode": draft.cityCode,
             "cityName": draft.cityName,
-            "isFeatured": draft.isFeatured
         ]
         if let data = try? JSONSerialization.data(withJSONObject: dict) {
             UserDefaults.standard.set(data, forKey: draftStorageKey)
@@ -555,14 +551,12 @@ public struct NewEntryModal: View {
             if let code = dict["cityCode"] as? String { draft.cityCode = code }
             if let name = dict["cityName"] as? String { draft.cityName = name }
         }
-        if let feat = dict["isFeatured"] as? Bool { draft.isFeatured = feat }
     }
 
     private func clearDraft() {
         UserDefaults.standard.removeObject(forKey: draftStorageKey)
         draft.title = ""
         draft.content = ""
-        draft.isFeatured = false
         media.removeAll()
     }
 

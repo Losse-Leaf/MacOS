@@ -66,7 +66,6 @@ enum ArchivePreviewFixtures {
                 category: "开源项目",
                 githubUrl: "https://github.com/example/looseleaf",
                 status: ProjectStatus.active.rawValue,
-                featured: true,
                 order: 1,
                 createdAt: nil,
                 updatedAt: nil
@@ -80,7 +79,6 @@ enum ArchivePreviewFixtures {
                 category: "设计作品",
                 githubUrl: nil,
                 status: ProjectStatus.ongoing.rawValue,
-                featured: false,
                 order: 2,
                 createdAt: nil,
                 updatedAt: nil
@@ -94,7 +92,6 @@ enum ArchivePreviewFixtures {
                 category: "写作出版",
                 githubUrl: nil,
                 status: ProjectStatus.archived.rawValue,
-                featured: false,
                 order: 3,
                 createdAt: nil,
                 updatedAt: nil
@@ -344,7 +341,6 @@ enum ArchivePreviewFixtures {
                 wish: nil,
                 footprintId: 9201,
                 attachments: [],
-                featured: false,
                 deletedAt: nil,
                 createdAt: nil,
                 updatedAt: nil,
@@ -365,7 +361,6 @@ enum ArchivePreviewFixtures {
                 wish: nil,
                 footprintId: 9202,
                 attachments: [],
-                featured: true,
                 deletedAt: nil,
                 createdAt: nil,
                 updatedAt: nil,

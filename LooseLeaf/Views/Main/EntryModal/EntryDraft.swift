@@ -39,7 +39,6 @@ final class EntryDraft {
     var occurredAt: Date = Date()
     var cityCode: String = ""
     var cityName: String = ""
-    var isFeatured: Bool = false
 
     // MARK: - 游历专有
 

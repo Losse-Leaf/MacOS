@@ -275,24 +275,6 @@ public struct QuickCaptureView: View {
             .accessibilityLabel("补记历史时刻")
             .help("补记过去的时刻")
 
-            // 精选印记开关（命中区不小于 28pt）
-            Button {
-                draft.isFeatured.toggle()
-            } label: {
-                Image(systemName: draft.isFeatured ? "star.fill" : "star")
-                    .font(.system(size: ArchiveTypography.Scale.caption))
-                    .foregroundStyle(draft.isFeatured ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                    .padding(ArchiveSpacing.xs)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                    .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(draft.isFeatured ? "取消精选印记" : "标记为精选印记")
-            .accessibilityValue(draft.isFeatured ? "已精选" : "未精选")
-            .help("标记为精选印记")
-
             Spacer(minLength: 0)
 
             Button {
@@ -540,7 +522,6 @@ public struct QuickCaptureView: View {
                     cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
                     cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
                     attachmentIds: draft.uploadedAttachments.map(\.id),
-                    featured: draft.isFeatured,
                     occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
                 )
                 draft.reset()

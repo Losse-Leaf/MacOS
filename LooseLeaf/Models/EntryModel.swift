@@ -154,7 +154,6 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var gearId: String?
     public var footprintId: Int?
     public var attachments: [Attachment]
-    public var featured: Bool?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -178,7 +177,6 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         case gearId = "gear_id"
         case footprintId = "footprint_id"
         case attachments
-        case featured
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -201,7 +199,6 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         gearId: String? = nil,
         footprintId: Int? = nil,
         attachments: [Attachment] = [],
-        featured: Bool? = false,
         deletedAt: String? = nil,
         createdAt: String? = nil,
         updatedAt: String? = nil,
@@ -222,7 +219,6 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         self.gearId = gearId
         self.footprintId = footprintId
         self.attachments = attachments
-        self.featured = featured
         self.deletedAt = deletedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -246,7 +242,6 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         gearId = try? container.decodeIfPresent(String.self, forKey: .gearId)
         footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
-        featured = try? container.decodeIfPresent(Bool.self, forKey: .featured)
         deletedAt = try? container.decodeIfPresent(String.self, forKey: .deletedAt)
         createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try? container.decodeIfPresent(String.self, forKey: .updatedAt)
@@ -310,7 +305,6 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
     public var content: String
     public var occurredAt: String
     public var location: String?
-    public var featured: Bool
     public var cityCode: String?
     public var cityName: String?
     public var projectId: Int?
@@ -324,7 +318,6 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         case content
         case occurredAt = "occurred_at"
         case location
-        case featured
         case cityCode = "city_code"
         case cityName = "city_name"
         case projectId = "project_id"
@@ -339,7 +332,6 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         content: String,
         occurredAt: String = FormatUtils.beijingISOString(),
         location: String? = nil,
-        featured: Bool = false,
         cityCode: String? = nil,
         cityName: String? = nil,
         projectId: Int? = nil,
@@ -352,7 +344,6 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         self.content = content
         self.occurredAt = occurredAt
         self.location = location
-        self.featured = featured
         self.cityCode = cityCode
         self.cityName = cityName
         self.projectId = projectId
@@ -369,7 +360,6 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
     public var content: String?
     public var occurredAt: String?
     public var location: String?
-    public var featured: Bool?
     public var cityCode: String?
     public var cityName: String?
     public var projectId: Int?
@@ -383,7 +373,6 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         case content
         case occurredAt = "occurred_at"
         case location
-        case featured
         case cityCode = "city_code"
         case cityName = "city_name"
         case projectId = "project_id"
@@ -398,7 +387,6 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         content: String? = nil,
         occurredAt: String? = nil,
         location: String? = nil,
-        featured: Bool? = nil,
         cityCode: String? = nil,
         cityName: String? = nil,
         projectId: Int? = nil,
@@ -411,7 +399,6 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         self.content = content
         self.occurredAt = occurredAt
         self.location = location
-        self.featured = featured
         self.cityCode = cityCode
         self.cityName = cityName
         self.projectId = projectId

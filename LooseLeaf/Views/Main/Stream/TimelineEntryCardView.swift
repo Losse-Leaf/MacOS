@@ -67,7 +67,6 @@ import AppKit
             let state = appState ?? AppState.shared
             onEditEntry = { entry in state.editingEntry = entry }
             onEditTransaction = { tx in state.editingTransaction = tx }
-            onToggleFeatured = { entry in state.toggleFeatured(entry) }
             onOpenDetail = { entry in
                 // 给主线程卡顿归因：出问题时能知道当时用户点的是哪一步
                 MainThreadWatchdog.shared.noteAction("点击卡片（打开详情）")
@@ -107,7 +106,6 @@ import AppKit
         /// 删除账目
         var onDeleteTransaction: (Transaction) -> Void = { _ in }
         /// 切换精选
-        var onToggleFeatured: (LifeEntry) -> Void = { _ in }
         /// 打开详情
         var onOpenDetail: (LifeEntry) -> Void = { _ in }
         /// 打开灯箱
@@ -199,18 +197,6 @@ import AppKit
                             .foregroundStyle(ArchivePalette.inkMuted)
                         }
 
-                        if entry.featured == true {
-                            Text("精选")
-                                .font(ArchiveTypography.monoScale(size: 10, weight: .medium))
-                                .foregroundStyle(ArchivePalette.accentMoss)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1.5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                        .stroke(ArchivePalette.accentMoss.opacity(0.4), lineWidth: 0.5)
-                                )
-                        }
-
                         // 同步状态：待同步（网络未通）/ 同步失败（可重试）
                         let syncState = entry.syncStatus ?? "synced"
                         if syncState == "pending_create" {
@@ -286,20 +272,6 @@ import AppKit
                                         .accessibilityLabel("删除账目")
                                     }
                                 } else {
-                                    Button {
-                                        actions.onToggleFeatured(entry)
-                                    } label: {
-                                        Image(systemName: entry.featured == true ? "star.fill" : "star")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(entry.featured == true ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                                            .frame(width: 24, height: 24)
-                                            .background(ArchivePalette.archiveSubtle.opacity(0.8))
-                                            .clipShape(Circle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help(entry.featured == true ? "取消精选" : "设为精选")
-                                        .accessibilityLabel(entry.featured == true ? "取消精选" : "设为精选")
-
                                     Button {
                                         actions.onEditEntry(entry)
                                     } label: {
@@ -452,11 +424,6 @@ import AppKit
                         actions.onOpenDetail(entry)
                     } label: {
                         Label("查看手稿详情", systemImage: "book.pages")
-                    }
-                    Button {
-                        actions.onToggleFeatured(entry)
-                    } label: {
-                        Label(entry.featured == true ? "取消精选印记" : "标记为精选印记", systemImage: entry.featured == true ? "star.slash" : "star")
                     }
                     Button {
                         actions.onEditEntry(entry)

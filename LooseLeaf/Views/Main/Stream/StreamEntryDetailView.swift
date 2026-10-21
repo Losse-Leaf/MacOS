@@ -151,16 +151,6 @@ struct StreamEntryDetailView: View {
                         }
                         .foregroundStyle(ArchivePalette.inkMuted)
                     }
-
-                    if entry.featured == true {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bookmark.fill")
-                                .font(.system(size: 10))
-                            Text("精选典藏")
-                                .font(ArchiveTypography.monoScale(size: 11))
-                        }
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    }
                 }
 
                 if !entry.title.isEmpty {

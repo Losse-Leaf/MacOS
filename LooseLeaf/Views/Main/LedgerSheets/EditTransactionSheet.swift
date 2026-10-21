@@ -162,7 +162,24 @@ public struct EditTransactionSheet: View {
                     note: note.isEmpty ? nil : note,
                     paymentMethod: paymentMethod,
                     cityCode: cityCode.isEmpty ? nil : cityCode,
-                    occurredAt: FormatUtils.beijingISOString(from: occurredDate)
+                    occurredAt: FormatUtils.beijingISOString(from: occurredDate),
+                    // 关键：**透传原有的分期字段**。
+                    // 原先这里完全没传，于是 `isInstallment` 取默认值 false，
+                    // 而 `Bool` 一定会被 JSONEncoder 写进请求体 ——
+                    // 后端据此把 `tx.IsInstallment = false`，
+                    // 于是**任何一次编辑（哪怕只改个标题）都会把分期账目
+                    // 降级成一次性支出**：分期负债凭空消失、流动余额被整额冲减。
+                    // 用户全程只在界面上看到「改了笔备注」。
+                    isInstallment: transaction.isInstallment == true,
+                    installmentChannelCode: transaction.installmentChannelCode,
+                    installmentTotalAmount: transaction.installmentTotalAmount,
+                    installmentMonths: transaction.installmentMonths,
+                    // 月供：金额变了要按新总额重算；没变就沿用原值
+                    installmentMonthlyPay: cents == transaction.amount
+                        ? transaction.installmentMonthlyPay
+                        : (cents / Int64(max(1, transaction.installmentMonths ?? 1))),
+                    installmentRemainMonths: transaction.installmentRemainMonths,
+                    repaymentDay: transaction.repaymentDay
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
                 // 账目在时间流里是合成条目，账目变了时间流也要跟着变

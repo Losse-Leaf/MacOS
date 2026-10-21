@@ -439,6 +439,19 @@ public final class SyncManager {
     /// 移除一条尚未同步的乐观账目
     public func removeOptimisticTransaction(localTempId: Int) {
         var latest = snapshot
+        // 关键：删除乐观账目时**回滚汇总**。
+        // 原先只从数组里移除，汇总里的金额却留着 ——
+        // 于是「离线记 ¥500 → 又删掉」之后，本月支出仍然多算 ¥500，
+        // 直到下次同步才被服务端覆盖。
+        if let removed = latest.transactions.first(where: { $0.id == localTempId }),
+           Self.isInSummaryMonth(removed.occurredAt, summary: latest.transactionSummary) {
+            Self.applySummaryDelta(
+                &latest.transactionSummary,
+                category: removed.category,
+                type: removed.type,
+                amount: -removed.amount
+            )
+        }
         latest.transactions.removeAll { $0.id == localTempId }
         latest.outbox.removeAll { $0.localTempId == localTempId }
         saveSnapshot(latest)
@@ -514,15 +527,47 @@ public final class SyncManager {
 
         var current = snapshot
         current.transactions = Self.sortedTransactions(current.transactions, inserting: optimistic)
-        if req.type == "expense" {
-            current.transactionSummary.totalExpense += req.amount
-            current.transactionSummary.categoryBreakdown[req.category, default: 0] += req.amount
-        } else {
-            current.transactionSummary.totalIncome += req.amount
+        // 关键：只有当这笔账目**落在汇总所属的月份**时才调整汇总。
+        // `transactionSummary` 恒为「当前自然月」的汇总，
+        // 而用户完全可以补记上个月的账（occurredAt 是别的月份）——
+        // 原先无条件 `totalExpense += amount`，
+        // 于是补记一笔往月的账会立刻把**本月**支出加上去，直到下次同步才被覆盖。
+        if Self.isInSummaryMonth(req.occurredAt, summary: current.transactionSummary) {
+            Self.applySummaryDelta(&current.transactionSummary, category: req.category, type: req.type, amount: req.amount)
         }
-        current.transactionSummary.balance = current.transactionSummary.totalIncome - current.transactionSummary.totalExpense
         saveSnapshot(current)
         return optimistic
+    }
+
+    /// 账目是否落在汇总所属的年月
+    nonisolated static func isInSummaryMonth(_ occurredAt: String, summary: TransactionSummary) -> Bool {
+        guard let date = FormatUtils.parseFlexDate(occurredAt) else { return false }
+        let (y, m) = FormatUtils.beijingCurrentYearMonth()
+        let parts = FormatUtils.formatBeijingDate(date)
+        return parts.year == String(y) && parts.month == String(format: "%02d", m)
+    }
+
+    /// 统一调整月度汇总（正数=增加，负数=扣减）
+    ///
+    /// 关键：所有会改变汇总的地方都必须走这里，
+    /// 否则「乐观写入加了、删除时忘了减」就会让汇总长期失真。
+    nonisolated static func applySummaryDelta(
+        _ summary: inout TransactionSummary,
+        category: String,
+        type: String,
+        amount: Int64
+    ) {
+        if type == "expense" {
+            summary.totalExpense += amount
+            if let existing = summary.categoryBreakdown[category] {
+                summary.categoryBreakdown[category] = existing + amount
+            } else if amount > 0 {
+                summary.categoryBreakdown[category] = amount
+            }
+        } else {
+            summary.totalIncome += amount
+        }
+        summary.balance = summary.totalIncome - summary.totalExpense
     }
 
     /// 后台同步一条已乐观写入的账目
@@ -614,6 +659,17 @@ public final class SyncManager {
         var latest = snapshot
         var touched = false
         for index in latest.transactions.indices where latest.transactions[index].id == tempId {
+            // 关键：服务端返回永久错误（4xx）时，这笔账**根本没进服务端** ——
+            // 汇总里的金额必须回滚，否则本地会一直显示一笔不存在的支出。
+            let tx = latest.transactions[index]
+            if Self.isInSummaryMonth(tx.occurredAt, summary: latest.transactionSummary) {
+                Self.applySummaryDelta(
+                    &latest.transactionSummary,
+                    category: tx.category,
+                    type: tx.type,
+                    amount: -tx.amount
+                )
+            }
             latest.transactions[index].syncStatus = "failed"
             touched = true
         }

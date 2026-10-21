@@ -264,6 +264,110 @@ final class UIRenderingBenchmarkTests: XCTestCase {
         }
     }
 
+    // MARK: - 时间流滚动：卡片批量物化的开销
+
+    /// 滚动卡顿的根源不是「单张卡片慢」，而是**滚动过程中被反复触发**的那些开销：
+    /// 悬停态切换（会带阴影/动画）、文本选中、嵌套滚动视图。
+    /// 这里用「一次物化 N 张卡」来量化批量成本，作为修改前后的对照基准。
+    func test12_TimelineScrollMaterializationCost() {
+        let entries = (0..<40).map { i in
+            LifeEntry(
+                id: i,
+                type: "life",
+                title: "第 \(i + 1) 条随笔",
+                content: "把书架靠到窗边，下午的光正好落在书脊上。顺手拍了一张，纸的味道还没散。",
+                occurredAt: "2026-10-20T10:00:00+08:00"
+            )
+        }
+        // 视口高度撑到足够大 → LazyVStack 里的 40 行全部物化
+        let tall = CGSize(width: 900, height: 40 * 190)
+        measure("时间流 40 张卡全量物化", size: tall) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(entries) { entry in
+                        TimelineEntryCardView(
+                            entry: entry,
+                            transaction: nil,
+                            isKeyboardFocused: false,
+                            actions: TimelineEntryActions()
+                        )
+                    }
+                }
+            }
+            .frame(width: 900, height: 40 * 190)
+        }
+    }
+
+    // MARK: - 悬停态代价（滚动时悬停会疯狂触发）
+
+    /// 滚动卡顿的元凶往往不是「卡片本身慢」，而是**滚动时被反复触发**的开销：
+    /// 指针扫过卡片 → onHover 触发 → 状态切换 → 若此时带模糊阴影，
+    /// 就要对整棵子树做一次离屏渲染。滚动中每秒能触发十几次。
+    func test13_HoverStateCost() {
+        let entry = LifeEntry(
+            id: 1,
+            type: "life",
+            title: "悬停态基准",
+            content: "把书架靠到窗边，下午的光正好落在书脊上。",
+            occurredAt: "2026-10-20T10:00:00+08:00"
+        )
+        measure("卡片 · paperElevation(1)（非悬停）") {
+            TimelineEntryCardView(
+                entry: entry, transaction: nil, isKeyboardFocused: false, actions: TimelineEntryActions()
+            )
+            .frame(width: 900, height: 180)
+        }
+        measure("卡片 · paperElevation(2)（悬停态，带模糊阴影）") {
+            TimelineEntryCardView(
+                entry: entry, transaction: nil, isKeyboardFocused: false, actions: TimelineEntryActions()
+            )
+            .frame(width: 900, height: 180)
+            .paperElevation(2)
+        }
+        measure("卡片 · 带 textSelection（可选中文本）") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(entry.title)
+                    .font(ArchiveTypography.editorialSerif(size: 17.5, weight: .semibold))
+                Text(entry.content)
+                    .font(ArchiveTypography.bodySans(size: 13.5))
+                    .lineSpacing(5)
+                    .textSelection(.enabled)
+            }
+            .frame(width: 860, height: 180, alignment: .leading)
+        }
+    }
+
+    // MARK: - 悬停 + 大图：模糊阴影的离屏栅格化代价
+
+    /// 验证假设：**悬停时的模糊阴影会把整张卡（含大图）离屏栅格化**。
+    /// 指针扫过卡片 → 悬停 → level 2 阴影 → 2412×1584 的位图要被重新光栅化一遍。
+    /// 时间流里这种事件每秒能发生十几次。
+    func test14_HoverShadowWithLargeImageCost() {
+        // 造一张接近真实相纸的位图（2412×1584）
+        let big = NSImage(size: NSSize(width: 2412, height: 1584))
+        big.lockFocus()
+        NSColor(calibratedRed: 0.55, green: 0.48, blue: 0.40, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 2412, height: 1584).fill()
+        NSColor(calibratedRed: 0.3, green: 0.42, blue: 0.35, alpha: 1).setFill()
+        NSRect(x: 120, y: 120, width: 2172, height: 1344).fill()
+        big.unlockFocus()
+
+        measure("大图相纸框 · 无阴影") {
+            FilmFrameView(localImage: big, caption: "窗边的光", metaText: "2026-10-20", maxHeight: 220)
+                .frame(width: 260, height: 200)
+        }
+        measure("大图相纸框 · paperElevation(1)（描边）") {
+            FilmFrameView(localImage: big, caption: "窗边的光", metaText: "2026-10-20", maxHeight: 220)
+                .frame(width: 260, height: 200)
+                .paperElevation(1)
+        }
+        measure("大图相纸框 · paperElevation(2)（悬停态，旧版带模糊阴影）") {
+            FilmFrameView(localImage: big, caption: "窗边的光", metaText: "2026-10-20", maxHeight: 220)
+                .frame(width: 260, height: 200)
+                .paperElevation(2)
+        }
+    }
+
     // MARK: - 列表内卡片（每张都会重复渲染）
 
     func test11_ListCardRenderingCost() {

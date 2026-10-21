@@ -67,6 +67,16 @@ public final class SyncManager {
     /// 本地快照目录 (存储于 ~/Library/Application Support/LooseLeaf/ 保证沙箱环境下 100% 可靠读写)
     /// 目录 URL 只计算一次，避免每次写盘都做一次 createDirectory 系统调用。
     nonisolated public static let sharedStorageDirectory: URL = {
+        // 诊断用：允许把整个存储目录（凭据 / 快照 / 媒体缓存）指到别处。
+        // 关键：UI 测试与性能剖析必须有一份**完全隔离**的存储，
+        // 否则测试会读写用户真实的中枢令牌与档案。
+        if let override = ProcessInfo.processInfo.environment["LOOSELEAF_STORAGE_DIR"],
+           !override.isEmpty {
+            let dir = URL(fileURLWithPath: override, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+            return dir
+        }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = appSupport.appendingPathComponent("LooseLeaf", isDirectory: true)

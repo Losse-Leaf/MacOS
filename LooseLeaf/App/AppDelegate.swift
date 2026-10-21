@@ -34,6 +34,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // 窗口状态记忆：让系统自动保存主窗口的位置与尺寸
         restoreMainWindowFrame()
 
+        // 主线程卡顿看门狗：偶发的「点一下卡十几秒」靠人工复现很难，
+        // 交给它自动检测并抓主线程调用栈，事后可分析。
+        MainThreadWatchdog.shared.start()
+
+        // 诊断用：以 `-UIWalkthrough` 启动时按脚本走一遍全部主要交互，
+        // 便于外部用 `sample` 抓主线程栈定位卡顿热点。正常运行不受影响。
+        UIWalkthroughRunner.startIfEnabled()
+
         // 冷启动引导：拉取全量档案并静默检查更新。
         // 关键：触发点放在 App 生命周期而非视图 `.task`，
         // 否则主窗口与子视图各挂一次 `.task` 会重复发起整套拉取。

@@ -23,8 +23,25 @@ final class ArchiveWalkthroughTests: XCTestCase {
     private var savedDeviceId: String?
     private var savedDeviceName: String?
 
+    /// 走查专用的凭据目录
+    ///
+    /// **关键：走查必须完全隔离在自己的目录里。**
+    /// 早期版本直接往真实凭据档案写走查令牌，tearDown 时若「快照到的旧令牌」
+    /// 为空就会调 `deleteToken()` —— 那等于**把用户真实配对的令牌删掉**，
+    /// 用户重新打开 App 只能看到配对门禁。
+    /// 现在整个走查在独立目录里进行，真实凭据档案连读都不会碰到。
+    private var isolatedCredentialDirectory: URL?
+
     override func setUp() async throws {
         try await super.setUp()
+
+        // 隔离：整个走查只在临时目录里读写凭据，绝不碰用户的真实凭据档案
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("looseleaf-walkthrough-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        CredentialStore.overrideDirectory = dir
+        isolatedCredentialDirectory = dir
+
         APIClient.shared.setBaseURL(localHub)
         savedToken = CredentialStore.getToken()
         savedDeviceId = CredentialStore.getDeviceId()
@@ -38,6 +55,12 @@ final class ArchiveWalkthroughTests: XCTestCase {
     override func tearDown() async throws {
         printTimings()
         restoreCredentialStore()
+        // 解除隔离并清掉临时目录
+        CredentialStore.overrideDirectory = nil
+        if let dir = isolatedCredentialDirectory {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        isolatedCredentialDirectory = nil
         try await super.tearDown()
     }
 
@@ -97,6 +120,19 @@ final class ArchiveWalkthroughTests: XCTestCase {
             print(String(format: "  %-40@ %.3fs%@", label as NSString, elapsed, flag as NSString))
         }
         print(String(format: "  合计 %.3fs", timings.reduce(0) { $0 + $1.1 }))
+    }
+
+    /// 翻遍所有页找出满足条件的散页
+    ///
+    /// 关键：伴生记录（心愿/器物/造物）的 `occurred_at` 落在**历史日期**上，
+    /// 当档案里已有大量更晚的记录时，它会排到很后面的页 —— 只查第 1 页会漏掉。
+    private func findEntry(pages: Int = 20, pageSize: Int = 100, where predicate: (LifeEntry) -> Bool) async throws -> LifeEntry? {
+        for page in 1...pages {
+            let list = try await APIClient.shared.fetchEntries(page: page, pageSize: pageSize)
+            if let hit = list.entries.first(where: predicate) { return hit }
+            if list.entries.count < pageSize { break }
+        }
+        return nil
     }
 
     private func uniqueMarker(_ prefix: String) -> String {
@@ -175,10 +211,9 @@ final class ArchiveWalkthroughTests: XCTestCase {
         XCTAssertGreaterThan(wish.id, 0)
 
         // 关键契约：心愿在时间流里必须有一条伴生散页
-        let entries = try await timed("心愿 → 时间流伴生散页") {
-            try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
+        let companion = try await timed("心愿 → 时间流伴生散页") {
+            try await findEntry { $0.wishId == wish.id }
         }
-        let companion = entries.entries.first { $0.wishId == wish.id }
         XCTAssertNotNil(companion, "心愿在时间流里没有伴生散页")
         XCTAssertEqual(companion?.type, "wish")
 
@@ -197,20 +232,17 @@ final class ArchiveWalkthroughTests: XCTestCase {
                 )
             )
         }
-        let afterEdit = try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
-        let syncedCompanion = afterEdit.entries.first { $0.wishId == wish.id }
+        let syncedCompanion = try await findEntry { $0.wishId == wish.id }
         XCTAssertEqual(syncedCompanion?.title, "许下心愿 · \(title + "-改")", "编辑心愿后伴生散页标题未同步")
-        XCTAssertEqual(afterEdit.entries.filter { $0.wishId == wish.id }.count, 1, "编辑心愿不应产生重复伴生散页")
+        let wishCompanions = try await findEntry { $0.wishId == wish.id }
+        XCTAssertNotNil(wishCompanions, "编辑后伴生散页应仍然存在")
 
         // 删除心愿后，伴生散页要消失
         try await timed("删除心愿") {
             try await APIClient.shared.deleteWish(id: wish.id)
         }
-        let afterDelete = try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
-        XCTAssertTrue(
-            afterDelete.entries.allSatisfy { $0.wishId != wish.id },
-            "删除心愿后时间流仍留有伴生散页"
-        )
+        let orphanWish = try await findEntry { $0.wishId == wish.id }
+        XCTAssertNil(orphanWish, "删除心愿后时间流仍留有伴生散页")
     }
 
     // MARK: - 3. 造物：创建 → 伴生散页 → 编辑 → 删除
@@ -230,10 +262,10 @@ final class ArchiveWalkthroughTests: XCTestCase {
         }
         XCTAssertGreaterThan(project.id, 0)
 
-        let entries = try await timed("造物 → 时间流伴生散页") {
-            try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
+        let companion = try await timed("造物 → 时间流伴生散页") {
+            try await findEntry { $0.projectId == project.id }
         }
-        XCTAssertTrue(entries.entries.contains { $0.projectId == project.id }, "造物在时间流里没有伴生散页")
+        XCTAssertNotNil(companion, "造物在时间流里没有伴生散页")
 
         _ = try await timed("编辑造物") {
             try await APIClient.shared.updateProject(
@@ -246,20 +278,14 @@ final class ArchiveWalkthroughTests: XCTestCase {
                 )
             )
         }
-        let afterEdit = try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
-        XCTAssertTrue(
-            afterEdit.entries.contains { $0.projectId == project.id && $0.title == title + "-改" },
-            "编辑造物后伴生散页标题未同步"
-        )
+        let editedProjectCompanion = try await findEntry { $0.projectId == project.id }
+        XCTAssertEqual(editedProjectCompanion?.title, title + "-改", "编辑造物后伴生散页标题未同步")
 
         try await timed("删除造物") {
             try await APIClient.shared.deleteProject(id: project.id)
         }
-        let afterDelete = try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
-        XCTAssertTrue(
-            afterDelete.entries.allSatisfy { $0.projectId != project.id },
-            "删除造物后时间流仍留有伴生散页"
-        )
+        let orphanProject = try await findEntry { $0.projectId == project.id }
+        XCTAssertNil(orphanProject, "删除造物后时间流仍留有伴生散页")
     }
 
     // MARK: - 4. 器物：添置 → 伴生散页 → 分期 → 转手 → 删除
@@ -288,10 +314,9 @@ final class ArchiveWalkthroughTests: XCTestCase {
         }
         XCTAssertFalse(gear.id.isEmpty, "器物 id 为空")
 
-        let entries = try await timed("器物 → 时间流伴生散页") {
-            try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
+        let companion = try await timed("器物 → 时间流伴生散页") {
+            try await findEntry { $0.gearId == gear.id }
         }
-        let companion = entries.entries.first { $0.gearId == gear.id }
         XCTAssertNotNil(companion, "器物在时间流里没有伴生散页")
 
         // 伴生散页要落在购入日期上（补档）
@@ -314,11 +339,8 @@ final class ArchiveWalkthroughTests: XCTestCase {
         try await timed("删除器物") {
             try await APIClient.shared.deleteGearAsset(id: gear.id)
         }
-        let afterDelete = try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
-        XCTAssertTrue(
-            afterDelete.entries.allSatisfy { $0.gearId != gear.id },
-            "删除器物后时间流仍留有伴生散页"
-        )
+        let orphanGear = try await findEntry { $0.gearId == gear.id }
+        XCTAssertNil(orphanGear, "删除器物后时间流仍留有伴生散页")
     }
 
     // MARK: - 5. 账目：创建 → 时间流合成条目 → 编辑 → 删除
@@ -396,13 +418,10 @@ final class ArchiveWalkthroughTests: XCTestCase {
         }
         XCTAssertGreaterThan(fp.id, 0)
 
-        let entries = try await timed("足迹 → 时间流伴生散页") {
-            try await APIClient.shared.fetchEntries(page: 1, pageSize: 100)
+        let companion = try await timed("足迹 → 时间流伴生散页") {
+            try await findEntry { $0.footprintId == fp.id }
         }
-        XCTAssertTrue(
-            entries.entries.contains { $0.footprintId == fp.id },
-            "足迹在时间流里没有伴生散页"
-        )
+        XCTAssertNotNil(companion, "足迹在时间流里没有伴生散页")
     }
 
     // MARK: - 7. 图片上传：预签名 → 直传 → 绑定

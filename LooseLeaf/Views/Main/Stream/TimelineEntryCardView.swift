@@ -54,6 +54,7 @@ import AppKit
             case "project": return "造物演进"
             case "wish": return "心愿印记"
             case "transaction": return "柴米油盐"
+            case "gear": return "器物印记"
             default: return "日常随笔"
             }
         }

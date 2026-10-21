@@ -5,6 +5,17 @@ import SwiftUI
 /// 选中板块后由外部回调统一处理，保持与主视图的状态同步。
 
 struct WorkbenchSidebar: View {
+    /// 底部状态文案：把「待同步 / 同步失败」的条数显性化，
+    /// 否则用户只能靠猜为什么新内容没出现在中枢。
+    private var statusLabel: String {
+        let pending = appState.entries.filter { ($0.syncStatus ?? "synced") == "pending_create" }.count
+        let failed = appState.entries.filter { ($0.syncStatus ?? "synced") == "failed" }.count
+        if failed > 0 { return "同步失败 \(failed) 条" }
+        if pending > 0 { return "待同步 \(pending) 条" }
+        if appState.isFlushingOutbox { return "同步中…" }
+        return appState.isOnline ? "中枢就绪" : "离线发件箱守护"
+    }
+
     @Bindable var appState: AppState
         @Binding var isSystemGroupCollapsed: Bool
         /// 选中板块的回调（由主视图统一处理状态同步）
@@ -118,9 +129,10 @@ struct WorkbenchSidebar: View {
                         Circle()
                             .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
                             .frame(width: 5, height: 5)
-                        Text(appState.isOnline ? (appState.isFlushingOutbox ? "同步中…" : "中枢就绪") : "离线发件箱守护")
-                            .font(ArchiveTypography.bodySans(size: 10.5))
+                        Text(statusLabel)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkMuted)
+                            .accessibilityLabel(statusLabel)
 
                         Spacer()
 

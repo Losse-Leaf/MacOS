@@ -485,11 +485,21 @@ public struct LedgerAssetsView: View {
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
-                Button("记入账本") {
+                Button {
                     submitQuickLine()
+                } label: {
+                    // 关键：提交中要有守卫。
+                    // 全应用其它提交按钮都有 `isSubmitting` 守卫 + ProgressView，
+                    // 只有账本页这两个没有 —— 网络往返期间按钮仍可点，
+                    // 于是**同一笔账会被 POST 两次**，产生重复流水。
+                    if isSubmittingTx {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("记入账本")
+                    }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .disabled(FormatUtils.parseQuickLedgerInput(quickLine) == nil)
+                .disabled(isSubmittingTx || quickParsed == nil)
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -733,11 +743,18 @@ public struct LedgerAssetsView: View {
                             .background(ArchivePalette.archivePaper)
                             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
-                        Button("完成记账并入账") {
+                        Button {
                             submitVisualForm()
+                        } label: {
+                            // 同上：提交中守卫，避免连点造成重复流水
+                            if isSubmittingTx {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("完成记账并入账")
+                            }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                        .disabled((FormatUtils.parseYuanToCents(formAmountYuan) ?? 0) <= 0)
+                        .disabled(isSubmittingTx || (FormatUtils.parseYuanToCents(formAmountYuan) ?? 0) <= 0)
                     }
                 }
                 .padding(.top, 4)
@@ -1172,6 +1189,9 @@ public struct LedgerAssetsView: View {
 
     // MARK: - 数据提交处理
 
+    /// 记账提交中（防连点造成重复流水）
+    @State private var isSubmittingTx: Bool = false
+
     /// 极速记账的解析结果（body 里算一次，供预览与按钮可用性共用）
     private var quickParsed: FormatUtils.QuickLedgerParsed? {
         FormatUtils.parseQuickLedgerInput(quickLine, knownCategories: appState.expenseCategories)
@@ -1179,8 +1199,12 @@ public struct LedgerAssetsView: View {
 
     private func submitQuickLine() {
         guard let parsed = quickParsed else { return }
+        // 关键：提交期间加守卫，防止连点造成**重复流水**
+        guard !isSubmittingTx else { return }
+        isSubmittingTx = true
         errorNotice = nil
         Task { @MainActor in
+            defer { isSubmittingTx = false }
             do {
                 _ = try await appState.submitQuickLedger(
                     amountCents: parsed.amountCents,
@@ -1197,6 +1221,9 @@ public struct LedgerAssetsView: View {
 
     private func submitVisualForm() {
         guard let cents = FormatUtils.parseYuanToCents(formAmountYuan), cents > 0 else { return }
+        // 同上：提交期间加守卫
+        guard !isSubmittingTx else { return }
+        isSubmittingTx = true
         errorNotice = nil
         let cleanTitle = formTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalTitle = cleanTitle.isEmpty ? formCategory : cleanTitle
@@ -1205,6 +1232,7 @@ public struct LedgerAssetsView: View {
         let monthlyPay = isInst ? (cents / Int64(months)) : nil
 
         Task { @MainActor in
+            defer { isSubmittingTx = false }
             do {
                 let req = CreateTransactionRequest(
                     amount: cents,

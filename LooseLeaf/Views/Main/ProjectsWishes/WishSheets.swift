@@ -273,6 +273,14 @@ public struct ResolveWishSheet: View {
     @State private var createLifeEntry: Bool = true
     @State private var createFootprint: Bool
     @State private var entryContent: String = ""
+    /// 「替代拿下」时实际购入的物品名
+    ///
+    /// 关键：后端为 `resolution_type == "altered"` 专门留了 `actual_title`，
+    /// 并据此生成流水标题「心愿替代达成: <替代品> (原: <原心愿>)」。
+    /// 而客户端此前**恒传原心愿标题** → 选了「替代拿下」也落成
+    /// 「心愿替代达成: X (原: X)」，`actual_title` 也是废值 ——
+    /// 后端有、客户端不用，静默写错。
+    @State private var alteredTitle: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
 
@@ -300,6 +308,15 @@ public struct ResolveWishSheet: View {
                 PaperPillButton(title: "如愿拿下", isSelected: resolutionType == "exact") { resolutionType = "exact" }
                 PaperPillButton(title: "替代拿下", isSelected: resolutionType == "altered") { resolutionType = "altered" }
                 PaperPillButton(title: "理性拔草", isSelected: resolutionType == "relinquished") { resolutionType = "relinquished" }
+            }
+
+            // 替代拿下：实际购入的物品名
+            if resolutionType == "altered" {
+                EntryPaperField(
+                    placeholder: "实际购入的物品名（例：同价位的中性笔）",
+                    text: $alteredTitle,
+                    font: ArchiveTypography.bodySans(size: 12)
+                )
             }
 
             // 实付金额
@@ -385,7 +402,11 @@ public struct ResolveWishSheet: View {
                     fulfilledAt: FormatUtils.beijingISOString(),
                     actualCost: cents,
                     resolutionType: resolutionType,
-                    actualTitle: wish.title,
+                    // 「替代拿下」传实际购入的物品名；其余场景传 nil，
+                    // 由后端回落到原心愿标题。
+                    actualTitle: (resolutionType == "altered" && !alteredTitle.isEmpty)
+                        ? alteredTitle
+                        : nil,
                     createTransaction: isRelinquished ? false : createTransaction,
                     createGearAsset: isRelinquished ? false : createGearAsset,
                     createLifeEntry: createLifeEntry,

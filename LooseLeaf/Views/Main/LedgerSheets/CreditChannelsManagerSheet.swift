@@ -248,6 +248,21 @@ public struct CreditChannelsManagerSheet: View {
     }
 
     private func deleteChannel(_ ch: CreditChannel) {
+        // 关键：破坏性操作要有二次确认。
+        // 删除账目 / 手稿 / 设备 / 快照 / 吊销设备全都有确认框，
+        // 唯独删渠道是「一点即删」—— 而渠道被账目分期引用
+        // （installment_channel_code），误删会让既有分期账单失去渠道名。
+        appState.askConfirm(
+            title: "确认删除该信贷渠道？",
+            message: "删除后，以此渠道记账的分期账单将失去渠道归属。",
+            confirmText: "删除渠道",
+            danger: true
+        ) {
+            performDeleteChannel(ch)
+        }
+    }
+
+    private func performDeleteChannel(_ ch: CreditChannel) {
         isSubmitting = true
         errorText = nil
         Task { @MainActor in

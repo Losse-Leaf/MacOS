@@ -227,6 +227,12 @@ struct WorkbenchSidebar: View {
                 .animation(.easeOut(duration: 0.14), value: selected)
                 .animation(.easeOut(duration: 0.1), value: isHovering)
                 .onHover { isHovering = $0 }
+                // 关键：VoiceOver 要能听出「当前在哪个板块」。
+                // 原先没有 label / value / trait，VoiceOver 只念「时间流，按钮」。
+                // 写法与 `PaperSegmentedControl` 保持一致。
+                .accessibilityLabel(section.title)
+                .accessibilityValue(selected ? "已选中" : "未选中")
+                .accessibilityAddTraits(selected ? .isSelected : AccessibilityTraits())
             }
 
             private var rowFill: Color {

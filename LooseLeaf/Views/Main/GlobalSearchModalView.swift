@@ -200,6 +200,7 @@ public struct GlobalSearchModalView: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.escape, modifiers: [])
+                .accessibilityLabel("关闭全局检索")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)

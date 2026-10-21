@@ -205,6 +205,7 @@ public struct NewEntryModal: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
+            .accessibilityLabel("关闭创作弹窗")
             .help("关闭 (Esc)")
             .frame(width: 90, alignment: .trailing)
         }

@@ -16,7 +16,10 @@
 import Foundation
 import os
 
-final class MainThreadWatchdog {
+/// `@unchecked Sendable`：本类的可变状态只有 `_lastUserAction` 与 `expectedAt`，
+/// 两者都由 `stateLock` / `expectedLock` 保护；心跳定时器与主线程之间只通过
+/// 值传递（时间戳、字符串），不共享引用。
+final class MainThreadWatchdog: @unchecked Sendable {
 
     static let shared = MainThreadWatchdog()
 

@@ -381,6 +381,7 @@ public struct StreamView: View {
                                         .font(.system(size: 11))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                 }
+                                .accessibilityLabel("清空搜索关键词")
                                 .buttonStyle(.plain)
                             }
                         }

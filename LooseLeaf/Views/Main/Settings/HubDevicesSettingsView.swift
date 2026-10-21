@@ -37,7 +37,13 @@ struct HubDevicesSettingsView: View {
                         Text(appState.isPaired ? "数据中枢已连接" : "未配对中枢节点")
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text(appState.isPaired ? appState.hubURLString : "配对后可跨设备多端实时同步散页与财务资产")
+                                                // 关键：文案要与**事实**相符。
+                        // 原文写「实时同步」，但客户端**没有任何推送或轮询** ——
+                        // 全仓没有 Timer / WebSocket / SSE，实际同步只发生在
+                        // 冷启动、用户按 ⌘R、以及提交后自动上传三处。
+                        Text(appState.isPaired
+                             ? appState.hubURLString
+                             : "配对后可跨设备多端同步散页与财务资产（⌘R 手动同步，提交后自动上传）")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }

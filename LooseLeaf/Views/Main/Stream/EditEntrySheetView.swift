@@ -106,6 +106,7 @@ public struct EditEntrySheetView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .padding(2)
+                                    .accessibilityLabel("移除附件 \(att.originalFilename)")
                                 }
                             }
                         }

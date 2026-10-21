@@ -29,6 +29,16 @@ public struct LooseLeafApp: App {
             appState.showNewEntrySheet = false
         } else if appState.lightboxAttachment != nil {
             appState.lightboxAttachment = nil
+        } else if appState.editingEntry != nil {
+            // 关键：详情 / 编辑这三个 sheet 也要能被 ⌘W 关掉。
+            // 上一轮把它们加进了 `hasOpenOverlay`（⌘W 菜单项变成可用了），
+            // 却没有在这里加对应处理 —— 于是菜单项可点却**毫无反应**。
+            // 这是我自己引入的回归。
+            appState.editingEntry = nil
+        } else if appState.editingTransaction != nil {
+            appState.editingTransaction = nil
+        } else if appState.highlightedEntry != nil {
+            appState.highlightedEntry = nil
         }
     }
 

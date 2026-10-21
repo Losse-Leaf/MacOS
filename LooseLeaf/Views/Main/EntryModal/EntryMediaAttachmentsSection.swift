@@ -122,6 +122,7 @@ struct EntryMediaAttachmentsSection: View {
                 .buttonStyle(.plain)
                 .offset(x: 4, y: -4)
                 .help("移除这张相纸")
+                .accessibilityLabel("移除相纸 \(item.displayName)")
             }
             .frame(width: 72, height: 72)
 

@@ -248,42 +248,19 @@ import AppKit
 
                         Spacer()
 
-                        // 右侧操作：仅在鼠标悬停时优雅淡现，默认保持日记纯粹无噪点
+                        // 右侧操作
+                        //
+                        // 关键：**按钮必须常驻在视图树里**，用透明度做视觉弱化，
+                        // 而不是 `if isHovering { … }` 整块移除。
+                        // 后者会让按钮**不进无障碍树** —— VoiceOver 读不到
+                        // 「编辑手稿 / 删除手稿 / 查看详情」，纯键盘用户也 Tab 不到，
+                        // 等于这三个操作对非鼠标用户**完全不存在**。
+                        // 现在：未悬停时半透明（仍是活元素），悬停时完全显现。
                         HStack(spacing: 6) {
-                            if isHovering {
-                                if entry.type == "transaction" {
-                                    if let tx = transaction {
-                                        Button {
-                                            actions.onEditTransaction(tx)
-                                        } label: {
-                                            Image(systemName: "pencil")
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                                .frame(width: 24, height: 24)
-                                                .background(ArchivePalette.archiveSubtle.opacity(0.8))
-                                                .clipShape(Circle())
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("编辑账目")
-                                        .accessibilityLabel("编辑账目")
-
-                                        Button {
-                                            actions.onDeleteTransaction(tx)
-                                        } label: {
-                                            Image(systemName: "trash")
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(ArchivePalette.accentWarm)
-                                                .frame(width: 24, height: 24)
-                                                .background(ArchivePalette.archiveSubtle.opacity(0.8))
-                                                .clipShape(Circle())
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("删除账目")
-                                        .accessibilityLabel("删除账目")
-                                    }
-                                } else {
+                            if entry.type == "transaction" {
+                                if let tx = transaction {
                                     Button {
-                                        actions.onEditEntry(entry)
+                                        actions.onEditTransaction(tx)
                                     } label: {
                                         Image(systemName: "pencil")
                                             .font(.system(size: 11))
@@ -293,11 +270,11 @@ import AppKit
                                             .clipShape(Circle())
                                     }
                                     .buttonStyle(.plain)
-                                    .help("编辑手稿")
-                                        .accessibilityLabel("编辑手稿")
+                                    .help("编辑账目")
+                                    .accessibilityLabel("编辑账目")
 
                                     Button {
-                                        actions.onDeleteEntry(entry)
+                                        actions.onDeleteTransaction(tx)
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.system(size: 11))
@@ -307,30 +284,55 @@ import AppKit
                                             .clipShape(Circle())
                                     }
                                     .buttonStyle(.plain)
-                                    .help("删除手稿")
-                                        .accessibilityLabel("删除手稿")
+                                    .help("删除账目")
+                                    .accessibilityLabel("删除账目")
                                 }
-                            }
-
-                            // 关键：这一枚此前是**常驻**的，而同行其它动作都只在悬停时出现 ——
-                            // 于是每张卡右上角都挂着一个孤零零的小方框，看着像没画完。
-                            // 现在统一：悬停时才淡入。
-                            if isHovering {
+                            } else {
                                 Button {
-                                    actions.onOpenDetail(entry)
+                                    actions.onEditEntry(entry)
                                 } label: {
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 11.5))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
                                         .frame(width: 24, height: 24)
                                         .background(ArchivePalette.archiveSubtle.opacity(0.8))
                                         .clipShape(Circle())
                                 }
                                 .buttonStyle(.plain)
-                                .help("查看手稿完整详情")
-                                .accessibilityLabel("查看手稿完整详情")
+                                .help("编辑手稿")
+                                .accessibilityLabel("编辑手稿")
+
+                                Button {
+                                    actions.onDeleteEntry(entry)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.accentWarm)
+                                        .frame(width: 24, height: 24)
+                                        .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                        .clipShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("删除手稿")
+                                .accessibilityLabel("删除手稿")
                             }
+
+                            Button {
+                                actions.onOpenDetail(entry)
+                            } label: {
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                    .frame(width: 24, height: 24)
+                                    .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("查看手稿完整详情")
+                            .accessibilityLabel("查看手稿完整详情")
                         }
+                        // 未悬停时半透明：视觉上安静，但**仍在无障碍树与焦点链里**
+                        .opacity(isHovering ? 1 : 0.4)
                         // 关键：这里原本绑着一个 `value: isHovering` 的动画。
                         // 滚动时悬停被疯狂触发，每个悬停都会开启一次 Core Animation
                         // 事务，持续占用主线程 —— 这是滚动卡顿的帮凶。
@@ -398,6 +400,13 @@ import AppKit
             )
             .onHover { isHovering = $0 }
             .contentShape(Rectangle())
+            // 关键：给 VoiceOver 一个「激活」动作。
+            // 卡片打开详情此前只有「双击」一条路径（onTapGesture(count: 2)），
+            // 而 VoiceOver 的双击是「激活」，不会触发手势 ——
+            // 于是 VoiceOver 用户根本打不开详情。
+            .accessibilityAction(.default) {
+                actions.onOpenDetail(entry)
+            }
             .modifier(CountCardRender())
             .onTapGesture(count: 2) {
                 actions.onOpenDetail(entry)

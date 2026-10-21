@@ -14,6 +14,8 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
     case project = "project"
     case wish = "wish"
     case transaction = "transaction"
+    /// 器物（添置随身设备等二级对象在时间流里的伴生散页）
+    case gear = "gear"
 
     public var id: String { rawValue }
 
@@ -24,6 +26,7 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .project: return "造物"
         case .wish: return "心愿"
         case .transaction: return "账目"
+        case .gear: return "器物"
         }
     }
 
@@ -34,6 +37,7 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .project: return "hammer"
         case .wish: return "sparkles"
         case .transaction: return "creditcard"
+        case .gear: return "shippingbox"
         }
     }
 }
@@ -46,6 +50,7 @@ public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
     case project = "project"
     case wish = "wish"
     case transaction = "transaction"
+    case gear = "gear"
 
     public var id: String { rawValue }
 
@@ -57,6 +62,7 @@ public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
         case .project: return "造物"
         case .wish: return "心愿"
         case .transaction: return "账目"
+        case .gear: return "器物"
         }
     }
 }
@@ -135,6 +141,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var project: Project?
     public var wishId: Int?
     public var wish: Wish?
+    /// 器物伴生散页（器物 id 为字符串）
+    public var gearId: String?
     public var footprintId: Int?
     public var attachments: [Attachment]
     public var featured: Bool?
@@ -158,6 +166,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         case project
         case wishId = "wish_id"
         case wish
+        case gearId = "gear_id"
         case footprintId = "footprint_id"
         case attachments
         case featured
@@ -180,6 +189,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         project: Project? = nil,
         wishId: Int? = nil,
         wish: Wish? = nil,
+        gearId: String? = nil,
         footprintId: Int? = nil,
         attachments: [Attachment] = [],
         featured: Bool? = false,
@@ -200,6 +210,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         self.project = project
         self.wishId = wishId
         self.wish = wish
+        self.gearId = gearId
         self.footprintId = footprintId
         self.attachments = attachments
         self.featured = featured
@@ -223,6 +234,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         project = try? container.decodeIfPresent(Project.self, forKey: .project)
         wishId = try? container.decodeIfPresent(Int.self, forKey: .wishId)
         wish = try? container.decodeIfPresent(Wish.self, forKey: .wish)
+        gearId = try? container.decodeIfPresent(String.self, forKey: .gearId)
         footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
         featured = try? container.decodeIfPresent(Bool.self, forKey: .featured)
@@ -247,6 +259,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
             return type == EntryType.wish.rawValue || (wishId ?? 0) > 0
         case .transaction:
             return type == "transaction"
+        case .gear:
+            return type == "gear" || !(gearId ?? "").isEmpty
         }
     }
 

@@ -24,6 +24,17 @@ final class EntryDraft {
     // MARK: - 通用字段
 
     var title: String = ""
+
+    /// 实际落库的标题
+    ///
+    /// 朋友圈式发布：日常/随笔**不再单列标题输入框**，只写正文；
+    /// 标题由正文第一行自动派生（`FormatUtils.derivedTitle`）。
+    /// 显式填了标题就以标题为准（游历/心愿等形态仍用得到）。
+    var effectiveTitle: String {
+        let explicit = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !explicit.isEmpty { return explicit }
+        return FormatUtils.derivedTitle(from: content)
+    }
     var content: String = ""
     var occurredAt: Date = Date()
     var cityCode: String = ""

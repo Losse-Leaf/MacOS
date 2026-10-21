@@ -88,6 +88,22 @@ public enum FormatUtils {
     // MARK: - 货币分币转换与格式化 (Cents Standard)
 
     /// 将以“分”为单位的 Int64 金额格式化为标准元字符串 (如 4250 -> "42.50" 或 "¥ 42.50")
+    /// 从正文派生标题（朋友圈式发布：只填正文，标题自动取第一行）
+    ///
+    /// 关键：这条规则必须在**客户端、后端、Web 三端一致**，
+    /// 否则同一条记录在不同端的标题会不一样，搜索与索引也会对不上。
+    /// 规则：取正文的第一行（去掉首尾空白），超过 `maxLength` 则截断并加省略号。
+    public static func derivedTitle(from content: String, maxLength: Int = 40) -> String {
+        let firstLine = content
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .first
+            .map(String.init) ?? ""
+        let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        guard trimmed.count > maxLength else { return trimmed }
+        return String(trimmed.prefix(maxLength)) + "…"
+    }
+
     public static func formattedYuan(cents: Int64, includeSymbol: Bool = false) -> String {
         let isNegative = cents < 0
         // Int64.min 取绝对值会溢出 trap；这是极端值，钳到 Int64.max 只差 1 分，远好于崩溃

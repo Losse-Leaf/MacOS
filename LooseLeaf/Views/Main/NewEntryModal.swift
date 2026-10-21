@@ -389,7 +389,8 @@ public struct NewEntryModal: View {
             throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "正文内容不能为空"])
         }
         _ = try await appState.submitQuickCapture(
-            title: draft.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            // 朋友圈式：日常不单列标题，标题由正文第一行派生
+            title: draft.effectiveTitle,
             content: draft.content,
             type: .life,
             location: nil,

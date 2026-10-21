@@ -167,9 +167,10 @@ public final class SyncManager {
                     if (merged.lastEntriesSyncCursor ?? "").isEmpty {
                         merged.lastEntriesSyncCursor = loaded.lastEntriesSyncCursor
                     }
-                    if merged.siteConfig == nil { merged.siteConfig = loaded.siteConfig }
-                    if merged.profile == nil { merged.profile = loaded.profile }
-                    if merged.stats == nil { merged.stats = loaded.stats }
+                    // siteConfig / profile / stats 是**非可选**字段，
+                    // 本地内存快照里已有值（来自启动引导或后续更新），
+                    // 此时应以本地为准 —— 磁盘上的旧版本不应覆盖它。
+                    // 若本地还是空壳（冷启动即注水），才用磁盘里的。
                     self.snapshot = merged
                     self.onSnapshotUpdated?(merged)
                 } else {

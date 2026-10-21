@@ -20,30 +20,26 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Build App Bundle (unsigned)
+      # 统一走 scripts/package_release.sh：中间产物进临时目录、用完即删，
+      # 只把最终 zip 留在 dist/。这样本机手动跑同一条命令也不会残留一堆
+      # LooseLeaf.app 与旧 zip（那正是 Spotlight 里搜出七八个副本的由来）。
+      - name: Build & Package App Bundle (unsigned)
         run: |
-          xcodebuild -project LooseLeaf.xcodeproj -target LooseLeaf -configuration Release \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            SYMROOT=build/Sym build
-
-      - name: Package Artifact
-        run: |
-          cd build/Sym/Release
-          ditto -c -k --sequesterRsrc --keepParent LooseLeaf.app "LooseLeaf-${{ github.ref_name }}-arm64.zip"
-          ls -la
+          scripts/package_release.sh \
+            --tag "${{ github.ref_name }}" \
+            --output-dir "$GITHUB_WORKSPACE/dist"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LooseLeaf-unsigned-app
-          path: build/Sym/Release/LooseLeaf-*.zip
+          path: dist/LooseLeaf-*.zip
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/Sym/Release/LooseLeaf-*.zip
+          files: dist/LooseLeaf-*.zip
           body: |
             未签名构建产物（macOS arm64，免 Developer ID 下载即用；Gatekeeper 首次打开请右键 →「打开」）。
 

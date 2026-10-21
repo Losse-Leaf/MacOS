@@ -1,6 +1,7 @@
 # Xcode & Swift Package Manager
 .DS_Store
 build/
+dist/
 DerivedData/
 .build/
 .swiftpm/

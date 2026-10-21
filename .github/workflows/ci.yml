@@ -84,16 +84,14 @@ jobs:
           fi
           echo "Snapshot baselines present: $COUNT (+ manifest)"
 
+      # 与 release.yml 共用同一条打包路径（中间产物用完即删，不留残留）
       - name: Build Release App Bundle (unsigned)
         run: |
-          xcodebuild -project LooseLeaf.xcodeproj -target LooseLeaf -configuration Release \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            SYMROOT=build/Sym build
+          scripts/package_release.sh --output-dir "$GITHUB_WORKSPACE/dist"
 
       - name: Upload App Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LooseLeaf-macOS-arm64
-          path: build/Sym/Release/LooseLeaf.app
+          path: dist/LooseLeaf-macOS-arm64.zip
           retention-days: 30

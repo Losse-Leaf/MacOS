@@ -80,6 +80,12 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
     public var width: Int?
     public var height: Int?
     public var url: String
+    /// 缩略图地址（中枢自己的路由，稳定可缓存）
+    ///
+    /// 关键：列表与详情用缩略图，**只有灯箱（点开大图）才用原图**。
+    /// 原图动辄 1.5MB，从对象存储拉一次要 4 秒；滚动时间流时每张新卡片都在拉原图，
+    /// 网络与解码把主线程打满，表现为「滑动卡」「点开转圈」。
+    public var thumbnailUrl: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -94,6 +100,7 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         case width
         case height
         case url
+        case thumbnailUrl = "thumbnail_url"
         case createdAt = "created_at"
     }
 

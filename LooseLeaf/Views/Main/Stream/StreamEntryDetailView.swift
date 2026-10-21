@@ -182,7 +182,10 @@ struct StreamEntryDetailView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
                                     ForEach(entry.attachments) { att in
-                                        if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                        // 同时间流：详情页也用缩略图，
+                                        // 点开灯箱时才去拉原图。
+                                        let displayURL = att.thumbnailUrl ?? att.url
+                                        if let url = APIClient.shared.resolveMediaURL(displayURL) {
                                             FilmFrameView(
                                                 imageURL: url,
                                                 caption: entry.title.isEmpty ? att.originalFilename : entry.title,

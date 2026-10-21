@@ -321,8 +321,17 @@ public struct NewEntryModal: View {
             draft.cityCode = cCode
             draft.cityName = initialCityName ?? ""
         } else if draft.cityCode.isEmpty {
-            draft.cityCode = "330100"
-            draft.cityName = appState.profile.currentCity.isEmpty ? "杭州" : appState.profile.currentCity
+            // 关键：城市代码与名称必须来自**同一个**来源。
+            // 原先这里硬编码 cityCode = "330100"（浙江杭州），却把名称设成用户的所在城市，
+            // 于是选择器显示成「浙江 · 宜宾市」这种 province 与 city 错配的组合。
+            let profileCity = appState.profile.currentCity.trimmingCharacters(in: .whitespacesAndNewlines)
+            if profileCity.isEmpty {
+                draft.cityCode = ""
+                draft.cityName = ""
+            } else {
+                draft.cityCode = FormatUtils.resolveCityCode(from: profileCity) ?? ""
+                draft.cityName = profileCity
+            }
         }
         restoreDraft()
     }

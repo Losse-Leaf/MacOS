@@ -33,15 +33,19 @@ public struct PaperCityPicker: View {
         self.isFullWidth = isFullWidth
     }
 
+    /// 已选城市的展示文案。
+    ///
+    /// 只显示城市名：省名在选择列表里已经作为辅助信息出现，chip 上再拼一次既冗余，
+    /// 又会在「代码与名称来自不同来源」时拼出「浙江 · 宜宾市」这种错配的组合。
     private var displayText: String {
         if !selectedName.isEmpty {
-            if !selectedCode.isEmpty {
-                let prefix = String(selectedCode.prefix(2))
-                let prov = CityDictionary.provincePrefixMap[prefix] ?? ""
-                let provText = prov.isEmpty || selectedName.contains(prov) ? "" : "\(prov) · "
-                return "\(provText)\(selectedName)"
-            }
             return selectedName
+        }
+        if !selectedCode.isEmpty {
+            // 只有名称缺失时才退回「省份 · 代码」，保证信息不丢
+            let prefix = String(selectedCode.prefix(2))
+            let prov = CityDictionary.provincePrefixMap[prefix] ?? ""
+            return prov.isEmpty ? selectedCode : "\(prov) · \(selectedCode)"
         }
         return placeholder
     }

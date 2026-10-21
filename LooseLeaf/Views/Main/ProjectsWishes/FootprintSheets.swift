@@ -77,7 +77,8 @@ public struct NewFootprintSheet: View {
         Task { @MainActor in
             do {
                 let req = CreateFootprintRequest(
-                    cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? "330100") : cityCode,
+                    // 城市代码必须由城市名反查得出，不能用固定值配任意城市名
+                    cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? "") : cityCode,
                     cityName: cleanCity,
                     title: title.isEmpty ? nil : title,
                     visitedAt: FormatUtils.beijingISOString(from: visitedDate),

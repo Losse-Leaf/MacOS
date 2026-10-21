@@ -79,7 +79,8 @@ public enum DropLoader {
     /// 从单个 provider 提取文件 URL（Finder 拖拽场景）
     /// 读取用户拖入 / 选中的图片文件（沙箱下需取得安全作用域授权）
     public static func loadImageData(fromAccessibleFile url: URL) async -> Data? {
-        await SandboxFileAccess.withAccess(to: url) { scopedURL in
+        // 同步闭包不需要 await（withAccess 的同步重载）
+        SandboxFileAccess.withAccess(to: url) { scopedURL in
             try? Data(contentsOf: scopedURL, options: .mappedIfSafe)
         }
     }

@@ -26,7 +26,12 @@ public enum SandboxFileAccess {
     }
 
     /// 异步版本（配合后台任务处理大图时使用）
-    public static func withAccess<T>(to url: URL, _ body: (URL) async throws -> T) async rethrows -> T {
+    /// 闭包标注 `@Sendable`：它会跨隔离域执行（后台任务 → 主线程），
+    /// Swift 6 语言模式下这是必需的。
+    public static func withAccess<T: Sendable>(
+        to url: URL,
+        _ body: @Sendable (URL) async throws -> T
+    ) async rethrows -> T {
         let needsScope = url.startAccessingSecurityScopedResource()
         defer {
             if needsScope {

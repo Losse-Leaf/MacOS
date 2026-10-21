@@ -18,7 +18,7 @@ enum Pagination {
         since: String?,
         pageSize: Int = 100,
         useETagOnFirstPage: Bool = false,
-        onFirstPage: ((Int, [LifeEntry]) async -> Void)? = nil
+        onFirstPage: (@Sendable (Int, [LifeEntry]) async -> Void)? = nil
     ) async throws -> [LifeEntry] {
         var page = 1
         var all: [LifeEntry] = []

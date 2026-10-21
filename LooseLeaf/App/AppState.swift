@@ -654,6 +654,20 @@ public final class AppState {
         }
     }
 
+    /// 「首屏只投递一次」的一次性闸门（跨隔离域安全）
+    private final class FirstPageGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var claimed = false
+        /// 尝试抢占；只有第一个调用者返回 true
+        func claim() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if claimed { return false }
+            claimed = true
+            return true
+        }
+    }
+
     public func loadEntries(forceFull: Bool = false) async {
         let snap = SyncManager.shared.currentSnapshot()
         // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
@@ -661,14 +675,15 @@ public final class AppState {
         do {
             // 首屏优先：第一页一到就先把内容铺到界面上，
             // 剩余页在后台继续拉取并追加，用户无需等待全量同步完成。
-            var deliveredFirstPage = false
+            // 用一次性原子盒记录「是否已投递首屏」——闭包会跨隔离域执行，
+            // 直接捕获可变局部变量在 Swift 6 下不安全。
+            let firstPageGate = FirstPageGate()
             let allFetched = try await Pagination.fetchAllEntries(
                 since: cursor,
                 pageSize: 100,
                 useETagOnFirstPage: !forceFull && cursor == nil
             ) { _, firstPage in
-                guard !deliveredFirstPage, !firstPage.isEmpty else { return }
-                deliveredFirstPage = true
+                guard firstPageGate.claim(), !firstPage.isEmpty else { return }
                 await MainActor.run {
                     SyncManager.shared.mergeEntries(firstPage, isDelta: cursor != nil)
                 }

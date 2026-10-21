@@ -16,7 +16,6 @@
 import Foundation
 import os
 
-@MainActor
 final class MainThreadWatchdog {
 
     static let shared = MainThreadWatchdog()
@@ -29,16 +28,32 @@ final class MainThreadWatchdog {
     private let stallThreshold: TimeInterval = 0.6
 
     private var timer: DispatchSourceTimer?
+    /// 下一次心跳的**预期**执行时刻（由锁保护）
     private var expectedAt: Date = Date()
+    private let expectedLock = NSLock()
     private var running = false
 
     /// 最近一次用户动作（用于给卡顿归因）
-    @MainActor private(set) var lastUserAction: String = "（尚无）"
+    ///
+    /// 关键：这个类**不是** `@MainActor`。
+    /// 它的心跳定时器挂在后台队列上，若类标了 `@MainActor`，
+    /// 隔离承诺就是假的（Swift 5 语言模式下不报错，Swift 6 下直接编译失败），
+    /// 而且 `MainActor.assumeIsolated` 在非主线程调用会 trap。
+    /// 这里改用一把锁保护共享状态，心跳结果一律回主线程处理。
+    private let stateLock = NSLock()
+    private var _lastUserAction: String = "（尚无）"
+
+    var lastUserAction: String {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _lastUserAction
+    }
 
     /// 记录一条用户动作，卡顿发生时就能知道当时用户在干什么
-    @MainActor
     func noteAction(_ action: String) {
-        lastUserAction = action
+        stateLock.lock()
+        _lastUserAction = action
+        stateLock.unlock()
     }
 
     /// 日志目录（放在应用存储目录下，用户可自行取走）
@@ -78,10 +93,12 @@ final class MainThreadWatchdog {
         running = false
     }
 
-    /// 一次心跳
+    /// 一次心跳（运行在后台队列）
     private func tick() {
+        expectedLock.lock()
         let scheduled = expectedAt
         expectedAt = scheduled.addingTimeInterval(heartbeatInterval)
+        expectedLock.unlock()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -94,7 +111,7 @@ final class MainThreadWatchdog {
 
     /// 报告一次阻塞
     private func reportStall(delay: TimeInterval) {
-        let action = MainActor.assumeIsolated { self.lastUserAction }
+        let action = self.lastUserAction
         let stamp = Date().timeIntervalSince1970
         let message = String(format: "主线程阻塞 %.2fs（最近动作：%@）", delay, action)
         Self.logger.error("\(message, privacy: .public)")

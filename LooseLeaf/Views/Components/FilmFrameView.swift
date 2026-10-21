@@ -447,7 +447,8 @@ public struct CachedFilmImageView: View {
     public let maxHeight: CGFloat
 
     @State private var loadedImage: NSImage?
-    @State private var isLoading: Bool = false
+    /// 加载代号：只有最新一次加载的结果才被采纳
+    @State private var loadGeneration: UInt64 = 0
     @State private var hasFailed: Bool = false
 
     /// 缩略图目标像素：显示高度的 2 倍（Retina），下限 160
@@ -504,13 +505,17 @@ public struct CachedFilmImageView: View {
     }
 
     private func loadImage() async {
-        // 关键：并发闸门必须在**最前面**。
-        // 原先把 `guard !isLoading` 放在两次 await 之后 —— 那时两个并发任务
-        // 早已双双通过检查，于是同一张图会被**下载两次**，
-        // 而 `isLoading` 这个状态写了却从不被读。
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
+        // 关键：用**代号**而不是布尔闸门。
+        //
+        // `.task(id: url)` 在 url 变化时会取消旧任务并启动新任务，
+        // 而取消是**异步投递**的：新任务启动时旧任务的清理还没执行。
+        // 若用 `isLoading` 布尔量，新任务会被「已经在加载」的闸门直接挡掉
+        // → 这一张图**永远不会被加载**；同时旧任务的 catch 会把
+        // hasFailed 置 true → 界面显示「相纸载入失败」，即使 URL 完全正常。
+        //
+        // 代号方案：每次加载领一个号，只有**最新那个**号的结果才被采纳。
+        loadGeneration &+= 1
+        let gen = loadGeneration
 
         let pixel = Self.thumbPixel(for: maxHeight)
         if let cached = PaperImageCache.memoryImage(for: url, maxPixel: pixel) {
@@ -519,18 +524,24 @@ public struct CachedFilmImageView: View {
         }
         // 磁盘降采样解码在后台队列完成，不再阻塞首帧
         if let diskHit = await PaperImageCache.loadImage(for: url, maxPixel: pixel) {
+            guard gen == loadGeneration else { return }
             self.loadedImage = diskHit
             return
         }
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
+            guard gen == loadGeneration else { return }
             if let thumb = PaperImageCache.storeDownloaded(rawData: data, for: url, maxPixel: pixel) {
                 self.loadedImage = thumb
             } else {
                 self.hasFailed = true
             }
+        } catch is CancellationError {
+            // 取消不是失败 —— 旧任务被新任务取代时不该留下「载入失败」
+            return
         } catch {
+            guard gen == loadGeneration else { return }
             self.hasFailed = true
         }
     }

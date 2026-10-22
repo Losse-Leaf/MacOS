@@ -72,9 +72,18 @@ public struct EditTransactionSheet: View {
         ]
     }
 
-    /// 原账目是分期，而用户**显式**关掉了开关 ⇒ 本次要**显式取消**分期
+    /// 本次保存会**显式取消**分期
+    ///
+    /// 两种情形：
+    /// 1. 原账目是分期，用户**显式**关掉了开关；
+    /// 2. 原账目是分期，而收支类型被改成了**收入**（收入没有分期）。
+    ///
+    /// 「支出 → 收入 → 支出」来回切换**不会**命中 ——
+    /// 判定用的是保存时的最终类型。
     private var willCancelInstallment: Bool {
-        type == "expense" && installmentTouched && !wantsInstallment && transaction.isInstallment == true
+        guard transaction.isInstallment == true else { return false }
+        if type != "expense" { return true }
+        return installmentTouched && !wantsInstallment
     }
 
     public var body: some View {
@@ -192,8 +201,10 @@ public struct EditTransactionSheet: View {
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
-            } else if willCancelInstallment {
-                // 明确告知「会取消分期」——破坏性操作不能静默发生
+            }
+
+            // 明确告知「会取消分期」——破坏性操作不能静默发生
+            if willCancelInstallment {
                 Text("保存后将**取消分期**：账期、期数、月供与渠道会被一并清空，负债相应减少。")
                     .font(ArchiveTypography.bodySans(size: 11.5))
                     .foregroundStyle(ArchivePalette.accentWarm)

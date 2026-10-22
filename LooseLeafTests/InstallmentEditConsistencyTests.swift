@@ -89,14 +89,31 @@ final class InstallmentEditConsistencyTests: XCTestCase {
         )
     }
 
-    /// 关键：切换收支类型**不得**销毁已有的分期
-    func test03_TypeSwitchDoesNotCancelInstallment() {
+    /// 关键：「支出 → 收入 → 支出」这种**来回切换**不得销毁已有的分期
+    ///
+    /// 判定用的是**保存时的最终类型**：最终停在支出 ⇒ 走 untouched 分支 ⇒ 原样保留。
+    func test03_TypeRoundTripDoesNotCancelInstallment() {
         let installment = installmentTransaction()
-        // 支出 → 收入：收入没有分期，但类型切换不是「取消」的意图
+        XCTAssertEqual(
+            InstallmentEditing.intent(wantsInstallment: true, touched: false, isExpense: true, transaction: installment),
+            .untouched,
+            "支出 → 收入 → 支出 的来回切换不得被误判成「取消分期」"
+        )
+    }
+
+    /// 关键：最终类型是**收入**时，原账目的分期在保存这一刻被取消
+    /// （收入没有分期；与 Web 端同口径）
+    func test03b_IncomeTypeCancelsInstallmentAtSave() {
+        let installment = installmentTransaction()
         XCTAssertEqual(
             InstallmentEditing.intent(wantsInstallment: true, touched: false, isExpense: false, transaction: installment),
+            .cancel,
+            "最终改成收入时，原账目的分期应被显式取消（收入没有分期）"
+        )
+        XCTAssertEqual(
+            InstallmentEditing.intent(wantsInstallment: true, touched: false, isExpense: false, transaction: plainTransaction()),
             .untouched,
-            "切到收入不得顺手取消分期 —— 一次无心的类型切换会静默抹掉账期与负债"
+            "非分期账目改成收入不需要任何取消声明"
         )
     }
 

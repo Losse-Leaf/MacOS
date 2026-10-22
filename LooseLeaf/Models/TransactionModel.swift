@@ -371,11 +371,22 @@ public enum InstallmentEditing {
         isExpense: Bool,
         transaction: Transaction
     ) -> Intent {
-        // 收入没有分期 —— 且类型切换本身**不得**销毁已有的分期，
-        // 所以只有用户在支出态下显式动过开关，才算表达了意图。
-        guard isExpense, touched else { return .untouched }
-        if wantsInstallment { return .apply }
-        return (transaction.isInstallment == true) ? .cancel : .untouched
+        let wasInstallment = (transaction.isInstallment == true)
+        if isExpense {
+            // 支出态：只有用户**显式**动过开关，才算表达了意图。
+            // 没动过就沿用原值 —— 否则「支出 → 收入 → 支出」这种来回切换
+            // 会被误判成「用户取消了分期」，一次无心的类型切换就把分期静默抹掉。
+            guard touched else { return .untouched }
+            if wantsInstallment { return .apply }
+            return wasInstallment ? .cancel : .untouched
+        }
+        // 收入没有分期 —— 原账目是分期时**在保存这一刻**取消它。
+        //
+        // 注意这与「来回切换」不冲突：判定用的是**保存时的最终类型**，
+        // 用户「支出 → 收入 → 支出」最终停在支出，走上面那条 untouched 分支，
+        // 分期原样保留。
+        // （与 Web 端同口径：`wantInstallment` 也按保存时的最终类型算。）
+        return wasInstallment ? .cancel : .untouched
     }
 }
 

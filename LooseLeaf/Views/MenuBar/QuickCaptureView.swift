@@ -288,6 +288,7 @@ public struct QuickCaptureView: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
             .keyboardShortcut(.return, modifiers: [.command])
             .disabled(draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.uploadedAttachments.isEmpty || isSubmitting || isUploadingPhoto)
             .accessibilityLabel("归档本条闪念")

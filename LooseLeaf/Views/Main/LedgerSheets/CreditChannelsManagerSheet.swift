@@ -42,6 +42,7 @@ public struct CreditChannelsManagerSheet: View {
                     onDismiss()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             Text("配置常用的信用卡、花呗或白条渠道及每月固定还款日（1~31 日），记账勾选分期时将自动核算剩余期数与待还负债。")
@@ -73,12 +74,14 @@ public struct CreditChannelsManagerSheet: View {
                                     saveChannelEdit(ch)
                                 }
                                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                                .paperButtonFocusRing()
                                 .disabled(isSubmitting || editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                                 Button("取消") {
                                     editingChannelId = nil
                                 }
                                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                                .paperButtonFocusRing()
                             } else {
                                 VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                                     HStack(spacing: 6) {
@@ -176,6 +179,7 @@ public struct CreditChannelsManagerSheet: View {
                         createChannel()
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .paperButtonFocusRing()
                     .disabled(isSubmitting || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

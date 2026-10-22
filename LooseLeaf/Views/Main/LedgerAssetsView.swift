@@ -276,6 +276,7 @@ public struct LedgerAssetsView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
 
                 Button {
                     showAddGearSheet = true
@@ -286,6 +287,7 @@ public struct LedgerAssetsView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
 
                 Button {
                     if let currentInit = appState.assetsOverview?.initialLiquidBalance {
@@ -299,6 +301,7 @@ public struct LedgerAssetsView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
         }
     }
@@ -500,6 +503,7 @@ public struct LedgerAssetsView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(isSubmittingTx || quickParsed == nil)
 
                 Button {
@@ -514,6 +518,7 @@ public struct LedgerAssetsView: View {
                     .font(ArchiveTypography.bodySans(size: 11.5))
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             // 可视化精细记账展开面板
@@ -755,6 +760,7 @@ public struct LedgerAssetsView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .paperButtonFocusRing()
                         .disabled(isSubmittingTx || (FormatUtils.parseYuanToCents(formAmountYuan) ?? 0) <= 0)
                     }
                 }
@@ -1154,6 +1160,7 @@ public struct LedgerAssetsView: View {
                     showCalibrateBalanceSheet = false
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
 
                 Spacer()
 
@@ -1170,6 +1177,7 @@ public struct LedgerAssetsView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
             }
         }
         .padding(20)

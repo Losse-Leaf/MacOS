@@ -108,11 +108,13 @@ public struct NewProjectSheet: View {
             HStack {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button("创建造物项目") {
                     submitProject()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -271,11 +273,13 @@ public struct EditProjectSheet: View {
             HStack {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button("保存项目修改") {
                     updateProject()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }

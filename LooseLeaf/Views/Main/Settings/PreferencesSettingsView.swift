@@ -82,6 +82,7 @@ struct PreferencesSettingsView: View {
                             }
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                             .help("按下新的组合键以替换全局唤出快捷键")
 
                             // 恢复默认：仅当当前快捷键已被改动时可用
@@ -90,6 +91,7 @@ struct PreferencesSettingsView: View {
                             }
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                             .disabled(isHotKeyAtDefault)
                             .help("恢复为默认快捷键 ⌘ + ⇧ + L")
                         }

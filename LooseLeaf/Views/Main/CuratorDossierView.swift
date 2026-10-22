@@ -92,6 +92,7 @@ public struct CuratorDossierView: View {
                                 }
                             }
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                             .help("查看生活统计卡片 (⌘⌥S)")
 
                             Button("修订档案") {
@@ -107,6 +108,7 @@ public struct CuratorDossierView: View {
                                 showEditProfileSheet = true
                             }
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                         }
 
                         if !prof.displayCity.isEmpty {
@@ -182,6 +184,7 @@ public struct CuratorDossierView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
                     }
 
                     LifeActivityHeatmapView(
@@ -339,6 +342,7 @@ public struct CuratorDossierView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             // 分类筛选胶囊（首尾渐隐提示可横向滚动）
@@ -482,6 +486,7 @@ public struct CuratorDossierView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
                 .disabled(isUploadingAvatar)
 
                 if newAvatarKey != nil {
@@ -543,6 +548,7 @@ public struct CuratorDossierView: View {
             HStack {
                 Button("取消") { showEditProfileSheet = false }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button("保存档案") {
                     Task { @MainActor in
@@ -569,6 +575,7 @@ public struct CuratorDossierView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
             }
             .padding(.top, 4)
         }

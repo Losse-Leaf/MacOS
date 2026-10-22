@@ -117,6 +117,7 @@ struct StorageBackupSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
 
                     Button {
                         createServerBackupAction()
@@ -132,6 +133,7 @@ struct StorageBackupSettingsView: View {
                         }
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .paperButtonFocusRing()
                     .disabled(isCreatingServerBackup || !appState.isPaired)
                 }
             }
@@ -201,6 +203,7 @@ struct StorageBackupSettingsView: View {
                             }
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
 
                             Button {
                                 appState.askConfirm(
@@ -222,6 +225,7 @@ struct StorageBackupSettingsView: View {
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
 
                             // 删除快照：图标按钮 + 无障碍标签
                             PaperIconButton(
@@ -290,6 +294,7 @@ struct StorageBackupSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                     .disabled(isMigratingStorage)
                 }
             }
@@ -508,6 +513,7 @@ struct StorageBackupSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                     .disabled(isTestingStorage || isSavingStorage)
 
                     Button {
@@ -525,6 +531,7 @@ struct StorageBackupSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .paperButtonFocusRing()
                     .disabled(isSavingStorage || isTestingStorage)
                 }
             }

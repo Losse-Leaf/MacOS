@@ -47,6 +47,7 @@ public struct AnnualAlmanacSheet: View {
                     }
                     Button("关闭") { onDismiss() }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
                 }
             }
 

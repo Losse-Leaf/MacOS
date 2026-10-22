@@ -162,6 +162,7 @@ public struct PairingGateView: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
             .padding(.top, 4)
         }
     }
@@ -190,6 +191,7 @@ public struct PairingGateView: View {
                         Text("在浏览器中打开 Web 展厅 ↗")
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .paperButtonFocusRing()
                 }
 
                 Button("重新检测状态") {
@@ -198,6 +200,7 @@ public struct PairingGateView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
             .padding(.top, 6)
         }
@@ -246,6 +249,7 @@ public struct PairingGateView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
                 // 配对请求进行中禁用全部交互
                 .disabled(isSubmitting)
 
@@ -261,6 +265,7 @@ public struct PairingGateView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .keyboardShortcut(.defaultAction)
                 .disabled(pairLinkInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
                 .accessibilityHint(isSubmitting ? "正在与中枢握手，请稍候" : "使用填写的链接或工单完成配对")

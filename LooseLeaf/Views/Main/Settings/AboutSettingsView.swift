@@ -100,6 +100,7 @@ struct AboutSettingsView: View {
                                 }
                                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                                .paperButtonFocusRing()
                             }
 
                             if !update.body.isEmpty {
@@ -132,6 +133,7 @@ struct AboutSettingsView: View {
                             }
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                         }
                     }
 
@@ -189,6 +191,7 @@ struct AboutSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 }
             }
 
@@ -214,6 +217,7 @@ struct AboutSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 }
 
                 settingsRowDivider
@@ -238,6 +242,7 @@ struct AboutSettingsView: View {
                     }
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 }
             }
 

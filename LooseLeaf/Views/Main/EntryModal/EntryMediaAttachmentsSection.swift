@@ -72,6 +72,7 @@ struct EntryMediaAttachmentsSection: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            .paperButtonFocusRing()
             .disabled(media.isUploading)
             .help("从剪贴板粘贴截图或图片文件 (⌘V)")
 
@@ -86,6 +87,7 @@ struct EntryMediaAttachmentsSection: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            .paperButtonFocusRing()
             .disabled(media.isUploading)
             .help("从「照片」App 或访达拖拽照片到此处亦可装裱")
         }
@@ -157,6 +159,7 @@ struct EntryMediaAttachmentsSection: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
                 .help(item.errorMessage ?? "重新装裱这张相纸")
             }
         }

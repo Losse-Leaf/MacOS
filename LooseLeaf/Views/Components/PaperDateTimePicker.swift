@@ -398,6 +398,7 @@ public struct PaperDatePicker: View {
                     isPopoverPresented = false
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
             }
         }
         .padding(ArchiveCardMetrics.padding)
@@ -689,6 +690,7 @@ public struct PaperTimePicker: View {
                     isPopoverPresented = false
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
             }
         }
         .padding(ArchiveCardMetrics.padding)

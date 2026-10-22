@@ -76,6 +76,7 @@ public struct EditEntrySheetView: View {
                             selectPhotosForEdit()
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
                         .controlSize(.small)
                     }
                 }
@@ -139,12 +140,14 @@ public struct EditEntrySheetView: View {
                     onCancel()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
                 .disabled(isSaving)
 
                 Button(isSaving ? "保存中…" : "保存修改 ⌘↩") {
                     Task { await save() }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(isSaving || isUploading || editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

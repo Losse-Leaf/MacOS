@@ -85,11 +85,13 @@ public struct NewWishSheet: View {
             HStack {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button("存入心愿单") {
                     submitWish()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -214,11 +216,13 @@ public struct EditWishSheet: View {
             HStack {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button("保存修改") {
                     updateWish()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -374,11 +378,13 @@ public struct ResolveWishSheet: View {
             HStack {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button("确认圆满归册") {
                     submitResolve()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(isSubmitting)
             }
         }

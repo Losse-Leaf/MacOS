@@ -106,6 +106,34 @@ public extension View {
     func paperHover() -> some View {
         modifier(PaperHoverModifier())
     }
+
+    /// 按钮的纸本焦点环（键盘导航时显形）
+    ///
+    /// 关键（MC-06）：`ButtonStyle` 的 `makeBody` **拿不到焦点状态**
+    /// （`@FocusState` 必须是 View 成员，`ButtonStyle.Configuration` 也不公开 `trigger`），
+    /// 所以焦点环只能挂在 **Button 本身**上 —— 与 `PaperPillButton` / `PaperSelect`
+    /// 完全同一套写法。
+    ///
+    /// 为什么不把主按钮改造成 View 组件（那才是「正规」做法）：
+    /// 96 处调用里 **39 处**是 `Button { } label: { }` 的自定义标签形态，
+    /// 改造成组件就得把标签搬进组件里 —— 逐处搬运等于逐处重写，
+    /// 而这个修饰符**一行加在 `.buttonStyle` 之后**即可：
+    /// Button 的标签、动作、以及 `.keyboardShortcut` / `.disabled` 等修饰符**全都不动**。
+    func paperButtonFocusRing(cornerRadius: CGFloat = ArchiveRadius.sm) -> some View {
+        modifier(PaperButtonFocusRingModifier(cornerRadius: cornerRadius))
+    }
+}
+
+/// 按钮焦点环修饰符：自持 `@FocusState`，把焦点位置画成暖色描边
+struct PaperButtonFocusRingModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    @FocusState private var isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focused($isFocused)
+            .paperFocusRing(isFocused: isFocused, cornerRadius: cornerRadius)
+    }
 }
 
 /// 出版物操作按钮样式 (优雅墨色/纸本微高亮，告别大泥红)

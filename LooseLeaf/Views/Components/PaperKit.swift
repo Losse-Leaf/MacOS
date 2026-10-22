@@ -138,10 +138,12 @@ public struct ArchiveEmptyState: View {
                     if let primaryTitle, let primaryAction {
                         Button(primaryTitle, action: primaryAction)
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                            .paperButtonFocusRing()
                     }
                     if let secondaryTitle, let secondaryAction {
                         Button(secondaryTitle, action: secondaryAction)
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                     }
                 }
                 .padding(.top, ArchiveSpacing.xs)
@@ -250,6 +252,7 @@ public struct PaperSheetScaffold<Content: View>: View {
             HStack {
                 Button("取消", action: onCancel)
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 Spacer()
                 Button {
                     onSubmit()
@@ -261,6 +264,7 @@ public struct PaperSheetScaffold<Content: View>: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 .disabled(isSubmitting)
                 .keyboardShortcut(.return, modifiers: .command)
             }

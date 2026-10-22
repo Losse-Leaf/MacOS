@@ -136,6 +136,7 @@ public struct ProjectsView: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
         }
     }
 

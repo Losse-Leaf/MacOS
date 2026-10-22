@@ -270,6 +270,7 @@ public struct NewEntryModal: View {
                 onDismiss()
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            .paperButtonFocusRing()
 
             Button {
                 handleSubmit()
@@ -285,6 +286,7 @@ public struct NewEntryModal: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
             // 上传中禁止提交：否则 attachments 还没 append 完就提交，图片成为孤儿。
             .disabled(isSubmitting || media.isUploading)
             .keyboardShortcut(.return, modifiers: [.command])

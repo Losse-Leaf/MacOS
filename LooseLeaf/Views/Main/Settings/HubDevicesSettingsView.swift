@@ -74,6 +74,7 @@ struct HubDevicesSettingsView: View {
                         }
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
                     }
                 }
                 .padding(ArchiveCardMetrics.padding)
@@ -274,6 +275,7 @@ struct HubDevicesSettingsView: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
             .disabled(ticketURIInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingAuth)
             .help("使用工单号免密接入中枢")
         }
@@ -331,6 +333,7 @@ struct HubDevicesSettingsView: View {
                         }
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
                 }
             }
         }

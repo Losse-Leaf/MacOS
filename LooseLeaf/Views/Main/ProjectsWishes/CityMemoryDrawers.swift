@@ -32,6 +32,7 @@ public struct CityMemoryDrawerSheet: View {
                 Spacer()
                 Button("关闭") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
@@ -160,6 +161,7 @@ public struct ProvinceMemoryDrawerSheet: View {
                 Spacer()
                 Button("关闭") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)

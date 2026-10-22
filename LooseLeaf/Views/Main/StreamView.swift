@@ -924,6 +924,7 @@ public struct StreamView: View {
                     inspectingSearchFootprint = nil
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -959,6 +960,7 @@ public struct StreamView: View {
                     appState.activeSection = .atlas
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 Spacer()
             }
             .padding(.top, 8)
@@ -979,6 +981,7 @@ public struct StreamView: View {
                     inspectingSearchWish = nil
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1032,6 +1035,7 @@ public struct StreamView: View {
                     appState.activeSection = .wishes
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 Spacer()
             }
             .padding(.top, 8)
@@ -1052,6 +1056,7 @@ public struct StreamView: View {
                     inspectingSearchProject = nil
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1106,6 +1111,7 @@ public struct StreamView: View {
                     appState.activeSection = .projects
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
                 Spacer()
             }
             .padding(.top, 8)

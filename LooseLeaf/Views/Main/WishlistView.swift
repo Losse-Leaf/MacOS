@@ -154,6 +154,7 @@ public struct WishlistView: View {
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
             }
 
             Text("生活的三维期冀：花钱可得的称手好物、需要闲暇与决心的山川行旅、心智进阶的人生里程碑。无截止死线，真实倒映生活向往。")

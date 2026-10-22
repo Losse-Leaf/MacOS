@@ -108,6 +108,7 @@ public struct EditorialLightboxView: View {
                                 }
                             }
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                             .keyboardShortcut(.leftArrow, modifiers: [])
                             .disabled(currentIndex == 0)
 
@@ -124,6 +125,7 @@ public struct EditorialLightboxView: View {
                                 }
                             }
                             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
                             .keyboardShortcut(.rightArrow, modifiers: [])
                             .disabled(currentIndex == allAttachments.count - 1)
                         }
@@ -140,6 +142,7 @@ public struct EditorialLightboxView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
                         .help("使用 macOS 系统原生 Preview 打开原片")
 
                         Button {
@@ -151,6 +154,7 @@ public struct EditorialLightboxView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
 
                         Button {
                             saveImageToDisk(url: url, filename: currentAttachment.originalFilename)
@@ -161,11 +165,13 @@ public struct EditorialLightboxView: View {
                             }
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
 
                         Button("关闭 ESC") {
                             onClose()
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .paperButtonFocusRing()
                         .keyboardShortcut(.cancelAction)
                     }
 

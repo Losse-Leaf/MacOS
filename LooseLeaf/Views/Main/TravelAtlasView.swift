@@ -165,6 +165,7 @@ public struct TravelAtlasView: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
         }
     }
 

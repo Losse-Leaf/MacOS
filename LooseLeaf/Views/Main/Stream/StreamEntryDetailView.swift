@@ -89,6 +89,7 @@ struct StreamEntryDetailView: View {
                     appState.highlightedEntry = nil
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
             }
 
             if let tx = matchingTx {

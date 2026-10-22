@@ -311,6 +311,7 @@ public struct QuickLedgerView: View {
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
             .keyboardShortcut(.return, modifiers: [.command])
             .disabled(resolvedQuickParsed == nil || isSubmitting)
             .accessibilityLabel("记入账本")

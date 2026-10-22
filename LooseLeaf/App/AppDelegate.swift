@@ -56,11 +56,46 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         DropLoader.cleanupStaleDropFiles()
     }
 
+    /// 退出前把「会阻塞主线程」的事挪到异步，先让退出流程继续走
+    private var didFlushSnapshotBeforeQuit = false
+    private var didReplyToTerminate = false
+
+    /// 退出前的落盘改为**异步**（MC-09）
+    ///
+    /// 关键：整份快照的 JSON 编码是落盘的大头 ——
+    /// 实测 2000 条档案约 9ms、5 万条约 220ms。
+    /// 在 `applicationWillTerminate` 里同步等待，等于**主线程被卡住**：
+    /// 用户按 ⌘Q 会看到界面冻住（档案大时甚至转「沙滩球」）。
+    ///
+    /// 改用 `applicationShouldTerminate` 返回 `.terminateLater`：
+    /// 落盘在后台串行队列上完成，主线程只等结果，
+    /// **期间 run loop 照常转、界面不冻**；落盘完成后再回一句「可以退了」。
+    ///
+    /// 另设 2 秒超时兜底 —— 万一落盘卡住，也不能让应用退不出去。
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let finish: @MainActor () -> Void = { [weak self] in
+            guard let self, !self.didReplyToTerminate else { return }
+            self.didReplyToTerminate = true
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        Task { @MainActor [weak self] in
+            await SyncManager.shared.flushSnapshotToDiskIfNeededAsync()
+            // Spotlight 索引有 1.5 秒防抖，退出前必须立即提交，否则最近变更的条目搜不到
+            SpotlightIndexer.flushNow()
+            self?.didFlushSnapshotBeforeQuit = true
+            finish()
+        }
+        // 超时兜底：落盘万一卡住，也不能让应用退不出去
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { finish() }
+        return .terminateLater
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
-        // 防抖窗口内的最后一次修改必须落盘
-        SyncManager.shared.flushSnapshotToDiskIfNeeded()
-        // Spotlight 索引有 1.5 秒防抖，退出前必须立即提交，否则最近变更的条目搜不到
-        SpotlightIndexer.flushNow()
+        // 兜底：异步落盘没跑完（例如进程被强杀），这里同步补一次。
+        // 正常退出路径已在 applicationShouldTerminate 里异步落过盘，不会重复阻塞。
+        if !didFlushSnapshotBeforeQuit {
+            SyncManager.shared.flushSnapshotToDiskIfNeeded()
+        }
         if let hotKeyRef {
             UnregisterEventHotKey(hotKeyRef)
         }

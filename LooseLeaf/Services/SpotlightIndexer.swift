@@ -175,12 +175,22 @@ enum SpotlightIndexer {
     /// 于是刚写进去的条目又被系统索引删掉 —— 表现为「开关切了，搜索里什么都没有」。
     /// 因此提供 completion，让调用方在删除真正完成后再去重建。
     public static func clearIndex(completion: (() -> Void)? = nil) {
+        // 关键：CoreSpotlight 的完成回调是 @Sendable 闭包，
+        // 直接捕获非 Sendable 的 `completion` 会在
+        // `-strict-concurrency=complete` 下报警告。
+        // 用一个 @unchecked Sendable 盒子转交 —— 盒子本身不可分割，
+        // 但 completion 只会被调用一次，且我们自己在调用后才复位状态。
+        final class CompletionBox: @unchecked Sendable {
+            let handler: (() -> Void)?
+            init(_ handler: (() -> Void)?) { self.handler = handler }
+        }
+        let box = CompletionBox(completion)
         CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in
             stateLock.lock()
             indexedVersions.removeAll()
             hasRebuiltDomain = false
             stateLock.unlock()
-            completion?()
+            box.handler?()
         }
     }
 

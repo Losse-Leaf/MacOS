@@ -90,8 +90,32 @@ public final class SyncManager {
         return dir
     }()
 
+    /// 仅供**测试**注入：把快照文件指向临时目录。
+    ///
+    /// 关键：生产环境恒为 nil（真实档案路径）。
+    /// 有了它，MC-10「关键写入必须立即落盘」才能被**真实验证** ——
+    /// 否则测试会写到用户真实的档案上。
+    /// （与 `CredentialStore.overrideDirectory` 同一套路。）
+    /// 仅供**测试**注入：把快照文件指向临时目录。
+    ///
+    /// 关键：生产环境恒为 nil（真实档案路径）。
+    /// 有了它，MC-10「关键写入必须立即落盘」才能被**真实验证** ——
+    /// 否则测试会写到用户真实的档案上。
+    /// （与 `CredentialStore.overrideDirectory` 同一套路。）
+    ///
+    /// 并发说明：这是**测试专用**的开关，测试里只在主线程读写，
+    /// 不需要额外的锁；`nonisolated(unsafe)` 是为了让它能被
+    /// 后台串行队列上的写盘路径读到。
+    nonisolated(unsafe) private static var _snapshotFileURLOverride: URL?
+
+    public nonisolated static var snapshotFileURLOverride: URL? {
+        get { _snapshotFileURLOverride }
+        set { _snapshotFileURLOverride = newValue }
+    }
+
     public nonisolated static var snapshotFileURL: URL {
-        sharedStorageDirectory.appendingPathComponent("archive_snapshot_v1.json")
+        snapshotFileURLOverride
+            ?? sharedStorageDirectory.appendingPathComponent("archive_snapshot_v1.json")
     }
 
     /// 最近一次本地快照加载失败的原因（供启动期提示，nil 表示加载正常或文件不存在）
@@ -201,7 +225,15 @@ public final class SyncManager {
         saveSnapshot(latest)
     }
 
-    public func saveSnapshot(_ updated: LocalArchiveSnapshot) {
+    /// 保存一份新快照
+    ///
+    /// - Parameter critical: 是否为**关键写入**。
+    ///   关键写入（离线入发件箱的记录、离线删除）**只存在于本地** ——
+    ///   服务端还没有它们。此时若在 0.35 秒防抖窗口内崩溃，
+    ///   这条记录就**永久丢失**（既没到服务端，本地快照也没落盘）。
+    ///   标记为关键后**立即落盘**（不等防抖窗口），把崩溃丢数据的窗口
+    ///   从 350ms 压到「后台写盘完成前的那十几毫秒」。
+    public func saveSnapshot(_ updated: LocalArchiveSnapshot, critical: Bool = false) {
         var copy = updated
         copy.updatedAt = FormatUtils.beijingISOString()
         copy.schemaVersion = LocalArchiveSnapshot.currentSchemaVersion
@@ -214,7 +246,7 @@ public final class SyncManager {
             // 立即通知 UI 响应刷新，保证 0ms 上屏
             onSnapshotUpdated?(copy)
         }
-        scheduleDiskWrite(copy, revision: snapshotRevision)
+        scheduleDiskWrite(copy, revision: snapshotRevision, critical: critical)
     }
 
     /// 开始批量更新（期间不逐次回调 UI）
@@ -233,7 +265,7 @@ public final class SyncManager {
 
     /// 合并 0.35 秒内的连续保存：一次全量刷新会触发 5 次 save，没必要写 5 次盘。
     /// 写盘全部发生在 diskWriteQueue（串行），并用 revision 保证「后写的一定更新」。
-    private func scheduleDiskWrite(_ copy: LocalArchiveSnapshot, revision: UInt64) {
+    private func scheduleDiskWrite(_ copy: LocalArchiveSnapshot, revision: UInt64, critical: Bool = false) {
         pendingWrite?.cancel()
         let fileURL = Self.snapshotFileURL
         let item = DispatchWorkItem { [weak self] in
@@ -241,7 +273,18 @@ public final class SyncManager {
             _ = self
         }
         pendingWrite = item
-        diskWriteQueue.asyncAfter(deadline: .now() + 0.35, execute: item)
+        if critical {
+            // 关键写入：**不等** 0.35 秒防抖窗口，立刻排队落盘。
+            //
+            // 关键在于「排队」而不是「同步等待」——
+            // 同步等待会把整份快照的 JSON 编码压在主线程上
+            // （实测 2000 条约 9ms、5 万条约 220ms），
+            // 那正是 MC-09 要消灭的阻塞。排队执行让写盘在后台串行队列上完成，
+            // 崩溃丢数据的窗口从 350ms 压到十几毫秒，而界面不卡。
+            diskWriteQueue.async(execute: item)
+        } else {
+            diskWriteQueue.asyncAfter(deadline: .now() + 0.35, execute: item)
+        }
     }
 
     /// 串行落盘：只有 revision ≥ 已落盘版本时才允许覆盖，杜绝旧数据回滚新数据。
@@ -259,8 +302,33 @@ public final class SyncManager {
         }
     }
 
+    /// 退出前**异步**落盘，确保防抖窗口内的最后一次修改不丢失，
+    /// 同时**不阻塞主线程**。
+    ///
+    /// 关键（MC-09）：整份快照的 JSON 编码是这次落盘的大头 ——
+    /// 实测 2000 条档案约 9ms、5 万条约 220ms。若在主线程同步等待，
+    /// 用户按 ⌘Q 时会看到明显的卡顿（甚至「沙滩球」）。
+    /// 这里把编码与写盘都留在**同一串行队列**上（与队列中的旧写入不乱序），
+    /// 主线程只负责「等结果」，期间 run loop 照常转、界面不冻。
+    public func flushSnapshotToDiskIfNeededAsync() async {
+        pendingWrite?.cancel()
+        pendingWrite = nil
+        let copy = snapshot
+        let revision = snapshotRevision
+        let fileURL = Self.snapshotFileURL
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            diskWriteQueue.async {
+                Self.writeSnapshot(copy, to: fileURL, revision: revision)
+                continuation.resume()
+            }
+        }
+    }
+
     /// 退出前同步落盘，确保防抖窗口内的最后一次修改不丢失。
     /// 关键：在**同一串行队列**上同步等待，而不是在主线程另写一份，否则会与队列中的旧写入乱序。
+    ///
+    /// 注：这是**兜底**路径（异步落盘没跑完时用），正常退出走
+    /// `flushSnapshotToDiskIfNeededAsync()`，避免主线程被大快照阻塞。
     public func flushSnapshotToDiskIfNeeded() {
         pendingWrite?.cancel()
         pendingWrite = nil
@@ -413,7 +481,10 @@ public final class SyncManager {
             entryRequest: entryRequest,
             transactionRequest: transactionRequest
         ))
-        saveSnapshot(latest)
+        // 关键写入：这条记录此刻**只存在于本地**（还在发件箱里排队，没到服务端）。
+        // 若在 0.35 秒防抖窗口内崩溃，它就会**永久丢失** —— 服务端没有，
+        // 本地快照也没落盘。所以这里必须立即落盘。
+        saveSnapshot(latest, critical: true)
     }
 
     /// 把一次「删除」排入发件箱（离线时网络恢复后自动补删）

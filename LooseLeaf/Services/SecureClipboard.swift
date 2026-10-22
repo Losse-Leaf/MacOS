@@ -40,8 +40,13 @@ enum SecureClipboard {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             // 只有剪贴板里**仍然是我们放的那份内容**才清除 ——
             // 用户若已复制别的东西，绝不误删。
-            guard pasteboard.string(forType: .string) == fingerprint else { return }
-            pasteboard.clearContents()
+            //
+            // 关键：闭包里**重新取** NSPasteboard.general，而不是捕获外层的
+            // `pasteboard` —— NSPasteboard 不是 Sendable，捕获它会在
+            // `-strict-concurrency=complete` 下报警告。
+            let board = NSPasteboard.general
+            guard board.string(forType: .string) == fingerprint else { return }
+            board.clearContents()
         }
     }
 

@@ -19,6 +19,9 @@ public struct PaperPillButton: View {
     public var isCompact: Bool = false
     public let action: () -> Void
 
+    /// 键盘焦点态（用于画纸本焦点环）
+    @FocusState private var isFocused: Bool
+
     public init(
         title: String,
         icon: String? = nil,
@@ -59,6 +62,12 @@ public struct PaperPillButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // 关键（MC-06）：键盘焦点环。
+        // 系统默认焦点环在自定义按钮上几乎不可见，而胶囊按钮是本应用
+        // **最常被键盘 Tab 到的控件**（类目筛选、类型切换、渠道选择…）——
+        // 没有焦点指示，键盘用户根本不知道自己在哪儿。
+        .focused($isFocused)
+        .paperFocusRing(isFocused: isFocused, cornerRadius: ArchiveRadius.sm)
         .accessibilityLabel(title)
     }
 }

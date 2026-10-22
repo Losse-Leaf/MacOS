@@ -16,6 +16,8 @@ public struct NewProjectSheet: View {
     @State private var title: String = ""
     @State private var subtitle: String = ""
     @State private var description: String = ""
+    /// 项目故事（设计手记）—— 后端与 Web 端早已支持，桌面端本轮补齐（MC-04）
+    @State private var story: String = ""
     @State private var category: String = "开源造物"
     // 默认状态与 ProjectsView 的状态筛选共用同一套语义常量（进行中 = "Active"）
     @State private var status: String = ProjectStatus.active.rawValue
@@ -74,6 +76,21 @@ public struct NewProjectSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
+            // 项目故事：多行、纸质、斜体排印 —— 与「详细背景」区分开
+            VStack(alignment: .leading, spacing: 4) {
+                Text("项目故事")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("写下一段关于这个造物的故事…", text: $story, axis: .vertical)
+                    .accessibilityLabel("项目故事")
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
+                    .lineLimit(3...6)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
+
             TextField("GitHub 源码仓库链接", text: $githubUrl)
                 .accessibilityLabel("源码仓库链接")
                 .textFieldStyle(.plain)
@@ -119,6 +136,7 @@ public struct NewProjectSheet: View {
                     title: cleanTitle,
                     subtitle: subtitle.isEmpty ? nil : subtitle,
                     description: description,
+                    story: story.isEmpty ? nil : story,
                     category: category.isEmpty ? nil : category,
                     status: status.isEmpty ? nil : status,
                     githubUrl: githubUrl.isEmpty ? nil : githubUrl
@@ -146,6 +164,8 @@ public struct EditProjectSheet: View {
     @State private var title: String
     @State private var subtitle: String
     @State private var description: String
+    /// 项目故事（设计手记）—— 修订时从原造物带出（MC-04）
+    @State private var story: String
     @State private var category: String
     @State private var status: String
     @State private var githubUrl: String
@@ -159,6 +179,7 @@ public struct EditProjectSheet: View {
         _title = State(initialValue: project.title)
         _subtitle = State(initialValue: project.subtitle ?? "")
         _description = State(initialValue: project.description)
+        _story = State(initialValue: project.story ?? "")
         _category = State(initialValue: project.category ?? "开源造物")
         _status = State(initialValue: project.status ?? ProjectStatus.active.rawValue)
         _githubUrl = State(initialValue: project.githubUrl ?? "")
@@ -218,6 +239,21 @@ public struct EditProjectSheet: View {
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
+            // 项目故事：多行、纸质、斜体排印 —— 与「详细背景」区分开
+            VStack(alignment: .leading, spacing: 4) {
+                Text("项目故事")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("写下一段关于这个造物的故事…", text: $story, axis: .vertical)
+                    .accessibilityLabel("项目故事")
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
+                    .lineLimit(3...6)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
+
             TextField("GitHub 源码仓库链接", text: $githubUrl)
                 .accessibilityLabel("源码仓库链接")
                 .textFieldStyle(.plain)
@@ -263,9 +299,20 @@ public struct EditProjectSheet: View {
                     title: cleanTitle,
                     subtitle: subtitle.isEmpty ? nil : subtitle,
                     description: description,
+                    // 关键：修订时把故事**原样带回**，且**空串也要发**。
+                    //
+                    // 后端更新接口是指针语义（省略即保持原值）——
+                    // 若桌面端不携带，用户在桌面端就永远看不到、也改不了这段故事
+                    // （「用 Web 写故事、用桌面端改标题」之后桌面端就成了瞎子）；
+                    // 但若写成 `story.isEmpty ? nil : story`，
+                    // 用户把故事**删空**时发的就是 nil ⇒ 服务端保持原值 ⇒ **永远清不掉**。
+                    // 所以这里始终携带：空串即「清空」。
+                    story: story,
                     category: category.isEmpty ? nil : category,
                     status: status.isEmpty ? nil : status,
-                    githubUrl: githubUrl.isEmpty ? nil : githubUrl
+                    githubUrl: githubUrl.isEmpty ? nil : githubUrl,
+                    // 展示顺序同样带回（后端省略即保持原值，这里显式带上以免被改序）
+                    order: project.order
                 )
                 _ = try await APIClient.shared.updateProject(id: project.id, req)
                 await appState.loadProjectsWishesFootprints()

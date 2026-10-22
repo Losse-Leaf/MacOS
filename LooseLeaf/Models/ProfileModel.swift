@@ -945,33 +945,52 @@ public struct CreateProjectRequest: Codable, Sendable {
     public var title: String
     public var subtitle: String?
     public var description: String
+    /// 项目故事（设计手记）
+    ///
+    /// 关键（MC-04）：这个字段**后端早就支持**（`ProjectRequest.Story`），
+    /// Web 端也能编辑，但桌面端的请求模型里压根没有它 ——
+    /// 于是「用 Web 写了一段项目故事，再用桌面端改个标题」，
+    /// 故事就**没法在桌面端维护**（后端更新接口是指针语义、不会清空，
+    /// 但桌面端用户根本看不到、也改不了它）。
+    public var story: String?
     public var category: String?
     public var status: String?
     public var githubUrl: String?
+    /// 展示顺序（数值小的靠前）
+    ///
+    /// 同样后端支持、Web 端的请求模型里有，桌面端补齐。
+    /// 为 nil 时**不携带**该字段 —— 后端更新接口是指针语义，省略即保持原值。
+    public var order: Int?
 
     enum CodingKeys: String, CodingKey {
         case title
         case subtitle
         case description
+        case story
         case category
         case status
         case githubUrl = "github_url"
+        case order
     }
 
     public init(
         title: String,
         subtitle: String? = nil,
         description: String,
+        story: String? = nil,
         category: String? = "开源造物",
         status: String? = "持续维护",
-        githubUrl: String? = nil
+        githubUrl: String? = nil,
+        order: Int? = nil
     ) {
         self.title = title
         self.subtitle = subtitle
         self.description = description
+        self.story = story
         self.category = category
         self.status = status
         self.githubUrl = githubUrl
+        self.order = order
     }
 }
 

@@ -135,7 +135,25 @@ public final class SyncManager {
         }
         do {
             let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: data)
-            return (decoded.migrated(), nil)
+            // 关键：未来版本护栏 ——
+            // 快照版本高于当前版本 ⇒ 用户把应用**降级**了。
+            // 此时若照旧迁移（把版本号改小），新版引入的字段会在解码时
+            // 被 `try? decode ?? 默认值` 悄悄吃掉 ⇒ **静默丢数据**。
+            // 所以这里**拒绝迁移**，并按「解码失败」同样的路子把原文件隔离备份 ——
+            // 绝不覆盖用户仅存的一份本地档案。
+            guard let migrated = decoded.migrated() else {
+                let stamp = ISO8601DateFormatter().string(from: Date())
+                    .replacingOccurrences(of: ":", with: "-")
+                let backupURL = url.deletingLastPathComponent()
+                    .appendingPathComponent("archive_snapshot_v_newer.corrupt-\(stamp).json")
+                let moved = (try? FileManager.default.moveItem(at: url, to: backupURL)) != nil
+                let message = moved
+                    ? "本地快照来自更新版本的应用（v\(decoded.schemaVersion) > 当前 v\(LocalArchiveSnapshot.currentSchemaVersion)），已隔离备份为 \(backupURL.lastPathComponent)，本次以空档案启动。请升级到最新版以恢复完整档案。"
+                    : "本地快照来自更新版本的应用，且备份失败，请立即手动备份 \(url.path) 后再启动。"
+                Self.logger.error("Snapshot from a newer schema version (\(decoded.schemaVersion)); backup moved: \(moved)")
+                return (nil, message)
+            }
+            return (migrated, nil)
         } catch {
             let stamp = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
@@ -202,11 +220,108 @@ public final class SyncManager {
                     self.onSnapshotUpdated?(loaded)
                 }
             }
+
+            // 关键：磁盘快照里的媒体地址是**上次退出时**签发的，
+            // 早就过期了（签名 30 分钟一过期）。
+            // 注水完成后立刻批量换签一次，否则相纸会显示「载入失败」
+            // （磁盘缓存热时能兜住，冷缓存兜不住）。
+            //
+            // 放在 `MainActor.run` 之外 —— 那是个**同步**闭包，里面不能 await；
+            // `refreshExpiredMediaURLs` 自身是主 actor 方法，直接 await 会自动切过去。
+            await self.refreshExpiredMediaURLs()
         }
     }
 
     public func currentSnapshot() -> LocalArchiveSnapshot {
         snapshot
+    }
+
+    // MARK: - 媒体签名地址换签（快照里的 URL 会过期）
+
+    /// 判断一个媒体地址是否**已过期或即将过期**
+    ///
+    /// 关键：签名地址有两种形态（都带有效期）：
+    /// - 本机媒体签名：`/media/<key>?exp=<unix 秒>&sig=…`
+    /// - R2 预签名：`…?X-Amz-Date=<ISO>&X-Amz-Expires=<秒>&X-Amz-Signature=…`
+    ///
+    /// 判定不出来时**保守视为「需要换签」** ——
+    /// 多换一次只是多一个请求，漏换则相纸直接显示「载入失败」。
+    nonisolated static func isMediaURLExpired(_ urlString: String, within seconds: TimeInterval = 60) -> Bool {
+        guard let components = URLComponents(string: urlString),
+              let items = components.queryItems else {
+            // 解析不出来（相对路径无查询串等）—— 不是签名地址，视为不过期
+            return false
+        }
+        let dict = Dictionary(items.map { ($0.name.lowercased(), $0.value ?? "") }, uniquingKeysWith: { first, _ in first })
+
+        // 本机媒体签名：exp 是绝对 unix 秒
+        if let exp = dict["exp"], let ts = Double(exp) {
+            return Date().timeIntervalSince1970 + seconds >= ts
+        }
+        // R2 预签名：X-Amz-Date（ISO8601）+ X-Amz-Expires（相对秒）
+        if let iso = dict["x-amz-date"], let ttl = Double(dict["x-amz-expires"] ?? "") {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            if let signedAt = formatter.date(from: iso) {
+                return signedAt.timeIntervalSinceNow + ttl <= seconds
+            }
+        }
+        // 拿不准 → 保守换签
+        return true
+    }
+
+    /// 把快照里**已过期**的媒体地址批量换签并回写
+    ///
+    /// 关键：离线时本地磁盘缓存兜底（缓存键剥掉预签名参数，跨签名稳定），
+    /// 所以换签失败**不应**影响任何东西 —— 静默跳过即可。
+    public func refreshExpiredMediaURLs() async {
+        var latest = snapshot
+        // 收集需要换签的 object key
+        var needRefresh: Set<String> = []
+        func collect(_ attachments: [Attachment]) {
+            for att in attachments {
+                if att.objectKey.isEmpty { continue }
+                if Self.isMediaURLExpired(att.url) || (att.thumbnailUrl.map { Self.isMediaURLExpired($0) } ?? false) {
+                    needRefresh.insert(att.objectKey)
+                }
+            }
+        }
+        // 关键：快照里只有**条目**带附件 —— 心愿与足迹不落在快照里
+        // （它们随档案单独从中枢拉取，URL 由当次响应直接给出，本就不会过期）。
+        // 器物（GearItem）模型里根本没有 URL 字段。
+        for entry in latest.entries { collect(entry.attachments) }
+
+        guard !needRefresh.isEmpty else {
+            // 没有过期的地址 —— 但仍要记下「已确认新鲜」，避免每次启动都全量扫描
+            if latest.mediaURLsRefreshedAt == nil {
+                latest.mediaURLsRefreshedAt = FormatUtils.beijingISOString()
+                saveSnapshot(latest)
+            }
+            return
+        }
+
+        let refreshed: [String: RefreshedMediaURLs]
+        do {
+            refreshed = try await APIClient.shared.refreshMediaURLs(objectKeys: Array(needRefresh))
+        } catch {
+            // 离线或换签失败 —— 交给本地磁盘缓存兜底，不打扰用户
+            Self.logger.info("Media URL re-signing skipped: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard !refreshed.isEmpty else { return }
+
+        func patch(_ attachments: [Attachment]) -> [Attachment] {
+            attachments.map { att in
+                guard let new = refreshed[att.objectKey] else { return att }
+                var copy = att
+                if !new.url.isEmpty { copy.url = new.url }
+                if let thumb = new.thumbnailUrl, !thumb.isEmpty { copy.thumbnailUrl = thumb }
+                return copy
+            }
+        }
+        latest.entries = latest.entries.map { e in var c = e; c.attachments = patch(e.attachments); return c }
+        latest.mediaURLsRefreshedAt = FormatUtils.beijingISOString()
+        saveSnapshot(latest)
     }
 
     /// 原子更新站点配置、主理人档案与统计（始终基于当前最新 snapshot 原地打补丁，杜绝并发拉取时冲刷条目数据）
@@ -356,6 +471,12 @@ public final class SyncManager {
                 self.onNetworkStatusChanged?(online)
                 if online && (wasOffline || !self.snapshot.outbox.isEmpty) {
                     await self.flushOutbox()
+                }
+                // 网络恢复时顺手把过期的媒体地址换掉 ——
+                // 离线期间相纸只能靠本地磁盘缓存兜底，
+                // 一联网就应当拿到能用的地址。
+                if online {
+                    await self.refreshExpiredMediaURLs()
                 }
             }
         }

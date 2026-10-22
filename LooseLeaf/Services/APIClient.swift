@@ -866,6 +866,42 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/uploads/complete", method: "POST", body: req)
     }
 
+    // MARK: - 媒体签名地址换签 (Media URL Re-Signing)
+
+    /// 批量换取新鲜的媒体签名地址
+    ///
+    /// 关键：快照持久化了 `attachment.url` / `thumbnailUrl`，
+    /// 而它们是**会过期**的签名地址（本机媒体签名 30 分钟、R2 预签名同理）。
+    /// 快照离线读出来时这些地址可能早已失效 ⇒ 相纸显示「载入失败」
+    /// （磁盘缓存热时能兜住，冷缓存兜不住）。
+    ///
+    /// 离线时的兜底由本地磁盘缓存承担（缓存键剥掉预签名参数，跨签名稳定），
+    /// 这里负责的是「联网时把地址换成新鲜的」。
+    ///
+    /// - Parameter objectKeys: 需要换签的 object key 列表
+    /// - Returns: object key → (原图地址, 缩略图地址)
+    public func refreshMediaURLs(
+        objectKeys: [String],
+        expiresIn: Int = 1800
+    ) async throws -> [String: RefreshedMediaURLs] {
+        guard !objectKeys.isEmpty else { return [:] }
+        let req = BatchSignRequest(keys: objectKeys, expiresIn: expiresIn)
+        let resp: BatchSignResponse = try await performEnvelopeRequest(
+            path: "/api/v1/files/sign-batch",
+            method: "POST",
+            body: req
+        )
+        var out: [String: RefreshedMediaURLs] = [:]
+        for item in resp.items {
+            guard !item.objectKey.isEmpty else { continue }
+            out[item.objectKey] = RefreshedMediaURLs(
+                url: item.url,
+                thumbnailUrl: item.thumbnailUrl
+            )
+        }
+        return out
+    }
+
     /// 本地未配置 R2 时的统一 multipart/form-data 上传通道 (POST /api/v1/files/upload)
     public func uploadUnifiedMultipart(
         fileData: Data,

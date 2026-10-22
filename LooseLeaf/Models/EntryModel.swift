@@ -84,6 +84,57 @@ public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// 附件与多媒体对象实体
+/// 批量换签的请求载荷
+public struct BatchSignRequest: Codable, Sendable {
+    public var keys: [String]
+    public var expiresIn: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case keys
+        case expiresIn = "expires_in"
+    }
+
+    public init(keys: [String], expiresIn: Int? = nil) {
+        self.keys = keys
+        self.expiresIn = expiresIn
+    }
+}
+
+/// 批量换签的响应
+public struct BatchSignResponse: Codable, Sendable {
+    public struct Item: Codable, Sendable {
+        public var objectKey: String
+        public var url: String
+        /// 缩略图签名地址（与原图是两条不同的签名，客户端拼不出来）
+        public var thumbnailUrl: String?
+        public var expiresIn: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case objectKey = "object_key"
+            case url
+            case thumbnailUrl = "thumbnail_url"
+            case expiresIn = "expires_in"
+        }
+    }
+
+    public var items: [Item]
+
+    enum CodingKeys: String, CodingKey {
+        case items
+    }
+}
+
+/// 换签后的一对地址
+public struct RefreshedMediaURLs: Sendable {
+    public var url: String
+    public var thumbnailUrl: String?
+
+    public init(url: String, thumbnailUrl: String?) {
+        self.url = url
+        self.thumbnailUrl = thumbnailUrl
+    }
+}
+
 public struct Attachment: Codable, Identifiable, Equatable, Sendable {
     public let id: Int
     public var entryId: Int?

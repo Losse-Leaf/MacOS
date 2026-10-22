@@ -620,7 +620,9 @@ final class LooseLeafTests: XCTestCase {
     func testSnapshotSchemaVersionMigration() throws {
         let legacyJSON = """
         {
-          "entries": [],
+          "entries": [
+            { "id": 7, "type": "life", "title": "迁移前的旧条目", "content": "正文", "occurred_at": "2026-10-01T10:00:00+08:00" }
+          ],
           "transactions": [],
           "transactionSummary": { "totalExpense": 0, "totalIncome": 0, "balance": 0, "categoryBreakdown": {} },
           "profile": { "name": "测试", "title": "", "bio": "", "location": "", "currentCity": "", "avatarUrl": "", "motto": "", "manifesto": "", "edcGear": [] },
@@ -633,8 +635,43 @@ final class LooseLeafTests: XCTestCase {
         let decoded = try JSONDecoder().decode(LocalArchiveSnapshot.self, from: Data(legacyJSON.utf8))
         XCTAssertEqual(decoded.schemaVersion, 1, "缺少 schemaVersion 的老快照应按 v1 解释")
         let migrated = decoded.migrated()
-        XCTAssertEqual(migrated.schemaVersion, LocalArchiveSnapshot.currentSchemaVersion)
-        XCTAssertFalse(migrated.entries.isEmpty == false, "迁移不得丢弃任何历史数据")
+        XCTAssertNotNil(migrated, "v1 快照必须能迁移到当前版本")
+        XCTAssertEqual(migrated?.schemaVersion, LocalArchiveSnapshot.currentSchemaVersion)
+        XCTAssertEqual(migrated?.entries.count, 1, "迁移不得丢弃任何历史数据")
+        XCTAssertEqual(migrated?.entries.first?.title, "迁移前的旧条目", "迁移不得改动条目内容")
+    }
+
+    /// 未来版本护栏：快照来自**更新版本**的应用（用户降级了）时必须拒绝迁移
+    ///
+    /// 关键：若照旧把版本号改小，新版引入的字段会在解码时被
+    /// `try? decode ?? 默认值` **悄悄吃掉** —— 也就是静默丢数据。
+    /// 所以必须返回 nil，由调用方隔离备份并提示，绝不覆盖。
+    func testSnapshotFromNewerVersionIsRejected() throws {
+        var snap = LocalArchiveSnapshot()
+        snap.schemaVersion = LocalArchiveSnapshot.currentSchemaVersion + 1
+        XCTAssertNil(
+            snap.migrated(),
+            "未来版本的快照必须拒绝迁移（否则新版字段会被静默丢弃）"
+        )
+        // 旧版本则必须能迁移
+        var old = LocalArchiveSnapshot()
+        old.schemaVersion = 1
+        XCTAssertNotNil(old.migrated(), "旧版本快照必须能迁移")
+    }
+
+    /// v2 → v3 迁移：引入 mediaURLsRefreshedAt，且必须是 nil（=「还不知道有没有过期」）
+    func testSnapshotV2ToV3Migration() throws {
+        var snap = LocalArchiveSnapshot()
+        snap.schemaVersion = 2
+        snap.mediaURLsRefreshedAt = "2026-10-20T10:00:00+08:00"
+        let migrated = snap.migrated()
+        XCTAssertNotNil(migrated)
+        XCTAssertEqual(migrated?.schemaVersion, LocalArchiveSnapshot.currentSchemaVersion)
+        XCTAssertNil(
+            migrated?.mediaURLsRefreshedAt,
+            "v2 → v3 必须把 mediaURLsRefreshedAt 复位为 nil —— 填当前时间等于假装刚换过签，"
+            + "那份可能早已失效的地址就会被继续信任"
+        )
     }
 
     /// 新快照必须带 schemaVersion，且能被解码回来

@@ -307,6 +307,40 @@ public final class AppState {
         }
     }
 
+    /// 删除一件随身设备（⌘Z 可撤销）
+    ///
+    /// 关键：原先的器物删除是**硬删** —— 设备本体从主理人档案的 JSON 数组里被移除，
+    /// 伴生散页也一并软删，而软删的散页**没有恢复端点**。
+    /// 于是误删一件设备，它的照片与手记就**永久回不来**。
+    ///
+    /// 现在删除后登记一次撤销：撤销时把**原始设备数据**带回服务端，
+    /// 由服务端按原 id 插回档案数组，并连带恢复伴生散页。
+    public func deleteGearAction(_ gear: GearItem) async {
+        // 先记下它原先在档案数组中的位置，撤销时原位放回
+        let originalIndex = profile.edcGear.firstIndex { $0.id == gear.id } ?? -1
+        do {
+            try await APIClient.shared.deleteGearAsset(id: gear.id)
+            // 器物的伴生散页要一并从时间流移除
+            await loadConfigAndProfile()
+            await loadTransactionsAndAssets(forceFull: false)
+            await loadEntries(forceFull: false)
+        } catch {
+            errorBanner = error.localizedDescription
+            return
+        }
+        registerUndo(label: "删除器物「\(gear.name)」") {
+            do {
+                try await APIClient.shared.restoreGearAsset(gear, index: originalIndex)
+                await self.loadConfigAndProfile()
+                await self.loadTransactionsAndAssets(forceFull: false)
+                await self.loadEntries(forceFull: false)
+            } catch {
+                self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+            }
+        }
+        showTemporaryBanner("已删除器物 · 可按 ⌘Z 撤销")
+    }
+
     public func deleteTransactionAction(_ tx: Transaction) {
         // 同上：尚未同步的乐观账目要能删
         if tx.id < 0 {

@@ -499,6 +499,68 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
 }
 
 /// 随身装备与固定资产单品 (GearItem RC-53)
+/// 恢复随身设备的响应
+public struct RestoreGearAssetResponse: Codable, Sendable {
+    public var id: String
+    public var restored: Bool
+}
+
+/// 恢复随身设备请求载荷（⌘Z 撤销用）
+public struct RestoreGearAssetRequest: Codable, Sendable {
+    public var id: String
+    public var name: String
+    public var spec: String?
+    public var category: String
+    public var status: String?
+    public var priceCents: Int64?
+    public var purchaseDate: String?
+    public var soldPriceCents: Int64?
+    public var soldDate: String?
+    public var note: String?
+    /// 原先在档案数组中的位置（-1 = 追加到末尾）
+    public var index: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case spec
+        case category
+        case status
+        case priceCents = "price_cents"
+        case purchaseDate = "purchase_date"
+        case soldPriceCents = "sold_price_cents"
+        case soldDate = "sold_date"
+        case note
+        case index
+    }
+
+    public init(
+        id: String,
+        name: String,
+        spec: String? = nil,
+        category: String = "数码器材",
+        status: String? = nil,
+        priceCents: Int64? = nil,
+        purchaseDate: String? = nil,
+        soldPriceCents: Int64? = nil,
+        soldDate: String? = nil,
+        note: String? = nil,
+        index: Int = -1
+    ) {
+        self.id = id
+        self.name = name
+        self.spec = spec
+        self.category = category
+        self.status = status
+        self.priceCents = priceCents
+        self.purchaseDate = purchaseDate
+        self.soldPriceCents = soldPriceCents
+        self.soldDate = soldDate
+        self.note = note
+        self.index = index
+    }
+}
+
 public struct GearItem: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String

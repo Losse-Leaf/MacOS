@@ -724,6 +724,32 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/assets/gear/\(escapePathComponent(id))/sell", method: "POST", body: req)
     }
 
+    /// 恢复一件被删除的随身设备（⌘Z 撤销用）
+    ///
+    /// 关键：设备本体存在**主理人档案的 JSON 列**里，删除是「从数组里移除」——
+    /// 没有 deleted_at 可标记，所以恢复必须把**原始设备数据**带回去，
+    /// 由服务端按原 id 插回（并连带恢复伴生散页）。
+    public func restoreGearAsset(_ gear: GearItem, index: Int) async throws {
+        let req = RestoreGearAssetRequest(
+            id: gear.id,
+            name: gear.name,
+            spec: gear.spec,
+            category: gear.category,
+            status: gear.status,
+            priceCents: gear.priceCents,
+            purchaseDate: gear.purchaseDate,
+            soldPriceCents: gear.soldPriceCents,
+            soldDate: gear.soldDate,
+            note: gear.note,
+            index: index
+        )
+        let _: RestoreGearAssetResponse = try await performEnvelopeRequest(
+            path: "/api/v1/assets/gear/restore",
+            method: "POST",
+            body: req
+        )
+    }
+
     public func deleteGearAsset(id: String) async throws {
         let _: DeleteResponse = try await performEnvelopeRequest(
             path: "/api/v1/assets/gear/\(escapePathComponent(id))",

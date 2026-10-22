@@ -1299,16 +1299,9 @@ public struct LedgerAssetsView: View {
     }
 
     private func deleteGear(_ gear: GearItem) {
+        // 走 AppState 的动作：删除后登记 ⌘Z 撤销（误删可以原样找回）
         Task { @MainActor in
-            do {
-                try await APIClient.shared.deleteGearAsset(id: gear.id)
-                // 器物的伴生散页要一并从时间流移除
-                await appState.loadConfigAndProfile()
-                await appState.loadTransactionsAndAssets(forceFull: false)
-                await appState.loadEntries(forceFull: false)
-            } catch {
-                errorNotice = error.localizedDescription
-            }
+            await appState.deleteGearAction(gear)
         }
     }
 }

@@ -452,14 +452,9 @@ public struct CuratorDossierView: View {
     }
 
     private func deleteGear(_ gear: GearItem) {
+        // 走 AppState 的动作：删除后登记 ⌘Z 撤销（误删可以原样找回）
         Task { @MainActor in
-            do {
-                try await APIClient.shared.deleteGearAsset(id: gear.id)
-                await appState.loadConfigAndProfile()
-                await appState.loadTransactionsAndAssets(forceFull: false)
-            } catch {
-                dossierError = "删除器物失败：\(error.localizedDescription)"
-            }
+            await appState.deleteGearAction(gear)
         }
     }
 

@@ -889,37 +889,53 @@ public struct LedgerAssetsView: View {
 
     // MARK: - 6. 流水列表
 
-    /// 流水明细标题行与筛选胶囊
+    /// 流水明细标题行与**单行**紧凑筛选器
+    ///
+    /// 关键（MC-01）：原先是**两行**筛选 —— 时间维度（本月流水 / 全部历史）
+    /// 贴在标题行右侧，类目维度（16 个类目）另起一行。
+    /// 两行筛选把流水区**往下推**了整整一行，而上面的资产概览、
+    /// 月度光谱、记账控制台已经占了不少纵向空间 ——
+    /// 结果「账目明细」这个最常看的东西反而要滚一屏才看得到。
+    ///
+    /// 现在两个维度合并成**一行**：时间维度在前、一条细竖线分隔、类目维度在后，
+    /// 整行可横向滚动（首尾渐隐提示可滚）。语义不变，少占一行。
     private func transactionsHeaderSection(categories: [String], transactionCount: Int) -> some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            // 标题与时间跨度行
+        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+            // 标题行
             HStack {
                 Text("流水账目明细 (\(transactionCount) 笔)")
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                 Spacer()
+            }
 
-                HStack(spacing: ArchiveSpacing.xs) {
+            // 单行紧凑筛选器：时间维度 ‖ 类目维度
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    // ── 时间维度 ──
                     PaperPillButton(
                         title: "\(selectedMonth)月流水",
-                        isSelected: filterBySelectedMonth
+                        isSelected: filterBySelectedMonth,
+                        isCompact: true
                     ) {
                         filterBySelectedMonth = true
                     }
                     PaperPillButton(
                         title: "全部历史",
-                        isSelected: !filterBySelectedMonth
+                        isSelected: !filterBySelectedMonth,
+                        isCompact: true
                     ) {
                         filterBySelectedMonth = false
                     }
-                }
-            }
 
-            // 类目滚动筛选行 (自成一行，全宽平滑滚动，首尾渐隐提示可横向滚动)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    // 紧凑模式：16 个类目挤一行，默认尺寸会像一堵墙
+                    // 维度分隔：一条细竖线，让「时间」与「类目」不至于混成一锅
+                    Rectangle()
+                        .fill(ArchivePalette.borderSubtle)
+                        .frame(width: 1, height: 14)
+                        .padding(.horizontal, 3)
+
+                    // ── 类目维度 ──
                     PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部", isCompact: true) {
                         selectedCategoryFilter = "全部"
                     }

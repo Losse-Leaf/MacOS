@@ -211,6 +211,7 @@ public struct QuickCaptureView: View {
     private var contentEditor: some View {
         @Bindable var draft = appState.quickDraft
         return TextField("写下此刻闪念，按 ⌘ + Return 即刻归档…", text: $draft.contentText, axis: .vertical)
+            .accessibilityLabel("闪念正文")
             .textFieldStyle(.plain)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
             .foregroundStyle(ArchivePalette.inkPrimary)

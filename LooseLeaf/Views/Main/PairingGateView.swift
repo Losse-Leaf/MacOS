@@ -220,6 +220,7 @@ public struct PairingGateView: View {
             }
 
             TextField("looseleaf://pair?hub=…&ticket=… 或配对工单 Ticket", text: $pairLinkInput)
+                .accessibilityLabel("配对工单或深链")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                 .padding(ArchiveSpacing.s)
@@ -325,6 +326,7 @@ public struct PairingGateView: View {
         ) {
             VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                 TextField("http://localhost:8088", text: $appState.hubURLString)
+                    .accessibilityLabel("中枢地址")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
                     .padding(ArchiveSpacing.s)

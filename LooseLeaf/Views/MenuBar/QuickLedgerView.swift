@@ -140,6 +140,7 @@ public struct QuickLedgerView: View {
             }
 
             TextField("记一笔账，如：42.5 咖啡…", text: $smartInput)
+                .accessibilityLabel("快速记账输入")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
                 .foregroundStyle(ArchivePalette.inkPrimary)

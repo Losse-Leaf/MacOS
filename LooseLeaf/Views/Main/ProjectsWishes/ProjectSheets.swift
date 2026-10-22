@@ -75,6 +75,7 @@ public struct NewProjectSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("GitHub 源码仓库链接", text: $githubUrl)
+                .accessibilityLabel("源码仓库链接")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                 .padding(ArchiveSpacing.s)
@@ -218,6 +219,7 @@ public struct EditProjectSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("GitHub 源码仓库链接", text: $githubUrl)
+                .accessibilityLabel("源码仓库链接")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                 .padding(ArchiveSpacing.s)

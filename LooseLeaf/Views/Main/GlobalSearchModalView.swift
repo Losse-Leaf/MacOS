@@ -148,6 +148,7 @@ public struct GlobalSearchModalView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 TextField("搜索生活档案、山川足迹、心愿与造物…", text: $query)
+                    .accessibilityLabel("全局搜索")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.editorialSerif(size: 15))
                     .foregroundStyle(ArchivePalette.inkPrimary)

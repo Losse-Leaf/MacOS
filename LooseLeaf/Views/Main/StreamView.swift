@@ -343,6 +343,7 @@ public struct StreamView: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                             TextField("即时搜索散页与票根… (⌘F)", text: $localSearchText)
+                                .accessibilityLabel("搜索散页与票根")
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.bodySans(size: 12))
                                 .focused($isSearchFocused)

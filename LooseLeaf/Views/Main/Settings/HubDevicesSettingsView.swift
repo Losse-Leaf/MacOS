@@ -255,6 +255,7 @@ struct HubDevicesSettingsView: View {
     private var unpairedInputBar: some View {
         HStack(spacing: ArchiveSpacing.s) {
             TextField("输入或粘贴配对工单号 (Ticket) 或深链…", text: $ticketURIInput)
+                .accessibilityLabel("配对工单号或深链")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .padding(ArchiveSpacing.s)

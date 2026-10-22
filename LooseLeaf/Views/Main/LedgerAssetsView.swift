@@ -472,6 +472,7 @@ public struct LedgerAssetsView: View {
                     .foregroundStyle(ArchivePalette.accentWarm)
 
                 TextField("快速记账（如：42.5 咖啡）…", text: $quickLine)
+                    .accessibilityLabel("快速记账输入")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
                     .foregroundStyle(ArchivePalette.inkPrimary)

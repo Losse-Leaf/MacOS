@@ -1083,14 +1083,14 @@ public struct LedgerAssetsView: View {
             Divider()
             Button {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
+                SecureClipboard.copy(FormatUtils.formattedYuan(cents: tx.amount))
                 appState.showTemporaryBanner("已拷贝金额至剪贴板")
             } label: {
                 Label("拷贝金额", systemImage: "doc.on.doc")
             }
             Button {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
+                SecureClipboard.copy(tx.title.isEmpty ? tx.category : tx.title)
                 appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
             } label: {
                 Label("拷贝账目摘要", systemImage: "text.quote")

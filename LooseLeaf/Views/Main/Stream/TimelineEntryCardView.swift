@@ -427,14 +427,14 @@ import AppKit
                         Divider()
                         Button {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(FormatUtils.formattedYuan(cents: tx.amount), forType: .string)
+                            SecureClipboard.copy(FormatUtils.formattedYuan(cents: tx.amount))
                             actions.onToast("已拷贝金额至剪贴板")
                         } label: {
                             Label("拷贝金额", systemImage: "doc.on.doc")
                         }
                         Button {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(tx.title.isEmpty ? tx.category : tx.title, forType: .string)
+                            SecureClipboard.copy(tx.title.isEmpty ? tx.category : tx.title)
                             actions.onToast("已拷贝账目摘要至剪贴板")
                         } label: {
                             Label("拷贝账目摘要", systemImage: "text.quote")
@@ -459,14 +459,14 @@ import AppKit
                     Divider()
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(entry.content, forType: .string)
+                        SecureClipboard.copy(entry.content)
                         actions.onToast("已拷贝手稿正文至剪贴板")
                     } label: {
                         Label("拷贝手稿正文", systemImage: "doc.on.doc")
                     }
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(parsed.dotDateTime, forType: .string)
+                        SecureClipboard.copy(parsed.dotDateTime)
                         actions.onToast("已拷贝时间戳至剪贴板")
                     } label: {
                         Label("拷贝时间戳", systemImage: "clock")

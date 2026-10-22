@@ -119,14 +119,36 @@ enum SpotlightIndexer {
     }
 
     private static func fingerprint(_ entry: LifeEntry) -> String {
-        // 只取会影响搜索结果的字段，避免为纯排序变化付出重建成本
-        "\(entry.updatedAt ?? "")|\(entry.title)|\(entry.content.count)|\(entry.cityName ?? "")|\(entry.location ?? "")"
+        // 只取会影响搜索结果的字段，避免为纯排序变化付出重建成本。
+        //
+        // 关键：摘要模式下真正进入索引的是**正文的前 N 字**。
+        // 若只记「字数」，那么改动落在第 N 字之后、且字数不变时指纹不变 ⇒
+        // 不触发增量重建 ⇒ 系统搜索里还留着**旧摘要**，用户改了字却搜不到。
+        let contentKey = indexesFullContent
+            ? "\(entry.content.count)"
+            : String(summary(of: entry.content).prefix(summaryLimit))
+        return "\(entry.updatedAt ?? "")|\(entry.title)|\(contentKey)|\(entry.cityName ?? "")|\(entry.location ?? "")"
     }
+
+    /// 索引正文的最大字符数（摘要模式）
+    private static let summaryLimit = 60
+
+    /// 是否索引**全文**（DEC-03 口径 C：默认只索引摘要，完整索引由用户自己开）
+    ///
+    /// 关键：原文把**每条散页的正文全文**写进系统 Spotlight 索引 ——
+    /// 于是私人文字会被系统搜索与 Siri 命中；
+    /// 若用户开了「与 Siri 共享」或 iCloud 同步 Spotlight，内容还会**外流到云端**。
+    /// 默认只索引「标题 + 前 N 字摘要」，完整索引交给用户在设置里显式开启。
+    nonisolated(unsafe) static var indexesFullContent: Bool = false
 
     private static func makeItem(_ entry: LifeEntry) -> CSSearchableItem {
         let attrs = CSSearchableItemAttributeSet(contentType: .text)
         attrs.title = entry.title.isEmpty ? "散页手稿" : entry.title
-        attrs.contentDescription = entry.content
+        if indexesFullContent {
+            attrs.contentDescription = entry.content
+        } else {
+            attrs.contentDescription = Self.summary(of: entry.content)
+        }
         attrs.contentCreationDate = FormatUtils.parseFlexDate(entry.occurredAt)
         attrs.city = entry.cityName ?? entry.location
         return CSSearchableItem(
@@ -134,6 +156,32 @@ enum SpotlightIndexer {
             domainIdentifier: domainIdentifier,
             attributeSet: attrs
         )
+    }
+
+    /// 取正文摘要（首行 + 前 N 字）
+    ///
+    /// 可见性：internal（而非 private）是为了让单元测试能直接钉住这条隐私口径。
+    static func summary(of content: String) -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if trimmed.count <= summaryLimit { return trimmed }
+        return String(trimmed.prefix(summaryLimit)) + "…"
+    }
+
+    /// 清空整个索引域（用于「关闭完整索引」或「解除配对」时清理）
+    ///
+    /// 关键：CoreSpotlight 的删除是**异步**的（走 completion 回调）。
+    /// 若「先清空、再重建」不串起来，重建可能**先于**删除落地，
+    /// 于是刚写进去的条目又被系统索引删掉 —— 表现为「开关切了，搜索里什么都没有」。
+    /// 因此提供 completion，让调用方在删除真正完成后再去重建。
+    public static func clearIndex(completion: (() -> Void)? = nil) {
+        CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domainIdentifier]) { _ in
+            stateLock.lock()
+            indexedVersions.removeAll()
+            hasRebuiltDomain = false
+            stateLock.unlock()
+            completion?()
+        }
     }
 
     /// 执行一次增量重建。

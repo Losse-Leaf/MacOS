@@ -136,6 +136,19 @@ struct PreferencesSettingsView: View {
                             .accessibilityLabel("触感反馈")
                     }
 
+                    // Spotlight 索引范围（DEC-03 口径 C）
+                    settingsCardRow(
+                        icon: "magnifyingglass.circle",
+                        iconColor: ArchivePalette.inkSecondary,
+                        title: "系统搜索索引全文",
+                        subtitle: "关闭时只索引标题与前 60 字摘要；开启后正文全文会进入 macOS 系统搜索与 Siri"
+                    ) {
+                        Toggle("", isOn: $appState.indexesFullContentInSpotlight)
+                            .toggleStyle(PaperSwitchToggleStyle())
+                            .labelsHidden()
+                            .accessibilityLabel("系统搜索索引全文")
+                    }
+
                     settingsCardRow(
                         icon: "bell.badge",
                         iconColor: ArchivePalette.inkSecondary,

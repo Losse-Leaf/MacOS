@@ -473,6 +473,34 @@ public final class AppState {
     }
 
     /// 是否在同步完成 / 失败时发送系统通知
+    /// 是否把正文**全文**写进系统 Spotlight 索引
+    ///
+    /// 关键（DEC-03 口径 C）：默认**关闭** ——
+    /// 私人正文全文进系统索引意味着它会被系统搜索与 Siri 命中，
+    /// 开启「与 Siri 共享」或 iCloud 同步 Spotlight 时还会**外流到云端**。
+    /// 默认只索引「标题 + 前 60 字摘要」，想要全文搜索的用户自己开。
+    public var indexesFullContentInSpotlight: Bool {
+        didSet {
+            UserDefaults.standard.set(indexesFullContentInSpotlight, forKey: Self.spotlightFullContentKey)
+            SpotlightIndexer.indexesFullContent = indexesFullContentInSpotlight
+            if !indexesFullContentInSpotlight {
+                // 关闭时清掉已写入的全文。
+                // 关键：CoreSpotlight 的删除是异步的，必须等删除真正落地再重建 ——
+                // 否则重建可能先于删除完成，刚写进去的条目又被系统索引删掉
+                // （表现为「开关切了，搜索里什么都没有」）。
+                SpotlightIndexer.clearIndex { [weak self] in
+                    Task { @MainActor in
+                        SpotlightIndexer.reindex(entries: self?.entries ?? [])
+                    }
+                }
+            } else {
+                SpotlightIndexer.reindex(entries: entries)
+            }
+        }
+    }
+
+    private static let spotlightFullContentKey = "looseleaf_spotlight_full_content"
+
     public var notifiesOnSync: Bool {
         didSet {
             UserDefaults.standard.set(notifiesOnSync, forKey: "looseleaf_notifies_on_sync")
@@ -541,6 +569,10 @@ public final class AppState {
         self.showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
         self.launchesAtLogin = UserDefaults.standard.object(forKey: "looseleaf_launches_at_login") as? Bool ?? false
         self.notifiesOnSync = UserDefaults.standard.object(forKey: "looseleaf_notifies_on_sync") as? Bool ?? true
+        // Spotlight 全文索引开关（默认关闭：只索引标题 + 摘要）
+        let spotlightFull = UserDefaults.standard.object(forKey: Self.spotlightFullContentKey) as? Bool ?? false
+        self.indexesFullContentInSpotlight = spotlightFull
+        SpotlightIndexer.indexesFullContent = spotlightFull
         self.enablesHapticFeedback = UserDefaults.standard.object(forKey: "looseleaf_enables_haptic_feedback") as? Bool ?? true
 
         // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
@@ -1154,6 +1186,14 @@ public final class AppState {
         }
         CredentialStore.clearAllCredentials()
         self.isPaired = false
+        // 关键：解除配对时**一并清理系统 Spotlight 索引** ——
+        // 否则私人正文会继续留在系统索引里被搜索与 Siri 命中，
+        // 即便用户已经与中枢解除关系。
+        //
+        // 同时把内存里的散页也清掉：否则一次在途的快照回来后会再次触发重建，
+        // 刚清干净的索引又被写回去 —— 等于「解除配对后正文仍在系统搜索里」。
+        self.entries = []
+        SpotlightIndexer.clearIndex()
         showTemporaryBanner("已安全吊销并清除本机设备配对凭证")
     }
 

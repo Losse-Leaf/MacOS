@@ -316,7 +316,10 @@ struct HubDevicesSettingsView: View {
 
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(ticket.qrPayload, forType: .string)
+                        // 关键：配对凭证是**凭据**，不能留在通用剪贴板里
+                        // （同机所有 App 可读，还会同步到同一 Apple ID 的其它设备）。
+                        // 延时清除，用户有 60 秒去粘贴。
+                        SecureClipboard.copy(ticket.qrPayload)
                         appState.showTemporaryBanner("已复制配对链接")
                     } label: {
                         HStack(spacing: ArchiveSpacing.xs) {

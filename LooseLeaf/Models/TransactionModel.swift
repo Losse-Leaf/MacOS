@@ -209,6 +209,52 @@ public struct TransactionSummary: Codable, Equatable, Sendable {
     }
 }
 
+/// 编辑一笔已有账目时，分期相关字段应当怎么取值
+///
+/// 关键（2026-10-22 修复）：**金额改了，分期总额必须跟着改**。
+///
+/// 原先桌面端编辑分期账目时传的是**旧**的 `installmentTotalAmount`，
+/// 而月供却按**新**金额重算 —— 于是库里
+/// `amount = ¥6,000`、`installment_total_amount = ¥12,000`、`monthly_pay = ¥500`，
+/// 资产大盘仍按 ¥12,000 计负债（实算 ¥11,500）。
+/// 用户明明把金额改小了，**负债却纹丝不动**，
+/// 展厅与桌面端显示的「分期总额」也对不上。
+///
+/// 口径与 Web / Android 一致：**分期总额 == 账目金额**。
+/// 金额没改时沿用原值（总额可能本就与金额不同，例如「首付 + 分期」）。
+public struct InstallmentEditFields: Equatable, Sendable {
+    public var totalAmount: Int64?
+    public var monthlyPay: Int64?
+    public var months: Int?
+    public var remainMonths: Int?
+    public var repaymentDay: Int?
+    public var channelCode: String?
+}
+
+public enum InstallmentEditing {
+    /// 按新金额推算编辑后的分期字段
+    ///
+    /// - Parameters:
+    ///   - transaction: 被编辑的原始账目
+    ///   - newAmountCents: 编辑后的新金额（分）
+    public static func fields(for transaction: Transaction, newAmountCents: Int64) -> InstallmentEditFields {
+        let amountChanged = newAmountCents != transaction.amount
+        let months = transaction.installmentMonths
+        return InstallmentEditFields(
+            // 总额随金额同步 —— 否则「金额改了、负债没改」
+            totalAmount: amountChanged ? newAmountCents : transaction.installmentTotalAmount,
+            // 月供随金额同步（金额没改就沿用原值，避免与后端的取整口径二次漂移）
+            monthlyPay: amountChanged
+                ? (months ?? 0) > 0 ? newAmountCents / Int64(months!) : nil
+                : transaction.installmentMonthlyPay,
+            months: months,
+            remainMonths: transaction.installmentRemainMonths,
+            repaymentDay: transaction.repaymentDay,
+            channelCode: transaction.installmentChannelCode
+        )
+    }
+}
+
 /// 创建或更新记账请求载荷 (POST / PUT /api/v1/transactions)
 public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     public var amount: Int64

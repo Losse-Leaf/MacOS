@@ -154,6 +154,8 @@ public struct EditTransactionSheet: View {
         errorText = nil
         Task { @MainActor in
             do {
+                // 分期字段推算（金额改了则总额与月供同步改）
+                let installmentFields = InstallmentEditing.fields(for: transaction, newAmountCents: cents)
                 let req = CreateTransactionRequest(
                     amount: cents,
                     type: type,
@@ -173,15 +175,15 @@ public struct EditTransactionSheet: View {
                     // 传**原始的可选值**（nil = 本次未携带 → 后端保持原值），
                     // 而不是强转成 true/false —— 后者的语义是「显式降级」。
                     isInstallment: transaction.isInstallment,
-                    installmentChannelCode: transaction.installmentChannelCode,
-                    installmentTotalAmount: transaction.installmentTotalAmount,
-                    installmentMonths: transaction.installmentMonths,
-                    // 月供：金额变了要按新总额重算；没变就沿用原值
-                    installmentMonthlyPay: cents == transaction.amount
-                        ? transaction.installmentMonthlyPay
-                        : (cents / Int64(max(1, transaction.installmentMonths ?? 1))),
-                    installmentRemainMonths: transaction.installmentRemainMonths,
-                    repaymentDay: transaction.repaymentDay
+                    // 关键：分期字段统一由模型层推算 ——
+                    // 「金额改了，总额与月供必须一起改」这条口径单点收口，
+                    // 免得总���与月供各算各的、留下一致性裂缝。
+                    installmentChannelCode: installmentFields.channelCode,
+                    installmentTotalAmount: installmentFields.totalAmount,
+                    installmentMonths: installmentFields.months,
+                    installmentMonthlyPay: installmentFields.monthlyPay,
+                    installmentRemainMonths: installmentFields.remainMonths,
+                    repaymentDay: installmentFields.repaymentDay
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
                 // 账目在时间流里是合成条目，账目变了时间流也要跟着变

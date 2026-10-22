@@ -223,6 +223,10 @@ public struct TransactionSummary: Codable, Equatable, Sendable {
 /// 口径与 Web / Android 一致：**分期总额 == 账目金额**。
 /// 金额没改时沿用原值（总额可能本就与金额不同，例如「首付 + 分期」）。
 public struct InstallmentEditFields: Equatable, Sendable {
+    /// 本次要发出的 is_installment（nil = 不携带）
+    public var isInstallment: Bool?
+    /// 本次是否**显式声明**取消分期
+    public var clearInstallment: Bool
     public var totalAmount: Int64?
     public var monthlyPay: Int64?
     public var months: Int?
@@ -232,26 +236,146 @@ public struct InstallmentEditFields: Equatable, Sendable {
 }
 
 public enum InstallmentEditing {
-    /// 按新金额推算编辑后的分期字段
+    /// 本次编辑对分期的**意图**（三态）
+    public enum Intent: Equatable, Sendable {
+        /// 本次与分期无关 —— 服务端保持原值
+        case untouched
+        /// 明确是分期
+        case apply
+        /// 明确取消分期 —— 服务端会清空全部账期字段
+        case cancel
+    }
+
+    /// 按意图 + 新金额推算编辑后的分期字段
     ///
     /// - Parameters:
     ///   - transaction: 被编辑的原始账目
     ///   - newAmountCents: 编辑后的新金额（分）
-    public static func fields(for transaction: Transaction, newAmountCents: Int64) -> InstallmentEditFields {
+    ///   - intent: 本次对分期的意图
+    ///   - channelCode: 用户选定的信贷渠道（nil = 沿用原值）
+    ///   - months: 用户选定的期数（nil = 沿用原值）
+    ///   - repaymentDay: 用户选定的每月还款日（nil = 沿用原值）
+    public static func fields(
+        for transaction: Transaction,
+        newAmountCents: Int64,
+        intent: Intent,
+        channelCode: String? = nil,
+        months: Int? = nil,
+        repaymentDay: Int? = nil
+    ) -> InstallmentEditFields {
+        switch intent {
+        case .untouched:
+            // 本次不涉及分期。
+            //
+            // 关键：原账目**是**分期时，仍然要把账期字段带出去 ——
+            // 因为后端一旦收到 `is_installment: true` 就会进入「写分期」的分支，
+            // 若此时不携带 `installment_total_amount`，总额会保持旧值，
+            // 于是「金额改了、负债没改」又回来了（MC-13 的老问题）。
+            //
+            // 原账目**不是**分期时则什么都不带（服务端保持原值）。
+            //
+            // isInstallment 透传**原始的可选值**：
+            // nil = 省略（服务端保持原值）；false = 显式「不是分期」但**不带** clear_installment
+            // （后端契约：单传 false 仍保持原值，这是为了保护老客户端）。
+            guard transaction.isInstallment == true else {
+                return InstallmentEditFields(
+                    isInstallment: transaction.isInstallment,
+                    clearInstallment: false,
+                    totalAmount: nil,
+                    monthlyPay: nil,
+                    months: nil,
+                    remainMonths: nil,
+                    repaymentDay: nil,
+                    channelCode: nil
+                )
+            }
+            return applyFields(
+                transaction: transaction,
+                newAmountCents: newAmountCents,
+                channelCode: channelCode,
+                months: months,
+                repaymentDay: repaymentDay
+            )
+
+        case .cancel:
+            // 显式取消分期 —— 必须同时带上 is_installment=false 与 clear_installment=true，
+            // 否则后端会「保持原值」，分期根本取消不掉（Android / Web 上踩过的同一个坑）。
+            return InstallmentEditFields(
+                isInstallment: false,
+                clearInstallment: true,
+                totalAmount: nil,
+                monthlyPay: nil,
+                months: nil,
+                remainMonths: nil,
+                repaymentDay: nil,
+                channelCode: nil
+            )
+
+        case .apply:
+            // 明确是分期 —— 总额与月供**由同一组数推出**，保证自洽。
+            return applyFields(
+                transaction: transaction,
+                newAmountCents: newAmountCents,
+                channelCode: channelCode,
+                months: months,
+                repaymentDay: repaymentDay
+            )
+        }
+    }
+
+    /// 「是分期」时账期字段的推算 —— 总额与月供由**同一组数**推出，保证自洽：
+    ///   月供 = 总额 / 期数（整数除法，与后端 `total / months` 完全同口径）
+    /// 关键：金额改了总额必须跟着改，否则「金额改了、负债没改」。
+    private static func applyFields(
+        transaction: Transaction,
+        newAmountCents: Int64,
+        channelCode: String?,
+        months: Int?,
+        repaymentDay: Int?
+    ) -> InstallmentEditFields {
         let amountChanged = newAmountCents != transaction.amount
-        let months = transaction.installmentMonths
+        let effectiveMonths = months ?? transaction.installmentMonths ?? 12
+        let total: Int64
+        if amountChanged {
+            total = newAmountCents
+        } else {
+            total = transaction.installmentTotalAmount ?? newAmountCents
+        }
+        let monthly: Int64? = effectiveMonths > 0 ? total / Int64(effectiveMonths) : nil
         return InstallmentEditFields(
-            // 总额随金额同步 —— 否则「金额改了、负债没改」
-            totalAmount: amountChanged ? newAmountCents : transaction.installmentTotalAmount,
-            // 月供随金额同步（金额没改就沿用原值，避免与后端的取整口径二次漂移）
-            monthlyPay: amountChanged
-                ? (months ?? 0) > 0 ? newAmountCents / Int64(months!) : nil
-                : transaction.installmentMonthlyPay,
-            months: months,
+            isInstallment: true,
+            clearInstallment: false,
+            totalAmount: total,
+            monthlyPay: monthly,
+            months: effectiveMonths,
             remainMonths: transaction.installmentRemainMonths,
-            repaymentDay: transaction.repaymentDay,
-            channelCode: transaction.installmentChannelCode
+            repaymentDay: repaymentDay ?? transaction.repaymentDay,
+            channelCode: channelCode ?? transaction.installmentChannelCode
         )
+    }
+
+    /// 由「用户是否显式动过分期开关」推出本次意图
+    ///
+    /// - Parameters:
+    ///   - wantsInstallment: 分期开关当前状态
+    ///   - touched: 用户是否**显式**动过这个开关
+    ///   - isExpense: 当前收支类型是否为支出（收入没有分期）
+    ///   - transaction: 被编辑的原始账目
+    ///
+    /// 关键（2026-10-22）：**没动过就不许改**。
+    /// 若只看「开关当前值 vs 原值」，那么「支出 → 收入 → 支出」这种来回切换
+    /// 会被误判成「用户取消了分期」，于是一次无心的类型切换就把分期静默抹掉。
+    public static func intent(
+        wantsInstallment: Bool,
+        touched: Bool,
+        isExpense: Bool,
+        transaction: Transaction
+    ) -> Intent {
+        // 收入没有分期 —— 且类型切换本身**不得**销毁已有的分期，
+        // 所以只有用户在支出态下显式动过开关，才算表达了意图。
+        guard isExpense, touched else { return .untouched }
+        if wantsInstallment { return .apply }
+        return (transaction.isInstallment == true) ? .cancel : .untouched
     }
 }
 
@@ -275,6 +399,13 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     /// 非可选让这个契约在 mac 侧**根本无法表达**，
     /// 于是「撤销删除 / 重传 / 重试」重建账目时都会丢分期信息。
     public var isInstallment: Bool?
+    /// 显式声明「本次要取消分期」
+    ///
+    /// 关键：单发 `is_installment: false` **不足以**表达「取消分期」。
+    /// 后端的新契约是「不带 clear_installment 就保持原值」——
+    /// 因为已发布的老客户端（`Bool` 不可选，必定发 false）压根不知道可以不传。
+    /// 若把 false 直接当成「取消分期」，老用户编辑一次账目就会毁掉分期负债。
+    public var clearInstallment: Bool
     public var installmentChannelCode: String?
     public var installmentTotalAmount: Int64?
     public var installmentMonths: Int?
@@ -297,6 +428,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         case cityCode = "city_code"
         case occurredAt = "occurred_at"
         case isInstallment = "is_installment"
+        case clearInstallment = "clear_installment"
         case installmentChannelCode = "installment_channel_code"
         case installmentTotalAmount = "installment_total_amount"
         case installmentMonths = "installment_months"
@@ -320,6 +452,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         cityCode: String? = nil,
         occurredAt: String = FormatUtils.beijingISOString(),
         isInstallment: Bool? = nil,
+        clearInstallment: Bool = false,
         installmentChannelCode: String? = nil,
         installmentTotalAmount: Int64? = nil,
         installmentMonths: Int? = nil,
@@ -341,6 +474,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         self.cityCode = cityCode
         self.occurredAt = occurredAt
         self.isInstallment = isInstallment
+        self.clearInstallment = clearInstallment
         self.installmentChannelCode = installmentChannelCode
         self.installmentTotalAmount = installmentTotalAmount
         self.installmentMonths = installmentMonths

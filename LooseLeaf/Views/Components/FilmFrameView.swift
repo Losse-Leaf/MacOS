@@ -441,15 +441,87 @@ public enum PaperImageCache {
     }
 }
 
+/// 相纸加载状态机（纯值类型，便于单测）。
+///
+/// 关键：用**代号**而不是布尔闸门。
+///
+/// `.task(id: url)` 在 url 变化时会取消旧任务并启动新任务，
+/// 而取消是**异步投递**的：新任务启动时旧任务的清理还没执行。
+/// 若用 `isLoading` 布尔量，新任务会被「已经在加载」的闸门直接挡掉
+/// → 这一张图**永远不会被加载**；同时旧任务的 catch 会把
+/// hasFailed 置 true → 界面显示「相纸载入失败」，即使 URL 完全正常。
+///
+/// 代号方案：每次加载领一个号，只有**最新那个**号的结果才被采纳。
+/// url 变化时同时清空上一张的 `image` / `hasFailed`，
+/// 避免灯箱切换附件后继续显示上一张相纸。
+struct FilmImageLoadState {
+    private(set) var url: URL?
+    private(set) var generation: UInt64 = 0
+    private(set) var image: NSImage?
+    private(set) var hasFailed = false
+    /// 当前 url 是否还欠一次加载（init 命中内存缓存时为 false）
+    private(set) var needsReload = false
+
+    init(url: URL?, cachedImage: NSImage? = nil) {
+        self.url = url
+        self.image = cachedImage
+        self.needsReload = cachedImage == nil
+    }
+
+    /// url 变化：丢弃上一张的显示态并领取新代号。
+    /// 同一 url 返回 nil —— 不重复触发加载。
+    @discardableResult
+    mutating func resetIfNeeded(to newURL: URL?) -> UInt64? {
+        guard newURL != url else { return nil }
+        url = newURL
+        image = nil
+        hasFailed = false
+        needsReload = true
+        generation &+= 1
+        return generation
+    }
+
+    /// 领取本次加载的代号；旧代号的异步结果将全部失效。
+    mutating func beginLoad() -> UInt64 {
+        generation &+= 1
+        needsReload = false
+        return generation
+    }
+
+    /// 任务被取消（不是失败）：重新标记待加载，允许 task 重启后重试。
+    /// 旧代号的取消不得污染新 url 的状态。
+    mutating func markInterrupted(generation: UInt64) {
+        guard isCurrent(generation) else { return }
+        needsReload = true
+    }
+
+    func isCurrent(_ generation: UInt64) -> Bool {
+        generation == self.generation
+    }
+
+    /// 只有最新代号的结果才允许回写。
+    @discardableResult
+    mutating func accept(image newImage: NSImage, generation: UInt64) -> Bool {
+        guard isCurrent(generation) else { return false }
+        image = newImage
+        hasFailed = false
+        return true
+    }
+
+    @discardableResult
+    mutating func acceptFailure(generation: UInt64) -> Bool {
+        guard isCurrent(generation) else { return false }
+        hasFailed = true
+        return true
+    }
+}
+
 /// 支持内存首帧命中与平滑解码展示的相纸图像视图（消除长列表翻阅时的白屏闪烁）
 public struct CachedFilmImageView: View {
     public let url: URL
     public let maxHeight: CGFloat
 
-    @State private var loadedImage: NSImage?
-    /// 加载代号：只有最新一次加载的结果才被采纳
-    @State private var loadGeneration: UInt64 = 0
-    @State private var hasFailed: Bool = false
+    @State private var loadState: FilmImageLoadState
 
     /// 缩略图目标像素：显示高度的 2 倍（Retina），下限 160
     private static func thumbPixel(for displayHeight: CGFloat) -> Int {
@@ -460,12 +532,19 @@ public struct CachedFilmImageView: View {
         self.url = url
         self.maxHeight = maxHeight
         // 只做缩略图内存命中（零 I/O）；磁盘降采样解码交给 .task 在后台完成
-        _loadedImage = State(initialValue: PaperImageCache.memoryImage(for: url, maxPixel: Self.thumbPixel(for: maxHeight)))
+        _loadState = State(initialValue: FilmImageLoadState(
+            url: url,
+            cachedImage: PaperImageCache.memoryImage(for: url, maxPixel: Self.thumbPixel(for: maxHeight))
+        ))
     }
 
     public var body: some View {
-        Group {
-            if let image = loadedImage {
+        // 注意：`.task(id: url)` 必须挂在**始终存在**的容器（ZStack）上。
+        // 原先它挂在「加载中」分支的 VStack 里，加载成功后该分支消失、
+        // `.task` 随之被卸载；灯箱切换附件时视图身份不变、只换 url，
+        // 于是新 url 永远不会触发加载，界面继续显示上一张图。
+        ZStack {
+            if loadState.url == url, let image = loadState.image {
                 Image(nsImage: image)
                     .interpolation(.high)
                     .antialiased(true)
@@ -473,7 +552,7 @@ public struct CachedFilmImageView: View {
                     .scaledToFit()
                     .frame(maxHeight: maxHeight)
                     .clipped()
-            } else if hasFailed {
+            } else if loadState.url == url, loadState.hasFailed {
                 VStack(spacing: 6) {
                     Image(systemName: "photo.artframe")
                         .font(.system(size: 22))
@@ -497,52 +576,54 @@ public struct CachedFilmImageView: View {
                 .frame(maxWidth: .infinity, minHeight: 140)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("相纸载入中")
-                .task(id: url) {
-                    await loadImage()
-                }
             }
+        }
+        .task(id: url) {
+            await loadImage()
+        }
+        // 新 url 到达时先同步清掉旧图与失败标记，
+        // 避免在 task 启动前的那一帧仍闪现上一张相纸。
+        .onChange(of: url) { _, newURL in
+            loadState.resetIfNeeded(to: newURL)
         }
     }
 
     private func loadImage() async {
-        // 关键：用**代号**而不是布尔闸门。
-        //
-        // `.task(id: url)` 在 url 变化时会取消旧任务并启动新任务，
-        // 而取消是**异步投递**的：新任务启动时旧任务的清理还没执行。
-        // 若用 `isLoading` 布尔量，新任务会被「已经在加载」的闸门直接挡掉
-        // → 这一张图**永远不会被加载**；同时旧任务的 catch 会把
-        // hasFailed 置 true → 界面显示「相纸载入失败」，即使 URL 完全正常。
-        //
-        // 代号方案：每次加载领一个号，只有**最新那个**号的结果才被采纳。
-        loadGeneration &+= 1
-        let gen = loadGeneration
+        // 双保险：即使 onChange 尚未投递，task 自己也能发现 url 已变并重置。
+        loadState.resetIfNeeded(to: url)
+
+        // init 已命中内存缓存、或同一 url 已加载完成时不再重复解码/下载，
+        // 避免 SwiftUI 分支切换引发加载风暴。
+        guard loadState.needsReload else { return }
+
+        let gen = loadState.beginLoad()
 
         let pixel = Self.thumbPixel(for: maxHeight)
         if let cached = PaperImageCache.memoryImage(for: url, maxPixel: pixel) {
-            self.loadedImage = cached
+            loadState.accept(image: cached, generation: gen)
             return
         }
         // 磁盘降采样解码在后台队列完成，不再阻塞首帧
         if let diskHit = await PaperImageCache.loadImage(for: url, maxPixel: pixel) {
-            guard gen == loadGeneration else { return }
-            self.loadedImage = diskHit
+            loadState.accept(image: diskHit, generation: gen)
             return
         }
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            guard gen == loadGeneration else { return }
+            guard loadState.isCurrent(gen) else { return }
             if let thumb = PaperImageCache.storeDownloaded(rawData: data, for: url, maxPixel: pixel) {
-                self.loadedImage = thumb
+                loadState.accept(image: thumb, generation: gen)
             } else {
-                self.hasFailed = true
+                loadState.acceptFailure(generation: gen)
             }
         } catch is CancellationError {
-            // 取消不是失败 —— 旧任务被新任务取代时不该留下「载入失败」
+            // 取消不是失败 —— 旧任务被新任务取代时不该留下「载入失败」；
+            // 但同一代号的取消要重新标记待加载，避免重新出现时一直转圈。
+            loadState.markInterrupted(generation: gen)
             return
         } catch {
-            guard gen == loadGeneration else { return }
-            self.hasFailed = true
+            loadState.acceptFailure(generation: gen)
         }
     }
 }

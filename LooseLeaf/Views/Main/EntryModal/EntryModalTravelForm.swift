@@ -23,10 +23,9 @@ struct EntryModalTravelForm: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                PaperDatePicker(selection: $draft.occurredAt, enableTime: true, label: "启程/抵达时刻")
-                PaperDatePicker(selection: $draft.departedAt, enableTime: true, label: "离开时刻")
-            }
+            // 散页接口没有 departed_at 字段（返程只存在于足迹），
+            // 这里不再展示一个采集后无人消费的“离开时刻”输入。
+            PaperDatePicker(selection: $draft.occurredAt, enableTime: true, label: "启程/抵达时刻")
 
             EntryPaperField(
                 placeholder: "旅途标题（例：西湖暮色寻茶记）",

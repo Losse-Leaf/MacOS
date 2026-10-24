@@ -291,7 +291,11 @@ public struct EditTransactionSheet: View {
                     installmentMonths: installmentFields.months,
                     installmentMonthlyPay: installmentFields.monthlyPay,
                     installmentRemainMonths: installmentFields.remainMonths,
-                    repaymentDay: installmentFields.repaymentDay
+                    repaymentDay: installmentFields.repaymentDay,
+                    // 契约 A：用户清空属地城市时显式声明 clear_city，
+                    // 服务端据此清空 city_code（优先于 city_code 字段）。
+                    // 原先发 nil（省略）被后端按「保持原值」处理，清空静默失效。
+                    clearCity: cityCode.isEmpty ? true : nil
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
                 // 账目在时间流里是合成条目，账目变了时间流也要跟着变

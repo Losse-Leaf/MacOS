@@ -243,10 +243,18 @@ public enum FormatUtils {
 
     private static func inferCategory(from text: String, isIncome: Bool, fallback: String) -> String {
         if isIncome {
-            if text.contains("二手") || text.contains("出闲置") || text.contains("回血") {
-                return "二手回血"
+            let rules: [(keywords: [String], category: String)] = [
+                (["工资", "薪资", "奖金", "津贴", "月薪"], "工资收入"),
+                (["二手", "出闲置", "回血", "卖掉"], "二手回血"),
+                (["稿费", "稿酬", "稿筹", "设计费", "外包"], "稿酬设计"),
+                (["利息", "理财", "分红", "基金", "股票"], "投资理财"),
+                (["红包", "礼金", "压岁钱"], "礼金红包"),
+                (["报销", "退款", "退货"], "退款报销")
+            ]
+            for rule in rules where rule.keywords.contains(where: { text.contains($0) }) {
+                return rule.category
             }
-            return "其他"
+            return "其他收入"
         }
         let rules: [(keywords: [String], category: String)] = [
             (["咖啡", "午餐", "午饭", "晚餐", "晚饭", "早餐", "早饭", "奶茶", "外卖", "面", "火锅", "聚餐", "茶", "面包", "甜点", "水果"], "餐饮"),

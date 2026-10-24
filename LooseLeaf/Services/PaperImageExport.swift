@@ -28,22 +28,16 @@ public enum PaperImageExport {
     /// 关键：下载失败必须**抛出来**，不能静默返回 nil ——
     /// 否则调用方无从判断「没取到」是「失败」还是「本来就没有」。
     public static func data(for url: URL) async throws -> Data {
-        if let cached = PaperImageCache.image(for: url),
-           let tiff = cached.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiff),
-           let png = bitmap.representation(using: .png, properties: [:]) {
-            return png
+        // 先读磁盘原始字节：不做全尺寸解码、不占主线程，也不必重新编码。
+        if let raw = await PaperImageCache.loadRawData(for: url) {
+            return raw
         }
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw NSError(
-                    domain: "PaperImageExport",
-                    code: http.statusCode,
-                    userInfo: [NSLocalizedDescriptionKey: "相纸读取失败（HTTP \(http.statusCode)）"]
-                )
-            }
-            return data
+            // 与卡片共用同一套会话与在途合并：卡片正在下载同一张图时直接等结果。
+            return try await ImageRequestCoalescer.shared.data(
+                for: url,
+                session: APIClient.mediaSession
+            )
         } catch {
             throw NSError(
                 domain: "PaperImageExport",

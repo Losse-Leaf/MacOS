@@ -229,6 +229,8 @@ public final class AppState {
         set { navigation.searchQuery = newValue }
     }
     public var globalSearchResult: GlobalSearchResponse?
+    /// 检索结果版本号（每次结果写入自增）：供 `.task(id:)` 感知远端结果到达
+    public private(set) var globalSearchResultVersion: Int = 0
     /// 全局检索的加载指示防抖（避免 spinner 闪烁）
     public let globalSearchLoading = LoadingDebouncer()
     public var isGlobalSearching: Bool = false
@@ -299,8 +301,10 @@ public final class AppState {
                 do {
                     _ = try await APIClient.shared.createEntry(restoreRequest)
                     await self.loadEntries(forceFull: false)
+                    return true
                 } catch {
                     self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                    return false
                 }
             }
             self.showTemporaryBanner("已删除手稿 · 可按 ⌘Z 撤销")
@@ -334,8 +338,10 @@ public final class AppState {
                 await self.loadConfigAndProfile()
                 await self.loadTransactionsAndAssets(forceFull: false)
                 await self.loadEntries(forceFull: false)
+                return true
             } catch {
                 self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                return false
             }
         }
         showTemporaryBanner("已删除器物 · 可按 ⌘Z 撤销")
@@ -396,8 +402,10 @@ public final class AppState {
                 do {
                     _ = try await APIClient.shared.createTransaction(restoreRequest)
                     await self.loadTransactionsAndAssets(forceFull: false)
+                    return true
                 } catch {
                     self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
+                    return false
                 }
             }
             self.showTemporaryBanner("已删除账目 · 可按 ⌘Z 撤销")
@@ -576,14 +584,20 @@ public final class AppState {
     }
 
     // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
-    /// 仅在「条目/账目」集合变化时自增；配置类变更不应让列表 memo 全部失效
+    /// 仅在「条目」集合变化时自增；配置类变更/账目变更不应让列表 memo 全部失效
     @ObservationIgnored private var entriesRevision: Int = 0
+    /// 仅在「账目」集合变化时自增（MAC-8：与 entriesRevision 解耦）
+    @ObservationIgnored private var transactionsRevision: Int = 0
     @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
     @ObservationIgnored private var streamRowsMemo: (key: String, value: [StreamRow])?
     @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
     @ObservationIgnored private var entriesByDateMemo: (key: String, value: [String: [LifeEntry]])?
     /// 账目索引（id -> 账目）：时间流卡片按 id 查账目时避免全量遍历
     @ObservationIgnored private var transactionIndexMemo: (Int, [Int: Transaction])?
+    /// 全局检索语料（预计算可搜索串）：按 entriesRevision 记忆化
+    @ObservationIgnored private var searchCorpusMemo: (Int, [SearchableLifeEntry])?
+    /// On This Day 按北京时间自然日缓存：同一天重复刷新不再发请求
+    @ObservationIgnored private var onThisDayCacheDateKey: String?
     /// 全局检索代号：防止先发出的慢请求覆盖后发出的快请求结果
     @ObservationIgnored private var globalSearchGeneration: UInt64 = 0
     /// 二级内容（造物 / 心愿 / 足迹）加载代号：同上
@@ -655,11 +669,40 @@ public final class AppState {
         }
     }
 
+    @ObservationIgnored private var appliedEntriesFingerprint: SyncManager.CollectionFingerprint?
+    @ObservationIgnored private var appliedTransactionsFingerprint: SyncManager.CollectionFingerprint?
+
     private func applySnapshot(_ snap: LocalArchiveSnapshot) {
         // 相等性判断：@Observable 的 setter 无论值是否相等都会触发全树重渲染，
         // 因此必须先比较再赋值，把「每次同步全量重绘」降级为「仅真正变化时重绘」。
-        let entriesChanged = self.entries != snap.entries
-        let transactionsChanged = self.transactions != snap.transactions
+        //
+        // MAC-5：大数据量时不再逐个字段深比较整份数组（每条含长正文），
+        // 改比 SyncManager 维护的轻量指纹（数量 + 最大 updatedAt + id/状态哈希）。
+        // 指纹命中后仍保持原语义：**只有真正变化才赋值**。
+        let entriesUseFingerprint = snap.entries.count >= SyncManager.fingerprintThreshold
+        let transactionsUseFingerprint = snap.transactions.count >= SyncManager.fingerprintThreshold
+        let snapshotFingerprint = (entriesUseFingerprint || transactionsUseFingerprint)
+            ? SyncManager.shared.fingerprint(for: snap)
+            : nil
+
+        let entriesChanged: Bool
+        if entriesUseFingerprint,
+           let fingerprint = snapshotFingerprint?.entries,
+           let previous = appliedEntriesFingerprint {
+            entriesChanged = previous != fingerprint
+        } else {
+            entriesChanged = self.entries != snap.entries
+        }
+
+        let transactionsChanged: Bool
+        if transactionsUseFingerprint,
+           let fingerprint = snapshotFingerprint?.transactions,
+           let previous = appliedTransactionsFingerprint {
+            transactionsChanged = previous != fingerprint
+        } else {
+            transactionsChanged = self.transactions != snap.transactions
+        }
+
         if entriesChanged { self.entries = snap.entries }
         if transactionsChanged { self.transactions = snap.transactions }
         if self.transactionSummary != snap.transactionSummary { self.transactionSummary = snap.transactionSummary }
@@ -667,9 +710,20 @@ public final class AppState {
         if self.siteConfig != snap.siteConfig { self.siteConfig = snap.siteConfig }
         if self.stats != snap.stats { self.stats = snap.stats }
         if self.outboxItems != snap.outbox { self.outboxItems = snap.outbox }
-        if entriesChanged || transactionsChanged {
+        // MAC-8：条目与账目的版本号分开递增 ——
+        // 仅账目变化时不应让 streamRows / 热力图 / 日期索引全部重算。
+        if entriesChanged {
             entriesRevision += 1
+            // 往年今日是条目的派生投影：任何增删改后都必须重新拉取，
+            // 否则当天会一直显示已删除的卡片，直到次日零点。
+            onThisDayCacheDateKey = nil
         }
+        if transactionsChanged {
+            transactionsRevision += 1
+        }
+        // 记住本次已应用的指纹；集合变小后回到深比较，下次变大时会重新建立基线。
+        appliedEntriesFingerprint = entriesUseFingerprint ? snapshotFingerprint?.entries : nil
+        appliedTransactionsFingerprint = transactionsUseFingerprint ? snapshotFingerprint?.transactions : nil
         // 系统搜索索引（Spotlight，异步派发不阻塞渲染）
         // 关键：仅在条目**真正变化**时才重建索引 ——
         // 只改了配置/统计时也全量 diff 会白做一次 O(N) 遍历与指纹计算。
@@ -680,16 +734,59 @@ public final class AppState {
 
     // MARK: - 过滤与检索计算属性
 
+    /// 仅供检索/测试：条目集合版本号
+    public var contentRevision: Int { entriesRevision }
+
+    /// 全局检索语料：每个条目预先拼好「标题 + 正文 + 地点 + 城市」的小写串。
+    ///
+    /// 关键：原实现每次查询都对全部条目重复 `lowercased()`（4 个字段 × N 条），
+    /// 输入每变一次就做一遍；这里按 entriesRevision 记忆化，查询时只做 `contains`。
+    var searchableEntries: [SearchableLifeEntry] {
+        if let memo = searchCorpusMemo, memo.0 == entriesRevision {
+            return memo.1
+        }
+        let corpus = entries.map { entry in
+            SearchableLifeEntry(
+                entry: entry,
+                haystack: [
+                    entry.title,
+                    entry.content,
+                    entry.location ?? "",
+                    entry.cityName ?? ""
+                ].joined(separator: "\n").lowercased()
+            )
+        }
+        searchCorpusMemo = (entriesRevision, corpus)
+        return corpus
+    }
+
     /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤、#标签下钻与模糊搜索）
     /// 带记忆缓存：仅在数据版本或筛选条件变化时重算，渲染路径零重复过滤
     public var filteredStreamEntries: [LifeEntry] {
-        let key = "\(entriesRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
+        let key = Self.filteredEntriesCacheKey(
+            entriesRevision: entriesRevision,
+            transactionsRevision: transactionsRevision,
+            category: selectedCategory,
+            searchQuery: searchQuery
+        )
         if let memo = filteredMemo, memo.key == key {
             return memo.value
         }
         let computed = computeFilteredStreamEntries()
         filteredMemo = (key, computed)
         return computed
+    }
+
+    /// 过滤缓存键（纯函数，便于单测）：
+    /// 只有「账目视角」才依赖 transactionsRevision，生活/其它视角不受账目变化影响。
+    nonisolated static func filteredEntriesCacheKey(
+        entriesRevision: Int,
+        transactionsRevision: Int,
+        category: ArchiveCategory,
+        searchQuery: String
+    ) -> String {
+        let txPart = category == .transaction ? String(transactionsRevision) : "0"
+        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)"
     }
 
     private func computeFilteredStreamEntries() -> [LifeEntry] {
@@ -762,23 +859,28 @@ public final class AppState {
         return "\(current.year)年\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
     }
 
-    // 账目 id → 账目 的索引（按 entriesRevision 记忆化）
+    // 账目 id → 账目 的索引（按 transactionsRevision 记忆化）
     /// 关键：时间流卡片原先在 body 里对每个条目做 `transactions.first(where:)`，
     /// N 行 × M 条账目 = O(N×M)；现在一次建表，查询 O(1)。
     public var transactionById: [Int: Transaction] {
-        if let memo = transactionIndexMemo, memo.0 == entriesRevision {
+        if let memo = transactionIndexMemo, memo.0 == transactionsRevision {
             return memo.1
         }
         var map: [Int: Transaction] = [:]
         map.reserveCapacity(transactions.count)
         for tx in transactions { map[tx.id] = tx }
-        transactionIndexMemo = (entriesRevision, map)
+        transactionIndexMemo = (transactionsRevision, map)
         return map
     }
 
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
     public var streamRows: [StreamRow] {
-        let key = "\(entriesRevision)|\(selectedCategory.rawValue)|\(searchQuery)"
+        let key = Self.streamRowsCacheKey(
+            entriesRevision: entriesRevision,
+            transactionsRevision: transactionsRevision,
+            category: selectedCategory,
+            searchQuery: searchQuery
+        )
         if let memo = streamRowsMemo, memo.key == key {
             return memo.value
         }
@@ -786,21 +888,39 @@ public final class AppState {
         let list = filteredStreamEntries
         var rows: [StreamRow] = []
         rows.reserveCapacity(list.count)
-        for (index, entry) in list.enumerated() {
-            let gap = index == 0
-                ? 0
-                : FormatUtils.daysBetween(list[index - 1].occurredAt, entry.occurredAt)
+        // 关键：循环内复用上一轮解析结果。
+        // 原实现对每一行调两次 `parsedDate`（当前行 + 上一行），
+        // 5000 条就是 10000 次 DateFormatter 解析；现在每条只解析一次。
+        var previousParsed: FormatUtils.ParsedBeijingDate?
+        var previousValidDate: Date?
+        for entry in list {
             let parsed = entry.parsedDate
-            let label: String
-            if index == 0 {
-                label = Self.compactTimeLabel(parsed, previous: nil)
+            let gap: Int
+            if parsed.isValid, let previousValidDate {
+                gap = FormatUtils.daysBetween(previousValidDate, parsed.date)
             } else {
-                label = Self.compactTimeLabel(parsed, previous: list[index - 1].parsedDate)
+                gap = 0
             }
+            let label = Self.compactTimeLabel(parsed, previous: previousParsed)
             rows.append(StreamRow(entry: entry, gapDays: gap, dayKey: parsed.dateKey, timeLabel: label))
+            previousParsed = parsed
+            previousValidDate = parsed.isValid ? parsed.date : nil
         }
         streamRowsMemo = (key, rows)
         return rows
+    }
+
+    /// 时间流缓存键（纯函数，便于单测）：
+    /// 仅当处于「账目视角」时才包含 transactionsRevision；
+    /// 其它视角下账目变化不应让时间流整列失效。
+    nonisolated static func streamRowsCacheKey(
+        entriesRevision: Int,
+        transactionsRevision: Int,
+        category: ArchiveCategory,
+        searchQuery: String
+    ) -> String {
+        let txPart = category == .transaction ? String(transactionsRevision) : "0"
+        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)"
     }
 
     /// 全库跨模块网络搜索（当已配对时发起，支持足迹、心愿与造物项目联动检索）
@@ -808,9 +928,7 @@ public final class AppState {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, isPaired else {
             // 清空查询时让所有在途请求失效，避免旧结果稍后回填
-            globalSearchGeneration &+= 1
-            self.globalSearchResult = nil
-            self.isGlobalSearching = false
+            clearGlobalSearchResult()
             return
         }
         // 代号机制：快速输入「咖 → 咖啡」时，先发出的「咖」请求可能后返回；
@@ -829,9 +947,20 @@ public final class AppState {
             let res = try await APIClient.shared.searchGlobalArchive(query: q, limit: 30)
             guard generation == globalSearchGeneration, !Task.isCancelled else { return }
             self.globalSearchResult = res
+            self.globalSearchResultVersion &+= 1
         } catch {
             // 网络受阻或离线时保持本地纯粹搜索
         }
+    }
+
+    /// 清空全局检索结果（同时作废在途请求），供弹窗「清空」按钮复用
+    public func clearGlobalSearchResult() {
+        globalSearchGeneration &+= 1
+        if globalSearchResult != nil {
+            globalSearchResult = nil
+        }
+        globalSearchResultVersion &+= 1
+        isGlobalSearching = false
     }
 
     /// 按北京时间自然日聚合的记录密度（52 周热力图数据源，带记忆缓存）
@@ -899,6 +1028,11 @@ public final class AppState {
         if forceFull {
             SyncManager.shared.resetPausedOutboxItems()
         }
+        // 关键：必须先排空发件箱、再拉全量。
+        // 若两者并发，离线新建的记录可能在上传成功（转 synced）之后，
+        // 被一份「上传前发出、上传后返回」的全量列表当成服务端已删除而丢掉；
+        // 离线删除也可能被旧列表复活。flushOutbox 在队列为空时立即返回，
+        // 有积压时多等一次网络往返，远好过静默丢数据。
         await SyncManager.shared.flushOutbox()
 
         // 批量模式：5 个并发任务各自会写快照，若每次都立即回调 UI，
@@ -919,10 +1053,12 @@ public final class AppState {
     }
 
     public func loadConfigAndProfile() async {
-        let cfg = try? await APIClient.shared.fetchSiteConfig()
-        let prof = try? await APIClient.shared.fetchCuratorProfile()
-        let st = try? await APIClient.shared.fetchGlobalStats()
-        SyncManager.shared.updateConfigAndProfile(siteConfig: cfg, profile: prof, stats: st)
+        // 三个端点彼此独立：并行拉取，最慢的那个决定总耗时。
+        async let cfg = try? APIClient.shared.fetchSiteConfig()
+        async let prof = try? APIClient.shared.fetchCuratorProfile()
+        async let st = try? APIClient.shared.fetchGlobalStats()
+        let (siteConfig, profile, stats) = await (cfg, prof, st)
+        SyncManager.shared.updateConfigAndProfile(siteConfig: siteConfig, profile: profile, stats: stats)
     }
 
     public func loadCategories() async {
@@ -981,7 +1117,7 @@ public final class AppState {
                     SyncManager.shared.mergeEntriesIncremental(firstPage)
                 }
             }
-            SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
+            await SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified: 本地缓存已是最新
         } catch is CancellationError {
@@ -998,8 +1134,13 @@ public final class AppState {
             self.errorBanner = error.localizedDescription
         }
 
-        if let otd = try? await APIClient.shared.fetchOnThisDayEntries() {
-            self.onThisDayEntries = otd.entries
+        // On This Day 只需每天取一次：按北京日期缓存，普通刷新不重复请求。
+        let todayKey = FormatUtils.beijingDateString()
+        if onThisDayCacheDateKey != todayKey {
+            if let otd = try? await APIClient.shared.fetchOnThisDayEntries() {
+                self.onThisDayEntries = otd.entries
+                onThisDayCacheDateKey = todayKey
+            }
         }
     }
 
@@ -1022,14 +1163,18 @@ public final class AppState {
         }
 
         let ym = FormatUtils.beijingCurrentYearMonth()
-        if let summary = try? await APIClient.shared.fetchTransactionSummary(year: ym.year, month: ym.month) {
+        // 月度概览 / 资产总览 / 信用渠道三者独立，并行拉取。
+        async let summaryTask = try? APIClient.shared.fetchTransactionSummary(year: ym.year, month: ym.month)
+        async let overviewTask = try? APIClient.shared.fetchAssetsOverview()
+        async let channelsTask = try? APIClient.shared.fetchCreditChannels()
+        let (summary, overview, channels) = await (summaryTask, overviewTask, channelsTask)
+        if let summary {
             SyncManager.shared.updateTransactionSummary(summary)
         }
-
-        if let overview = try? await APIClient.shared.fetchAssetsOverview() {
+        if let overview {
             self.assetsOverview = overview
         }
-        if let channels = try? await APIClient.shared.fetchCreditChannels() {
+        if let channels {
             self.creditChannels = channels
         }
     }
@@ -1055,17 +1200,23 @@ public final class AppState {
         secondaryLoadGeneration &+= 1
         let gen = secondaryLoadGeneration
 
-        if let projs = try? await APIClient.shared.fetchProjects() {
-            guard gen == secondaryLoadGeneration else { return }
+        // 三个端点独立，并行请求；全部返回后统一做一次代号校验，
+        // 避免旧响应把新建的对象覆盖掉。
+        async let projectsTask = try? APIClient.shared.fetchProjects()
+        async let wishesTask = try? Pagination.fetchAllWishes()
+        async let footprintsTask = try? APIClient.shared.fetchFootprints()
+        let (projs, allWishes, fps) = await (projectsTask, wishesTask, footprintsTask)
+
+        guard gen == secondaryLoadGeneration else { return }
+
+        if let projs {
             self.projects = projs
         }
         // 只有"确实成功拉到数据"才覆盖；空数组是合法结果（删掉最后一枚心愿也必须生效）
-        if let allWishes = try? await Pagination.fetchAllWishes() {
-            guard gen == secondaryLoadGeneration else { return }
+        if let allWishes {
             self.wishes = allWishes
         }
-        if let fps = try? await APIClient.shared.fetchFootprints() {
-            guard gen == secondaryLoadGeneration else { return }
+        if let fps {
             self.footprints = fps
         }
     }
@@ -1160,28 +1311,22 @@ public final class AppState {
             occurredAt: occurredAt ?? FormatUtils.beijingISOString()
         )
 
-        // 乐观更新：账目立刻出现在账本与时间流，后台静默同步。
-        //
-        // 关键：**如实回传**同步结果。
-        // 早先这里 fire-and-forget，调用方拿到的 `queuedOffline` 恒为 false ——
-        // 于是离线时也照弹「已记入账本」，用户完全不知道这条账只是躺在发件箱里。
+        // 乐观写入 + **等待同步结果**：
+        // 调用方需要真实的 queuedOffline 才能决定提示「已记入账本」还是「已暂存发件箱」。
+        // 原先走 fire-and-forget 的后台提交、返回值恒为 false ——
+        // 菜单栏面板看不到全局横幅，离线时也照弹「已记入账本」。
+        // 现改走可等待的 submitTransaction（乐观写入仍在任何 await 之前完成，上屏不变慢）。
+        let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
+        // 成功回执（失败由调用方就地呈现）：账本页极速行原先依赖这里的横幅做唯一反馈
         let amountText = FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true)
-        SyncManager.shared.submitTransactionInBackground(req) { result in
-            switch result {
-            case .success(true):
-                // 已进发件箱，等网络恢复后自动补传
-                self.showTemporaryBanner("已暂存至本地发件箱：\(amountText)（网络恢复后自动上传）")
-            case .success(false):
-                self.showTemporaryBanner("已记入账本：\(amountText)")
-            case .failure:
-                self.showTemporaryBanner("记账失败：\(amountText) 未能上传，请检查中枢连接")
-            }
-        }
-        Task { @MainActor in
-            await loadTransactionsAndAssets(forceFull: false)
-            await loadConfigAndProfile()
-        }
-        return false
+        showTemporaryBanner(queuedOffline
+            ? "已暂存至本地发件箱：\(amountText)（网络恢复后自动上传）"
+            : "已记入账本：\(amountText)")
+        // 关键：**同步完成之后**再拉月度汇总 —— 先拉会把服务端尚未收到的那笔账
+        // 覆盖掉（配合 SyncManager.updateTransactionSummary 的 pending 重叠兜底双保险）。
+        await loadTransactionsAndAssets(forceFull: false)
+        await loadConfigAndProfile()
+        return queuedOffline
     }
 
     // MARK: - 设备配对与密钥授权 (Device Pairing & Credential Vault)
@@ -1210,6 +1355,8 @@ public final class AppState {
             deviceModel: "Mac"
         )
         self.isPaired = true
+        // 换了一个中枢：往年今日的当日缓存必须失效。
+        onThisDayCacheDateKey = nil
         showTemporaryBanner("配对工单握手成功，凭证已写入本机受保护档案")
         await refreshAll(forceFull: true)
     }
@@ -1224,11 +1371,35 @@ public final class AppState {
         // 否则私人正文会继续留在系统索引里被搜索与 Siri 命中，
         // 即便用户已经与中枢解除关系。
         //
-        // 同时把内存里的散页也清掉：否则一次在途的快照回来后会再次触发重建，
-        // 刚清干净的索引又被写回去 —— 等于「解除配对后正文仍在系统搜索里」。
-        self.entries = []
+        // 同时清空全部内存集合与派生缓存：只清 entries 不够 ——
+        // 账目、往年的「On This Day」、检索语料与 streamRows memo 仍会留在内存里，
+        // 重配对前搜索/时间流仍可能读到上一个中枢的数据。
+        clearPrivateArchiveState()
         SpotlightIndexer.clearIndex()
         showTemporaryBanner("已安全吊销并清除本机设备配对凭证")
+    }
+
+    /// 解除配对 / 切换中枢时清空一切「属于旧中枢」的内存状态。
+    private func clearPrivateArchiveState() {
+        entries = []
+        transactions = []
+        projects = []
+        wishes = []
+        footprints = []
+        onThisDayEntries = []
+        onThisDayCacheDateKey = nil
+        clearGlobalSearchResult()
+        assetsOverview = nil
+        entriesRevision += 1
+        transactionsRevision += 1
+        filteredMemo = nil
+        streamRowsMemo = nil
+        entryCountsMemo = nil
+        entriesByDateMemo = nil
+        transactionIndexMemo = nil
+        searchCorpusMemo = nil
+        appliedEntriesFingerprint = nil
+        appliedTransactionsFingerprint = nil
     }
 
     /// 导航定位并打开指定散页（Spotlight 系统搜索 / 深链直达）
@@ -1479,9 +1650,9 @@ public final class AppState {
     public struct UndoAction: Identifiable {
         public let id = UUID()
         public let label: String
-        let perform: () async -> Void
+        let perform: () async -> Bool
 
-        public init(label: String, perform: @escaping () async -> Void) {
+        public init(label: String, perform: @escaping () async -> Bool) {
             self.label = label
             self.perform = perform
         }
@@ -1499,7 +1670,7 @@ public final class AppState {
     public var undoActionLabel: String? { undoStack.last?.label }
 
     /// 登记一次可撤销操作
-    public func registerUndo(label: String, perform: @escaping () async -> Void) {
+    public func registerUndo(label: String, perform: @escaping () async -> Bool) {
         undoStack.append(UndoAction(label: label, perform: perform))
         if undoStack.count > Self.maxUndoStackSize {
             undoStack.removeFirst(undoStack.count - Self.maxUndoStackSize)
@@ -1509,8 +1680,10 @@ public final class AppState {
     /// 执行并弹出最近一次撤销操作
     public func performUndo() async {
         guard let action = undoStack.popLast() else { return }
-        await action.perform()
-        showTemporaryBanner("已撤销「\(action.label)」")
+        if await action.perform() {
+            showTemporaryBanner("已撤销「\(action.label)」")
+        }
+        // 失败路径由动作自身给出提示；绝不能用成功横幅覆盖它。
     }
 
     public func showTemporaryBanner(_ text: String) {

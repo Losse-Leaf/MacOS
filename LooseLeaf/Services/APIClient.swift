@@ -63,38 +63,47 @@ public actor APIClient {
     private var hasNotifiedUnauthorized: Bool = false
 
     public init(session: URLSession? = nil) {
-        if let session {
-            self.session = session
-        } else {
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 30
-            config.timeoutIntervalForResource = 120
-            config.waitsForConnectivity = true
-            config.httpMaximumConnectionsPerHost = 8
-            config.requestCachePolicy = .useProtocolCachePolicy
-            // 关键：不能用相对 diskPath。相对路径会落到进程当前工作目录：
-            // 开发时污染仓库，Finder 启动时 CWD 通常是 "/"，导致缓存库无法创建，
-            // 每次请求都退化到无缓存（日志里可见 Cache.db Error=14）。
-            if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
-                let httpCacheDirectory = caches.appendingPathComponent("LooseLeaf/HTTPCache", isDirectory: true)
-                do {
-                    try FileManager.default.createDirectory(at: httpCacheDirectory, withIntermediateDirectories: true)
-                    config.urlCache = URLCache(
-                        memoryCapacity: 8 * 1024 * 1024,
-                        diskCapacity: 64 * 1024 * 1024,
-                        directory: httpCacheDirectory
-                    )
-                } catch {
-                    // 目录不可写（受限环境/只读容器）时退化为纯内存缓存，
-                    // 否则 URLCache 会持续报 Cache.db Error=14，且每次请求都无缓存。
-                    config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
-                }
-            } else {
+        self.session = session ?? URLSession(configuration: Self.makeDefaultSessionConfiguration())
+    }
+
+    /// 统一会话配置：API、媒体图片、导出下载共用。
+    ///
+    /// 关键：媒体请求此前走 `URLSession.shared`，与 `APIClient` 的超时、
+    /// 连接数与 URLCache 策略都不同；共用配置后，图片也能吃到同一份 HTTP 缓存。
+    nonisolated public static func makeDefaultSessionConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 120
+        config.waitsForConnectivity = true
+        config.httpMaximumConnectionsPerHost = 8
+        config.requestCachePolicy = .useProtocolCachePolicy
+        // 关键：不能用相对 diskPath。相对路径会落到进程当前工作目录：
+        // 开发时污染仓库，Finder 启动时 CWD 通常是 "/"，导致缓存库无法创建，
+        // 每次请求都退化到无缓存（日志里可见 Cache.db Error=14）。
+        if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let httpCacheDirectory = caches.appendingPathComponent("LooseLeaf/HTTPCache", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: httpCacheDirectory, withIntermediateDirectories: true)
+                config.urlCache = URLCache(
+                    memoryCapacity: 8 * 1024 * 1024,
+                    diskCapacity: 64 * 1024 * 1024,
+                    directory: httpCacheDirectory
+                )
+            } catch {
+                // 目录不可写（受限环境/只读容器）时退化为纯内存缓存，
+                // 否则 URLCache 会持续报 Cache.db Error=14，且每次请求都无缓存。
                 config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
             }
-            self.session = URLSession(configuration: config)
+        } else {
+            config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
         }
+        return config
     }
+
+    /// 媒体图片专用会话（与 API 使用相同配置）
+    nonisolated public static let mediaSession: URLSession = URLSession(
+        configuration: makeDefaultSessionConfiguration()
+    )
 
     // MARK: - Hub 地址与媒体路径解析
 

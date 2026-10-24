@@ -13,6 +13,9 @@ public struct FilmFrameView: View {
     public var metaText: String?
     public var maxHeight: CGFloat
     public var onTap: (() -> Void)?
+    /// 缩略图目标像素（nil = 按显示高度 × 2 自动计算）。
+    /// 灯箱等多倍缩放场景可显式传更大的值，仍保持「缩略图」而非原图。
+    public var thumbnailMaxPixel: Int?
     /// 导出/拷贝结果反馈（成功或失败）—— 由调用方接到横幅上
     public var onExportNotice: ((String) -> Void)?
 
@@ -22,6 +25,7 @@ public struct FilmFrameView: View {
         caption: String? = nil,
         metaText: String? = nil,
         maxHeight: CGFloat = 280,
+        thumbnailMaxPixel: Int? = nil,
         onTap: (() -> Void)? = nil,
         onExportNotice: ((String) -> Void)? = nil
     ) {
@@ -30,6 +34,7 @@ public struct FilmFrameView: View {
         self.caption = caption
         self.metaText = metaText
         self.maxHeight = maxHeight
+        self.thumbnailMaxPixel = thumbnailMaxPixel
         self.onTap = onTap
         self.onExportNotice = onExportNotice
     }
@@ -49,7 +54,11 @@ public struct FilmFrameView: View {
                         .clipped()
                         .accessibilityLabel(caption ?? "相纸影像")
                 } else if let imageURL {
-                    CachedFilmImageView(url: imageURL, maxHeight: maxHeight)
+                    CachedFilmImageView(
+                        url: imageURL,
+                        maxHeight: maxHeight,
+                        maxPixelOverride: thumbnailMaxPixel
+                    )
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 2))
@@ -198,7 +207,63 @@ public enum PaperImageCache {
         return max(total, 1)
     }
 
-    private static let diskQueue = DispatchQueue(label: "com.looseleaf.media.diskcache", qos: .utility)
+    /// 磁盘读取：并发受控（4 路），只做 `Data(contentsOf:)`，不做解码。
+    private static let diskIOQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.looseleaf.media.diskio"
+        queue.maxConcurrentOperationCount = 4
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+
+    /// 图片解码：独立并发池（3 路），与磁盘 I/O 解耦。
+    /// 关键：原先读盘、解码、写盘、淘汰全部挤在同一个串行 `diskQueue` 上，
+    /// 一张 4K 图解码 30~80ms，后面排队的十几张缩略图全部被堵住。
+    private static let decodeQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.looseleaf.media.decode"
+        queue.maxConcurrentOperationCount = 3
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+
+    /// 磁盘写入：串行（避免同一文件并发写），utility 优先级。
+    private static let writeQueue = DispatchQueue(label: "com.looseleaf.media.write", qos: .utility)
+
+    /// 缓存淘汰：独立低优先级，绝不和前台读图抢线程。
+    private static let maintenanceQueue = DispatchQueue(
+        label: "com.looseleaf.media.maintenance",
+        qos: .background
+    )
+
+    /// per-key 单飞：同一张图 + 同一尺寸只解码一次。
+    private final class DecodeTaskBox: @unchecked Sendable {
+        let task: Task<NSImage?, Never>
+        init(_ task: Task<NSImage?, Never>) { self.task = task }
+    }
+    private static let decodeFlightLock = NSLock()
+    nonisolated(unsafe) private static var inFlightDecodes: [String: DecodeTaskBox] = [:]
+
+    /// per-key 写入去重：卡片与灯箱同时下载到同一份字节时只落盘一次。
+    private static let writeFlightLock = NSLock()
+    nonisolated(unsafe) private static var pendingDiskWrites: Set<String> = []
+
+    /// 在指定 OperationQueue 上执行同步工作，并用 continuation 回到调用方。
+    private static func runOnQueue<T>(_ queue: OperationQueue, _ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.addOperation {
+                continuation.resume(returning: work())
+            }
+        }
+    }
+
+    /// 读取文件字节（并发 4 路，不阻塞主线程）
+    private static func readData(at url: URL) async -> Data? {
+        await runOnQueue(diskIOQueue) {
+            try? Data(contentsOf: url)
+        }
+    }
+
 
     /// 磁盘缓存硬上限；超出后按最后访问时间淘汰最旧文件
     private static let maxDiskBytes: Int64 = 300 * 1024 * 1024
@@ -230,20 +295,7 @@ public enum PaperImageCache {
     /// 这里只保留「协议 + 主机 + 路径 + 非签名查询参数」作为身份，
     /// 不同主机仍是不同资源（不会被误合并）。
     public static func stableKeyURL(for url: URL) -> URL {
-        /// 常见的预签名 / 临时令牌参数名（小写比较）
-        let volatileParams: Set<String> = [
-            "x-amz-signature", "x-amz-credential", "x-amz-date", "x-amz-expires",
-            "x-amz-algorithm", "x-amz-security-token", "x-amz-signedheaders",
-            "signature", "expires", "token", "t", "ts", "time"
-        ]
-        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let items = comps.queryItems else {
-            return url
-        }
-        let kept = items.filter { !volatileParams.contains($0.name.lowercased()) }
-        guard kept.count != items.count else { return url }
-        comps.queryItems = kept.isEmpty ? nil : kept
-        return comps.url ?? url
+        MediaURLIdentity.stableURL(for: url)
     }
 
     /// 稳定缓存键：SHA256(剥掉签名参数后的 URL) 截断。
@@ -257,6 +309,11 @@ public enum PaperImageCache {
 
     private static func diskFileURL(for url: URL) -> URL {
         diskCacheDirectory.appendingPathComponent(cacheKey(for: url))
+    }
+
+    /// 仅供测试/诊断：磁盘缓存文件位置
+    public static func diskCacheFileURL(for url: URL) -> URL {
+        diskFileURL(for: url)
     }
 
     /// 仅查内存（可在 View init 中安全调用，不触发磁盘 I/O）
@@ -281,26 +338,64 @@ public enum PaperImageCache {
         if let hit = memoryImage(for: url, maxPixel: maxPixel) {
             return hit
         }
-        return await withCheckedContinuation { continuation in
-            diskQueue.async {
-                let image = decodeThumbnailFromDisk(url, maxPixel: maxPixel)
-                if let image {
-                    memoryCache.setObject(
-                        image,
-                        forKey: thumbKey(url, maxPixel: maxPixel),
-                        cost: bitmapByteCost(of: image)
-                    )
-                }
-                continuation.resume(returning: image)
-            }
-        }
+        return await decodeThumbnailSingleFlight(url: url, maxPixel: maxPixel)
     }
 
-    private static func decodeThumbnailFromDisk(_ url: URL, maxPixel: Int) -> NSImage? {
+    /// 仅供测试：观察「真正开始一次解码」的次数（用于验证 per-key 单飞）
+    nonisolated(unsafe) static var decodeObserverForTesting: (@Sendable (URL, Int) -> Void)?
+
+    /// 同一 (稳定 URL, maxPixel) 的并发解码只执行一次。
+    /// 视图快速切换/滚动时同一张卡可能被多个 body 同时触发加载，没有这层会重复解码。
+    private static func decodeThumbnailSingleFlight(url: URL, maxPixel: Int) async -> NSImage? {
+        let key = thumbCacheKeyString(url, maxPixel: maxPixel)
+
+        let box: DecodeTaskBox = withDecodeFlightLock {
+            if let existing = inFlightDecodes[key] { return existing }
+            let task = Task<NSImage?, Never> {
+                decodeObserverForTesting?(url, maxPixel)
+                return await decodeThumbnailFromDisk(url, maxPixel: maxPixel)
+            }
+            let created = DecodeTaskBox(task)
+            inFlightDecodes[key] = created
+            return created
+        }
+
+        let image = await box.task.value
+
+        withDecodeFlightLock {
+            if inFlightDecodes[key] === box {
+                inFlightDecodes[key] = nil
+            }
+        }
+        return image
+    }
+
+    private static func thumbCacheKeyString(_ url: URL, maxPixel: Int) -> String {
+        thumbKey(url, maxPixel: maxPixel).absoluteString
+            ?? stableKeyURL(for: url).absoluteString
+    }
+
+    private static func withDecodeFlightLock<T>(_ body: () -> T) -> T {
+        decodeFlightLock.lock()
+        defer { decodeFlightLock.unlock() }
+        return body()
+    }
+
+    private static func decodeThumbnailFromDisk(_ url: URL, maxPixel: Int) async -> NSImage? {
         let diskPath = diskFileURL(for: url)
-        guard let data = try? Data(contentsOf: diskPath) else { return nil }
+        guard let data = await readData(at: diskPath) else { return nil }
+        let image = await runOnQueue(decodeQueue) {
+            decodeThumbnail(from: data, maxPixel: maxPixel)
+        }
+        if let image {
+            memoryCache.setObject(
+                image,
+                forKey: thumbKey(url, maxPixel: maxPixel),
+                cost: bitmapByteCost(of: image)
+            )
+        }
         touchDiskFile(at: diskPath)
-        return decodeThumbnail(from: data, maxPixel: maxPixel)
+        return image
     }
 
     private static func decodeThumbnail(from data: Data, maxPixel: Int) -> NSImage? {
@@ -314,9 +409,18 @@ public enum PaperImageCache {
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
-    /// 下载完成后：原图落盘（异步）+ 指定尺寸缩略图进内存，不在主线程做全尺寸解码
-    public static func storeDownloaded(rawData: Data, for url: URL, maxPixel: Int) -> NSImage? {
-        let thumbnail = decodeThumbnail(from: rawData, maxPixel: maxPixel)
+    /// 下载完成后：指定尺寸缩略图在专用解码队列生成（await 回调用方），
+    /// 原始字节在写队列落盘一次。
+    ///
+    /// 关键：原先是同步 `decodeThumbnail` —— 调用点 `.task` 在主 Actor 上，
+    /// 一张 4K 图解码 30~80ms 直接把滚动/灯箱切图卡住。
+    /// 改成 async 后，解码在 `decodeQueue`（并发 3）执行，
+    /// `withCheckedContinuation` 回到调用方；调用方仍要校验 `loadGeneration`，
+    /// 避免过期 url 的解码结果回写。
+    public static func storeDownloaded(rawData: Data, for url: URL, maxPixel: Int) async -> NSImage? {
+        let thumbnail = await runOnQueue(decodeQueue) {
+            decodeThumbnail(from: rawData, maxPixel: maxPixel)
+        }
         if let thumbnail {
             memoryCache.setObject(
                 thumbnail,
@@ -324,12 +428,29 @@ public enum PaperImageCache {
                 cost: bitmapByteCost(of: thumbnail)
             )
         }
-        let diskURL = diskFileURL(for: url)
-        diskQueue.async {
-            try? rawData.write(to: diskURL, options: .atomic)
-            pruneDiskCacheIfNeeded()
-        }
+        enqueueDiskWrite(rawData, for: url)
         return thumbnail
+    }
+
+    /// 原始字节落盘（per-key 去重 + 串行写）
+    private static func enqueueDiskWrite(_ data: Data, for url: URL) {
+        let key = stableKeyURL(for: url).absoluteString
+        writeFlightLock.lock()
+        let inserted = pendingDiskWrites.insert(key).inserted
+        writeFlightLock.unlock()
+        guard inserted else { return }
+
+        let diskURL = diskFileURL(for: url)
+        writeQueue.async {
+            try? data.write(to: diskURL, options: .atomic)
+            writeFlightLock.lock()
+            pendingDiskWrites.remove(key)
+            writeFlightLock.unlock()
+            // 淘汰在独立低优先级队列，避免写入者排队等一次全目录扫描
+            maintenanceQueue.async {
+                pruneDiskCacheIfNeeded()
+            }
+        }
     }
 
     /// 同步两级命中：仅供详情灯箱、导出、复制等允许阻塞的路径使用
@@ -340,16 +461,31 @@ public enum PaperImageCache {
         return loadFromDisk(url)
     }
 
+    /// 异步读取磁盘缓存的**原始字节**（导出/拷贝路径专用，不做解码）
+    public static func loadRawData(for url: URL) async -> Data? {
+        await readData(at: diskFileURL(for: url))
+    }
+
     /// 异步两级命中：列表卡片路径专用，磁盘读取与解码全部离开主线程
     public static func loadImage(for url: URL) async -> NSImage? {
         if let memoryHit = memoryImage(for: url) {
             return memoryHit
         }
-        return await withCheckedContinuation { continuation in
-            diskQueue.async {
-                continuation.resume(returning: loadFromDisk(url))
-            }
+        let diskPath = diskFileURL(for: url)
+        guard let diskData = await readData(at: diskPath) else { return nil }
+        let diskImage = await runOnQueue(decodeQueue) {
+            NSImage(data: diskData)
         }
+        guard let diskImage else { return nil }
+        normalizePixelSize(diskImage)
+        // cost 用真实位图内存（4K 原图解码后约 39MB，而压缩文件只有 2MB）
+        // 关键：写入键必须与 `image(for:)` 的读取键**一致**。
+        // 读取用 `stableKeyURL(for: url)`（剥掉预签名参数），
+        // 而写入却用了原始 URL —— 预签名 URL 每次都变，
+        // 于是原图缓存**永远命中不了**，每次都重新全尺寸解码 4K 图（约 39MB）。
+        originalMemoryCache.setObject(diskImage, forKey: stableKeyURL(for: url) as NSURL, cost: bitmapByteCost(of: diskImage))
+        touchDiskFile(at: diskPath)
+        return diskImage
     }
 
     private static func loadFromDisk(_ url: URL) -> NSImage? {
@@ -372,7 +508,7 @@ public enum PaperImageCache {
     /// 触达磁盘缓存文件：更新修改时间，使其成为「最近使用」
     /// 否则淘汰策略按写入时间排序，热门老照片永远不被回收，冷门新图反而先被删。
     private static func touchDiskFile(at url: URL) {
-        diskQueue.async {
+        diskIOQueue.addOperation {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
         }
     }
@@ -389,17 +525,21 @@ public enum PaperImageCache {
         // 同上：写入键要与读取键一致
         originalMemoryCache.setObject(image, forKey: stableKeyURL(for: url) as NSURL, cost: resolvedCost)
 
-        // 异步写入磁盘缓存，避免主线程 I/O 阻塞
+        if let rawData {
+            enqueueDiskWrite(rawData, for: url)
+            return
+        }
+        // 没有原始字节时才重编码 —— 编码在写队列，避免主线程压缩大图
         let diskURL = diskFileURL(for: url)
-        diskQueue.async {
-            if let rawData {
-                try? rawData.write(to: diskURL, options: .atomic)
-            } else if let tiff = image.tiffRepresentation,
-                      let rep = NSBitmapImageRep(data: tiff),
-                      let jpeg = rep.representation(using: .jpeg, properties: [:]) {
+        writeQueue.async {
+            if let tiff = image.tiffRepresentation,
+               let rep = NSBitmapImageRep(data: tiff),
+               let jpeg = rep.representation(using: .jpeg, properties: [:]) {
                 try? jpeg.write(to: diskURL, options: .atomic)
             }
-            pruneDiskCacheIfNeeded()
+            maintenanceQueue.async {
+                pruneDiskCacheIfNeeded()
+            }
         }
     }
 
@@ -520,6 +660,8 @@ struct FilmImageLoadState {
 public struct CachedFilmImageView: View {
     public let url: URL
     public let maxHeight: CGFloat
+    /// 显式缩略图目标像素（nil = maxHeight × 2）
+    public let maxPixelOverride: Int?
 
     @State private var loadState: FilmImageLoadState
 
@@ -528,13 +670,21 @@ public struct CachedFilmImageView: View {
         max(160, Int(displayHeight * 2))
     }
 
-    public init(url: URL, maxHeight: CGFloat) {
+    private var targetPixel: Int {
+        maxPixelOverride ?? Self.thumbPixel(for: maxHeight)
+    }
+
+    public init(url: URL, maxHeight: CGFloat, maxPixelOverride: Int? = nil) {
         self.url = url
         self.maxHeight = maxHeight
+        self.maxPixelOverride = maxPixelOverride
         // 只做缩略图内存命中（零 I/O）；磁盘降采样解码交给 .task 在后台完成
         _loadState = State(initialValue: FilmImageLoadState(
             url: url,
-            cachedImage: PaperImageCache.memoryImage(for: url, maxPixel: Self.thumbPixel(for: maxHeight))
+            cachedImage: PaperImageCache.memoryImage(
+                for: url,
+                maxPixel: maxPixelOverride ?? Self.thumbPixel(for: maxHeight)
+            )
         ))
     }
 
@@ -598,21 +748,30 @@ public struct CachedFilmImageView: View {
 
         let gen = loadState.beginLoad()
 
-        let pixel = Self.thumbPixel(for: maxHeight)
+        let pixel = targetPixel
         if let cached = PaperImageCache.memoryImage(for: url, maxPixel: pixel) {
             loadState.accept(image: cached, generation: gen)
             return
         }
         // 磁盘降采样解码在后台队列完成，不再阻塞首帧
         if let diskHit = await PaperImageCache.loadImage(for: url, maxPixel: pixel) {
+            guard loadState.isCurrent(gen) else { return }
             loadState.accept(image: diskHit, generation: gen)
             return
         }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            // 单飞：卡片与灯箱同时打开时共享同一次下载（稳定 URL 去重）。
+            let data = try await ImageRequestCoalescer.shared.data(
+                for: url,
+                session: APIClient.mediaSession
+            )
             guard loadState.isCurrent(gen) else { return }
-            if let thumb = PaperImageCache.storeDownloaded(rawData: data, for: url, maxPixel: pixel) {
+            // 解码在专用 decodeQueue 上执行；返回后再校验一次代号，
+            // 防止解码期间用户已切到下一张。
+            let thumb = await PaperImageCache.storeDownloaded(rawData: data, for: url, maxPixel: pixel)
+            guard loadState.isCurrent(gen) else { return }
+            if let thumb {
                 loadState.accept(image: thumb, generation: gen)
             } else {
                 loadState.acceptFailure(generation: gen)

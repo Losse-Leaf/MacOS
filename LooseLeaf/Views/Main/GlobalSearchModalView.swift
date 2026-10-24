@@ -19,51 +19,20 @@ public struct GlobalSearchModalView: View {
     @FocusState private var isFieldFocused: Bool
     /// 当前键盘高亮的命中项（用稳定的 scrollId 追踪，而不是数组索引）
     @State private var highlightedHitId: String? = nil
+    /// 一次派生、body 只读的检索结果
+    @State private var presentation = SearchPresentation.empty
+    /// 派生记忆器：同一 key 只计算一次
+    @State private var presentationMemo = SearchPresentationMemo()
+    /// 检索代号：旧请求结束时不得清掉新请求的 spinner
+    @State private var searchGeneration = 0
 
-    /// 扁平化检索结果：供 ↑/↓/Return 键盘导航使用
-    private enum SearchResultHit {
-        case entry(LifeEntry)
-        case footprint(Footprint)
-        case wish(Wish)
-        case project(Project)
-
-        var scrollId: String {
-            switch self {
-            case .entry(let e): return "hit-e-\(e.id)"
-            case .footprint(let f): return "hit-f-\(f.id)"
-            case .wish(let w): return "hit-w-\(w.id)"
-            case .project(let p): return "hit-p-\(p.id)"
-            }
-        }
+    private var presentationKey: SearchPresentationMemo.Key {
+        SearchPresentationMemo.Key(
+            query: debouncedQuery,
+            entriesRevision: appState.contentRevision,
+            remoteVersion: appState.globalSearchResultVersion
+        )
     }
-
-    /// 检索结果分组（带稳定 id，避免用数组索引做 ForEach 标识）
-    private struct SearchSection: Identifiable {
-        let id: String
-        let title: String
-        let icon: String
-        let tint: Color
-        let hits: [SearchResultHit]
-    }
-
-    private var flatSections: [SearchSection] {
-        var sections: [SearchSection] = []
-        if !mergedEntries.isEmpty {
-            sections.append(SearchSection(id: "section-entries", title: "生活印记 (\(mergedEntries.count))", icon: "book.pages", tint: ArchivePalette.inkMuted, hits: mergedEntries.map { .entry($0) }))
-        }
-        if !remoteFootprints.isEmpty {
-            sections.append(SearchSection(id: "section-footprints", title: "山川足迹 (\(remoteFootprints.count))", icon: "map", tint: ArchivePalette.accentWarm, hits: remoteFootprints.map { .footprint($0) }))
-        }
-        if !remoteWishes.isEmpty {
-            sections.append(SearchSection(id: "section-wishes", title: "心愿清单 (\(remoteWishes.count))", icon: "sparkles", tint: ArchivePalette.accentWarm, hits: remoteWishes.map { .wish($0) }))
-        }
-        if !remoteProjects.isEmpty {
-            sections.append(SearchSection(id: "section-projects", title: "造物项目 (\(remoteProjects.count))", icon: "hammer", tint: ArchivePalette.accentMoss, hits: remoteProjects.map { .project($0) }))
-        }
-        return sections
-    }
-
-    private var allHits: [SearchResultHit] { flatSections.flatMap(\.hits) }
 
     private func activateHit(_ hit: SearchResultHit) {
         switch hit {
@@ -91,54 +60,6 @@ public struct GlobalSearchModalView: View {
         self.onSelectProject = onSelectProject
     }
 
-    private var localEntryMatches: [LifeEntry] {
-        let q = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return [] }
-        return appState.entries.filter { entry in
-            entry.title.lowercased().contains(q) ||
-            entry.content.lowercased().contains(q) ||
-            (entry.location?.lowercased().contains(q) ?? false) ||
-            (entry.cityName?.lowercased().contains(q) ?? false)
-        }
-    }
-
-    private var mergedEntries: [LifeEntry] {
-        var seen = Set<Int>()
-        var list: [LifeEntry] = []
-        for item in localEntryMatches {
-            seen.insert(item.id)
-            list.append(item)
-        }
-        if let remote = appState.globalSearchResult?.entries {
-            for item in remote {
-                if !seen.contains(item.id) {
-                    seen.insert(item.id)
-                    list.append(item)
-                }
-            }
-        }
-        return list
-    }
-
-    private var remoteFootprints: [Footprint] {
-        appState.globalSearchResult?.footprints ?? []
-    }
-
-    private var remoteWishes: [Wish] {
-        appState.globalSearchResult?.wishes ?? []
-    }
-
-    private var remoteProjects: [Project] {
-        appState.globalSearchResult?.projects ?? []
-    }
-
-    private var hasAnyResults: Bool {
-        !mergedEntries.isEmpty ||
-        !remoteFootprints.isEmpty ||
-        !remoteWishes.isEmpty ||
-        !remoteProjects.isEmpty
-    }
-
     public var body: some View {
         VStack(spacing: 0) {
             // 顶栏输入框
@@ -157,7 +78,7 @@ public struct GlobalSearchModalView: View {
                         handleQueryChange(newQ)
                     }
                     .onKeyPress(keys: [.upArrow, .downArrow, .return]) { press in
-                        let hits = allHits
+                        let hits = presentation.allHits
                         guard !hits.isEmpty else { return .ignored }
                         let current = highlightedHitId.flatMap { id in hits.firstIndex { $0.scrollId == id } } ?? 0
                         switch press.key {
@@ -179,7 +100,8 @@ public struct GlobalSearchModalView: View {
                     Button("清空") {
                         query = ""
                         debouncedQuery = ""
-                        appState.globalSearchResult = nil
+                        appState.clearGlobalSearchResult()
+                        presentation = .empty
                         isSearchingRemote = false
                     }
                     .font(ArchiveTypography.monoScale(size: 11))
@@ -223,7 +145,7 @@ public struct GlobalSearchModalView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 60)
-                    } else if isSearchingRemote && !hasAnyResults {
+                    } else if isSearchingRemote && !presentation.hasResults {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .scaleEffect(0.8)
@@ -233,7 +155,7 @@ public struct GlobalSearchModalView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 50)
-                    } else if !hasAnyResults {
+                    } else if !presentation.hasResults {
                         VStack(spacing: 6) {
                             Text("没有找到匹配的生活碎片")
                                 .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
@@ -245,8 +167,7 @@ public struct GlobalSearchModalView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 60)
                     } else {
-                        let sections = flatSections
-                        ForEach(sections) { section in
+                        ForEach(presentation.sections) { section in
 
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 6) {
@@ -258,21 +179,31 @@ public struct GlobalSearchModalView: View {
                                 .foregroundStyle(section.tint)
                                 .padding(.horizontal, 4)
 
-                                // 生活印记为纵向单列；足迹 / 心愿 / 项目保持双列网格
+                                // 生活印记为纵向单列；足迹 / 心愿 / 项目保持双列网格。
+                                // 结果区改为 Lazy 容器：本地最多 200 条时也不会一次性物化全部卡片。
                                 if section.id == "section-entries" {
-                                    VStack(spacing: 6) {
-                                        ForEach(section.hits, id: \.scrollId) { hit in
+                                    LazyVStack(spacing: 6) {
+                                        ForEach(section.hits) { hit in
                                             searchResultCard(hit, isHighlighted: hit.scrollId == highlightedHitId)
+                                                .id(hit.scrollId)
                                         }
                                     }
                                 } else {
                                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                                        ForEach(section.hits, id: \.scrollId) { hit in
+                                        ForEach(section.hits) { hit in
                                             searchResultCard(hit, isHighlighted: hit.scrollId == highlightedHitId)
+                                                .id(hit.scrollId)
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        if presentation.localTruncated {
+                            Text("本地仅展示前 \(SearchPresentation.localLimit) 条，共命中 \(presentation.localMatchCount) 条；请补充关键词以缩小范围。")
+                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(.horizontal, 4)
                         }
                     }
                 }
@@ -320,16 +251,26 @@ public struct GlobalSearchModalView: View {
         .onAppear {
             isFieldFocused = true
         }
+        // 检索派生只在这里做一次；body 只读 `presentation`。
+        .task(id: presentationKey) {
+            let key = presentationKey
+            let corpus = appState.searchableEntries
+            let remote = appState.globalSearchResult
+            presentation = presentationMemo.presentation(key: key, corpus: corpus, remote: remote)
+        }
     }
 
     private func handleQueryChange(_ newQ: String) {
         searchTask?.cancel()
+        searchGeneration &+= 1
+        let generation = searchGeneration
         // 关键词变化后重置键盘高亮（改为按稳定 scrollId 追踪）
         highlightedHitId = nil
         let trimmed = newQ.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             debouncedQuery = ""
-            appState.globalSearchResult = nil
+            appState.clearGlobalSearchResult()
+            presentation = .empty
             isSearchingRemote = false
             return
         }
@@ -337,16 +278,16 @@ public struct GlobalSearchModalView: View {
         debouncedQuery = trimmed
         searchTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == searchGeneration else { return }
             isSearchingRemote = true
-            defer { isSearchingRemote = false }
             // 关键：改走 AppState 的统一检索入口。
             // 原先弹窗**自己**发请求并直接写 `appState.globalSearchResult` ——
             // 于是绕过了 `globalSearchGeneration` 代号机制：
             // ⌘K 弹窗与顶栏搜索并发时，**旧请求可以覆盖新结果**；
-            // 而且 `defer { isSearchingRemote = false }` 会被旧任务执行，
-            // 新请求还在飞，spinner 却提前消失。
+            // 而旧任务无条件把 spinner 置 false，会让新请求还在飞时指示器提前消失。
             await appState.performGlobalSearch(query: trimmed)
+            guard generation == searchGeneration else { return }
+            isSearchingRemote = false
         }
     }
 
@@ -417,7 +358,6 @@ public struct GlobalSearchModalView: View {
             .background(isHighlighted ? ArchivePalette.accentWarm.opacity(0.06) : Color.clear)
             .paperHover()
             .contentShape(Rectangle())
-            .id("hit-e-\(entry.id)")
         }
         .buttonStyle(.plain)
     }

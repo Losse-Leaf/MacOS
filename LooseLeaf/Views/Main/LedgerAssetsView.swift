@@ -1218,8 +1218,17 @@ public struct LedgerAssetsView: View {
     @State private var isSubmittingTx: Bool = false
 
     /// 极速记账的解析结果（body 里算一次，供预览与按钮可用性共用）
+    ///
+    /// 关键：类目字典必须**按解析出的收支类型**对应传入（与 QuickLedgerView 同一用法）。
+    /// 收支类型由输入自身的正负号决定（「+」前缀 = 收入，其余 = 支出）；
+    /// 原先恒传支出类目，于是「+5000 工资」匹配不到收入类目，
+    /// 被兜底推断成「其他」，收入记录的分类口径从此失真。
     private var quickParsed: FormatUtils.QuickLedgerParsed? {
-        FormatUtils.parseQuickLedgerInput(quickLine, knownCategories: appState.expenseCategories)
+        let isIncome = quickLine.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("+")
+        return FormatUtils.parseQuickLedgerInput(
+            quickLine,
+            knownCategories: isIncome ? appState.incomeCategories : appState.expenseCategories
+        )
     }
 
     private func submitQuickLine() {

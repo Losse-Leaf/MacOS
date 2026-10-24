@@ -164,7 +164,15 @@ public struct EditEntrySheetView: View {
         defer { isSaving = false }
 
         let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let code = editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode
+        // 关键：用户**显式清空**城市时，按契约 A 发 `clear_city: true`，
+        // 服务端据此清空 city_code（优先于 city_code 字段）。
+        // 原先 code 回落 entry.cityCode 且城市字段发 nil（省略）——
+        // 后端按「保持原值」处理，用户清了城市保存后原样还在，
+        // 等于「清空」这条操作静默失效。
+        let cityCleared = cleanCity.isEmpty && editCityCode.isEmpty
+        let code: String? = cityCleared
+            ? nil
+            : (editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode)
         let req = UpdateEntryRequest(
             type: entry.type,
             title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -173,6 +181,7 @@ public struct EditEntrySheetView: View {
             location: cleanCity.isEmpty ? nil : cleanCity,
             cityCode: code,
             cityName: cleanCity.isEmpty ? nil : cleanCity,
+            clearCity: cityCleared ? true : nil,
             attachmentIds: editAttachments.map(\.id)
         )
         do {

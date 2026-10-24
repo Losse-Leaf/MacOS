@@ -43,7 +43,6 @@ final class EntryDraft {
     // MARK: - 游历专有
 
     var selectedFootprintId: Int?
-    var departedAt: Date = Date()
 
     // MARK: - 造物专有
 

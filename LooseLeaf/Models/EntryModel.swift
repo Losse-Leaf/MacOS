@@ -378,6 +378,11 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
     public var wishId: Int?
     public var footprintId: Int?
     public var attachmentIds: [Int]
+    /// 幂等创建键（契约 C）：离线发件箱 CREATE 事件在入队时生成 UUID 并
+    /// **持久化进载荷**，重试/复活复用同一个 —— 服务端按它查重，
+    /// 命中返回已有记录，杜绝同一篇手稿被重复上传成两份。
+    /// 在线直发路径不携带（nil = 不下发）。
+    public var clientRequestId: String?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -391,6 +396,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         case wishId = "wish_id"
         case footprintId = "footprint_id"
         case attachmentIds = "attachment_ids"
+        case clientRequestId = "client_request_id"
     }
 
     public init(
@@ -404,7 +410,8 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         projectId: Int? = nil,
         wishId: Int? = nil,
         footprintId: Int? = nil,
-        attachmentIds: [Int] = []
+        attachmentIds: [Int] = [],
+        clientRequestId: String? = nil
     ) {
         self.type = type
         self.title = title
@@ -417,6 +424,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         self.wishId = wishId
         self.footprintId = footprintId
         self.attachmentIds = attachmentIds
+        self.clientRequestId = clientRequestId
     }
 }
 
@@ -429,6 +437,10 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
     public var location: String?
     public var cityCode: String?
     public var cityName: String?
+    /// 显式清空属地城市（契约 A）：true 时服务端清空 city_code，
+    /// 优先于 city_code 字段。此前「清空城市」发 nil（省略）会被
+    /// 后端按「保持原值」处理 —— 用户清了城市，保存后原样还在。
+    public var clearCity: Bool?
     public var projectId: Int?
     public var wishId: Int?
     public var footprintId: Int?
@@ -442,6 +454,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         case location
         case cityCode = "city_code"
         case cityName = "city_name"
+        case clearCity = "clear_city"
         case projectId = "project_id"
         case wishId = "wish_id"
         case footprintId = "footprint_id"
@@ -456,6 +469,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         location: String? = nil,
         cityCode: String? = nil,
         cityName: String? = nil,
+        clearCity: Bool? = nil,
         projectId: Int? = nil,
         wishId: Int? = nil,
         footprintId: Int? = nil,
@@ -468,6 +482,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         self.location = location
         self.cityCode = cityCode
         self.cityName = cityName
+        self.clearCity = clearCity
         self.projectId = projectId
         self.wishId = wishId
         self.footprintId = footprintId

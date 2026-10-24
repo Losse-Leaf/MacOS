@@ -29,8 +29,19 @@ public final class SyncManager {
 
     private var snapshot: LocalArchiveSnapshot
     private var pendingWrite: DispatchWorkItem?
+    /// 关键写入（离线新记录/删除）的立即落盘任务。
+    /// 与防抖任务分开管理：后续普通保存不得 cancel 它，否则 MC-10 又退回 350ms 窗口。
+    private var pendingCriticalWrite: DispatchWorkItem?
     /// 单调递增的快照版本号：只有更高版本的快照才允许落盘，杜绝「旧数据覆盖新数据」
     private var snapshotRevision: UInt64 = 0
+    /// 磁盘快照是否已在主线程注水完成。
+    /// 注水前一律**不落盘**：内存里可能只有启动期的配置/首页，直接写会把磁盘上的
+    /// 完整档案（含离线发件箱与账目）覆盖成空壳。
+    private var hasHydrated = false
+    /// 轻量指纹缓存（按 snapshotRevision 对应）。由 diskWriteQueue 后台计算，
+    /// applySnapshot 优先用它避免全量深比较；缓存未就绪时按需计算（仍比深比较便宜）。
+    private var cachedFingerprintRevision: UInt64 = 0
+    private var cachedFingerprint: SnapshotFingerprint?
     /// 批量更新模式：一次全量同步会触发多次保存，
     /// 若每次都立即回调 UI，会造成 5 次整页重绘。此模式下只在批次结束时回调一次。
     private var isBatching: Bool = false
@@ -178,11 +189,19 @@ public final class SyncManager {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if let message = result.failureMessage {
+                    self.hasHydrated = true
                     self.lastLoadFailureMessage = message
                     self.onLocalDataWarning?(message)
                     return
                 }
-                guard let loaded = result.snapshot else { return }
+                guard let loaded = result.snapshot else {
+                    self.hasHydrated = true
+                    // 没有历史快照：启动期已有本地写入（例如刚提交的乐观记录）时才需要落盘。
+                    if self.snapshotRevision > 0 {
+                        self.saveSnapshot(self.snapshot, critical: true)
+                    }
+                    return
+                }
 
                 // 关键：**不要**无条件用磁盘快照覆盖内存快照。
                 //
@@ -192,32 +211,24 @@ public final class SyncManager {
                 // 那些刚写进去的数据会被**整体抹掉**，并且之后的每次
                 // saveSnapshot 都以这个旧快照为基准 —— 磁盘上的新数据也被回滚覆盖。
                 //
-                // 正确做法：已经有本地写入时，注水只负责「填空」，
-                // 条目一律走增量合并。
+                // 正确做法：已经有本地写入时，注水只负责「填空」；
+                // 并且条目的本地同步状态必须原样保留（不能把 pending 当成 synced）。
                 if self.snapshotRevision > 0 {
-                    // 本地已被改写 → 增量合并，不覆盖
-                    var merged = self.snapshot
-                    merged.entries = Self.mergedEntries(
-                        current: self.snapshot.entries,
-                        incoming: loaded.entries,
-                        isDelta: true
-                    )
-                    // 发件箱以本地为准（本地可能有还没发出去的项）
-                    if loaded.outbox.isEmpty {
-                        merged.outbox = self.snapshot.outbox
-                    }
-                    if (merged.lastEntriesSyncCursor ?? "").isEmpty {
-                        merged.lastEntriesSyncCursor = loaded.lastEntriesSyncCursor
-                    }
-                    // siteConfig / profile / stats 是**非可选**字段，
-                    // 本地内存快照里已有值（来自启动引导或后续更新），
-                    // 此时应以本地为准 —— 磁盘上的旧版本不应覆盖它。
-                    // 若本地还是空壳（冷启动即注水），才用磁盘里的。
-                    self.snapshot = merged
-                    self.onSnapshotUpdated?(merged)
+                    let merged = Self.mergedHydratedSnapshot(current: self.snapshot, loaded: loaded)
+                    self.hasHydrated = true
+                    // critical：立即把合并后的完整快照写回磁盘。
+                    // 注水前 saveSnapshot 被拦截不落盘，磁盘上仍是原始档案；
+                    // 这里不写的话，退出时若走不到 flush，下一次启动又会重复注水。
+                    self.saveSnapshot(merged, critical: true)
                 } else {
+                    self.hasHydrated = true
+                    self.snapshotRevision += 1
                     self.snapshot = loaded
-                    self.onSnapshotUpdated?(loaded)
+                    if self.isBatching {
+                        self.pendingBatchSnapshot = loaded
+                    } else {
+                        self.onSnapshotUpdated?(loaded)
+                    }
                 }
             }
 
@@ -275,7 +286,9 @@ public final class SyncManager {
     /// 关键：离线时本地磁盘缓存兜底（缓存键剥掉预签名参数，跨签名稳定），
     /// 所以换签失败**不应**影响任何东西 —— 静默跳过即可。
     public func refreshExpiredMediaURLs() async {
-        var latest = snapshot
+        // 只用当前快照做「收集」，不要在跨 await 期间持有它并整体回写：
+        // 换签请求期间可能有新条目/发件箱写入，整体覆盖会把这些改动抹掉。
+        let scan = snapshot
         // 收集需要换签的 object key
         var needRefresh: Set<String> = []
         func collect(_ attachments: [Attachment]) {
@@ -289,10 +302,11 @@ public final class SyncManager {
         // 关键：快照里只有**条目**带附件 —— 心愿与足迹不落在快照里
         // （它们随档案单独从中枢拉取，URL 由当次响应直接给出，本就不会过期）。
         // 器物（GearItem）模型里根本没有 URL 字段。
-        for entry in latest.entries { collect(entry.attachments) }
+        for entry in scan.entries { collect(entry.attachments) }
 
         guard !needRefresh.isEmpty else {
             // 没有过期的地址 —— 但仍要记下「已确认新鲜」，避免每次启动都全量扫描
+            var latest = snapshot
             if latest.mediaURLsRefreshedAt == nil {
                 latest.mediaURLsRefreshedAt = FormatUtils.beijingISOString()
                 saveSnapshot(latest)
@@ -319,6 +333,8 @@ public final class SyncManager {
                 return copy
             }
         }
+        // 请求返回后重新读取最新快照，只替换附件 URL 字段，其余并发写入原样保留。
+        var latest = snapshot
         latest.entries = latest.entries.map { e in var c = e; c.attachments = patch(e.attachments); return c }
         latest.mediaURLsRefreshedAt = FormatUtils.beijingISOString()
         saveSnapshot(latest)
@@ -326,6 +342,9 @@ public final class SyncManager {
 
     /// 原子更新站点配置、主理人档案与统计（始终基于当前最新 snapshot 原地打补丁，杜绝并发拉取时冲刷条目数据）
     public func updateConfigAndProfile(siteConfig: SiteConfig?, profile: CuratorProfile?, stats: GlobalStats?) {
+        // 三个端点全部失败时不要 save：否则会无意义地推进 revision，
+        // 而注水前的这次 save 还会把内存空壳当成新快照（现已由 hasHydrated 拦截落盘）。
+        guard siteConfig != nil || profile != nil || stats != nil else { return }
         var latest = snapshot
         if let siteConfig { latest.siteConfig = siteConfig }
         if let profile { latest.profile = profile }
@@ -334,10 +353,123 @@ public final class SyncManager {
     }
 
     /// 原子更新月度记账概览
+    ///
+    /// 关键：服务端汇总**天然不含**本地尚未上传成功的乐观账目
+    /// （`pending_create`，可能还在上传途中或躺在发件箱里）。
+    /// 若按服务端原值直接覆盖，快速记账刚叠加的乐观增量会被冲掉，
+    /// 表现为「记一笔后本月支出反而少了这一笔」，直到下次同步才回来。
+    /// 这里在写入前把仍处于 pending、且落在汇总所属年月的账目重新叠加一遍。
     public func updateTransactionSummary(_ summary: TransactionSummary) {
         var latest = snapshot
-        latest.transactionSummary = summary
+        var adjusted = summary
+        for tx in latest.transactions where (tx.syncStatus ?? "synced") == "pending_create" {
+            guard let date = FormatUtils.parseFlexDate(tx.occurredAt) else { continue }
+            let parts = FormatUtils.formatBeijingDate(date)
+            guard parts.year == String(summary.year),
+                  parts.month == String(format: "%02d", summary.month) else { continue }
+            Self.applySummaryDelta(&adjusted, category: tx.category, type: tx.type, amount: tx.amount)
+        }
+        latest.transactionSummary = adjusted
         saveSnapshot(latest)
+    }
+
+    /// 单个集合的轻量指纹：条目数 + 最大 updatedAt + 顺序化状态哈希。
+    ///
+    /// 不比较正文字符串，因此成本远低于 `entries != snap.entries`；
+    /// 同时把 `syncStatus` 与附件 URL 混入哈希 —— 这两类变化不会改 updatedAt，
+    /// 但必须让 UI 重新赋值（否则「待同步」徽标或换签后的相纸地址不会刷新）。
+    public struct CollectionFingerprint: Equatable, Sendable {
+        public var count: Int
+        public var maxUpdatedAt: String
+        public var stateHash: UInt64
+    }
+
+    public struct SnapshotFingerprint: Equatable, Sendable {
+        public var entries: CollectionFingerprint
+        public var transactions: CollectionFingerprint
+    }
+
+    nonisolated private static let fnvOffset: UInt64 = 14_695_981_039_346_656_037
+    nonisolated private static let fnvPrime: UInt64 = 1_099_511_628_211
+
+    @inline(__always)
+    nonisolated private static func mix(_ value: UInt64, into hash: inout UInt64) {
+        hash ^= value
+        hash &*= fnvPrime
+    }
+
+    @inline(__always)
+    nonisolated private static func mix(_ string: String, into hash: inout UInt64) {
+        for byte in string.utf8 { mix(UInt64(byte), into: &hash) }
+        mix(0xFF, into: &hash)
+    }
+
+    /// 只有大集合才值得用指纹代替深比较；小集合深比较更准确且成本可忽略。
+    public static let fingerprintThreshold = 2_000
+
+    nonisolated public static func entryFingerprint(_ entries: [LifeEntry]) -> CollectionFingerprint {
+        var hash = fnvOffset
+        var maxUpdatedAt = ""
+        for entry in entries {
+            mix(UInt64(bitPattern: Int64(entry.id)), into: &hash)
+            mix(entry.syncStatus ?? "", into: &hash)
+            // 这些字段都可能被写入方修改；即使 updatedAt 因异常没有推进，
+            // 也应让 UI 重新赋值。content 通常很长，交给 updatedAt 兜底。
+            mix(entry.title, into: &hash)
+            mix(entry.type, into: &hash)
+            mix(entry.occurredAt, into: &hash)
+            mix(entry.location ?? "", into: &hash)
+            mix(entry.cityName ?? "", into: &hash)
+            mix(entry.deletedAt ?? "", into: &hash)
+            mix(UInt64(entry.projectId ?? 0), into: &hash)
+            mix(UInt64(entry.wishId ?? 0), into: &hash)
+            for attachment in entry.attachments {
+                mix(UInt64(attachment.id), into: &hash)
+                mix(attachment.objectKey, into: &hash)
+                mix(attachment.url, into: &hash)
+                mix(attachment.thumbnailUrl ?? "", into: &hash)
+            }
+            let updated = entry.updatedAt ?? ""
+            if !updated.isEmpty, updated > maxUpdatedAt { maxUpdatedAt = updated }
+        }
+        return CollectionFingerprint(count: entries.count, maxUpdatedAt: maxUpdatedAt, stateHash: hash)
+    }
+
+    nonisolated public static func transactionFingerprint(_ transactions: [Transaction]) -> CollectionFingerprint {
+        var hash = fnvOffset
+        var maxUpdatedAt = ""
+        for tx in transactions {
+            mix(UInt64(bitPattern: Int64(tx.id)), into: &hash)
+            mix(tx.syncStatus ?? "", into: &hash)
+            mix(tx.category, into: &hash)
+            mix(tx.type, into: &hash)
+            mix(UInt64(bitPattern: tx.amount), into: &hash)
+            mix(tx.occurredAt, into: &hash)
+            mix(tx.title, into: &hash)
+            mix(tx.paymentMethod ?? "", into: &hash)
+            mix(tx.isInstallment == true ? "1" : "0", into: &hash)
+            mix(UInt64(bitPattern: tx.installmentTotalAmount ?? 0), into: &hash)
+            mix(UInt64(tx.installmentMonths ?? 0), into: &hash)
+            mix(UInt64(bitPattern: Int64(tx.footprintId ?? 0)), into: &hash)
+            let updated = tx.updatedAt ?? ""
+            if !updated.isEmpty, updated > maxUpdatedAt { maxUpdatedAt = updated }
+        }
+        return CollectionFingerprint(count: transactions.count, maxUpdatedAt: maxUpdatedAt, stateHash: hash)
+    }
+
+    nonisolated public static func fingerprint(of snapshot: LocalArchiveSnapshot) -> SnapshotFingerprint {
+        SnapshotFingerprint(
+            entries: entryFingerprint(snapshot.entries),
+            transactions: transactionFingerprint(snapshot.transactions)
+        )
+    }
+
+    /// 取快照指纹：优先使用后台预算的缓存（同 revision），否则按需计算。
+    public func fingerprint(for snapshot: LocalArchiveSnapshot) -> SnapshotFingerprint {
+        if cachedFingerprintRevision == snapshotRevision, let cachedFingerprint {
+            return cachedFingerprint
+        }
+        return Self.fingerprint(of: snapshot)
     }
 
     /// 保存一份新快照
@@ -361,6 +493,33 @@ public final class SyncManager {
             // 立即通知 UI 响应刷新，保证 0ms 上屏
             onSnapshotUpdated?(copy)
         }
+
+        // 注水完成前禁止落盘：此时内存快照可能只是启动期的空壳 + 首页数据，
+        // 写下去会覆盖磁盘上的完整档案与离线发件箱。注水本身会以 critical 写回合并结果。
+        guard hasHydrated else { return }
+
+        // 指纹在后台算：不占用主线程，也不影响防抖写盘。
+        // 若 applySnapshot 先到，会退化为按需计算（仍然只是整数哈希，不做深比较）。
+        //
+        // 只有大集合才需要：小集合走 AppState 的深比较，给每次乐观写入都
+        // 后台遍历一遍全量条目纯属浪费（同步期间一次批量会有多次 saveSnapshot）。
+        let needsFingerprint = copy.entries.count >= Self.fingerprintThreshold
+            || copy.transactions.count >= Self.fingerprintThreshold
+        if needsFingerprint {
+            let fingerprintRevision = snapshotRevision
+            let fingerprintSnapshot = copy
+            diskWriteQueue.async { [weak self] in
+                let fingerprint = Self.fingerprint(of: fingerprintSnapshot)
+                Task { @MainActor in
+                    guard let self, self.snapshotRevision == fingerprintRevision else { return }
+                    self.cachedFingerprint = fingerprint
+                    self.cachedFingerprintRevision = fingerprintRevision
+                }
+            }
+        } else {
+            cachedFingerprint = nil
+            cachedFingerprintRevision = snapshotRevision
+        }
         scheduleDiskWrite(copy, revision: snapshotRevision, critical: critical)
     }
 
@@ -381,13 +540,7 @@ public final class SyncManager {
     /// 合并 0.35 秒内的连续保存：一次全量刷新会触发 5 次 save，没必要写 5 次盘。
     /// 写盘全部发生在 diskWriteQueue（串行），并用 revision 保证「后写的一定更新」。
     private func scheduleDiskWrite(_ copy: LocalArchiveSnapshot, revision: UInt64, critical: Bool = false) {
-        pendingWrite?.cancel()
         let fileURL = Self.snapshotFileURL
-        let item = DispatchWorkItem { [weak self] in
-            Self.writeSnapshot(copy, to: fileURL, revision: revision)
-            _ = self
-        }
-        pendingWrite = item
         if critical {
             // 关键写入：**不等** 0.35 秒防抖窗口，立刻排队落盘。
             //
@@ -396,10 +549,28 @@ public final class SyncManager {
             // （实测 2000 条约 9ms、5 万条约 220ms），
             // 那正是 MC-09 要消灭的阻塞。排队执行让写盘在后台串行队列上完成，
             // 崩溃丢数据的窗口从 350ms 压到十几毫秒，而界面不卡。
-            diskWriteQueue.async(execute: item)
-        } else {
-            diskWriteQueue.asyncAfter(deadline: .now() + 0.35, execute: item)
+            //
+            // 关键：关键写**单独占用** pendingCriticalWrite 槽位 ——
+            // 原先它与防抖写共用 pendingWrite，任意一次后续普通保存
+            // 都会把刚排队的关键写 cancel 掉、改回 0.35 秒防抖，
+            // MC-10 的「关键写入立即落盘」就形同虚设。
+            // 只有更新一次的关键写（更高版本）到来时才取代旧的关键写。
+            pendingCriticalWrite?.cancel()
+            let criticalItem = DispatchWorkItem {
+                Self.writeSnapshot(copy, to: fileURL, revision: revision)
+            }
+            pendingCriticalWrite = criticalItem
+            diskWriteQueue.async(execute: criticalItem)
+            return
         }
+        // 非关键写参与防抖合并；关键写不受这里 cancel 的影响（分槽管理）。
+        pendingWrite?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            Self.writeSnapshot(copy, to: fileURL, revision: revision)
+            _ = self
+        }
+        pendingWrite = item
+        diskWriteQueue.asyncAfter(deadline: .now() + 0.35, execute: item)
     }
 
     /// 串行落盘：只有 revision ≥ 已落盘版本时才允许覆盖，杜绝旧数据回滚新数据。
@@ -426,8 +597,12 @@ public final class SyncManager {
     /// 这里把编码与写盘都留在**同一串行队列**上（与队列中的旧写入不乱序），
     /// 主线程只负责「等结果」，期间 run loop 照常转、界面不冻。
     public func flushSnapshotToDiskIfNeededAsync() async {
+        // 注水尚未完成：内存快照不是权威档案，退出时绝不能拿它覆盖磁盘。
+        guard hasHydrated else { return }
         pendingWrite?.cancel()
         pendingWrite = nil
+        pendingCriticalWrite?.cancel()
+        pendingCriticalWrite = nil
         let copy = snapshot
         let revision = snapshotRevision
         let fileURL = Self.snapshotFileURL
@@ -445,8 +620,11 @@ public final class SyncManager {
     /// 注：这是**兜底**路径（异步落盘没跑完时用），正常退出走
     /// `flushSnapshotToDiskIfNeededAsync()`，避免主线程被大快照阻塞。
     public func flushSnapshotToDiskIfNeeded() {
+        guard hasHydrated else { return }
         pendingWrite?.cancel()
         pendingWrite = nil
+        pendingCriticalWrite?.cancel()
+        pendingCriticalWrite = nil
         let copy = snapshot
         let revision = snapshotRevision
         let fileURL = Self.snapshotFileURL
@@ -595,12 +773,30 @@ public final class SyncManager {
         // 网络恢复后**服务端会收到两份**，本地也多出两条重复条目。
         // 后写覆盖先写：请求内容以最新一次为准。
         latest.outbox.removeAll { $0.kind == kind && $0.localTempId == localTempId }
+        // 幂等创建（契约 C）：CREATE 事件入队时生成 client_request_id 并
+        // **持久化进载荷** —— 之后无论重试多少次、经历多少轮复活，
+        // 都复用同一个 UUID，服务端按它查重，命中返回已有记录。
+        // 在线直发路径不携带；nil 视为老载荷（升级前入队的），补签一次。
+        var stampedEntryRequest = entryRequest
+        if kind == .createEntry, var req = stampedEntryRequest {
+            if req.clientRequestId?.isEmpty != false {
+                req.clientRequestId = UUID().uuidString
+            }
+            stampedEntryRequest = req
+        }
+        var stampedTransactionRequest = transactionRequest
+        if kind == .createTransaction, var req = stampedTransactionRequest {
+            if req.clientRequestId?.isEmpty != false {
+                req.clientRequestId = UUID().uuidString
+            }
+            stampedTransactionRequest = req
+        }
         latest.outbox.append(OutboxItem(
             kind: kind,
             localTempId: localTempId,
             targetServerId: targetServerId,
-            entryRequest: entryRequest,
-            transactionRequest: transactionRequest
+            entryRequest: stampedEntryRequest,
+            transactionRequest: stampedTransactionRequest
         ))
         // 关键写入：这条记录此刻**只存在于本地**（还在发件箱里排队，没到服务端）。
         // 若在 0.35 秒防抖窗口内崩溃，它就会**永久丢失** —— 服务端没有，
@@ -1015,13 +1211,136 @@ public final class SyncManager {
         timestamps.compactMap { $0 }.filter { !$0.isEmpty }.max()
     }
 
-    public func mergeEntries(_ incoming: [LifeEntry], isDelta: Bool) {
-        var current = snapshot
-        current.entries = Self.mergedEntries(current: current.entries, incoming: incoming, isDelta: isDelta)
-        if let latest = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] }) {
-            current.lastEntriesSyncCursor = latest
+    /// 合并增量/全量条目。
+    ///
+    /// MAC-4：全量建字典、日期解析与排序（5000 条约 20~40ms）**离开 MainActor**，
+    /// 在 detached 任务里执行；回到主 Actor 后用 `snapshotRevision` 做 CAS：
+    /// 若期间已有别的写入落盘，则用最新快照重算（最多 5 次），绝不覆盖新数据。
+    public func mergeEntries(_ incoming: [LifeEntry], isDelta: Bool) async {
+        let cursor = Self.latestServerCursor(incoming.flatMap { [$0.updatedAt, $0.deletedAt] })
+
+        for _ in 0..<12 {
+            try? Task.checkCancellation()
+            if Task.isCancelled { return }
+            let revision = snapshotRevision
+            let current = snapshot.entries
+            let merged = await Task.detached(priority: .userInitiated) {
+                Self.mergedEntries(current: current, incoming: incoming, isDelta: isDelta)
+            }.value
+
+            guard snapshotRevision == revision else { continue }
+            var latest = snapshot
+            latest.entries = merged
+            if let cursor {
+                latest.lastEntriesSyncCursor = cursor
+            }
+            saveSnapshot(latest)
+            return
         }
-        saveSnapshot(current)
+
+        // 极端情况下（同步期间十几次并发写盘）退化为同步收口：
+        // 宁可多占主线程一次 20~40ms 的合并，也不能把整批远端数据丢掉。
+        if Task.isCancelled { return }
+        Self.logger.warning("mergeEntries fell back to synchronous merge after repeated revision churn")
+        var latest = snapshot
+        latest.entries = Self.mergedEntries(current: latest.entries, incoming: incoming, isDelta: isDelta)
+        if let cursor {
+            latest.lastEntriesSyncCursor = cursor
+        }
+        saveSnapshot(latest)
+    }
+
+    /// 注水合并：磁盘快照负责补全历史，内存里已发生的本地写入优先。
+    ///
+    /// 与 `mergedEntries(isDelta: true)` 的关键差别：**不把 loaded 的条目改写成 synced**。
+    /// 磁盘里可能躺着 pending_create / failed 的离线记录，强行标 synced 会让下一轮
+    /// 全量合并把它们当成「服务端已删除」而丢掉。
+    nonisolated static func mergedHydratedSnapshot(
+        current: LocalArchiveSnapshot,
+        loaded: LocalArchiveSnapshot
+    ) -> LocalArchiveSnapshot {
+        var merged = current
+
+        var entryMap = Dictionary(loaded.entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for local in current.entries {
+            if let disk = entryMap[local.id] {
+                entryMap[local.id] = Self.preferHydratedEntry(local: local, disk: disk)
+            } else {
+                entryMap[local.id] = local
+            }
+        }
+        merged.entries = sortedEntries(Array(entryMap.values))
+
+        var txMap = Dictionary(loaded.transactions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for local in current.transactions {
+            if let disk = txMap[local.id] {
+                txMap[local.id] = Self.preferHydratedTransaction(local: local, disk: disk)
+            } else {
+                txMap[local.id] = local
+            }
+        }
+        merged.transactions = sortedTransactions(Array(txMap.values))
+
+        // 发件箱按 id 取并集：本地与磁盘各自可能都有对方没见过的待发项。
+        var outboxByID = Dictionary(loaded.outbox.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for item in current.outbox { outboxByID[item.id] = item }
+        merged.outbox = outboxByID.values.sorted { $0.createdAt < $1.createdAt }
+
+        if (merged.lastEntriesSyncCursor ?? "").isEmpty {
+            merged.lastEntriesSyncCursor = loaded.lastEntriesSyncCursor
+        }
+        if (merged.lastTransactionsSyncCursor ?? "").isEmpty {
+            merged.lastTransactionsSyncCursor = loaded.lastTransactionsSyncCursor
+        }
+        if (merged.mediaURLsRefreshedAt ?? "").isEmpty {
+            merged.mediaURLsRefreshedAt = loaded.mediaURLsRefreshedAt
+        }
+        // 配置/档案在启动期可能已从网络拿到新值；内存还是空壳时才用磁盘的。
+        if current.siteConfig.siteName.isEmpty {
+            merged.siteConfig = loaded.siteConfig
+        }
+        if current.profile.name.isEmpty {
+            merged.profile = loaded.profile
+        }
+        let statsEmpty = current.stats.totalEntries == 0
+            && current.stats.totalPhotos == 0
+            && current.stats.totalProjects == 0
+            && current.stats.monthExpense == 0
+        if statsEmpty {
+            merged.stats = loaded.stats
+        }
+        // 月度汇总也属于快照：启动期早写入会让它变成空值，注水时应补回同月的历史汇总。
+        let summaryEmpty = current.transactionSummary.count == 0
+            && current.transactionSummary.totalExpense == 0
+            && current.transactionSummary.totalIncome == 0
+        if summaryEmpty,
+           loaded.transactionSummary.year == current.transactionSummary.year,
+           loaded.transactionSummary.month == current.transactionSummary.month {
+            merged.transactionSummary = loaded.transactionSummary
+        }
+        return merged
+    }
+
+    /// 注水时同一 id 的取舍：待同步的本地编辑优先于服务端已同步副本；
+    /// 两边都同步时取 updatedAt 较新的那一份（磁盘可能比启动期首页更新）。
+    nonisolated static func preferHydratedEntry(local: LifeEntry, disk: LifeEntry) -> LifeEntry {
+        let localPending = (local.syncStatus ?? "synced") != "synced"
+        let diskPending = (disk.syncStatus ?? "synced") != "synced"
+        if diskPending && !localPending { return disk }
+        if localPending && !diskPending { return local }
+        let localUpdated = local.updatedAt ?? ""
+        let diskUpdated = disk.updatedAt ?? ""
+        return diskUpdated > localUpdated ? disk : local
+    }
+
+    nonisolated static func preferHydratedTransaction(local: Transaction, disk: Transaction) -> Transaction {
+        let localPending = (local.syncStatus ?? "synced") != "synced"
+        let diskPending = (disk.syncStatus ?? "synced") != "synced"
+        if diskPending && !localPending { return disk }
+        if localPending && !diskPending { return local }
+        let localUpdated = local.updatedAt ?? ""
+        let diskUpdated = disk.updatedAt ?? ""
+        return diskUpdated > localUpdated ? disk : local
     }
 
     /// **只增不删**地合并一批远端散页（用于「首屏优先」投递）

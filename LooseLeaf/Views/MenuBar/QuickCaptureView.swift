@@ -573,7 +573,13 @@ public struct QuickCaptureView: View {
         let counter = ProgressCounter()
         for url in urls {
             do {
-                let processed = try await ImageProcessor.processImageFileInBackground(at: url)
+                // 关键：拖拽 / 访达来源的文件位于沙盒容器之外，必须取得安全作用域
+                // 授权才能读取，否则 CGImageSourceCreateWithURL 直接返回 nil，
+                // 表现为「拖进来就报『无法读取图像数据源』」。与 EntryMediaState.process
+                // 对齐：授权只包住压制（读取）阶段，上传用内存字节，无需持续持有作用域。
+                let processed = try await SandboxFileAccess.withAccess(to: url) { scopedURL in
+                    try await ImageProcessor.processImageFileInBackground(at: scopedURL)
+                }
                 if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
                     appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
                 }

@@ -373,7 +373,8 @@ public struct QuickLedgerView: View {
         guard let parsed = FormatUtils.parseQuickLedgerInput(
             smartInput,
             defaultCategory: selectedCategory,
-            knownCategories: activeCategories
+            // 类型尚未切换时，用两套字典一起识别，否则“工资收入”会被当成标题。
+            knownCategories: appState.expenseCategories + appState.incomeCategories
         ) else { return }
         guard parsed.type != selectedType else { return }
         selectType(parsed.type)

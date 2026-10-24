@@ -51,7 +51,11 @@ public struct EditorialLightboxView: View {
                             metaText: (currentAttachment.width != nil && currentAttachment.height != nil)
                                 ? "\(currentAttachment.width!) × \(currentAttachment.height!) px"
                                 : nil,
-                            maxHeight: 520
+                            maxHeight: 520,
+                            // 灯箱要原图才经得起放大；解码时降采样到
+                            // 780pt × 2 = 1560px，避免 4K 原图整幅进内存。
+                            // 卡片用的是 480px 缩略图，两者缓存键不同，不能共享字节。
+                            thumbnailMaxPixel: 1_560
                         )
                         .scaleEffect(scale)
                         .offset(offset)

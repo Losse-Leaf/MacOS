@@ -423,6 +423,13 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     public var installmentMonthlyPay: Int64?
     public var installmentRemainMonths: Int?
     public var repaymentDay: Int?
+    /// 显式清空属地城市（契约 A，仅修订路径使用）：true 时服务端清空 city_code，
+    /// 优先于 city_code 字段。创建路径恒为 nil（不下发）。
+    public var clearCity: Bool?
+    /// 幂等创建键（契约 C，仅发件箱 CREATE 事件携带）：入队时生成 UUID 并
+    /// 持久化进载荷，重试/复活复用同一个 —— 服务端按它查重，
+    /// 杜绝同一笔账被重复上传成两份。在线直发路径不携带。
+    public var clientRequestId: String?
     public var linkGearAsset: Bool
     public var gearCategory: String?
     public var gearSpec: String?
@@ -446,6 +453,8 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         case installmentMonthlyPay = "installment_monthly_pay"
         case installmentRemainMonths = "installment_remain_months"
         case repaymentDay = "repayment_day"
+        case clearCity = "clear_city"
+        case clientRequestId = "client_request_id"
         case linkGearAsset = "link_gear_asset"
         case gearCategory = "gear_category"
         case gearSpec = "gear_spec"
@@ -470,6 +479,8 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         installmentMonthlyPay: Int64? = nil,
         installmentRemainMonths: Int? = nil,
         repaymentDay: Int? = nil,
+        clearCity: Bool? = nil,
+        clientRequestId: String? = nil,
         linkGearAsset: Bool = false,
         gearCategory: String? = nil,
         gearSpec: String? = nil
@@ -492,6 +503,8 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         self.installmentMonthlyPay = installmentMonthlyPay
         self.installmentRemainMonths = installmentRemainMonths
         self.repaymentDay = repaymentDay
+        self.clearCity = clearCity
+        self.clientRequestId = clientRequestId
         self.linkGearAsset = linkGearAsset
         self.gearCategory = gearCategory
         self.gearSpec = gearSpec

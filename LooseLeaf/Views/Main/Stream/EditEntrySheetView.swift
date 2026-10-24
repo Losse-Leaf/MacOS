@@ -149,7 +149,8 @@ public struct EditEntrySheetView: View {
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
                 .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(isSaving || isUploading || editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(isSaving || isUploading || (editTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
         }
         .padding(24)
@@ -163,6 +164,12 @@ public struct EditEntrySheetView: View {
         saveError = nil
         defer { isSaving = false }
 
+        let cleanTitle = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = editContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !(cleanTitle.isEmpty && cleanContent.isEmpty) else {
+            saveError = "标题与正文不能同时为空"
+            return
+        }
         let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
         // 关键：用户**显式清空**城市时，按契约 A 发 `clear_city: true`，
         // 服务端据此清空 city_code（优先于 city_code 字段）。
@@ -175,12 +182,13 @@ public struct EditEntrySheetView: View {
             : (editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode)
         let req = UpdateEntryRequest(
             type: entry.type,
-            title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-            content: editContent.trimmingCharacters(in: .whitespacesAndNewlines),
+            title: cleanTitle,
+            // 空串是显式清空；nil 会被后端当作保持原值。
+            content: cleanContent,
             occurredAt: entry.occurredAt,
-            location: cleanCity.isEmpty ? nil : cleanCity,
+            location: cleanCity,
             cityCode: code,
-            cityName: cleanCity.isEmpty ? nil : cleanCity,
+            cityName: cleanCity,
             clearCity: cityCleared ? true : nil,
             attachmentIds: editAttachments.map(\.id)
         )

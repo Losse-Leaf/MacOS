@@ -483,7 +483,7 @@ public struct LedgerAssetsView: View {
                         submitQuickLine()
                     }
 
-                if let parsed = FormatUtils.parseQuickLedgerInput(quickLine) {
+                if let parsed = quickParsed {
                     Text("\(parsed.category) · \(FormatUtils.formattedYuan(cents: parsed.amountCents, includeSymbol: true))")
                         .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
                         .foregroundStyle(ArchivePalette.accentWarm)

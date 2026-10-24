@@ -185,9 +185,10 @@ public struct EditFootprintSheet: View {
                 let req = CreateFootprintRequest(
                     cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? footprint.cityCode) : cityCode,
                     cityName: cleanCity,
-                    title: title.isEmpty ? nil : title,
+                    // 空串是显式清空；nil 会被后端当作保持原值。
+                    title: title,
                     visitedAt: FormatUtils.beijingISOString(from: visitedDate),
-                    note: note.isEmpty ? nil : note
+                    note: note
                 )
                 _ = try await APIClient.shared.updateFootprint(id: footprint.id, req)
                 await appState.loadProjectsWishesFootprints()

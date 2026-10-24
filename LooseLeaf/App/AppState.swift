@@ -1163,14 +1163,23 @@ public final class AppState {
         }
 
         let ym = FormatUtils.beijingCurrentYearMonth()
-        // 月度概览 / 资产总览 / 信用渠道三者独立，并行拉取。
-        async let summaryTask = try? APIClient.shared.fetchTransactionSummary(year: ym.year, month: ym.month)
+        // 资产总览 / 信用渠道与月度概览并行；概览响应必须绑定本地账目快照：
+        // 请求期间若发生乐观增删或同步完成，旧响应可能漏算/重复计入。
         async let overviewTask = try? APIClient.shared.fetchAssetsOverview()
         async let channelsTask = try? APIClient.shared.fetchCreditChannels()
-        let (summary, overview, channels) = await (summaryTask, overviewTask, channelsTask)
-        if let summary {
-            SyncManager.shared.updateTransactionSummary(summary)
+        for _ in 0..<2 {
+            let before = SyncManager.shared.fingerprint(for: SyncManager.shared.currentSnapshot()).transactions
+            guard let summary = try? await APIClient.shared.fetchTransactionSummary(year: ym.year, month: ym.month) else {
+                break
+            }
+            let after = SyncManager.shared.fingerprint(for: SyncManager.shared.currentSnapshot()).transactions
+            if before == after {
+                SyncManager.shared.updateTransactionSummary(summary)
+                break
+            }
+            // 账目在请求期间变化：丢弃这份响应，再取一次稳定的快照。
         }
+        let (overview, channels) = await (overviewTask, channelsTask)
         if let overview {
             self.assetsOverview = overview
         }
@@ -1250,6 +1259,7 @@ public final class AppState {
         location: String? = nil,
         cityCode: String? = nil,
         cityName: String? = nil,
+        footprintId: Int? = nil,
         attachmentIds: [Int] = [],
         occurredAt: String? = nil
     ) async throws -> Bool {
@@ -1277,6 +1287,7 @@ public final class AppState {
             location: finalLocation,
             cityCode: resolvedCode,
             cityName: resolvedCityName,
+            footprintId: footprintId,
             attachmentIds: attachmentIds
         )
 
@@ -1319,14 +1330,18 @@ public final class AppState {
         let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
         // 成功回执（失败由调用方就地呈现）：账本页极速行原先依赖这里的横幅做唯一反馈
         let amountText = FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true)
-        showTemporaryBanner(queuedOffline
-            ? "已暂存至本地发件箱：\(amountText)（网络恢复后自动上传）"
-            : "已记入账本：\(amountText)")
+        if queuedOffline {
+            showTemporaryBanner("已暂存至本地发件箱：\(amountText)（网络恢复后自动上传）")
+            // 离线时不做网络刷新：那只会让提交按钮继续等一轮注定失败/超时的请求。
+            // 恢复联网后会由同步与刷新链路补拉汇总。
+            return true
+        }
+        showTemporaryBanner("已记入账本：\(amountText)")
         // 关键：**同步完成之后**再拉月度汇总 —— 先拉会把服务端尚未收到的那笔账
         // 覆盖掉（配合 SyncManager.updateTransactionSummary 的 pending 重叠兜底双保险）。
         await loadTransactionsAndAssets(forceFull: false)
         await loadConfigAndProfile()
-        return queuedOffline
+        return false
     }
 
     // MARK: - 设备配对与密钥授权 (Device Pairing & Credential Vault)
@@ -1660,6 +1675,8 @@ public final class AppState {
 
     /// 最近的撤销操作（栈顶为最近一次）
     @ObservationIgnored private var undoStack: [UndoAction] = []
+    /// 撤销动作串行执行，避免连续快捷键在 await 期间交错。
+    @ObservationIgnored private var isUndoing = false
     /// 撤销栈容量上限
     public static let maxUndoStackSize = 20
 
@@ -1679,11 +1696,19 @@ public final class AppState {
 
     /// 执行并弹出最近一次撤销操作
     public func performUndo() async {
-        guard let action = undoStack.popLast() else { return }
+        guard !isUndoing, let action = undoStack.popLast() else { return }
+        isUndoing = true
+        defer { isUndoing = false }
         if await action.perform() {
             showTemporaryBanner("已撤销「\(action.label)」")
+        } else {
+            // 失败路径由动作自身给出提示；动作必须放回栈顶，
+            // 否则一次网络故障就会让这次撤销永久失去重试入口。
+            undoStack.append(action)
+            if undoStack.count > Self.maxUndoStackSize {
+                undoStack.removeFirst(undoStack.count - Self.maxUndoStackSize)
+            }
         }
-        // 失败路径由动作自身给出提示；绝不能用成功横幅覆盖它。
     }
 
     public func showTemporaryBanner(_ text: String) {

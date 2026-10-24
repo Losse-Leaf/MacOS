@@ -33,6 +33,24 @@ final class TransactionSummaryConsistencyTests: XCTestCase {
         )
     }
 
+    /// 汇总自身可能停留在上个月（跨月离线启动）：必须按 summary.year/month 判断，
+    /// 不能拿「当前自然月」硬套，否则本月账目会被加进上月汇总。
+    func test01b_UsesSummaryOwnYearMonth() {
+        var pastSummary = TransactionSummary(year: 2025, month: 3)
+        pastSummary.totalExpense = 0
+        let marchTx = "2025-03-15T10:00:00+08:00"
+        XCTAssertTrue(
+            SyncManager.isInSummaryMonth(marchTx, summary: pastSummary),
+            "应使用汇总自身的年月判断"
+        )
+
+        let currentSummary = TransactionSummary()
+        XCTAssertFalse(
+            SyncManager.isInSummaryMonth(marchTx, summary: currentSummary),
+            "往月账目不得计入当前月汇总"
+        )
+    }
+
     // MARK: - 2. 汇总调整必须可逆
 
     func test02_SummaryDeltaIsReversible() {

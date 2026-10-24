@@ -38,6 +38,11 @@ public final class SyncManager {
     /// 注水前一律**不落盘**：内存里可能只有启动期的配置/首页，直接写会把磁盘上的
     /// 完整档案（含离线发件箱与账目）覆盖成空壳。
     private var hasHydrated = false
+    /// 是否已收到过服务端权威月度汇总。
+    ///
+    /// 注水时若网络已先返回同月「真实零值」，不能被磁盘旧的非零汇总覆盖；
+    /// 反之未收到网络汇总时，空壳汇总才用磁盘同月数据兜底。
+    private var hasAuthoritativeSummary = false
     /// 轻量指纹缓存（按 snapshotRevision 对应）。由 diskWriteQueue 后台计算，
     /// applySnapshot 优先用它避免全量深比较；缓存未就绪时按需计算（仍比深比较便宜）。
     private var cachedFingerprintRevision: UInt64 = 0
@@ -214,7 +219,11 @@ public final class SyncManager {
                 // 正确做法：已经有本地写入时，注水只负责「填空」；
                 // 并且条目的本地同步状态必须原样保留（不能把 pending 当成 synced）。
                 if self.snapshotRevision > 0 {
-                    let merged = Self.mergedHydratedSnapshot(current: self.snapshot, loaded: loaded)
+                    let merged = Self.mergedHydratedSnapshot(
+                        current: self.snapshot,
+                        loaded: loaded,
+                        hasAuthoritativeSummary: self.hasAuthoritativeSummary
+                    )
                     self.hasHydrated = true
                     // critical：立即把合并后的完整快照写回磁盘。
                     // 注水前 saveSnapshot 被拦截不落盘，磁盘上仍是原始档案；
@@ -360,6 +369,7 @@ public final class SyncManager {
     /// 表现为「记一笔后本月支出反而少了这一笔」，直到下次同步才回来。
     /// 这里在写入前把仍处于 pending、且落在汇总所属年月的账目重新叠加一遍。
     public func updateTransactionSummary(_ summary: TransactionSummary) {
+        hasAuthoritativeSummary = true
         var latest = snapshot
         var adjusted = summary
         for tx in latest.transactions where (tx.syncStatus ?? "synced") == "pending_create" {
@@ -669,9 +679,30 @@ public final class SyncManager {
     /// 再在后台静默同步到服务端。同步失败时按错误性质分别处理：
     /// - 网络类错误 → 转入 Outbox 待重试，记录保持 `pending_create`
     /// - 4xx 永久错误 → 记录标记为 `failed` 并保留在本地，用户可重试
+    /// 给创建请求补上稳定的幂等键。
+    ///
+    /// 首次在线直发也必须携带：若服务端已落库但响应在网络上丢失，
+    /// 后续重试/入队会用同一把键命中幂等查重，而不是再建一份。
+    private func stableEntryRequest(_ req: CreateEntryRequest) -> CreateEntryRequest {
+        var copy = req
+        if copy.clientRequestId?.isEmpty != false {
+            copy.clientRequestId = UUID().uuidString
+        }
+        return copy
+    }
+
+    private func stableTransactionRequest(_ req: CreateTransactionRequest) -> CreateTransactionRequest {
+        var copy = req
+        if copy.clientRequestId?.isEmpty != false {
+            copy.clientRequestId = UUID().uuidString
+        }
+        return copy
+    }
+
     public func submitEntry(_ req: CreateEntryRequest, attachments: [Attachment] = []) async throws -> (entry: LifeEntry, queuedOffline: Bool) {
-        let optimistic = submitEntryOptimistically(req, attachments: attachments)
-        return try await syncPendingEntry(req, tempId: optimistic.id, optimistic: optimistic)
+        let stableReq = stableEntryRequest(req)
+        let optimistic = submitEntryOptimistically(stableReq, attachments: attachments)
+        return try await syncPendingEntry(stableReq, tempId: optimistic.id, optimistic: optimistic)
     }
 
     /// **乐观写入**：立刻把记录写进本地快照并通知 UI（时间流立即可见），完全同步、无任何等待。
@@ -714,9 +745,12 @@ public final class SyncManager {
         }
         do {
             let created = try await APIClient.shared.createEntry(req)
-            // 用服务端正式实体替换乐观记录（id 换成真实 id，状态转为已同步）
+            // 用服务端正式实体替换乐观记录（id 换成真实 id，状态转为已同步）。
+            // 同时清掉该 tempId 的 CREATE 待发项并按服务端 id 去重：
+            // 幂等命中时服务端返回的是已存在记录，不能在本机再插一份。
             var latest = snapshot
-            latest.entries.removeAll { $0.id == tempId }
+            latest.entries.removeAll { $0.id == tempId || $0.id == created.id }
+            latest.outbox.removeAll { $0.kind == .createEntry && $0.localTempId == tempId }
             latest.entries = Self.sortedEntries(latest.entries + [created])
             saveSnapshot(latest)
             return (created, false)
@@ -750,10 +784,11 @@ public final class SyncManager {
     /// 调用方（例如创作弹窗）可以马上关闭界面，用户不必等待网络往返。
     @discardableResult
     public func submitEntryInBackground(_ req: CreateEntryRequest, attachments: [Attachment] = []) -> LifeEntry {
-        let optimistic = submitEntryOptimistically(req, attachments: attachments)
+        let stableReq = stableEntryRequest(req)
+        let optimistic = submitEntryOptimistically(stableReq, attachments: attachments)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.syncPendingEntry(req, tempId: optimistic.id, optimistic: optimistic)
+            _ = try? await self.syncPendingEntry(stableReq, tempId: optimistic.id, optimistic: optimistic)
         }
         return optimistic
     }
@@ -858,20 +893,35 @@ public final class SyncManager {
     /// tempId 走同步流程 —— 成功时 `syncPendingEntry` 会用服务端实体替换它。
     public func resyncEntry(id: Int, req: CreateEntryRequest, attachments: [Attachment]) {
         guard let existing = snapshot.entries.first(where: { $0.id == id }) else { return }
+        var stableReq = req
+        if stableReq.clientRequestId?.isEmpty != false {
+            // 优先复用发件箱里已持久化的键；调用方重建的请求通常不带幂等键。
+            stableReq.clientRequestId = snapshot.outbox
+                .first(where: { $0.kind == .createEntry && $0.localTempId == id })?
+                .entryRequest?.clientRequestId
+        }
+        stableReq = stableEntryRequest(stableReq)
         markEntryRetrying(id: id)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.syncPendingEntry(req, tempId: id, optimistic: existing)
+            _ = try? await self.syncPendingEntry(stableReq, tempId: id, optimistic: existing)
         }
     }
 
     /// **重传一条已存在的乐观账目**（复用它原本的本地 id）
     public func resyncTransaction(id: Int, req: CreateTransactionRequest) {
         guard let existing = snapshot.transactions.first(where: { $0.id == id }) else { return }
+        var stableReq = req
+        if stableReq.clientRequestId?.isEmpty != false {
+            stableReq.clientRequestId = snapshot.outbox
+                .first(where: { $0.kind == .createTransaction && $0.localTempId == id })?
+                .transactionRequest?.clientRequestId
+        }
+        stableReq = stableTransactionRequest(stableReq)
         markTransactionRetrying(id: id)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = try? await self.syncPendingTransaction(req, tempId: id, optimistic: existing)
+            _ = try? await self.syncPendingTransaction(stableReq, tempId: id, optimistic: existing)
         }
     }
 
@@ -883,15 +933,19 @@ public final class SyncManager {
             latest.entries[index].syncStatus = "failed"
             touched = true
         }
-        guard touched else { return }
+        // 永久失败/未授权不再保留同一条 CREATE 待发项，避免 Worker 反复重试同一 4xx。
+        let hadOutboxItem = latest.outbox.contains { $0.kind == .createEntry && $0.localTempId == tempId }
+        latest.outbox.removeAll { $0.kind == .createEntry && $0.localTempId == tempId }
+        guard touched || hadOutboxItem else { return }
         saveSnapshot(latest)
         Self.logger.error("Entry \(tempId) marked as failed: \(reason, privacy: .public)")
     }
 
     /// 提交新记账流水（在线直接落库，离线或网络阻断时写入本地 Outbox 乐观更新）
     public func submitTransaction(_ req: CreateTransactionRequest) async throws -> (transaction: Transaction, queuedOffline: Bool) {
-        let optimistic = submitTransactionOptimistically(req)
-        return try await syncPendingTransaction(req, tempId: optimistic.id, optimistic: optimistic)
+        let stableReq = stableTransactionRequest(req)
+        let optimistic = submitTransactionOptimistically(stableReq)
+        return try await syncPendingTransaction(stableReq, tempId: optimistic.id, optimistic: optimistic)
     }
 
     /// **乐观写入**账目（同步完成，UI 立即可见）
@@ -930,9 +984,10 @@ public final class SyncManager {
     /// 账目是否落在汇总所属的年月
     nonisolated static func isInSummaryMonth(_ occurredAt: String, summary: TransactionSummary) -> Bool {
         guard let date = FormatUtils.parseFlexDate(occurredAt) else { return false }
-        let (y, m) = FormatUtils.beijingCurrentYearMonth()
         let parts = FormatUtils.formatBeijingDate(date)
-        return parts.year == String(y) && parts.month == String(format: "%02d", m)
+        // 必须使用汇总**自身**的年月，而不是「当前自然月」：
+        // 跨月离线启动时汇总可能仍是上月，用当前月判断会把本月金额加进上月。
+        return parts.year == String(summary.year) && parts.month == String(format: "%02d", summary.month)
     }
 
     /// 统一调整月度汇总（正数=增加，负数=扣减）
@@ -971,7 +1026,8 @@ public final class SyncManager {
         do {
             let created = try await APIClient.shared.createTransaction(req)
             var latest = snapshot
-            latest.transactions.removeAll { $0.id == tempId }
+            latest.transactions.removeAll { $0.id == tempId || $0.id == created.id }
+            latest.outbox.removeAll { $0.kind == .createTransaction && $0.localTempId == tempId }
             latest.transactions = Self.sortedTransactions(latest.transactions + [created])
             saveSnapshot(latest)
             return (created, false)
@@ -1005,11 +1061,12 @@ public final class SyncManager {
         _ req: CreateTransactionRequest,
         completion: (@MainActor (Result<Bool, Error>) -> Void)? = nil
     ) -> Transaction {
-        let optimistic = submitTransactionOptimistically(req)
+        let stableReq = stableTransactionRequest(req)
+        let optimistic = submitTransactionOptimistically(stableReq)
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let outcome = try await self.syncPendingTransaction(req, tempId: optimistic.id, optimistic: optimistic)
+                let outcome = try await self.syncPendingTransaction(stableReq, tempId: optimistic.id, optimistic: optimistic)
                 completion?(.success(outcome.queuedOffline))
             } catch {
                 completion?(.failure(error))
@@ -1061,7 +1118,9 @@ public final class SyncManager {
             latest.transactions[index].syncStatus = "failed"
             touched = true
         }
-        guard touched else { return }
+        let hadOutboxItem = latest.outbox.contains { $0.kind == .createTransaction && $0.localTempId == tempId }
+        latest.outbox.removeAll { $0.kind == .createTransaction && $0.localTempId == tempId }
+        guard touched || hadOutboxItem else { return }
         saveSnapshot(latest)
         Self.logger.error("Transaction \(tempId) marked as failed: \(reason, privacy: .public)")
     }
@@ -1098,6 +1157,32 @@ public final class SyncManager {
 
         Self.logger.info("Flushing outbox: \(self.snapshot.outbox.count) item(s) queued")
 
+        // 升级前入队的老载荷可能没有幂等键：发送前补签并落盘，
+        // 确保之后任何一次重试都复用同一把键（注释承诺过，但此前并未执行）。
+        var normalized = snapshot
+        var stamped = false
+        for index in normalized.outbox.indices {
+            switch normalized.outbox[index].kind {
+            case .createEntry:
+                if var req = normalized.outbox[index].entryRequest, req.clientRequestId?.isEmpty != false {
+                    req.clientRequestId = UUID().uuidString
+                    normalized.outbox[index].entryRequest = req
+                    stamped = true
+                }
+            case .createTransaction:
+                if var req = normalized.outbox[index].transactionRequest, req.clientRequestId?.isEmpty != false {
+                    req.clientRequestId = UUID().uuidString
+                    normalized.outbox[index].transactionRequest = req
+                    stamped = true
+                }
+            default:
+                break
+            }
+        }
+        if stamped {
+            saveSnapshot(normalized, critical: true)
+        }
+
         let itemsToFlush = snapshot.outbox.filter { $0.retryCount < Self.maxOutboxRetryCount }
 
         for item in itemsToFlush {
@@ -1110,7 +1195,7 @@ public final class SyncManager {
                     if let req = item.entryRequest {
                         let created = try await APIClient.shared.createEntry(req)
                         var latest = self.snapshot
-                        latest.entries.removeAll { $0.id == item.localTempId }
+                        latest.entries.removeAll { $0.id == item.localTempId || $0.id == created.id }
                         // 同步成功的记录按发生时间归位，而非插到列表顶部
                         latest.entries = Self.sortedEntries(latest.entries + [created])
                         latest.outbox.removeAll { $0.id == item.id }
@@ -1128,7 +1213,7 @@ public final class SyncManager {
                     if let req = item.transactionRequest {
                         let created = try await APIClient.shared.createTransaction(req)
                         var latest = self.snapshot
-                        latest.transactions.removeAll { $0.id == item.localTempId }
+                        latest.transactions.removeAll { $0.id == item.localTempId || $0.id == created.id }
                         latest.transactions = Self.sortedTransactions(latest.transactions + [created])
                         latest.outbox.removeAll { $0.id == item.id }
                         self.saveSnapshot(latest)
@@ -1257,7 +1342,8 @@ public final class SyncManager {
     /// 全量合并把它们当成「服务端已删除」而丢掉。
     nonisolated static func mergedHydratedSnapshot(
         current: LocalArchiveSnapshot,
-        loaded: LocalArchiveSnapshot
+        loaded: LocalArchiveSnapshot,
+        hasAuthoritativeSummary: Bool = false
     ) -> LocalArchiveSnapshot {
         var merged = current
 
@@ -1310,10 +1396,12 @@ public final class SyncManager {
             merged.stats = loaded.stats
         }
         // 月度汇总也属于快照：启动期早写入会让它变成空值，注水时应补回同月的历史汇总。
+        // 但已收到服务端权威汇总（即便数值为真实 0）时，磁盘旧值不得覆盖它。
         let summaryEmpty = current.transactionSummary.count == 0
             && current.transactionSummary.totalExpense == 0
             && current.transactionSummary.totalIncome == 0
-        if summaryEmpty,
+        if !hasAuthoritativeSummary,
+           summaryEmpty,
            loaded.transactionSummary.year == current.transactionSummary.year,
            loaded.transactionSummary.month == current.transactionSummary.month {
             merged.transactionSummary = loaded.transactionSummary

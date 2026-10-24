@@ -399,6 +399,7 @@ public struct NewEntryModal: View {
             location: nil,
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
+            footprintId: draft.selectedFootprintId,
             attachmentIds: media.uploadedAttachments.map(\.id),
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
         )
@@ -415,6 +416,7 @@ public struct NewEntryModal: View {
             location: nil,
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
+            footprintId: draft.selectedFootprintId,
             attachmentIds: media.uploadedAttachments.map(\.id),
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
         )

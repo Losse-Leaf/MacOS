@@ -426,9 +426,9 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     /// 显式清空属地城市（契约 A，仅修订路径使用）：true 时服务端清空 city_code，
     /// 优先于 city_code 字段。创建路径恒为 nil（不下发）。
     public var clearCity: Bool?
-    /// 幂等创建键（契约 C，仅发件箱 CREATE 事件携带）：入队时生成 UUID 并
-    /// 持久化进载荷，重试/复活复用同一个 —— 服务端按它查重，
-    /// 杜绝同一笔账被重复上传成两份。在线直发路径不携带。
+    /// 幂等创建键（契约 C）：首次在线直发前生成，发件箱持久化后重试复用同一个 ——
+    /// 服务端按它查重，杜绝同一笔账被重复上传成两份。
+    /// nil 仅代表升级前的旧载荷，发送前会补签。
     public var clientRequestId: String?
     public var linkGearAsset: Bool
     public var gearCategory: String?

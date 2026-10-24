@@ -381,7 +381,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
     /// 幂等创建键（契约 C）：离线发件箱 CREATE 事件在入队时生成 UUID 并
     /// **持久化进载荷**，重试/复活复用同一个 —— 服务端按它查重，
     /// 命中返回已有记录，杜绝同一篇手稿被重复上传成两份。
-    /// 在线直发路径不携带（nil = 不下发）。
+    /// 在线直发与发件箱重试统一携带；nil 仅代表升级前的旧载荷，发送前会补签。
     public var clientRequestId: String?
 
     enum CodingKeys: String, CodingKey {

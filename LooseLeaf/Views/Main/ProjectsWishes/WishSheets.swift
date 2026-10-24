@@ -244,10 +244,11 @@ public struct EditWishSheet: View {
                 let req = CreateWishRequest(
                     title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                     kind: kind,
-                    note: note.isEmpty ? nil : note,
-                    spec: spec.isEmpty ? nil : spec,
-                    cityCode: cityCode.isEmpty ? nil : cityCode,
-                    cityName: cityName.isEmpty ? nil : cityName,
+                    // 空串是显式清空；nil 会被后端当作保持原值。
+                    note: note,
+                    spec: kind == "item" ? spec : "",
+                    cityCode: kind == "travel" ? cityCode : "",
+                    cityName: kind == "travel" ? cityName : "",
                     budget: cents
                 )
                 _ = try await APIClient.shared.updateWish(id: wish.id, req)

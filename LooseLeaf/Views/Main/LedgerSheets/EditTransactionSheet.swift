@@ -279,8 +279,9 @@ public struct EditTransactionSheet: View {
                     amount: cents,
                     type: type,
                     category: category,
-                    title: title.isEmpty ? category : title,
-                    note: note.isEmpty ? nil : note,
+                    // 空串是显式清空；展示层已有「空标题回退到分类」的兜底。
+                    title: title,
+                    note: note,
                     paymentMethod: paymentMethod,
                     cityCode: cityCode.isEmpty ? nil : cityCode,
                     occurredAt: FormatUtils.beijingISOString(from: occurredDate),

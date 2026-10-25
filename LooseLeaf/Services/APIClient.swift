@@ -204,6 +204,11 @@ public actor APIClient {
         }
         if !queryItems.isEmpty {
             components.queryItems = queryItems
+            // RFC 3986 允许 query 中保留 '+'，但服务端 URL 解码器 (如 Go net/http) 会将 '+' 解释为空格，
+            // 导致 ISO8601 时区偏移量（如 +08:00）变成空格从而解析失败。因此将 '+' 显式转义为 '%2B'。
+            if let rawQuery = components.percentEncodedQuery {
+                components.percentEncodedQuery = rawQuery.replacingOccurrences(of: "+", with: "%2B")
+            }
         }
         guard let url = components.url else {
             throw APIError.invalidURL(path)

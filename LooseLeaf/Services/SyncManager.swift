@@ -103,6 +103,16 @@ public final class SyncManager {
         saveSnapshot(latest)
     }
 
+    /// 重置增量同步游标。
+    /// 当遇到游标损坏或服务端游标格式校验失败时，调用此方法清空本地快照中的游标，
+    /// 触发后续请求退化为安全的全量同步自愈。
+    public func resetSyncCursors() {
+        var latest = snapshot
+        latest.lastEntriesSyncCursor = nil
+        latest.lastTransactionsSyncCursor = nil
+        saveSnapshot(latest)
+    }
+
     // MARK: - 本地临时 ID 生成
 
     private nonisolated(unsafe) static var tempIdSequence: Int = 0
@@ -1355,10 +1365,29 @@ public final class SyncManager {
 
     // MARK: - 增量拉取与软删除对账合并 (Delta Sync & LWW Reconciliation)
 
+    /// 规范化时间戳游标字符串。
+    /// 针对可能由于历史 URL 解码导致的空格漂移（如 "2026-10-25T21:07:00 08:00"）自动修复为标准 RFC3339 偏移量（"+08:00"）。
+    nonisolated static func normalizeCursor(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        if trimmed.count >= 6 {
+            let suffix = trimmed.suffix(6)
+            if suffix.hasPrefix(" ") && suffix.contains(":") {
+                let prefix = trimmed.dropLast(6)
+                if prefix.contains(":") {
+                    let offsetDigits = suffix.dropFirst()
+                    return "\(prefix)+\(offsetDigits)"
+                }
+            }
+        }
+        return trimmed
+    }
+
     /// 计算增量响应中的最新服务端游标 (取 `updated_at` / `deleted_at` 最大值)。
     /// 使用服务端时间戳而非本地时钟，避免时钟漂移导致增量漏拉；无有效时间戳时返回 nil（保持旧游标不推进）。
     nonisolated static func latestServerCursor(_ timestamps: [String?]) -> String? {
-        timestamps.compactMap { $0 }.filter { !$0.isEmpty }.max()
+        timestamps.compactMap { normalizeCursor($0) }.filter { !$0.isEmpty }.max()
     }
 
     /// 合并增量/全量条目。

@@ -58,6 +58,39 @@ final class ArchiveSyncIntegrityTests: XCTestCase {
         XCTAssertNil(SyncManager.latestServerCursor([]))
     }
 
+    func testNormalizeCursorRepairsSpaceInOffset() {
+        XCTAssertEqual(
+            SyncManager.normalizeCursor("2026-10-25T21:07:00 08:00"),
+            "2026-10-25T21:07:00+08:00"
+        )
+        XCTAssertEqual(
+            SyncManager.normalizeCursor("2026-10-25 21:07:00 08:00"),
+            "2026-10-25 21:07:00+08:00"
+        )
+        XCTAssertEqual(
+            SyncManager.normalizeCursor("2026-10-25T21:07:00+08:00"),
+            "2026-10-25T21:07:00+08:00"
+        )
+        XCTAssertEqual(
+            SyncManager.normalizeCursor("2026-10-25 14:30"),
+            "2026-10-25 14:30"
+        )
+        XCTAssertNil(SyncManager.normalizeCursor(nil))
+        XCTAssertNil(SyncManager.normalizeCursor("  "))
+    }
+
+    func testResetSyncCursorsClearsStoredCursors() {
+        var snap = SyncManager.shared.currentSnapshot()
+        snap.lastEntriesSyncCursor = "2026-10-25T21:07:00+08:00"
+        snap.lastTransactionsSyncCursor = "2026-10-25T21:07:00+08:00"
+        SyncManager.shared.saveSnapshot(snap)
+
+        SyncManager.shared.resetSyncCursors()
+        let updated = SyncManager.shared.currentSnapshot()
+        XCTAssertNil(updated.lastEntriesSyncCursor)
+        XCTAssertNil(updated.lastTransactionsSyncCursor)
+    }
+
     func testLocalTempIdsAreUniqueAndNegative() {
         var seen = Set<Int>()
         for _ in 0..<50 {

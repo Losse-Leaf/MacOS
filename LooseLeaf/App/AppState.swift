@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Observation
 import AppKit
+import os
 #if canImport(ServiceManagement)
 import ServiceManagement
 #endif
@@ -166,6 +167,7 @@ public struct ConfirmDialogRequest: Identifiable {
 @MainActor
 public final class AppState {
     public static let shared = AppState()
+    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "appstate")
 
     // MARK: - 核心业务数据 (100% 动态驱动，严禁假数据兜底)
     public var entries: [LifeEntry] = []
@@ -1099,7 +1101,9 @@ public final class AppState {
     public func loadEntries(forceFull: Bool = false) async {
         let snap = SyncManager.shared.currentSnapshot()
         // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
-        let cursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
+        // 自动调用 normalizeCursor 修复旧快照中可能存在的空格偏移游标。
+        let rawCursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
+        let cursor = SyncManager.normalizeCursor(rawCursor)
         do {
             // 首屏优先：第一页一到就先把内容铺到界面上，
             // 剩余页在后台继续拉取并追加，用户无需等待全量同步完成。
@@ -1133,6 +1137,22 @@ public final class AppState {
             // 而原先它落进下面的通用 catch —— 于是用户看到的是
             // 「The operation couldn't be completed. (Swift.CancellationError error 1.)」
             // 这种天书般的红色横幅。
+        } catch let APIError.serverError(_, message) where message.localizedCaseInsensitiveContains("since") || message.localizedCaseInsensitiveContains("时间格式") {
+            // 自愈机制：若服务端返回 since 时间格式错误，说明本地持久化的游标损坏或与服务端不兼容，
+            // 自动重置本地游标并静默回退到全量同步，不再弹红框打扰用户。
+            Self.logger.warning("Invalid sync cursor detected: \(message, privacy: .public). Resetting cursors and falling back to full sync.")
+            SyncManager.shared.resetSyncCursors()
+            if !forceFull {
+                await loadEntries(forceFull: true)
+                return
+            }
+        } catch where error.localizedDescription.localizedCaseInsensitiveContains("since") || error.localizedDescription.localizedCaseInsensitiveContains("时间格式") {
+            Self.logger.warning("Invalid sync cursor detected: \(error.localizedDescription, privacy: .public). Resetting cursors and falling back to full sync.")
+            SyncManager.shared.resetSyncCursors()
+            if !forceFull {
+                await loadEntries(forceFull: true)
+                return
+            }
         } catch {
             // 关键：**总是**提示。
             // 原先只在「本地一条都没有」时才提示 ——
@@ -1154,7 +1174,8 @@ public final class AppState {
     public func loadTransactionsAndAssets(forceFull: Bool = false) async {
         guard isPaired else { return }
         let snap = SyncManager.shared.currentSnapshot()
-        let cursor = (forceFull || snap.transactions.isEmpty) ? nil : snap.lastTransactionsSyncCursor
+        let rawCursor = (forceFull || snap.transactions.isEmpty) ? nil : snap.lastTransactionsSyncCursor
+        let cursor = SyncManager.normalizeCursor(rawCursor)
 
         do {
             let allTxs = try await Pagination.fetchAllTransactions(
@@ -1165,6 +1186,18 @@ public final class AppState {
             SyncManager.shared.mergeTransactions(allTxs, isDelta: cursor != nil)
         } catch APIError.notModified {
             // 304 Not Modified
+        } catch let APIError.serverError(_, message) where message.localizedCaseInsensitiveContains("since") || message.localizedCaseInsensitiveContains("时间格式") {
+            SyncManager.shared.resetSyncCursors()
+            if !forceFull {
+                await loadTransactionsAndAssets(forceFull: true)
+                return
+            }
+        } catch where error.localizedDescription.localizedCaseInsensitiveContains("since") || error.localizedDescription.localizedCaseInsensitiveContains("时间格式") {
+            SyncManager.shared.resetSyncCursors()
+            if !forceFull {
+                await loadTransactionsAndAssets(forceFull: true)
+                return
+            }
         } catch {
             // 保持本地缓存
         }

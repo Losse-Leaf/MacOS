@@ -72,6 +72,9 @@ import AppKit
                 MainThreadWatchdog.shared.noteAction("点击卡片（打开详情）")
                 state.highlightedEntry = entry
             }
+            onOpenInNewWindow = { entry in
+                state.detailWindowEntry = entry
+            }
             onOpenLightbox = { attachment in state.lightboxAttachment = attachment }
             onToast = { message in state.showTemporaryBanner(message) }
             onRetrySync = { id in state.retryFailedEntry(id: id) }
@@ -109,6 +112,8 @@ import AppKit
         /// 切换精选
         /// 打开详情
         var onOpenDetail: (LifeEntry) -> Void = { _ in }
+        /// 在新窗口打开详情
+        var onOpenInNewWindow: (LifeEntry) -> Void = { _ in }
         /// 打开灯箱
         var onOpenLightbox: (Attachment) -> Void = { _ in }
         /// 顶部提示条
@@ -400,8 +405,8 @@ import AppKit
             .overlay(
                 RoundedRectangle(cornerRadius: ArchiveRadius.md)
                     .stroke(
-                        isKeyboardFocused ? ArchivePalette.accentWarm : Color.clear,
-                        lineWidth: 1.0
+                        isKeyboardFocused ? ArchivePalette.accentWarm : (isHovering ? ArchivePalette.borderSubtle : Color.clear),
+                        lineWidth: isKeyboardFocused ? 1.5 : 0.5
                     )
             )
             .onHover { isHovering = $0 }
@@ -452,6 +457,11 @@ import AppKit
                     } label: {
                         Label("查看手稿详情", systemImage: "book.pages")
                     }
+                    Button {
+                        actions.onOpenInNewWindow(entry)
+                    } label: {
+                        Label("在新窗口打开", systemImage: "macwindow.badge.plus")
+                    }
                     // 待同步条目（负本地 id）远程编辑必 404，右键菜单同样按 id 门禁
                     if entry.id > 0 {
                         Button {
@@ -472,6 +482,14 @@ import AppKit
                         actions.onToast("已拷贝手稿正文至剪贴板")
                     } label: {
                         Label("拷贝手稿正文", systemImage: "doc.on.doc")
+                    }
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        let md = ArchiveExporter.makeMarkdown(entries: [entry])
+                        SecureClipboard.copy(md)
+                        actions.onToast("已拷贝 Markdown 格式至剪贴板")
+                    } label: {
+                        Label("拷贝 Markdown 格式", systemImage: "text.alignleft")
                     }
                     Button {
                         NSPasteboard.general.clearContents()

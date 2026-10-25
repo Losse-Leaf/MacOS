@@ -209,10 +209,8 @@ struct WishCardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                     }
 
-                    // 次级动作（修订 / 删除）改为**悬停才出现** ——
-                    // 与时间流卡片一致：一排卡片里常驻一堆图标按钮，视觉噪音很大。
-                    // 主操作「圆满心愿」保持常驻，它是被扫到的主要动作。
-                    if isHovering {
+                    // 次级动作（修订 / 删除）：常驻视图树以确保无障碍与键盘 Tab 可触达，悬停时完全显现
+                    HStack(spacing: 6) {
                         Button(action: onEdit) {
                             Image(systemName: "pencil")
                                 .font(.system(size: 11))
@@ -224,7 +222,6 @@ struct WishCardView: View {
                                     RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                                 )
-                                // 命中区下限：图标视觉保持 11pt，可点区域不小于 28pt
                                 .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         }
                         .buttonStyle(.plain)
@@ -234,7 +231,7 @@ struct WishCardView: View {
                         Button(action: onDelete) {
                             Image(systemName: ArchiveIcon.delete.systemName)
                                 .font(.system(size: 11))
-                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .foregroundStyle(ArchivePalette.accentWarm)
                                 .padding(6)
                                 .background(ArchivePalette.archivePaper)
                                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
@@ -248,6 +245,8 @@ struct WishCardView: View {
                         .help("删除心愿")
                         .accessibilityLabel("删除心愿")
                     }
+                    .opacity(isHovering ? 1.0 : 0.4)
+                    .animation(nil, value: isHovering)
                 }
             }
         }
@@ -267,6 +266,34 @@ struct WishCardView: View {
         // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
         .onHover { isHovering = $0 }
+        .contextMenu {
+            if wish.status != "fulfilled" {
+                Button(action: onResolve) {
+                    Label("圆满心愿", systemImage: "sparkles")
+                }
+            }
+            Button(action: onEdit) {
+                Label("修订心愿", systemImage: "pencil")
+            }
+            Button(role: .destructive, action: onDelete) {
+                Label("删除心愿", systemImage: "trash")
+            }
+            Divider()
+            Button {
+                NSPasteboard.general.clearContents()
+                SecureClipboard.copy(wish.title)
+            } label: {
+                Label("拷贝心愿名称", systemImage: "doc.on.doc")
+            }
+            if let note = wish.note, !note.isEmpty {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    SecureClipboard.copy(note)
+                } label: {
+                    Label("拷贝手记备注", systemImage: "text.quote")
+                }
+            }
+        }
     }
 
     private var kindIcon: String {
@@ -413,44 +440,43 @@ struct ProjectCardView: View {
                 Spacer()
 
                 HStack(spacing: 6) {
-                    // 次级动作（修订 / 删除）改为悬停才出现，
-                    // 与时间流、心愿卡保持一致
-                    if isHovering {
-                        Button(action: onEdit) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 11))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(6)
-                                .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                                )
-                                .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                        }
-                        .buttonStyle(.plain)
-                        .help("修订项目")
-                        .accessibilityLabel("修订项目")
-
-                        Button(action: onDelete) {
-                            Image(systemName: ArchiveIcon.delete.systemName)
-                                .font(.system(size: 11))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(6)
-                                .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                                )
-                                .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                        }
-                        .buttonStyle(.plain)
-                        .help("删除项目")
-                        .accessibilityLabel("删除项目")
+                    // 次级动作（修订 / 删除）：常驻视图树以确保无障碍与键盘 Tab 可触达，悬停时完全显现
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
+                    .buttonStyle(.plain)
+                    .help("修订项目")
+                    .accessibilityLabel("修订项目")
+
+                    Button(action: onDelete) {
+                        Image(systemName: ArchiveIcon.delete.systemName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除项目")
+                    .accessibilityLabel("删除项目")
                 }
+                .opacity(isHovering ? 1.0 : 0.4)
+                .animation(nil, value: isHovering)
             }
         }
         .padding(ArchiveCardMetrics.padding)
@@ -470,6 +496,36 @@ struct ProjectCardView: View {
         // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
         .onHover { isHovering = $0 }
+        .contextMenu {
+            if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label("打开源码仓库", systemImage: "arrow.up.right.square")
+                }
+            }
+            Button(action: onEdit) {
+                Label("修订造物项目", systemImage: "pencil")
+            }
+            Button(role: .destructive, action: onDelete) {
+                Label("删除造物项目", systemImage: "trash")
+            }
+            Divider()
+            Button {
+                NSPasteboard.general.clearContents()
+                SecureClipboard.copy(proj.title)
+            } label: {
+                Label("拷贝项目名称", systemImage: "doc.on.doc")
+            }
+            if !proj.description.isEmpty {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    SecureClipboard.copy(proj.description)
+                } label: {
+                    Label("拷贝项目手记", systemImage: "text.quote")
+                }
+            }
+        }
     }
 }
 

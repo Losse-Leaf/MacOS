@@ -295,7 +295,9 @@ public struct PaperModalOverlay<Content: View>: View {
 
     public var body: some View {
         ZStack {
-            Color.black.opacity(0.38)
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Color.black.opacity(0.28))
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { onDismiss() }
@@ -303,10 +305,10 @@ public struct PaperModalOverlay<Content: View>: View {
 
             content()
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.lg))
-                .shadow(color: Color.black.opacity(0.35), radius: 32, x: 0, y: 12)
+                .shadow(color: Color.black.opacity(0.28), radius: 28, x: 0, y: 10)
                 .overlay(
                     RoundedRectangle(cornerRadius: ArchiveRadius.lg)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
+                        .stroke(ArchivePalette.borderSubtle.opacity(0.8), lineWidth: 0.8)
                 )
                 .onTapGesture { /* 吸收点击，避免冒泡关闭 */ }
         }

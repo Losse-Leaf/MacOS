@@ -42,6 +42,8 @@ public struct PaperPillButton: View {
                 if let icon {
                     Image(systemName: icon)
                         .font(.system(size: isCompact ? 9.5 : 10.5, weight: isSelected ? .semibold : .medium))
+                        .imageScale(.small)
+                        .symbolRenderingMode(.hierarchical)
                 }
                 Text(title)
                     .font(ArchiveTypography.bodySans(size: isCompact ? 11 : 11.5, weight: isSelected ? .semibold : .regular))

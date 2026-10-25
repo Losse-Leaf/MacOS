@@ -60,6 +60,8 @@ extension View {
                     .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .medium))
+                    .imageScale(.medium)
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(iconColor)
                     .accessibilityHidden(true)
             }

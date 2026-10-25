@@ -390,6 +390,10 @@ public struct StreamView: View {
                         .frame(height: 32)
                         .background(ArchivePalette.archivePaper)
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                                .stroke(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.6), lineWidth: isSearchFocused ? 1.0 : 0.5)
+                        )
                         .paperElevation(1)
 
                         // 分类筛选与检索并排：

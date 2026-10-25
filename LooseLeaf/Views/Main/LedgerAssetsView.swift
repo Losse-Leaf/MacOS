@@ -891,6 +891,44 @@ public struct LedgerAssetsView: View {
                 .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
         )
         .paperHover()
+        .contextMenu {
+            if gear.status != "sold" {
+                Button {
+                    sellingGear = gear
+                } label: {
+                    Label("转售回血", systemImage: "dollarsign.circle")
+                }
+            }
+            Button(role: .destructive) {
+                appState.askConfirm(
+                    title: ArchiveSharedCopy.gearDeleteTitle,
+                    message: ArchiveSharedCopy.gearDeleteMessage,
+                    confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
+                    danger: true
+                ) {
+                    deleteGear(gear)
+                }
+            } label: {
+                Label("删除设备", systemImage: ArchiveIcon.delete.systemName)
+            }
+            Divider()
+            Button {
+                NSPasteboard.general.clearContents()
+                SecureClipboard.copy(gear.name)
+                appState.showTemporaryBanner("已拷贝设备名称至剪贴板")
+            } label: {
+                Label("拷贝设备名称", systemImage: "doc.on.doc")
+            }
+            if let spec = gear.spec, !spec.isEmpty {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    SecureClipboard.copy(spec)
+                    appState.showTemporaryBanner("已拷贝规格型号至剪贴板")
+                } label: {
+                    Label("拷贝规格型号", systemImage: "text.quote")
+                }
+            }
+        }
     }
 
     // MARK: - 6. 流水列表

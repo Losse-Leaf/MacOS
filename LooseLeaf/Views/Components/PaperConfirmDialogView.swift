@@ -28,8 +28,10 @@ public struct PaperConfirmDialogView: View {
 
     public var body: some View {
         ZStack {
-            // 背景遮罩
-            Color.black.opacity(0.42)
+            // 背景半透明磨砂遮罩 (macOS 系统级 Vibrancy Material)
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Color.black.opacity(0.32))
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {

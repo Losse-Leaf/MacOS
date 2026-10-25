@@ -1,16 +1,17 @@
 import SwiftUI
+import AppKit
 
 /// 工作台左侧导航栏 (Workbench Sidebar)
-/// 从 StreamView 拆出：刊头印记、板块导航分组与中枢状态灯。
-/// 选中板块后由外部回调统一处理，保持与主视图的状态同步。
+/// 严格遵循 macOS HIG 与 macos-native-ui 规范：
+/// 1. 采用 macOS 系统级 Vibrancy 半透明磨砂材质 (NSVisualEffectView sidebar) 融合温润纸张底色
+/// 2. SF Symbols 全面升级为层次渲染 (hierarchical) 与 medium 缩放规范
+/// 3. 精雕细琢的原生侧栏选中微胶囊、左侧朱砂指示线与指针悬停反馈
+/// 4. 完美融合交通灯安全间隙与无感知窗口拖拽区域
 
 struct WorkbenchSidebar: View {
     /// 底部状态文案：把「待同步 / 同步失败」的条数显性化，
     /// 否则用户只能靠猜为什么新内容没出现在中枢。
     private var statusLabel: String {
-        // 关键：**一次遍历**同时统计散页与账目。
-        // 原先是两个 `filter`（每次渲染 2×O(N)），而且**完全漏掉了账目** ——
-        // 于是账目同步失败时，侧栏仍显示「中枢就绪」。
         var pending = 0
         var failed = 0
         for entry in appState.entries {
@@ -34,93 +35,93 @@ struct WorkbenchSidebar: View {
     }
 
     @Bindable var appState: AppState
-        @Binding var isSystemGroupCollapsed: Bool
-        /// 选中板块的回调（由主视图统一处理状态同步）
-        var onSelect: (WorkbenchSection) -> Void
+    @Binding var isSystemGroupCollapsed: Bool
+    /// 选中板块的回调（由主视图统一处理状态同步）
+    var onSelect: (WorkbenchSection) -> Void
 
-        var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
-                // 刊头印记 (100% 动态读取后端配置与主理人档案)
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "leaf.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(ArchivePalette.accentMoss)
-                        Text(appState.siteConfig.siteName.isEmpty ? "散页 · 时光手账" : appState.siteConfig.siteName)
-                            .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                            .lineLimit(1)
-                    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // 刊头印记 (100% 动态读取后端配置与主理人档案)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    Image(systemName: "leaf.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .imageScale(.medium)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(ArchivePalette.accentMoss)
 
-                    if !appState.profile.name.isEmpty || !appState.profile.displayCity.isEmpty {
-                        Text(
-                            [appState.profile.name, appState.profile.displayCity]
-                                .filter { !$0.isEmpty }
-                                .joined(separator: " · ")
-                        )
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text(appState.siteConfig.siteName.isEmpty ? "散页 · 时光手账" : appState.siteConfig.siteName)
+                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
-                    }
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 44)
-                .overlay(
-                    WindowDragHandleView()
-                        .frame(height: 38),
-                    alignment: .top
-                )
 
-                Divider().overlay(ArchivePalette.borderSubtle)
+                if !appState.profile.name.isEmpty || !appState.profile.displayCity.isEmpty {
+                    Text(
+                        [appState.profile.name, appState.profile.displayCity]
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " · ")
+                    )
+                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 42)
+            .overlay(
+                WindowDragHandleView()
+                    .frame(height: 48),
+                alignment: .top
+            )
 
-                // 说明：原先此处有一个「⌘K 全局档案检索」按钮，与画布内的 ⌘F 搜索框
-                // 视觉上高度相似，用户难以分辨两者关系；⌘K 已提升至原生窗口工具栏。
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-                // 导航菜单项：6 大内容板块 + 5 个配置条目（扁平化后原「配置中心」tab 直接进侧栏）
-                // 12 行在 640pt 最小窗口高度下会贴边，故外层包 ScrollView 兜底
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("生活卷宗")
-                            .font(ArchiveTypography.monoScale(size: 9.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 2)
+            // 导航菜单项：6 大内容板块 + 5 个配置条目（扁平化后原「配置中心」tab 直接进侧栏）
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("生活卷宗")
+                        .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 2)
+                        .padding(.bottom, 3)
 
-                        ForEach(WorkbenchSection.contentSections) { section in
-                            WorkbenchNavRow(
-                                section: section,
-                                selected: appState.activeSection == section
-                            ) {
-                                guard appState.activeSection != section else { return }
-                                onSelect(section)
-                            }
+                    ForEach(WorkbenchSection.contentSections) { section in
+                        WorkbenchNavRow(
+                            section: section,
+                            selected: appState.activeSection == section
+                        ) {
+                            guard appState.activeSection != section else { return }
+                            onSelect(section)
                         }
+                    }
 
-                        Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
-                            .padding(.vertical, 6)
+                    Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+                        .padding(.vertical, 6)
 
-                        // 系统配置组标题（可点击折叠/展开）
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                isSystemGroupCollapsed.toggle()
-                                UserDefaults.standard.set(isSystemGroupCollapsed, forKey: "looseleaf_ui_system_group_collapsed")
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Text("系统配置")
-                                Image(systemName: isSystemGroupCollapsed ? "chevron.right" : "chevron.down")
-                                    .font(.system(size: 7, weight: .semibold))
-                            }
-                            .font(ArchiveTypography.monoScale(size: 9.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 2)
-                            .contentShape(Rectangle())
+                    // 系统配置组标题（可点击折叠/展开）
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            isSystemGroupCollapsed.toggle()
+                            UserDefaults.standard.set(isSystemGroupCollapsed, forKey: "looseleaf_ui_system_group_collapsed")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isSystemGroupCollapsed ? "展开系统配置分组" : "折叠系统配置分组")
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("系统配置")
+                            Image(systemName: isSystemGroupCollapsed ? "chevron.right" : "chevron.down")
+                                .font(.system(size: 7.5, weight: .semibold))
+                        }
+                        .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 3)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isSystemGroupCollapsed ? "展开系统配置分组" : "折叠系统配置分组")
 
-                        if !isSystemGroupCollapsed {
+                    if !isSystemGroupCollapsed {
                         ForEach(WorkbenchSection.configurationSections) { section in
                             WorkbenchNavRow(
                                 section: section,
@@ -130,115 +131,131 @@ struct WorkbenchSidebar: View {
                                 onSelect(section)
                             }
                         }
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                }
-
-                Spacer(minLength: 8)
-
-                // 底部仅保留系统状态（配置入口已全部进侧栏）
-                VStack(alignment: .leading, spacing: 8) {
-                    Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-
-                    // 中枢就绪状态与快捷记账提示
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
-                            .frame(width: 5, height: 5)
-                        Text(statusLabel)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .accessibilityLabel(statusLabel)
-
-                        // 关键：有待同步内容时，状态文字**可点**。
-                        // 早先它只是几个字 —— 用户看到「待同步 12 条」却没有任何办法
-                        // 把它们推上去，只能逐条点卡片里的「重试」。
-                        if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
-                            Button {
-                                appState.reuploadAllPending()
-                            } label: {
-                                Text("重新上传")
-                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
-                            }
-                            .buttonStyle(.plain)
-                            .help("把所有待同步 / 同步失败的内容重新上传到中枢")
-                            .accessibilityLabel("重新上传全部待同步内容")
-                        }
-
-                        Spacer()
-
-                        HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 8))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                            Text("快速记 ⇧⌘L")
-                        }
-                        .font(ArchiveTypography.monoScale(size: 9.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
                     }
                 }
                 .padding(.horizontal, 10)
-                .padding(.bottom, 12)
             }
-            .background(ArchivePalette.archivePaper.opacity(0.65))
-        }
 
-        /// 侧边导航行：整行可点（contentShape 修透明背景不参与命中测试的问题），
-        /// 悬停显背景、选中态 0.14s 局部过渡——反馈即时且动画不外溢全树。
+            Spacer(minLength: 8)
 
-        struct WorkbenchNavRow: View {
-            let section: WorkbenchSection
-            let selected: Bool
-            let action: () -> Void
+            // 底部仅保留系统状态（配置入口已全部进侧栏）
+            VStack(alignment: .leading, spacing: 8) {
+                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
 
-            @State private var isHovering: Bool = false
+                // 中枢就绪状态与快捷记账提示
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .frame(width: 5.5, height: 5.5)
 
-            var body: some View {
-                Button(action: action) {
-                    // 图标与文字的间距：早先是 spacing 10 + 18pt 宽的图标框，
-                    // 12.5pt 的小图标居中在 18pt 框里，两侧各留 3pt ——
-                    // 视觉上图标与文字之间像隔了二十来点，整列读起来松散。
-                    // 收到 7 + 16pt 之后，图标与文字才像一组。
-                    HStack(spacing: 7) {
-                        Image(systemName: section.icon)
-                            .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                            .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                            .frame(width: 16)
-                        Text(section.title)
-                            .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
-                            .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                        Spacer()
+                    Text(statusLabel)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .accessibilityLabel(statusLabel)
+
+                    if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
+                        Button {
+                            appState.reuploadAllPending()
+                        } label: {
+                            Text("重传")
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                                .underline()
+                        }
+                        .buttonStyle(.plain)
+                        .help("把所有待同步 / 同步失败的内容重新上传到中枢")
+                        .accessibilityLabel("重新上传全部待同步内容")
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(rowFill)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(selected ? ArchivePalette.borderDivider : Color.clear, lineWidth: 0.5)
-                    )
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .animation(.easeOut(duration: 0.14), value: selected)
-                .animation(.easeOut(duration: 0.1), value: isHovering)
-                .onHover { isHovering = $0 }
-                // 关键：VoiceOver 要能听出「当前在哪个板块」。
-                // 原先没有 label / value / trait，VoiceOver 只念「时间流，按钮」。
-                // 写法与 `PaperSegmentedControl` 保持一致。
-                .accessibilityLabel(section.title)
-                .accessibilityValue(selected ? "已选中" : "未选中")
-                .accessibilityAddTraits(selected ? .isSelected : AccessibilityTraits())
-            }
 
-            private var rowFill: Color {
-                if selected { return ArchivePalette.archiveSubtle }
-                return isHovering ? ArchivePalette.archiveSubtle.opacity(0.45) : .clear
+                    Spacer()
+
+                    HStack(spacing: 3) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text("⇧⌘L")
+                            .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1.5)
+                            .background(ArchivePalette.archivePaper.opacity(0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .help("呼出极速闪念与记账悬浮面板 (⇧⌘L)")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .background {
+            ZStack {
+                WindowVibrancyView(material: .sidebar, blendingMode: .behindWindow)
+                ArchivePalette.archivePaper.opacity(0.78)
             }
         }
+    }
 
+    /// 侧边导航行：符合 macOS HIG 规范，支持层级 SF Symbols、微胶囊背景与左侧朱砂指示线
+    struct WorkbenchNavRow: View {
+        let section: WorkbenchSection
+        let selected: Bool
+        let action: () -> Void
+
+        @State private var isHovering: Bool = false
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 8) {
+                    Image(systemName: section.icon)
+                        .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
+                        .imageScale(.medium)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                        .frame(width: 18)
+
+                    Text(section.title)
+                        .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
+
+                    Spacer()
+                }
+                .padding(.leading, 10)
+                .padding(.trailing, 10)
+                .padding(.vertical, 6.5)
+                .background(
+                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                        .fill(rowFill)
+                )
+                .overlay(alignment: .leading) {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(ArchivePalette.accentWarm)
+                            .frame(width: 2.5, height: 14)
+                            .padding(.leading, 2)
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                        .stroke(selected ? ArchivePalette.borderDivider.opacity(0.6) : Color.clear, lineWidth: 0.5)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .animation(.easeOut(duration: 0.14), value: selected)
+            .animation(.easeOut(duration: 0.1), value: isHovering)
+            .onHover { isHovering = $0 }
+            .accessibilityLabel(section.title)
+            .accessibilityValue(selected ? "已选中" : "未选中")
+            .accessibilityAddTraits(selected ? .isSelected : AccessibilityTraits())
+        }
+
+        private var rowFill: Color {
+            if selected { return ArchivePalette.archiveSubtle }
+            return isHovering ? ArchivePalette.archiveSubtle.opacity(0.55) : .clear
+        }
+    }
 }

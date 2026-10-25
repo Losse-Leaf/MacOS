@@ -400,6 +400,47 @@ public struct TravelAtlasView: View {
                             .accessibilityLabel("\(fp.cityName) 票根，\(fp.title ?? "行旅手记")")
                             .accessibilityHint("打开该城市的回忆抽屉")
                             .paperHover()
+                            .contextMenu {
+                                Button {
+                                    selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
+                                } label: {
+                                    Label("打开城市回忆抽屉", systemImage: "folder")
+                                }
+                                Button {
+                                    editingFootprint = fp
+                                } label: {
+                                    Label("修订足迹票根", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    appState.askConfirm(
+                                        title: "确认删除该座城市足迹票根？",
+                                        message: "删除后将移除该次漫游记录，关联游记散页不受影响。",
+                                        confirmText: "删除足迹票根",
+                                        danger: true
+                                    ) {
+                                        deleteFootprint(fp)
+                                    }
+                                } label: {
+                                    Label("删除足迹票根", systemImage: ArchiveIcon.delete.systemName)
+                                }
+                                Divider()
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    SecureClipboard.copy(fp.cityName)
+                                    appState.showTemporaryBanner("已拷贝城市名称至剪贴板")
+                                } label: {
+                                    Label("拷贝城市名称", systemImage: "doc.on.doc")
+                                }
+                                if let note = fp.note, !note.isEmpty {
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        SecureClipboard.copy(note)
+                                        appState.showTemporaryBanner("已拷贝行旅手记至剪贴板")
+                                    } label: {
+                                        Label("拷贝行旅手记", systemImage: "text.quote")
+                                    }
+                                }
+                            }
 
                             HStack(spacing: ArchiveSpacing.xs) {
                                 PaperIconButton(

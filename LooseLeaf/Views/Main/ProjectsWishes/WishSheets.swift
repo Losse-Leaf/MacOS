@@ -115,8 +115,12 @@ public struct NewWishSheet: View {
                     kind: kind,
                     note: note.isEmpty ? nil : note,
                     spec: spec.isEmpty ? nil : spec,
-                    cityCode: cityCode.isEmpty ? nil : cityCode,
-                    cityName: cityName.isEmpty ? nil : cityName,
+                    // 关键（2026-10-25 修复）：城市仅旅程心愿携带 —— 原先非 travel 也照发，
+                    // 「先选目的地再切心仪好物」会让 item 心愿挂着幽灵目的地
+                    // （后端不校验 kind 与城市的组合，伴生散页 Location 也被写上）。
+                    // 与 EntryModalWishForm.submitWish / EditWishSheet 同口径。
+                    cityCode: kind == "travel" ? (cityCode.isEmpty ? nil : cityCode) : nil,
+                    cityName: kind == "travel" ? (cityName.isEmpty ? nil : cityName) : nil,
                     budget: cents,
                     plantedAt: FormatUtils.beijingDateString(from: plantedAt)
                 )
@@ -339,28 +343,35 @@ public struct ResolveWishSheet: View {
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 联动联动伴生复选
-            VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
-                    .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-
-                if wish.kind == "item" {
-                    Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
+            // 联动伴生复选
+            //
+            // 关键（2026-10-25 修复）：「理性拔草」下流水/固资/足迹三个联动开关是**死控件** ——
+            // 提交时被 `isRelinquished ? false : …` 静默覆盖，后端 relinquished 分支也本就忽略它们。
+            // 死控件必须隐藏：用户勾了也不会发生的事，不该让他能勾。
+            // （「伴生发布时间流手稿」在 relinquished 下后端仍生效，保持可见。）
+            if resolutionType != "relinquished" {
+                VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                    Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
                         .toggleStyle(.paperCheckbox)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                }
 
-                if wish.kind == "travel" {
-                    Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
-                        .toggleStyle(.paperCheckbox)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                }
+                    if wish.kind == "item" {
+                        Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
+                            .toggleStyle(.paperCheckbox)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                    }
 
-                Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
-                    .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                    if wish.kind == "travel" {
+                        Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
+                            .toggleStyle(.paperCheckbox)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                    }
+                }
             }
+
+            Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
+                .toggleStyle(.paperCheckbox)
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
 
             if createLifeEntry {
                 TextField("圆梦感言手记", text: $entryContent)
@@ -400,6 +411,15 @@ public struct ResolveWishSheet: View {
 
     private func submitResolve() {
         let isRelinquished = (resolutionType == "relinquished")
+        // 关键（2026-10-25 修复）：「替代拿下」必须填实际购入物品名 ——
+        // 原先留空回落 nil，后端按原心愿标题兜底，落成
+        // 「心愿替代达成: X (原: X)」且 actual_title 与 title 同文（幽灵值），
+        // 正是这个字段要修的 bug 的空值回潮。
+        let cleanAlteredTitle = alteredTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if resolutionType == "altered" && cleanAlteredTitle.isEmpty {
+            errorText = "「替代拿下」请填写实际购入的物品名"
+            return
+        }
         let cents = isRelinquished ? 0 : (FormatUtils.parseYuanToCents(actualCostYuan) ?? 0)
         isSubmitting = true
         errorText = nil
@@ -409,11 +429,9 @@ public struct ResolveWishSheet: View {
                     fulfilledAt: FormatUtils.beijingISOString(),
                     actualCost: cents,
                     resolutionType: resolutionType,
-                    // 「替代拿下」传实际购入的物品名；其余场景传 nil，
+                    // 「替代拿下」传实际购入的物品名（已强制非空）；其余场景传 nil，
                     // 由后端回落到原心愿标题。
-                    actualTitle: (resolutionType == "altered" && !alteredTitle.isEmpty)
-                        ? alteredTitle
-                        : nil,
+                    actualTitle: resolutionType == "altered" ? cleanAlteredTitle : nil,
                     createTransaction: isRelinquished ? false : createTransaction,
                     createGearAsset: isRelinquished ? false : createGearAsset,
                     createLifeEntry: createLifeEntry,

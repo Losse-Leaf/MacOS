@@ -171,11 +171,19 @@ public struct QuickCaptureView: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// 形态选择胶囊（日常 / 游历 / 造物 / 心愿 / 账目）
+    /// 形态选择胶囊
+    ///
+    /// 关键（2026-10-25 修复）：速记面板只保留「日常 / 游历」两种形态。
+    /// 原先遍历 EntryType.allCases 五胶囊，但这里**没有**心愿/造物/账目的
+    /// 专属采集字段 —— 裸 type 直发后：
+    /// · type="transaction" 被后端散页类型白名单 400（离线时毒化发件箱，重试永远失败）；
+    /// · type="wish" / "project" 落成**无 wish_id / project_id 的孤儿伪条目**。
+    /// 心愿/造物/账目请走主工作台「记一笔」或对应的专用入口。
     private var entryTypeCapsules: some View {
         @Bindable var draft = appState.quickDraft
+        let quickTypes: [EntryType] = [.life, .travel]
         return HStack(spacing: ArchiveSpacing.xs) {
-            ForEach(EntryType.allCases) { kind in
+            ForEach(quickTypes) { kind in
                 PaperPillButton(
                     title: kind.label,
                     icon: kind.symbolName,
@@ -516,10 +524,13 @@ public struct QuickCaptureView: View {
 
         Task { @MainActor in
             do {
+                // 类型钳制（防御）：速记面板只支持 life / travel（见 entryTypeCapsules），
+                // 其它类型在这里没有专属采集字段，裸发必 400 或落孤儿条目。
+                let safeType: EntryType = (draft.entryType == .life || draft.entryType == .travel) ? draft.entryType : .life
                 let queuedOffline = try await appState.submitQuickCapture(
                     title: draft.titleText,
                     content: contentToSubmit,
-                    type: draft.entryType,
+                    type: safeType,
                     cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
                     cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
                     attachmentIds: draft.uploadedAttachments.map(\.id),

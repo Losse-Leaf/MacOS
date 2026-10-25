@@ -13,9 +13,7 @@ public struct CuratorDossierView: View {
     @State private var editName: String = ""
     @State private var editTitle: String = ""
     @State private var editCity: String = ""
-    @State private var editCityCode: String = ""
     @State private var editLocation: String = ""
-    @State private var editLocationCode: String = ""
     @State private var editMotto: String = ""
     @State private var editBio: String = ""
     @State private var editManifesto: String = ""
@@ -99,9 +97,7 @@ public struct CuratorDossierView: View {
                                 editName = prof.name
                                 editTitle = prof.title
                                 editCity = prof.currentCity
-                                editCityCode = CityDictionary.code(forLocation: prof.currentCity) ?? ""
                                 editLocation = prof.location
-                                editLocationCode = CityDictionary.code(forLocation: prof.location) ?? ""
                                 editMotto = prof.motto
                                 editBio = prof.bio
                                 editManifesto = prof.manifesto
@@ -510,8 +506,12 @@ public struct CuratorDossierView: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             HStack(spacing: ArchiveSpacing.s) {
+                // 关键（2026-10-25 修复）：不再维护 editCityCode/editLocationCode 死状态 ——
+                // 后端档案只存城市**名称**（UpdateProfileRequest 无 code 字段），
+                // 原先反查出的 code 采集后从不发送。选择器的 code 半边用常量绑定承接即可，
+                // 城市名才是真正落库的值。
                 PaperCityPicker(
-                    selectedCode: $editCityCode,
+                    selectedCode: .constant(""),
                     selectedName: $editCity,
                     placeholder: "点选当前城市…",
                     label: "当前城市",
@@ -519,7 +519,7 @@ public struct CuratorDossierView: View {
                 )
 
                 PaperCityPicker(
-                    selectedCode: $editLocationCode,
+                    selectedCode: .constant(""),
                     selectedName: $editLocation,
                     placeholder: "点选常居城市…",
                     label: "常居城市",
@@ -534,6 +534,15 @@ public struct CuratorDossierView: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("副标题", text: $editBio)
+                .textFieldStyle(.plain)
+                .padding(ArchiveSpacing.s)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+            // 关键（2026-10-25 修复）：manifesto 补上输入框 ——
+            // 原先档案页展示宣言、请求也恒带该字段，编辑表单里却没有它的容身之处，
+            // 「修订档案」永远改不了宣言（后端有、客户端不用）。
+            TextField("主理人宣言", text: $editManifesto)
                 .textFieldStyle(.plain)
                 .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)

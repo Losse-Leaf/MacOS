@@ -9,56 +9,50 @@ import SwiftUI
 /// 造物项目状态语义字典（全应用唯一真源）。
 /// 新建 / 修订项目与 `ProjectsView` 的状态筛选共用同一套取值，
 /// 避免「默认写入的状态」与「筛选匹配的状态」不一致导致项目在筛选下消失。
+/// 四端统一为中文四态（与后端 validProjectStatuses 白名单一致）；
+/// 存量英文/历史表述由 normalize 兼容读取（配合后端一次性数据迁移）。
 enum ProjectStatus: String, CaseIterable, Identifiable {
     /// 进行中
-    case active = "Active"
-    /// 已归档
-    case archived = "Archived"
-    /// 持续维护（兼容旧数据的表述，语义上等同于进行中）
-    case ongoing = "持续维护"
+    case inProgress = "进行中"
+    /// 已完成
+    case completed = "已完成"
+    /// 维护中
+    case maintaining = "维护中"
+    /// 已搁置
+    case shelved = "已搁置"
 
     var id: String { rawValue }
 
     /// 面向用户的中文展示名
-    var displayName: String {
-        switch self {
-        case .active: return "进行中"
-        case .archived: return "已归档"
-        case .ongoing: return "持续维护"
-        }
-    }
+    var displayName: String { rawValue }
 
-    /// 是否属于「进行中」语义（含旧数据表述 active / 持续维护 等大小写变体）
+    /// 是否属于「进行中」语义（维护中的项目仍在服役）
     var isActiveLike: Bool {
         switch self {
-        case .active, .ongoing: return true
-        case .archived: return false
+        case .inProgress, .maintaining: return true
+        case .completed, .shelved: return false
         }
     }
 
-    /// 将任意来源的状态字符串归一化为语义枚举（无法识别时按进行中处理）
+    /// 将任意来源的状态字符串归一化为语义枚举（无法识别时按进行中处理）。
+    /// 兼容历史英文表述与「持续维护 / 已归档」等旧中文表述。
     static func normalize(_ raw: String?) -> ProjectStatus {
-        guard let raw, !raw.isEmpty else { return .active }
+        guard let raw, !raw.isEmpty else { return .inProgress }
         if let matched = ProjectStatus(rawValue: raw) {
             return matched
         }
-        // 兼容后端可能返回的小写形式（如 active / archived）
-        let lowered = raw.lowercased()
-        if lowered == ProjectStatus.archived.rawValue.lowercased() { return .archived }
-        return .active
+        switch raw.lowercased() {
+        case "active", "wip": return .inProgress
+        case "maintained", "持续维护": return .maintaining
+        case "archived", "已归档": return .shelved
+        default: return .inProgress
+        }
     }
 
     /// 判断给定状态是否命中指定筛选值（`all` 表示不限）
     static func matches(_ raw: String?, selected: String) -> Bool {
         if selected == "all" { return true }
-        let normalized = normalize(raw)
-        if selected == ProjectStatus.active.rawValue {
-            return normalized.isActiveLike
-        }
-        if selected == ProjectStatus.archived.rawValue {
-            return normalized == .archived
-        }
-        return false
+        return normalize(raw).rawValue == selected
     }
 }
 

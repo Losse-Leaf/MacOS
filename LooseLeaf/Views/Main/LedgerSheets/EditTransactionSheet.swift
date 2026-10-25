@@ -36,7 +36,6 @@ public struct EditTransactionSheet: View {
     @State private var installmentTouched: Bool = false
     @State private var installmentChannelCode: String
     @State private var installmentMonths: Int
-    @State private var installmentRepaymentDay: Int
 
     public init(appState: AppState, transaction: Transaction, onDismiss: @escaping () -> Void) {
         self.appState = appState
@@ -56,20 +55,28 @@ public struct EditTransactionSheet: View {
         _occurredDate = State(initialValue: FormatUtils.parseFlexDate(transaction.occurredAt) ?? Date())
         // 分期：原账目是分期就默认勾上（用户不勾 = 明确取消）
         _wantsInstallment = State(initialValue: transaction.isInstallment == true)
-        _installmentChannelCode = State(initialValue: transaction.installmentChannelCode ?? "huabei")
+        // 渠道无硬编码兜底：空值由视图归一到用户真实渠道列表的首项
+        _installmentChannelCode = State(initialValue: transaction.installmentChannelCode ?? "")
         _installmentMonths = State(initialValue: transaction.installmentMonths ?? 12)
-        _installmentRepaymentDay = State(initialValue: transaction.repaymentDay ?? 10)
     }
 
-    /// 可选信贷渠道（用户没配则回落到内置的两家）
+    /// 可选信贷渠道（不再伪造内置兜底 —— 渠道为空时禁用分期并提示先登记，
+    /// 避免「界面显示占位符、提交却发出幽灵渠道」）
     private var availableCreditChannels: [CreditChannel] {
-        if !appState.creditChannels.isEmpty {
-            return appState.creditChannels
+        appState.creditChannels
+    }
+
+    /// 当前选定渠道（还款日**单源**：账单还款日一律由渠道派生，绝不自由编辑）
+    private var selectedCreditChannel: CreditChannel? {
+        availableCreditChannels.first { $0.code == installmentChannelCode }
+    }
+
+    /// 渠道归一：当前选择不在渠道列表里（含空值）时回落到列表首项
+    private func normalizeInstallmentChannel() {
+        guard let first = availableCreditChannels.first else { return }
+        if !availableCreditChannels.contains(where: { $0.code == installmentChannelCode }) {
+            installmentChannelCode = first.code
         }
-        return [
-            CreditChannel(id: 1, code: "huabei", name: "花呗", repaymentDay: 10, isBuiltin: true),
-            CreditChannel(id: 2, code: "baitiao", name: "白条", repaymentDay: 15, isBuiltin: true)
-        ]
     }
 
     /// 本次保存会**显式取消**分期
@@ -158,20 +165,40 @@ public struct EditTransactionSheet: View {
                 }
             }
 
-            // ── 分期开关（仅支出可分期）──────────────────────────────
+            // ── 分期开关（仅支出可分期；渠道未登记时禁用并提示）──────────────
             if type == "expense" {
                 Toggle("分期付款", isOn: $wantsInstallment)
                     .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 11.5))
-                    .onChange(of: wantsInstallment) { _, _ in
+                    .disabled(availableCreditChannels.isEmpty)
+                    .help(availableCreditChannels.isEmpty ? "请先在信贷渠道管理中登记渠道" : "")
+                    .onChange(of: wantsInstallment) { _, isOn in
                         // 记录「用户显式动过」—— 类型切换不得等同于取消分期
                         installmentTouched = true
+                        // 勾选分期时把渠道归一到列表首项（渠道无硬编码默认值）
+                        if isOn {
+                            normalizeInstallmentChannel()
+                        }
                     }
+                    .onChange(of: appState.creditChannels) { _, _ in
+                        // 渠道列表就绪/刷新后同样归一
+                        if wantsInstallment {
+                            normalizeInstallmentChannel()
+                        }
+                    }
+
+                if availableCreditChannels.isEmpty {
+                    Text("信贷分期需要先在「资产大盘 → 渠道管理」中登记渠道与每月还款日。")
+                        .font(ArchiveTypography.bodySans(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
             }
 
             if wantsInstallment && type == "expense" {
-                // 与「录入设备」弹窗保持同一形态：单行三个下拉，
-                // 不额外占用弹窗高度（弹窗没有滚动容器，��高会被裁掉）。
+                // 与「录入设备」弹窗保持同一形态：渠道 + 期数两个下拉，
+                // 还款日**不再单独采集** —— 单源化为「所选渠道的还款日」
+                //（渠道 label 即展示「每月X日」，切换渠道随之更新），
+                // 杜绝「渠道 15 日、账单却记 10 日」的幽灵分叉。
                 HStack(spacing: ArchiveSpacing.s) {
                     PaperSelect(
                         selection: $installmentChannelCode,
@@ -188,12 +215,12 @@ public struct EditTransactionSheet: View {
                         },
                         label: "期数："
                     )
+                }
 
-                    PaperSelect(
-                        selection: $installmentRepaymentDay,
-                        options: (1...31).map { PaperSelectOption(value: $0, label: "每月 \($0) 日") },
-                        label: "还款日："
-                    )
+                if let channel = selectedCreditChannel {
+                    Text("还款日跟随渠道：每月 \(channel.repaymentDay) 日")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
                 if let cents = FormatUtils.parseYuanToCents(amountYuan), cents > 0, installmentMonths > 0 {
@@ -252,29 +279,36 @@ public struct EditTransactionSheet: View {
 
     private func saveChanges() {
         guard let cents = FormatUtils.parseYuanToCents(amountYuan), cents > 0 else { return }
+        // ── 分期三态（与后端契约严格对齐）────────────────────
+        // 关键：单发 `is_installment: false` **不足以**表达「取消分期」。
+        // 后端的新契约是「不带 clear_installment ⇒ 保持原值」，
+        // 所以「取消分期」必须同时带上 false 与 clear_installment=true，
+        // 否则用户点了取消、服务端纹丝不动（Android / Web 上踩过的同一个坑）。
+        let intent = InstallmentEditing.intent(
+            wantsInstallment: wantsInstallment,
+            touched: installmentTouched,
+            isExpense: type == "expense",
+            transaction: transaction
+        )
+        // 关键：还款日**单源化** —— 一律由所选渠道派生（2026-10-25 修复），
+        // 界面已无独立还款日输入。新开分期必须有渠道；untouched 保持原值不受影响。
+        if intent == .apply && selectedCreditChannel == nil {
+            errorText = "请先在信贷渠道管理中登记并选择分期渠道"
+            return
+        }
+        let installmentFields = InstallmentEditing.fields(
+            for: transaction,
+            newAmountCents: cents,
+            intent: intent,
+            channelCode: installmentChannelCode,
+            months: installmentMonths,
+            // 渠道还款日派生：切渠道 ⇒ 还款日随之更新，不再自由分叉
+            repaymentDay: selectedCreditChannel?.repaymentDay
+        )
         isSubmitting = true
         errorText = nil
         Task { @MainActor in
             do {
-                // ── 分期三态（与后端契约严格对齐）────────────────────
-                // 关键：单发 `is_installment: false` **不足以**表达「取消分期」。
-                // 后端的新契约是「不带 clear_installment ⇒ 保持原值」，
-                // 所以「取消分期」必须同时带上 false 与 clear_installment=true，
-                // 否则用户点了取消、服务端纹丝不动（Android / Web 上踩过的同一个坑）。
-                let intent = InstallmentEditing.intent(
-                    wantsInstallment: wantsInstallment,
-                    touched: installmentTouched,
-                    isExpense: type == "expense",
-                    transaction: transaction
-                )
-                let installmentFields = InstallmentEditing.fields(
-                    for: transaction,
-                    newAmountCents: cents,
-                    intent: intent,
-                    channelCode: installmentChannelCode,
-                    months: installmentMonths,
-                    repaymentDay: installmentRepaymentDay
-                )
                 let req = CreateTransactionRequest(
                     amount: cents,
                     type: type,

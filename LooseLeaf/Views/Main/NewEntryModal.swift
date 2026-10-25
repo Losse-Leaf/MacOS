@@ -135,6 +135,21 @@ public struct NewEntryModal: View {
         .onAppear {
             setupInitialState()
         }
+        // 关键（2026-10-25 修复）：草稿容器五形态共享，切走形态时必须清掉
+        // 不归属新形态的关联 id —— 原先游历选的「关联足迹」会静默跟随日常提交，
+        // 账目选的「圆满心愿」也常驻草稿（开关联动泄漏）。
+        .onChange(of: selectedKind) { _, newKind in
+            switch newKind {
+            case .travel, .transaction:
+                // 游历与账目表单都有足迹选择器，保留用户选择
+                break
+            case .life, .project, .wish:
+                draft.selectedFootprintId = nil
+            }
+            if newKind != .transaction {
+                draft.selectedWishId = nil
+            }
+        }
         .onDisappear {
             // 点击遮罩 / ESC / 切窗关闭都要保住草稿；成功提交后由 clearDraft 收尾
             if !didSubmitSuccessfully {
@@ -399,7 +414,8 @@ public struct NewEntryModal: View {
             location: nil,
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
-            footprintId: draft.selectedFootprintId,
+            // 日常表单没有足迹选择器：不读草稿里的关联 id（防跨形态泄漏）
+            footprintId: nil,
             attachmentIds: media.uploadedAttachments.map(\.id),
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
         )
@@ -485,26 +501,41 @@ public struct NewEntryModal: View {
             throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "请输入有效金额"])
         }
         let isExp = draft.txType == "expense"
-        let installmentPay: Int64? = (isExp && draft.isInstallment && draft.installmentMonths > 0) ? (cents / Int64(draft.installmentMonths)) : nil
+        let wantsInstallment = isExp && draft.isInstallment
+        // 关键：还款日**单源化** —— 有渠道时账单还款日 = 渠道还款日，
+        // 客户端一律派生、绝不自采（原先发幽灵常量 10，把渠道定义的还款日整个覆盖掉）。
+        let selectedChannel = appState.creditChannels.first { $0.code == draft.installmentChannel }
+        if wantsInstallment {
+            guard let selectedChannel else {
+                throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "请先在信贷渠道管理中登记并选择分期渠道"])
+            }
+            guard selectedChannel.repaymentDay >= 1 && selectedChannel.repaymentDay <= 31 else {
+                throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "分期渠道还款日无效（须在 1~31 日之间）"])
+            }
+        }
+        let installmentPay: Int64? = (wantsInstallment && draft.installmentMonths > 0) ? (cents / Int64(draft.installmentMonths)) : nil
+        // 标题与备注不再同文双写：标题取正文首行（与日常形态同一套派生口径），
+        // 空正文回落类目名；备注存全文。
+        let derivedTxTitle = FormatUtils.derivedTitle(from: draft.content)
 
         let req = CreateTransactionRequest(
             amount: cents,
             type: draft.txType,
             category: draft.txCategory,
-            title: draft.content.isEmpty ? draft.txCategory : draft.content,
+            title: derivedTxTitle.isEmpty ? draft.txCategory : derivedTxTitle,
             note: draft.content.isEmpty ? nil : draft.content,
             paymentMethod: draft.txPaymentMethod,
             wishId: draft.selectedWishId,
             footprintId: draft.selectedFootprintId,
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
-            isInstallment: isExp && draft.isInstallment,
-            installmentChannelCode: (isExp && draft.isInstallment) ? draft.installmentChannel : nil,
-            installmentTotalAmount: (isExp && draft.isInstallment) ? cents : nil,
-            installmentMonths: (isExp && draft.isInstallment) ? draft.installmentMonths : nil,
+            isInstallment: wantsInstallment,
+            installmentChannelCode: wantsInstallment ? draft.installmentChannel : nil,
+            installmentTotalAmount: wantsInstallment ? cents : nil,
+            installmentMonths: wantsInstallment ? draft.installmentMonths : nil,
             installmentMonthlyPay: installmentPay,
-            installmentRemainMonths: (isExp && draft.isInstallment) ? draft.installmentMonths : nil,
-            repaymentDay: (isExp && draft.isInstallment) ? draft.customRepaymentDay : nil,
+            installmentRemainMonths: wantsInstallment ? draft.installmentMonths : nil,
+            repaymentDay: wantsInstallment ? selectedChannel?.repaymentDay : nil,
             linkGearAsset: isExp && draft.syncToGear,
             gearCategory: (isExp && draft.syncToGear) ? draft.gearCategory : nil,
             gearSpec: (isExp && draft.syncToGear) ? (draft.gearSpec.isEmpty ? nil : draft.gearSpec) : nil

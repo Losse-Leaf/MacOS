@@ -346,13 +346,19 @@ public enum InstallmentEditing {
             total = transaction.installmentTotalAmount ?? newAmountCents
         }
         let monthly: Int64? = effectiveMonths > 0 ? total / Int64(effectiveMonths) : nil
+        // 关键（2026-10-25 修复）：原账目**不是**分期（remainMonths 为 nil）时，
+        // 必须显式发「满期数」而不是省略 —— 后端 UpdateTransaction 的
+        // `InstallmentRemainMonths` 是普通 int，省略 = 0，而 `0 >= 0 && 0 <= autoRemain`
+        // 恒命中 ⇒ 「支出改成分期」后剩余期数直接落 0，资产大盘按已还清计，
+        // **负债当场清零**。与 Web 端同口径：新开分期发满期数。
+        let remain = transaction.installmentRemainMonths ?? effectiveMonths
         return InstallmentEditFields(
             isInstallment: true,
             clearInstallment: false,
             totalAmount: total,
             monthlyPay: monthly,
             months: effectiveMonths,
-            remainMonths: transaction.installmentRemainMonths,
+            remainMonths: remain,
             repaymentDay: repaymentDay ?? transaction.repaymentDay,
             channelCode: channelCode ?? transaction.installmentChannelCode
         )

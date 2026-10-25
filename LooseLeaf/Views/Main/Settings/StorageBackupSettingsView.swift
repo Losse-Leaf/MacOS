@@ -314,6 +314,12 @@ struct StorageBackupSettingsView: View {
                     HStack(spacing: ArchiveSpacing.xxs) {
                         Button("Cloudflare R2") {
                             storageProviderType = "r2"
+                            // 关键（2026-10-25 修复）：切换模式时清空**另一模式**的字段 ——
+                            // 原先两种模式共用一套 @State，S3 模式填过的 endpoint 残留后，
+                            // 切回 R2 保存会「R2 Account ID + S3 endpoint」混发，
+                            // 而后端以非空 endpoint 为准（normalizeR2AccountAndEndpoint），
+                            // 实际仍按 S3 挂载，界面却停在 R2。
+                            storageEndpoint = ""
                         }
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: storageProviderType == "r2" ? .semibold : .regular))
                         .padding(.horizontal, ArchiveSpacing.s)
@@ -325,6 +331,8 @@ struct StorageBackupSettingsView: View {
 
                         Button("S3 兼容协议") {
                             storageProviderType = "s3"
+                            // 同上：切到 S3 时清掉 R2 的 Account ID，防另一模式字段混发
+                            storageAccountId = ""
                         }
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: storageProviderType == "s3" ? .semibold : .regular))
                         .padding(.horizontal, ArchiveSpacing.s)

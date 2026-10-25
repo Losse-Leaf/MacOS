@@ -31,10 +31,10 @@ struct EntryModalProjectForm: View {
                     let catOptions = appState.projectCategories.map { PaperSelectOption(value: $0, label: $0) }
                     PaperSelect(selection: $draft.newProjectCategory, options: catOptions, label: "项目类别")
 
-                    let statusOptions = [
-                        PaperSelectOption(value: "Active", label: "进行中 (Active)"),
-                        PaperSelectOption(value: "Archived", label: "已完结 (Archived)")
-                    ]
+                    // 四端统一中文四态(与 ProjectStatus 语义字典 / 后端白名单一致)
+                    let statusOptions = ProjectStatus.allCases.map {
+                        PaperSelectOption(value: $0.rawValue, label: $0.displayName)
+                    }
                     PaperSelect(selection: $draft.newProjectStatus, options: statusOptions, label: "当前状态")
                 }
 

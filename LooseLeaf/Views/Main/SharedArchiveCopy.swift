@@ -73,7 +73,7 @@ enum ArchivePreviewFixtures {
                 story: nil,
                 category: "开源项目",
                 githubUrl: "https://github.com/example/looseleaf",
-                status: ProjectStatus.active.rawValue,
+                status: ProjectStatus.inProgress.rawValue,
                 order: 1,
                 createdAt: nil,
                 updatedAt: nil
@@ -86,7 +86,7 @@ enum ArchivePreviewFixtures {
                 story: nil,
                 category: "设计作品",
                 githubUrl: nil,
-                status: ProjectStatus.ongoing.rawValue,
+                status: ProjectStatus.maintaining.rawValue,
                 order: 2,
                 createdAt: nil,
                 updatedAt: nil
@@ -99,7 +99,7 @@ enum ArchivePreviewFixtures {
                 story: nil,
                 category: "写作出版",
                 githubUrl: nil,
-                status: ProjectStatus.archived.rawValue,
+                status: ProjectStatus.shelved.rawValue,
                 order: 3,
                 createdAt: nil,
                 updatedAt: nil

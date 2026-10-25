@@ -20,7 +20,7 @@ public struct NewProjectSheet: View {
     @State private var story: String = ""
     @State private var category: String = "开源造物"
     // 默认状态与 ProjectsView 的状态筛选共用同一套语义常量（进行中 = "Active"）
-    @State private var status: String = ProjectStatus.active.rawValue
+    @State private var status: String = ProjectStatus.inProgress.rawValue
     @State private var githubUrl: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
@@ -50,12 +50,9 @@ public struct NewProjectSheet: View {
                     options: appState.projectCategories.map { PaperSelectOption(value: $0, label: $0) },
                     label: "项目类型："
                 )
-
-                TextField("状态", text: $status)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                // 关键（2026-10-25 修复）：状态只走下方快选胶囊，**删除手填框** ——
+                // 原先自由文本与快选胶囊同写一个字段，手填任意值后端无白名单照单全收，
+                // 展示层归一不到枚举的值会被静默改写显示（跨端分叉）。
             }
 
             // 状态快选：与 ProjectsView 的筛选胶囊共用同一套语义常量
@@ -183,7 +180,9 @@ public struct EditProjectSheet: View {
         _description = State(initialValue: project.description)
         _story = State(initialValue: project.story ?? "")
         _category = State(initialValue: project.category ?? "开源造物")
-        _status = State(initialValue: project.status ?? ProjectStatus.active.rawValue)
+        // 存量英文/历史状态(Active 等)必须归一化为中文四态再进表单，
+        // 否则未触碰状态直接保存会被后端白名单 400
+        _status = State(initialValue: ProjectStatus.normalize(project.status).rawValue)
         _githubUrl = State(initialValue: project.githubUrl ?? "")
     }
 
@@ -215,12 +214,8 @@ public struct EditProjectSheet: View {
                     ).map { PaperSelectOption(value: $0, label: $0) },
                     label: "项目类型："
                 )
-
-                TextField("状态", text: $status)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                // 关键（2026-10-25 修复）：状态只走下方快选胶囊，**删除手填框** ——
+                // 同 NewProjectSheet：自由文本与快选同写字段，任意值会被展示层静默归一。
             }
 
             // 状态快选：与 ProjectsView 的筛选胶囊共用同一套语义常量
@@ -301,7 +296,10 @@ public struct EditProjectSheet: View {
             do {
                 let req = CreateProjectRequest(
                     title: cleanTitle,
-                    subtitle: subtitle.isEmpty ? nil : subtitle,
+                    // 关键（2026-10-25 修复）：subtitle / github_url 与 story 同口径**恒发** ——
+                    // 原先 `isEmpty ? nil : …` 在删空时发 nil，后端更新是指针语义（省略=保持原值），
+                    // 于是副标题与仓库链接从桌面端**永远清不掉**（保存成功提示但旧值复活）。
+                    subtitle: subtitle,
                     description: description,
                     // 关键：修订时把故事**原样带回**，且**空串也要发**。
                     //
@@ -314,7 +312,7 @@ public struct EditProjectSheet: View {
                     story: story,
                     category: category.isEmpty ? nil : category,
                     status: status.isEmpty ? nil : status,
-                    githubUrl: githubUrl.isEmpty ? nil : githubUrl,
+                    githubUrl: githubUrl,
                     // 展示顺序同样带回（后端省略即保持原值，这里显式带上以免被改序）
                     order: project.order
                 )

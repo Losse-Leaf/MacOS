@@ -187,15 +187,24 @@ struct CategoriesSettingsView: View {
     }
 
     private func deleteCategoryAction(_ cat: CategoryOption) {
-        Task { @MainActor in
-            do {
-                try await APIClient.shared.deleteCategoryOption(id: cat.id)
-                await appState.loadConfigAndProfile()
-                // 同上：删掉分类后也要刷新 AppState 的分类数组
-                await appState.loadCategories()
-                allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
-            } catch {
-                authError = "删除分类失败: \(error.localizedDescription)"
+        // 关键（2026-10-25 修复）：删除词条接二次确认 —— 与删渠道/删设备/删快照同款守护，
+        // 原先一点即删，正被账目/器物引用的词条误触即失。
+        appState.askConfirm(
+            title: "确认删除分类「\(cat.name)」？",
+            message: "删除后，该类目将从字典移除；已使用该类目的既有记录不受影响，但新记录将无法再选择它。",
+            confirmText: "删除分类",
+            danger: true
+        ) {
+            Task { @MainActor in
+                do {
+                    try await APIClient.shared.deleteCategoryOption(id: cat.id)
+                    await appState.loadConfigAndProfile()
+                    // 同上：删掉分类后也要刷新 AppState 的分类数组
+                    await appState.loadCategories()
+                    allCategoriesList = (try? await APIClient.shared.fetchCategories()) ?? []
+                } catch {
+                    authError = "删除分类失败: \(error.localizedDescription)"
+                }
             }
         }
     }

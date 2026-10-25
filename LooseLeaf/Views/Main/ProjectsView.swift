@@ -166,11 +166,10 @@ public struct ProjectsView: View {
                     selectedStatus = "all"
                 }
                 // 状态取值与 ProjectStatus 语义字典保持一致，新建的项目方可被正确筛出
-                PaperPillButton(title: "进行中 (\(ProjectStatus.active.rawValue))", isSelected: selectedStatus == ProjectStatus.active.rawValue) {
-                    selectedStatus = ProjectStatus.active.rawValue
-                }
-                PaperPillButton(title: "已归档 (\(ProjectStatus.archived.rawValue))", isSelected: selectedStatus == ProjectStatus.archived.rawValue) {
-                    selectedStatus = ProjectStatus.archived.rawValue
+                ForEach(ProjectStatus.allCases) { st in
+                    PaperPillButton(title: st.displayName, isSelected: selectedStatus == st.rawValue) {
+                        selectedStatus = st.rawValue
+                    }
                 }
             }
         }

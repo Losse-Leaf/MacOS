@@ -140,9 +140,14 @@ struct HubDevicesSettingsView: View {
                     }
 
                     Button("解除配对") {
+                        // 与 Android 端解绑确认同口径：有未同步记录时明确警告将被丢弃
+                        let pending = appState.outboxItems.count
+                        let warning = pending > 0
+                            ? "注意：本机还有 \(pending) 条待同步记录（含离线日记/账目/相纸），解绑将连同删除且无法找回。建议先联网同步完成后再解绑。"
+                            : ""
                         appState.askConfirm(
                             title: "确认解除本机配对？",
-                            message: "解除配对将删除本机以 0600 权限保存的凭据档案 (credentials.json)，需重新扫码配对才能接入中枢。",
+                            message: "解除配对将删除本机以 0600 权限保存的凭据档案 (credentials.json)，需重新扫码配对才能接入中枢。\(warning)",
                             confirmText: "解除配对并退出",
                             danger: true
                         ) {

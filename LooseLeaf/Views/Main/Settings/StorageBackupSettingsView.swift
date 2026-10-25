@@ -42,7 +42,7 @@ struct StorageBackupSettingsView: View {
             // 次级选项卡切换胶囊 (仅保留全量 ZIP 快照与 R2/S3 对象存储)
             HStack(spacing: ArchiveSpacing.s) {
                 PaperPillButton(
-                    title: "全量快照与灾备 (\(serverBackups.count)/7)",
+                    title: "全量快照与灾备 (\(serverBackups.count)/12)",
                     isSelected: backupSubTab == "backup"
                 ) {
                     backupSubTab = "backup"
@@ -84,7 +84,7 @@ struct StorageBackupSettingsView: View {
                         Text("中枢系统级全量热备")
                             .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("\(serverBackups.count)/7 份")
+                        Text("\(serverBackups.count)/12 份")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -139,7 +139,7 @@ struct StorageBackupSettingsView: View {
             }
 
             // 极简备份策略说明
-            Text("每日自动热备整库，保留最新 7 份快照，支持 Cloudflare R2 与本地存储双重冗余，可在任一时间节点一键回滚整库。")
+            Text("每 6 小时自动热备整库，保留最新 12 份快照，支持 Cloudflare R2 与本地存储双重冗余，可在任一时间节点一键回滚整库。")
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 .foregroundStyle(ArchivePalette.inkSecondary)
                 .padding(ArchiveSpacing.s)
@@ -151,7 +151,7 @@ struct StorageBackupSettingsView: View {
             settingsFeedbackBanner(feedback: backupActionFeedback, error: backupActionError)
 
             // 历史快照清单
-            Text("历史快照归档清单 (\(serverBackups.count)/7)")
+            Text("历史快照归档清单 (\(serverBackups.count)/12)")
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 

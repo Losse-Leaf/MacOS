@@ -61,6 +61,46 @@ public final class SyncManager {
         self.snapshot = LocalArchiveSnapshot()
         startNetworkMonitor()
         hydrateFromDiskInBackground()
+        // 换中枢：旧中枢的发件箱与 pending 条目立即作废（跨中枢数据外发防线）
+        NotificationCenter.default.addObserver(
+            forName: .looseLeafHubDidChange,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                SyncManager.shared.discardOutboxAndPending()
+            }
+        }
+    }
+
+    /// 换中枢 / 解除配对时丢弃一切「属于旧中枢」的待同步状态。
+    ///
+    /// 发件箱与 pending 条目绝不能在重新配对后被 flushOutbox 发往新中枢
+    /// （跨中枢数据外发），也不能留在本机冒充可同步数据；已同步数据由
+    /// 随后的全量拉取按新中枢重建。
+    public func discardOutboxAndPending() {
+        var latest = snapshot
+        let pendingIDs = Set(latest.outbox.map { $0.localTempId })
+        let removedTx = latest.transactions.filter { pendingIDs.contains($0.id) || $0.id < 0 }
+        latest.outbox.removeAll()
+        latest.entries.removeAll { pendingIDs.contains($0.id) || $0.id < 0 }
+        latest.transactions.removeAll { pendingIDs.contains($0.id) || $0.id < 0 }
+        // 与补删成功的口径一致：被丢弃的 pending 账目若落在当前汇总月，回滚乐观汇总，
+        // 否则已离线记录的金额会一直虚挂在汇总里直到下一次服务端刷新。
+        for tx in removedTx where Self.isInSummaryMonth(tx.occurredAt, summary: latest.transactionSummary) {
+            Self.applySummaryDelta(
+                &latest.transactionSummary,
+                category: tx.category,
+                type: tx.type,
+                amount: -tx.amount
+            )
+        }
+        // 同步游标同属旧中枢：不置空的话，若配对后的全量拉取失败，后续增量拉取
+        // 会带着旧游标对新中枢做 since 查询，早于游标的记录一直拉不到。
+        // 置空后 cursor==nil 令 loadEntries 自动退化为全量，与「按新中枢重建」一致。
+        latest.lastEntriesSyncCursor = nil
+        latest.lastTransactionsSyncCursor = nil
+        saveSnapshot(latest)
     }
 
     // MARK: - 本地临时 ID 生成
@@ -543,6 +583,19 @@ public final class SyncManager {
     public func endBatch() {
         isBatching = false
         guard let snapshot = pendingBatchSnapshot else { return }
+        pendingBatchSnapshot = nil
+        onSnapshotUpdated?(snapshot)
+    }
+
+    /// 批量期间把**当前已累积**的快照立即投递一次（不结束批量）。
+    ///
+    /// 用途：refreshAll 的批量模式会把 loadEntries 首屏的 saveSnapshot 吞进
+    /// pendingBatchSnapshot，「第一页一到就先铺界面」的首屏优化在最主路径上失效
+    /// ——首屏要等最慢的 loader 完成才上屏。首屏合并后调用本方法立刻投递，
+    /// 批量继续聚合其余 loader 的更新，endBatch 照常收尾。
+    /// applySnapshot 内部有相等性检查，重复投递不会引发多余重绘。
+    public func flushBatchSnapshotNow() {
+        guard isBatching, let snapshot = pendingBatchSnapshot else { return }
         pendingBatchSnapshot = nil
         onSnapshotUpdated?(snapshot)
     }
@@ -1222,6 +1275,18 @@ public final class SyncManager {
                     if let targetId = item.targetServerId {
                         try await APIClient.shared.deleteTransaction(id: targetId)
                         var latest = self.snapshot
+                        // 补删成功的账目若落在汇总月，立即回滚乐观汇总——
+                        // 该自动同步路径不触发界面刷新，不回滚会让月度支出
+                        // 虚高挂到下一次手动刷新（与 removeOptimisticTransaction 口径一致）。
+                        if let removed = latest.transactions.first(where: { $0.id == targetId }),
+                           Self.isInSummaryMonth(removed.occurredAt, summary: latest.transactionSummary) {
+                            Self.applySummaryDelta(
+                                &latest.transactionSummary,
+                                category: removed.category,
+                                type: removed.type,
+                                amount: -removed.amount
+                            )
+                        }
                         latest.transactions.removeAll { $0.id == targetId }
                         latest.outbox.removeAll { $0.id == item.id }
                         self.saveSnapshot(latest)

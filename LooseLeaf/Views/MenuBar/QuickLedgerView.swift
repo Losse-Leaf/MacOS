@@ -388,10 +388,10 @@ public struct QuickLedgerView: View {
         localError = nil
         localSuccess = nil
 
-        var cityCodeToSubmit: String? = selectedCityCode.isEmpty ? nil : selectedCityCode
-        if cityCodeToSubmit == nil && !smartInput.isEmpty {
-            cityCodeToSubmit = CityDictionary.code(forLocation: smartInput)
-        }
+        // 属地只来自 PaperCityPicker 的显式选择：自由文本反查会静默挂错城市
+        // （如「中山装衬衣」命中中山市、「重庆小面」命中重庆），且客户端反查后
+        // 以显式 city_code 发送恰好绕过后端「仅认显式码」的收紧，服务端无从拦截。
+        let cityCodeToSubmit: String? = selectedCityCode.isEmpty ? nil : selectedCityCode
 
         Task { @MainActor in
             do {

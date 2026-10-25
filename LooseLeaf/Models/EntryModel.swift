@@ -343,11 +343,10 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     /// 如果该条目是由 Transaction 合成的伴生条目，解析其关联的真实账目 ID
     public var associatedTransactionId: Int64? {
         guard type == "transaction" else { return nil }
-        if id <= -1_000_000 {
-            return Int64(abs(id) - 1_000_000)
-        }
-        return id > 0 ? Int64(id) : nil
-    }
+        // 与 TransactionModel.toLifeEntry 的可逆编码互逆：txId - 1_000_000 ⇄ +1_000_000。
+        // 合成条目 id 恒为负（正负账目 id 都会减 1_000_000），待同步账目原样还原为负 id。
+        guard id <= -1 else { return nil }
+        return Int64(id + 1_000_000)}
 }
 
 /// 分页查询生活档案列表响应结构

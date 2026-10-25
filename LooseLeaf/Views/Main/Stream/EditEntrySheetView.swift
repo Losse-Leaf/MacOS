@@ -176,10 +176,13 @@ public struct EditEntrySheetView: View {
         // 原先 code 回落 entry.cityCode 且城市字段发 nil（省略）——
         // 后端按「保持原值」处理，用户清了城市保存后原样还在，
         // 等于「清空」这条操作静默失效。
+        //
+        // 城市只认 PaperCityPicker 显式选择的 editCityCode：自由文本反查
+        // （location 含城市名即静默挂码）会绕过后端「仅认显式 city_code」
+        // 的收紧，且与散页地点是两回事（旧散页的 location 是具体地点，
+        // 反查出一个城市码纯属误挂）。
         let cityCleared = cleanCity.isEmpty && editCityCode.isEmpty
-        let code: String? = cityCleared
-            ? nil
-            : (editCityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? entry.cityCode) : editCityCode)
+        let code: String? = editCityCode.isEmpty ? nil : editCityCode
         let req = UpdateEntryRequest(
             type: entry.type,
             title: cleanTitle,

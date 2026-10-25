@@ -1041,32 +1041,34 @@ public struct LedgerAssetsView: View {
                 .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
 
             HStack(spacing: ArchiveSpacing.s) {
-                PaperIconButton(
-                    systemName: "pencil",
-                    label: "修订此笔账目",
-                    help: "修订此笔账目",
-                    size: 11.5,
-                    tint: ArchivePalette.inkMuted
-                ) {
-                    editingTransaction = tx
-                }
-
+                // 待同步账目（负本地 id）尚无服务端实体，直发 PUT 必然 404，
+                // 远程修订入口对其隐藏；删除不受限（id<0 走本地乐观移除链路）。
                 if tx.id > 0 {
                     PaperIconButton(
-                        systemName: ArchiveIcon.delete.systemName,
-                        label: "删除该笔账目",
-                        help: "删除该笔账目",
+                        systemName: "pencil",
+                        label: "修订此笔账目",
+                        help: "修订此笔账目",
                         size: 11.5,
                         tint: ArchivePalette.inkMuted
                     ) {
-                        appState.askConfirm(
-                            title: ArchiveSharedCopy.transactionDeleteTitle,
-                            message: ArchiveSharedCopy.transactionDeleteMessage,
-                            confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
-                            danger: true
-                        ) {
-                            deleteTransaction(tx)
-                        }
+                        editingTransaction = tx
+                    }
+                }
+
+                PaperIconButton(
+                    systemName: ArchiveIcon.delete.systemName,
+                    label: "删除该笔账目",
+                    help: "删除该笔账目",
+                    size: 11.5,
+                    tint: ArchivePalette.inkMuted
+                ) {
+                    appState.askConfirm(
+                        title: ArchiveSharedCopy.transactionDeleteTitle,
+                        message: ArchiveSharedCopy.transactionDeleteMessage,
+                        confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
+                        danger: true
+                    ) {
+                        deleteTransaction(tx)
                     }
                 }
             }
@@ -1081,27 +1083,27 @@ public struct LedgerAssetsView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
-            editingTransaction = tx
+            if tx.id > 0 { editingTransaction = tx }
         }
         .contextMenu {
-            Button {
-                editingTransaction = tx
-            } label: {
-                Label("修订此笔账目", systemImage: "pencil")
-            }
             if tx.id > 0 {
-                Button(role: .destructive) {
-                    appState.askConfirm(
-                        title: ArchiveSharedCopy.transactionDeleteTitle,
-                        message: ArchiveSharedCopy.transactionDeleteMessage,
-                        confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
-                        danger: true
-                    ) {
-                        deleteTransaction(tx)
-                    }
+                Button {
+                    editingTransaction = tx
                 } label: {
-                    Label("删除该笔账目", systemImage: ArchiveIcon.delete.systemName)
+                    Label("修订此笔账目", systemImage: "pencil")
                 }
+            }
+            Button(role: .destructive) {
+                appState.askConfirm(
+                    title: ArchiveSharedCopy.transactionDeleteTitle,
+                    message: ArchiveSharedCopy.transactionDeleteMessage,
+                    confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
+                    danger: true
+                ) {
+                    deleteTransaction(tx)
+                }
+            } label: {
+                Label("删除该笔账目", systemImage: ArchiveIcon.delete.systemName)
             }
             Divider()
             Button {

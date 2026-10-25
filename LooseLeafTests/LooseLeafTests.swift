@@ -196,24 +196,6 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(sellJson?["note"] as? String, "闲鱼同城自提")
     }
 
-    // MARK: - 9. System Bootstrap Codable Contract Tests
-
-    func testBootstrapRequestCodableContract() throws {
-        let bootstrapReq = BootstrapRequest(
-            curatorName: "Starry",
-            location: "杭州",
-            masterPasscode: "pass1234",
-            confirmPasscode: "pass1234",
-            hubUrl: "http://127.0.0.1:8088"
-        )
-        let data = try JSONEncoder().encode(bootstrapReq)
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        XCTAssertEqual(json?["curator_name"] as? String, "Starry")
-        XCTAssertEqual(json?["location"] as? String, "杭州")
-        XCTAssertEqual(json?["master_passcode"] as? String, "pass1234")
-        XCTAssertEqual(json?["hub_url"] as? String, "http://127.0.0.1:8088")
-    }
-
     // MARK: - 10. Sync Merge, Cursor & Local Temp ID Logic Tests
 
     func testMergedEntriesDeltaReconciliation() {

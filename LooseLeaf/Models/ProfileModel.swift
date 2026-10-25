@@ -259,39 +259,6 @@ public struct ConfirmPairingResponse: Codable, Sendable {
     }
 }
 
-public struct VerifyPasscodeRequest: Codable, Sendable {
-    public var passcode: String
-    public var deviceName: String
-    public var platform: String
-    public var deviceModel: String
-
-    enum CodingKeys: String, CodingKey {
-        case passcode
-        case deviceName = "device_name"
-        case platform
-        case deviceModel = "device_model"
-    }
-
-    public init(passcode: String, deviceName: String, platform: String = "macos", deviceModel: String = "Mac") {
-        self.passcode = passcode
-        self.deviceName = deviceName
-        self.platform = platform
-        self.deviceModel = deviceModel
-    }
-}
-
-public struct VerifyPasscodeResponse: Codable, Sendable {
-    public var token: String
-    public var deviceId: String
-    public var deviceName: String
-
-    enum CodingKeys: String, CodingKey {
-        case token
-        case deviceId = "device_id"
-        case deviceName = "device_name"
-    }
-}
-
 public struct PairInitRequest: Codable, Sendable {
     public var hubUrl: String?
     public var deviceHint: String?
@@ -855,37 +822,6 @@ public struct HealthCheckResponse: Codable, Sendable {
         case runtime
         case storageR2 = "storage_r2"
         case message
-    }
-}
-
-/// 首次装帧初始化请求 (POST /api/v1/system/bootstrap)
-public struct BootstrapRequest: Codable, Sendable {
-    public var curatorName: String
-    public var location: String
-    public var masterPasscode: String
-    public var confirmPasscode: String
-    public var hubUrl: String
-
-    enum CodingKeys: String, CodingKey {
-        case curatorName = "curator_name"
-        case location
-        case masterPasscode = "master_passcode"
-        case confirmPasscode = "confirm_passcode"
-        case hubUrl = "hub_url"
-    }
-
-    public init(
-        curatorName: String,
-        location: String,
-        masterPasscode: String,
-        confirmPasscode: String,
-        hubUrl: String
-    ) {
-        self.curatorName = curatorName
-        self.location = location
-        self.masterPasscode = masterPasscode
-        self.confirmPasscode = confirmPasscode
-        self.hubUrl = hubUrl
     }
 }
 

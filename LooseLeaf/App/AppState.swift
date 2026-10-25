@@ -664,7 +664,7 @@ public final class AppState {
                 guard let self else { return }
                 CredentialStore.deleteToken()
                 self.isPaired = false
-                self.errorBanner = "设备授权已过期或被吊销，请重新完成设备配对或验证主理人密钥"
+                self.errorBanner = "设备授权已过期或被吊销，请重新完成设备配对（在 Web 页面生成配对二维码）"
             }
         }
     }
@@ -1043,10 +1043,13 @@ public final class AppState {
         // 并发拉取公开基础配置与档案
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadConfigAndProfile() }
-            group.addTask { await self.loadEntries(forceFull: forceFull) }
-            group.addTask { await self.loadCategories() }
-            group.addTask { await self.loadProjectsWishesFootprints() }
+            // 未配对（配对门禁阶段）不发其余档案请求：冷启动的一批 401 会把
+            // 「仅广播一次」的未授权标志消耗掉，之后真正的吊销反而回不到门禁。
+            // 站点配置/档案是公开接口，供门禁页展示，保持无条件拉取。
             if self.isPaired {
+                group.addTask { await self.loadEntries(forceFull: forceFull) }
+                group.addTask { await self.loadCategories() }
+                group.addTask { await self.loadProjectsWishesFootprints() }
                 group.addTask { await self.loadTransactionsAndAssets(forceFull: forceFull) }
             }
         }
@@ -1115,6 +1118,10 @@ public final class AppState {
                     // 这一页的 100 条 —— 本地几千条瞬间没了，
                     // 而且游标被推进后旧条目永远拉不回来。
                     SyncManager.shared.mergeEntriesIncremental(firstPage)
+                    // refreshAll 的批量模式会把这次合并吞进 pendingBatchSnapshot，
+                    // 首屏要等最慢的 loader 才上屏 —— 这里立即投递一次，
+                    // 让「第一页一到就铺界面」在主刷新路径上同样生效。
+                    SyncManager.shared.flushBatchSnapshotNow()
                 }
             }
             await SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
@@ -1272,9 +1279,9 @@ public final class AppState {
         var resolvedCityName = cityName?.trimmingCharacters(in: .whitespacesAndNewlines)
         if resolvedCityName?.isEmpty == true { resolvedCityName = nil }
 
-        if resolvedCode == nil, let loc = finalLocation {
-            resolvedCode = FormatUtils.resolveCityCode(from: loc)
-        }
+        // 城市只认显式 city_code，不做自由文本反查：
+        // 与 QuickLedgerView 同一 rationale——「重庆小面」这类文本会静默误挂城市，
+        // 且客户端反查后以显式码发送恰好绕过后端「仅认显式 city_code」的收紧。
         if resolvedCode != nil && resolvedCityName == nil {
             resolvedCityName = CityDictionary.standardCities.first(where: { $0.code == resolvedCode })?.name
         }
@@ -1377,11 +1384,29 @@ public final class AppState {
     }
 
     public func disconnectDevice() async {
+        // 网络失败时中止解绑：服务端没吊销成而本机清了凭据/发件箱，
+        // 离线记录会被永久丢弃，且该设备在服务端仍是受信状态——与 Android
+        // 端的解绑中止语义对齐；4xx（服务端明确说不认识/已吊销）才继续强制清除。
         if let devId = CredentialStore.getDeviceId() {
-            try? await APIClient.shared.revokeDevice(id: devId)
+            do {
+                try await APIClient.shared.revokeDevice(id: devId)
+            } catch let apiErr as APIError {
+                if case .serverError = apiErr {
+                    // 4xx：服务端已不认识这台设备，等价于已吊销，继续本地清除
+                } else {
+                    showTemporaryBanner("解除失败：无法联系中枢，本机数据与待同步记录均未清除，请联网后重试")
+                    return
+                }
+            } catch {
+                showTemporaryBanner("解除失败：无法联系中枢，本机数据与待同步记录均未清除，请联网后重试")
+                return
+            }
         }
         CredentialStore.clearAllCredentials()
         self.isPaired = false
+        // 发件箱与 pending 条目属于刚刚吊销的中枢，必须一并丢弃：
+        // 留在快照里会在重配对后（无论新旧中枢）被 flushOutbox 投递出去。
+        SyncManager.shared.discardOutboxAndPending()
         // 关键：解除配对时**一并清理系统 Spotlight 索引** ——
         // 否则私人正文会继续留在系统索引里被搜索与 Siri 命中，
         // 即便用户已经与中枢解除关系。

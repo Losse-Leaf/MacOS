@@ -3,6 +3,8 @@ import os
 
 public extension Notification.Name {
     static let looseLeafUnauthorized = Notification.Name("com.looseleaf.archive.unauthorized")
+    /// 中枢地址发生变化（换中枢/重配对）：SyncManager 收到后丢弃旧中枢的发件箱与 pending 状态
+    static let looseLeafHubDidChange = Notification.Name("com.looseleaf.archive.hub-did-change")
 }
 
 /// API 请求错误定义（严禁静默吞错）
@@ -21,7 +23,7 @@ public enum APIError: LocalizedError, Equatable, Sendable {
         case .invalidURL(let path):
             return "无效的接口地址: \(path)"
         case .unauthorized(let msg):
-            return msg.isEmpty ? "设备凭据未授权或已失效，请重新完成配对或验证主理人密钥" : msg
+            return msg.isEmpty ? "设备凭据未授权或已失效，请重新完成设备配对（在 Web 页面生成配对二维码）" : msg
         case .notModified:
             return "数据未变更 (304)"
         case .serverError(_, let msg):
@@ -139,6 +141,9 @@ public actor APIClient {
             CredentialStore.deleteToken()
             // ETag 必须随中枢一起失效：旧节点的 ETag 发往新节点会换来 304，导致拉不到任何数据
             Task { await APIClient.shared.invalidateCaches() }
+            // 旧中枢的发件箱与 pending 条目立即作废：它们绝不能在重新配对后
+            // 被 flushOutbox 发往新中枢（跨中枢数据外发）。SyncManager 监听此通知。
+            NotificationCenter.default.post(name: .looseLeafHubDidChange, object: nil)
         }
     }
 
@@ -146,6 +151,15 @@ public actor APIClient {
     public func invalidateCaches() {
         etagCache.removeAll()
         hasNotifiedUnauthorized = false
+    }
+
+    /// 「仅广播一次」的 401 吊销通知：检查并置位 hasNotifiedUnauthorized 后再广播。
+    /// multipart 上传 / 备份下载等非 envelope 路径的 401 也统一走这里，
+    /// 否则并发上传同时 401 会逐条广播、重复清凭据。
+    private func notifyUnauthorizedThrottled() {
+        guard !hasNotifiedUnauthorized else { return }
+        hasNotifiedUnauthorized = true
+        NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
     }
 
     /// 将后端返回的相对媒体路径 (如 /media/...) 补全为可访问的完整 URL。
@@ -289,7 +303,13 @@ public actor APIClient {
         if http.statusCode == 401 {
             let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
             Self.logger.warning("Received 401 unauthorized from \(path, privacy: .public)")
-            if !hasNotifiedUnauthorized {
+            // 只对「当前令牌」的 401 触发吊销广播：配对前发出的旧令牌请求
+            // 若在重新配对后返回 401（confirmPairing 末尾已复位一次性标志），
+            // 不加比对会把刚保存的新令牌误删、把用户踢回配对门禁。
+            let requestToken = request.value(forHTTPHeaderField: "X-Device-Token") ?? ""
+            let currentToken = CredentialStore.getToken() ?? ""
+            let isCurrentToken = requestToken.isEmpty || requestToken == currentToken
+            if isCurrentToken, !hasNotifiedUnauthorized {
                 hasNotifiedUnauthorized = true
                 NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
             }
@@ -382,6 +402,12 @@ public actor APIClient {
             method: "POST",
             body: payload
         )
+        // 换中枢必须发生在写入新令牌**之前**：setBaseURL 在地址变化时会删除旧令牌，
+        // 若先 saveToken 后 setBaseURL，刚保存的配对令牌会被当作「旧中枢的令牌」误删，
+        // 配对「成功」却立刻全量 401、被踢回配对门禁。
+        if let hub = resp.hubUrl, !hub.isEmpty {
+            setBaseURL(hub)
+        }
         guard CredentialStore.saveToken(resp.deviceToken),
               CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName) else {
             throw APIError.serverError(
@@ -389,37 +415,9 @@ public actor APIClient {
                 message: "无法写入本机凭据档案（磁盘权限或空间异常），配对未生效，请检查后重试"
             )
         }
-        if let hub = resp.hubUrl, !hub.isEmpty {
-            setBaseURL(hub)
-        }
-        return resp
-    }
-
-    /// 输入管理员密钥直接授权并签发设备令牌 (POST /api/v1/auth/verify)
-    public func verifyMasterPasscode(
-        passcode: String,
-        deviceName: String,
-        platform: String = "macos",
-        deviceModel: String = "Mac"
-    ) async throws -> VerifyPasscodeResponse {
-        let payload = VerifyPasscodeRequest(
-            passcode: passcode,
-            deviceName: deviceName,
-            platform: platform,
-            deviceModel: deviceModel
-        )
-        let resp: VerifyPasscodeResponse = try await performEnvelopeRequest(
-            path: "/api/v1/auth/verify",
-            method: "POST",
-            body: payload
-        )
-        guard CredentialStore.saveToken(resp.token),
-              CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName) else {
-            throw APIError.serverError(
-                code: 0,
-                message: "无法写入本机凭据档案（磁盘权限或空间异常），授权未生效，请检查后重试"
-            )
-        }
+        // 无条件复位「仅广播一次」的未授权标志：未配对冷启动的 401 可能已把它消耗掉，
+        // 复位后将来真正的吊销才能再次触发回到配对门禁（地址未变化时 setBaseURL 不会走到）。
+        invalidateCaches()
         return resp
     }
 
@@ -785,11 +783,6 @@ public actor APIClient {
         )
     }
 
-    /// 首次装帧初始化 (POST /api/v1/system/bootstrap)
-    public func bootstrapSystem(_ req: BootstrapRequest) async throws -> PairTicketResponse {
-        try await performEnvelopeRequest(path: "/api/v1/system/bootstrap", method: "POST", body: req)
-    }
-
     // MARK: - 5. 造物、心愿单与旅游足迹 (Projects, Wishes & Footprints)
 
     public func fetchProjects() async throws -> [Project] {
@@ -998,7 +991,9 @@ public actor APIClient {
             throw APIError.networkFailure("上传响应无效")
         }
         if http.statusCode == 401 {
-            NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
+            // 与 performEnvelopeRequest 同款「仅广播一次」节流：
+            // 多张相纸并发上传同时 401 时，逐条广播会重复删令牌/重复横幅
+            notifyUnauthorizedThrottled()
             throw APIError.unauthorized("上传需要设备授权凭据")
         }
         // 关键：先判状态码再解码。否则服务端返回 502 HTML 错误页会抛裸 DecodingError，
@@ -1082,7 +1077,8 @@ public actor APIClient {
             throw APIError.networkFailure("下载响应无效")
         }
         if http.statusCode == 401 {
-            NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
+            // 与 performEnvelopeRequest 同款「仅广播一次」节流
+            notifyUnauthorizedThrottled()
             throw APIError.unauthorized("下载备份需要设备授权凭据")
         }
         guard http.statusCode == 200 else {

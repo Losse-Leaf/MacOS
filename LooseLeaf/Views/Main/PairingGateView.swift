@@ -3,7 +3,7 @@ import AppKit
 
 /// 主理人工作台激活与配对门禁 (PairingGateView)
 /// 严格遵循主理人规范：
-/// 1. 桌面端移除首次装帧向导与管理员主密钥登录通道（主密钥仅限 Web 管理后台使用）；
+/// 1. 桌面端不设登录通道，首台设备由 Web 页面用启动时打印的认领码认领；
 /// 2. 仅支持通过二维码或配对工单链接 (looseleaf://pair?ticket=...) 免密配对接入；
 /// 3. 若中枢尚未装帧，友好引导至浏览器 Web 端完成首次创刊。
 @MainActor
@@ -179,7 +179,7 @@ public struct PairingGateView: View {
                 .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
 
-            Text("请先在 Web 展厅设定管理员密钥并完成装帧。随后在「设备管理」生成配对二维码或链接即可接入本桌面端。")
+            Text("请先在 Web 页面输入服务启动时打印的认领码完成首次认领。随后在「设备管理」生成配对二维码或链接即可接入本桌面端。")
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkSecondary)
                 .multilineTextAlignment(.center)

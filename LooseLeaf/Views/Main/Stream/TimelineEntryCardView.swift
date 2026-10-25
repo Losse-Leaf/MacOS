@@ -288,19 +288,25 @@ import AppKit
                                     .accessibilityLabel("删除账目")
                                 }
                             } else {
-                                Button {
-                                    actions.onEditEntry(entry)
-                                } label: {
-                                    Image(systemName: "pencil")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkSecondary)
-                                        .frame(width: 24, height: 24)
-                                        .background(ArchivePalette.archiveSubtle.opacity(0.8))
-                                        .clipShape(Circle())
+                                // 待同步条目（负本地 id）尚无服务端实体，直发 PUT 必然 404：
+                                // 仅「编辑」按钮加 id 门禁；「删除」必须保留可见——
+                                // 删除链路 deleteEntryAction 已正确处理 id<0（本地乐观移除 + 撤销），
+                                // 门禁若误伤删除，待同步条目就只剩右键菜单一条删除路。
+                                if entry.id > 0 {
+                                    Button {
+                                        actions.onEditEntry(entry)
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .frame(width: 24, height: 24)
+                                            .background(ArchivePalette.archiveSubtle.opacity(0.8))
+                                            .clipShape(Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("编辑手稿")
+                                    .accessibilityLabel("编辑手稿")
                                 }
-                                .buttonStyle(.plain)
-                                .help("编辑手稿")
-                                .accessibilityLabel("编辑手稿")
 
                                 Button {
                                     actions.onDeleteEntry(entry)
@@ -446,10 +452,13 @@ import AppKit
                     } label: {
                         Label("查看手稿详情", systemImage: "book.pages")
                     }
-                    Button {
-                        actions.onEditEntry(entry)
-                    } label: {
-                        Label("编辑手稿", systemImage: "pencil")
+                    // 待同步条目（负本地 id）远程编辑必 404，右键菜单同样按 id 门禁
+                    if entry.id > 0 {
+                        Button {
+                            actions.onEditEntry(entry)
+                        } label: {
+                            Label("编辑手稿", systemImage: "pencil")
+                        }
                     }
                     Button(role: .destructive) {
                         actions.onDeleteEntry(entry)

@@ -147,8 +147,12 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         let summaryText = "\(sign)\(FormatUtils.formattedYuan(cents: amount, includeSymbol: true)) · \(category)" +
             ((paymentMethod?.isEmpty == false) ? " · \(paymentMethod!)" : "") +
             ((note?.isEmpty == false) ? "\n\(note!)" : "")
+        // 可逆编码：合成条目 id = txId - 1_000_000（恒为负，不与真实散页正 id /
+        // 待同步散页的小负 id 撞号）。反向解析见 LifeEntry.associatedTransactionId。
+        // 旧方案 `-abs(id) - 1_000_000` 不可逆——待同步账目（负 id）反解回正数，
+        // 而 transactionById 的键是负 id ⇒ 永远查不到，账目视角的编辑/删除全部失联。
         return LifeEntry(
-            id: -abs(id) - 1_000_000,
+            id: id - 1_000_000,
             type: "transaction",
             title: title.isEmpty ? category : title,
             content: summaryText,

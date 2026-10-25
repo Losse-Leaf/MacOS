@@ -919,16 +919,6 @@ public enum CityDictionary {
         return (462.3, 300.0)
     }
 
-    /// 将城市坐标转化为经纬度标尺 (85°E ~ 125°E, 18°N ~ 50°N)，供经纬星野图谱渲染
-    public static func lonLat(forCode code: String, cityName: String = "") -> (lon: Double, lat: Double) {
-        let pt = coordinate(forCode: code, cityName: cityName)
-        let normX = min(max((pt.x - 65.0) / (590.0 - 65.0), 0.02), 0.98)
-        let normY = min(max((pt.y - 45.0) / (530.0 - 45.0), 0.02), 0.98)
-        let lon = 85.0 + normX * (125.0 - 85.0)
-        let lat = 50.0 - normY * (50.0 - 18.0)
-        return (lon, lat)
-    }
-
     // MARK: - 375 个标准行政区划城市条目与检索支持 (供 CityPicker 统一选点)
 
     public struct StandardCity: Identifiable, Hashable, Sendable {

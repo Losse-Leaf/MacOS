@@ -424,10 +424,6 @@ final class LooseLeafTests: XCTestCase {
         let jsonData = try ArchiveExporter.makeFullArchiveJSON(snapshot: snap, projects: [], wishes: [], footprints: [])
         XCTAssertFalse(jsonData.isEmpty)
         XCTAssertTrue(String(data: jsonData, encoding: .utf8)?.contains("transactions") == true)
-
-        let lonLat = CityDictionary.lonLat(forCode: "330100", cityName: "杭州市")
-        XCTAssertTrue(lonLat.lon > 85.0 && lonLat.lon < 125.0)
-        XCTAssertTrue(lonLat.lat > 18.0 && lonLat.lat < 50.0)
     }
 
     // MARK: - 18. Spotlight Navigation & Update Checker Fallback Tests

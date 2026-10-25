@@ -98,13 +98,10 @@ public struct TravelAtlasView: View {
                 }
 
                 Group {
-                    switch viewMode {
-                    case 0:
+                    if viewMode == 0 {
                         stampsMatrixSection
-                    case 1:
+                    } else {
                         ticketsSection
-                    default:
-                        celestialSection
                     }
                 }
                 .id(viewMode)
@@ -179,10 +176,6 @@ public struct TravelAtlasView: View {
             PaperPillButton(title: "典藏票根 (\(appState.footprints.count))", isSelected: viewMode == 1) {
                 guard viewMode != 1 else { return }
                 viewMode = 1
-            }
-            PaperPillButton(title: "经纬星野", isSelected: viewMode == 2) {
-                guard viewMode != 2 else { return }
-                viewMode = 2
             }
 
             Spacer()
@@ -476,13 +469,6 @@ public struct TravelAtlasView: View {
                     }
                 }
             }
-        }
-    }
-
-    // MARK: - 5. 经纬星野
-    private var celestialSection: some View {
-        CelestialAtlasCanvasView(footprints: appState.footprints) { code, name in
-            selectedDrawerCity = DrawerCitySelection(code: code, name: name)
         }
     }
 

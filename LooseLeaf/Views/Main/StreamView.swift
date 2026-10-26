@@ -22,6 +22,14 @@ public struct StreamView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var isOnThisDayExpanded: Bool = true
 
+    public enum StreamTimelineDisplayMode: String, CaseIterable, Identifiable {
+        case treeTimeline = "树状时间轴"
+        case treeDiagram = "事件树谱全景"
+
+        public var id: String { rawValue }
+    }
+    @State private var streamTimelineMode: StreamTimelineDisplayMode = .treeTimeline
+
     // 管理模式：编辑与删除状态
     // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
     // 行为闭包只捕获 AppState 单例 → 整轮时间流共享同一份 actions 引用
@@ -435,33 +443,62 @@ public struct StreamView: View {
                     globalSearchCrossModuleBanner(res: res)
                 }
 
-                // 5. 纵向时间流条目列表 (含 >= 14 天岁月留白切线)
-                let rows = appState.streamRows
-                if rows.isEmpty {
-                    // 加载中显示骨架屏（而非空态），避免用户误以为数据丢失
-                    if appState.isLoading {
-                        ArchiveSkeletonView(rowCount: 4)
-                    } else {
-                        emptyStreamPlaceholder
+                // 5. 按照事件的树图（时间轴）/ 事件树谱全景
+                HStack(alignment: .center) {
+                    HStack(spacing: ArchiveSpacing.xs) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text(streamTimelineMode == .treeTimeline ? "事件树状时间轴" : "事件树谱全景图")
+                            .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 4) {
+                        ForEach(StreamTimelineDisplayMode.allCases) { mode in
+                            PaperPillButton(
+                                title: mode.rawValue,
+                                isSelected: streamTimelineMode == mode
+                            ) {
+                                streamTimelineMode = mode
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 4)
+
+                if streamTimelineMode == .treeDiagram {
+                    EventTreeDiagramView(entries: appState.entries) { selectedEntry in
+                        appState.highlightedEntry = selectedEntry
                     }
                 } else {
-                    // 朋友圈式时间戳：每条自带一个短标签（同一分钟折叠、跨天才显日期），
-                    // 而不是另起一行放日期标题 ——
-                    // 一天只有一条时，日期标题反而成了主要噪音。
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(rows) { row in
-                            let entry = row.entry
-                            if row.gapDays >= 14 {
-                                TemporalGapDivider(days: row.gapDays)
+                    let rows = appState.streamRows
+                    if rows.isEmpty {
+                        // 加载中显示骨架屏（而非空态），避免用户误以为数据丢失
+                        if appState.isLoading {
+                            ArchiveSkeletonView(rowCount: 4)
+                        } else {
+                            emptyStreamPlaceholder
+                        }
+                    } else {
+                        // 纵向事件树状时间轴 (含连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ForEach(rows) { row in
+                                let entry = row.entry
+                                if row.gapDays >= 14 {
+                                    TemporalGapDivider(days: row.gapDays)
+                                }
+                                TimelineEntryCardView(
+                                    entry: entry,
+                                    timeLabel: row.timeLabel,
+                                    transaction: matchingTransaction(for: entry),
+                                    isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
+                                    actions: timelineActions
+                                )
+                                .id(entry.id)
                             }
-                            TimelineEntryCardView(
-                                entry: entry,
-                                timeLabel: row.timeLabel,
-                                transaction: matchingTransaction(for: entry),
-                                isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
-                                actions: timelineActions
-                            )
-                            .id(entry.id)
                         }
                     }
                 }

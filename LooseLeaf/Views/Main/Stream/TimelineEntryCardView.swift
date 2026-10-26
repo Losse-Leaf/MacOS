@@ -155,22 +155,38 @@ import AppKit
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
-                // 左侧时光节点：只陪元信息行，不再贯穿整张卡
-                //
-                // 早先是一根 3pt 宽的实心色条贴着卡片左边缘内侧 ——
-                // 看着像残留的装饰。现在收成「一枚节点 + 一小截引线」，
-                // 长度只够到元信息行下方，像时间轴上的一个刻度，
-                // 而不是一根从头贯到尾的栏杆。
-                VStack(spacing: 0) {
-                    Circle()
-                        .fill(typeAccentColor)
-                        .frame(width: 6, height: 6)
-                        .padding(.top, 5)
+                // 左侧事件树主干与直角分支引线 (遵循 diagram-design type-tree 树图规范)
+                // 树干贯穿整张卡片行高，节点居中直角延伸出树枝连接叶子卡片
+                ZStack(alignment: .topLeading) {
+                    // 纵向时间轴树干母线 (Continuous Tree Trunk Spine)
                     Rectangle()
-                        .fill(typeAccentColor.opacity(0.22))
-                        .frame(width: 1, height: 12)
+                        .fill(ArchivePalette.borderSubtle.opacity(0.7))
+                        .frame(width: 1.5)
+                        .padding(.leading, 6)
+
+                    // 直角分支引线 (Orthogonal Elbow Connector) 与树干节点 (Trunk Knot)
+                    HStack(spacing: 0) {
+                        ZStack {
+                            Circle()
+                                .fill(ArchivePalette.archivePaper)
+                                .frame(width: 11, height: 11)
+                            Circle()
+                                .stroke(typeAccentColor, lineWidth: 1.5)
+                                .frame(width: 11, height: 11)
+                            Circle()
+                                .fill(typeAccentColor)
+                                .frame(width: 4.5, height: 4.5)
+                        }
+                        .frame(width: 13, height: 13)
+
+                        Rectangle()
+                            .fill(typeAccentColor.opacity(0.40))
+                            .frame(width: 14, height: 1.5)
+                    }
+                    .padding(.top, 7)
                 }
-                .padding(.trailing, 12)
+                .frame(width: 27)
+                .padding(.trailing, 6)
 
                 VStack(alignment: .leading, spacing: 9) {
                     // 顶栏：形态印章 + 时刻 + 地点 + 悬停优雅动作

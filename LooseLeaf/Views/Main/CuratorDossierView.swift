@@ -155,11 +155,11 @@ public struct CuratorDossierView: View {
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
 
-                // 2. 生活刻度 · 编年时间热力图与年度卷宗
+                // 2. 生活刻度 · 编年时间日历图与年度卷宗
                 VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
                     HStack {
                         HStack(spacing: ArchiveSpacing.s) {
-                            Text("生活刻度 · 时间热力图")
+                            Text("生活刻度 · 时光日历图")
                                 .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
                             Text("（累计在册 \(appState.entries.count) 篇记录）")
@@ -183,10 +183,9 @@ public struct CuratorDossierView: View {
                         .paperButtonFocusRing()
                     }
 
-                    LifeActivityHeatmapView(
+                    LifeCalendarChartView(
                         entryCounts: appState.entryCountsByDate,
                         totalCount: appState.entries.count,
-                        weeksCount: 52,
                         selectedDate: $selectedHeatmapDate
                     )
 

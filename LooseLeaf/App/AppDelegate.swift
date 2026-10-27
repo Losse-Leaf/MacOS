@@ -163,9 +163,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 系统通知 (User Notifications)
 
+    /// 检查当前运行环境是否支持系统通知（必须运行在带有效 Bundle ID 的 .app 容器中；
+    /// 在命令行、终端裸二进制或无 Bundle ID 的测试环境下，UNUserNotificationCenter 会抛出
+    /// NSInternalInconsistencyException 导致 SIGABRT 崩溃）。
+    private static var isUserNotificationSupported: Bool {
+        guard let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty else {
+            return false
+        }
+        let url = Bundle.main.bundleURL
+        return url.pathExtension == "app" || Bundle.main.bundlePath.contains(".app")
+    }
+
     /// 发送一条本地系统通知（同步完成 / 失败 / 备份完成等关键事件）
     @MainActor
     public static func postNotification(title: String, body: String) {
+        guard isUserNotificationSupported else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -181,9 +193,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 请求通知授权（仅在用户开启相关偏好后调用一次）
     @MainActor
     public static func requestNotificationAuthorizationIfNeeded() {
+        guard isUserNotificationSupported else { return }
         // 使用异步 API：UNUserNotificationCenter 未标注 Sendable，
         // 在主线程上就地调用可避免把非 Sendable 实例捕获进 @Sendable 闭包。
         Task { @MainActor in
+            guard isUserNotificationSupported else { return }
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             guard settings.authorizationStatus == .notDetermined else { return }
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])

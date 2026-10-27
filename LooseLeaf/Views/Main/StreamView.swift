@@ -324,10 +324,14 @@ public struct StreamView: View {
             ("gear", "随身器物事件", "shippingbox", Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle))
         ]
 
+        var bucket: [String: [AppState.StreamRow]] = [:]
+        for row in rows {
+            bucket[row.entry.type, default: []].append(row)
+        }
+
         var groups: [EventCategoryGroup] = []
         for def in defs {
-            let catRows = rows.filter { $0.entry.type == def.type }
-            if !catRows.isEmpty {
+            if let catRows = bucket[def.type], !catRows.isEmpty {
                 groups.append(EventCategoryGroup(
                     id: def.type,
                     title: def.title,
@@ -338,7 +342,10 @@ public struct StreamView: View {
             }
         }
         let knownTypes = Set(defs.map(\.type))
-        let remaining = rows.filter { !knownTypes.contains($0.entry.type) }
+        var remaining: [AppState.StreamRow] = []
+        for (type, catRows) in bucket where !knownTypes.contains(type) {
+            remaining.append(contentsOf: catRows)
+        }
         if !remaining.isEmpty {
             groups.append(EventCategoryGroup(
                 id: "other",
@@ -349,6 +356,38 @@ public struct StreamView: View {
             ))
         }
         return groups
+    }
+
+    @ViewBuilder
+    private func categoryBranchHeader(for group: EventCategoryGroup) -> some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(ArchivePalette.archivePaper)
+                    .frame(width: 22, height: 22)
+                Circle()
+                    .stroke(group.tint, lineWidth: 1.8)
+                    .frame(width: 22, height: 22)
+                Image(systemName: group.icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(group.tint)
+            }
+
+            Text(group.title)
+                .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .bold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+
+            Text("(\(group.rows.count) 条事件)")
+                .font(ArchiveTypography.monoScale(size: 10.5))
+                .foregroundStyle(ArchivePalette.inkMuted)
+
+            Rectangle()
+                .fill(ArchivePalette.borderDivider.opacity(0.6))
+                .frame(height: 0.6)
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .background(ArchivePalette.archivePaper)
     }
 
     // MARK: - 右侧时间流主画布
@@ -533,39 +572,12 @@ public struct StreamView: View {
                         }
                     } else if streamTimelineMode == .eventCategoryTree && appState.selectedCategory == .all {
                         // 按事件形态分类分群呈现的树状时间轴 (彻底去卡片化，自然融入纸张画布)
+                        // 关键：使用 Section 维持 LazyVStack 对每一条事件节点的真正按需懒加载 (Virtualization)，
+                        // 彻底避免常规 VStack 导致整库数百条卡片同时实例化造成主线程卡死
                         let groups = groupRowsByEventCategory(rows)
-                        LazyVStack(alignment: .leading, spacing: 18) {
+                        LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(groups) { group in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    // 事件分类大分支主干节点 (Category Branch Knot)
-                                    HStack(spacing: 8) {
-                                        ZStack {
-                                            Circle()
-                                                .fill(ArchivePalette.archivePaper)
-                                                .frame(width: 22, height: 22)
-                                            Circle()
-                                                .stroke(group.tint, lineWidth: 1.8)
-                                                .frame(width: 22, height: 22)
-                                            Image(systemName: group.icon)
-                                                .font(.system(size: 10, weight: .semibold))
-                                                .foregroundStyle(group.tint)
-                                        }
-
-                                        Text(group.title)
-                                            .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .bold))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-
-                                        Text("(\(group.rows.count) 条事件)")
-                                            .font(ArchiveTypography.monoScale(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
-
-                                        Rectangle()
-                                            .fill(ArchivePalette.borderDivider.opacity(0.6))
-                                            .frame(height: 0.6)
-                                    }
-                                    .padding(.vertical, 4)
-
-                                    // 该事件分类下的事件节点
+                                Section {
                                     ForEach(group.rows) { row in
                                         let entry = row.entry
                                         if row.gapDays >= 14 {
@@ -580,6 +592,8 @@ public struct StreamView: View {
                                         )
                                         .id(entry.id)
                                     }
+                                } header: {
+                                    categoryBranchHeader(for: group)
                                 }
                             }
                         }

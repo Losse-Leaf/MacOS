@@ -23,12 +23,13 @@ public struct StreamView: View {
     @State private var isOnThisDayExpanded: Bool = true
 
     public enum StreamTimelineDisplayMode: String, CaseIterable, Identifiable {
-        case treeTimeline = "树状时间轴"
+        case eventCategoryTree = "事件分类树"
+        case chronologicalTree = "编年事件流"
         case treeDiagram = "事件树谱全景"
 
         public var id: String { rawValue }
     }
-    @State private var streamTimelineMode: StreamTimelineDisplayMode = .treeTimeline
+    @State private var streamTimelineMode: StreamTimelineDisplayMode = .eventCategoryTree
 
     // 管理模式：编辑与删除状态
     // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
@@ -302,6 +303,54 @@ public struct StreamView: View {
             }
         )
     }
+
+    // MARK: - 事件分类分组模型与辅助函数
+
+    private struct EventCategoryGroup: Identifiable {
+        let id: String
+        let title: String
+        let icon: String
+        let tint: Color
+        let rows: [AppState.StreamRow]
+    }
+
+    private func groupRowsByEventCategory(_ rows: [AppState.StreamRow]) -> [EventCategoryGroup] {
+        let defs: [(type: String, title: String, icon: String, tint: Color)] = [
+            ("life", "日常随笔事件", "pencil.line", ArchivePalette.accentMoss),
+            ("travel", "山川游历事件", "airplane", ArchivePalette.accentWarm),
+            ("project", "造物演进事件", "hammer", Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)),
+            ("wish", "心愿印记事件", "sparkles", Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle)),
+            ("transaction", "柴米油盐事件", "yensign.circle", Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle)),
+            ("gear", "随身器物事件", "shippingbox", Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle))
+        ]
+
+        var groups: [EventCategoryGroup] = []
+        for def in defs {
+            let catRows = rows.filter { $0.entry.type == def.type }
+            if !catRows.isEmpty {
+                groups.append(EventCategoryGroup(
+                    id: def.type,
+                    title: def.title,
+                    icon: def.icon,
+                    tint: def.tint,
+                    rows: catRows
+                ))
+            }
+        }
+        let knownTypes = Set(defs.map(\.type))
+        let remaining = rows.filter { !knownTypes.contains($0.entry.type) }
+        if !remaining.isEmpty {
+            groups.append(EventCategoryGroup(
+                id: "other",
+                title: "其它漫游事件",
+                icon: "circle.grid.2x2",
+                tint: ArchivePalette.inkMuted,
+                rows: remaining
+            ))
+        }
+        return groups
+    }
+
     // MARK: - 右侧时间流主画布
 
     private var streamTimelineCanvas: some View {
@@ -443,13 +492,13 @@ public struct StreamView: View {
                     globalSearchCrossModuleBanner(res: res)
                 }
 
-                // 5. 按照事件的树图（时间轴）/ 事件树谱全景
+                // 5. 按照事件的树图（时间轴）
                 HStack(alignment: .center) {
                     HStack(spacing: ArchiveSpacing.xs) {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
                             .font(.system(size: 11))
                             .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(streamTimelineMode == .treeTimeline ? "事件树状时间轴" : "事件树谱全景图")
+                        Text(streamTimelineMode.rawValue)
                             .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                     }
@@ -482,9 +531,61 @@ public struct StreamView: View {
                         } else {
                             emptyStreamPlaceholder
                         }
+                    } else if streamTimelineMode == .eventCategoryTree && appState.selectedCategory == .all {
+                        // 按事件形态分类分群呈现的树状时间轴 (彻底去卡片化，自然融入纸张画布)
+                        let groups = groupRowsByEventCategory(rows)
+                        LazyVStack(alignment: .leading, spacing: 18) {
+                            ForEach(groups) { group in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    // 事件分类大分支主干节点 (Category Branch Knot)
+                                    HStack(spacing: 8) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(ArchivePalette.archivePaper)
+                                                .frame(width: 22, height: 22)
+                                            Circle()
+                                                .stroke(group.tint, lineWidth: 1.8)
+                                                .frame(width: 22, height: 22)
+                                            Image(systemName: group.icon)
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .foregroundStyle(group.tint)
+                                        }
+
+                                        Text(group.title)
+                                            .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .bold))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+
+                                        Text("(\(group.rows.count) 条事件)")
+                                            .font(ArchiveTypography.monoScale(size: 10.5))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                                        Rectangle()
+                                            .fill(ArchivePalette.borderDivider.opacity(0.6))
+                                            .frame(height: 0.6)
+                                    }
+                                    .padding(.vertical, 4)
+
+                                    // 该事件分类下的事件节点
+                                    ForEach(group.rows) { row in
+                                        let entry = row.entry
+                                        if row.gapDays >= 14 {
+                                            TemporalGapDivider(days: row.gapDays)
+                                        }
+                                        TimelineEntryCardView(
+                                            entry: entry,
+                                            timeLabel: row.timeLabel,
+                                            transaction: matchingTransaction(for: entry),
+                                            isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
+                                            actions: timelineActions
+                                        )
+                                        .id(entry.id)
+                                    }
+                                }
+                            }
+                        }
                     } else {
-                        // 纵向事件树状时间轴 (含连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
-                        LazyVStack(alignment: .leading, spacing: 10) {
+                        // 编年事件流 / 单事件分类分支 (纵向连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
+                        LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(rows) { row in
                                 let entry = row.entry
                                 if row.gapDays >= 14 {

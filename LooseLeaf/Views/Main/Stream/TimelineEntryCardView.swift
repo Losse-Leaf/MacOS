@@ -413,16 +413,17 @@ import AppKit
                     }
                 }
             }
-            .padding(.horizontal, 15)
-            .padding(.vertical, 13)
-            .background(ArchivePalette.archivePaper)
-            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
-            .paperElevation(isHovering ? 2 : 1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovering ? typeAccentColor.opacity(0.06) : Color.clear)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: ArchiveRadius.md)
+                RoundedRectangle(cornerRadius: 6)
                     .stroke(
-                        isKeyboardFocused ? ArchivePalette.accentWarm : (isHovering ? ArchivePalette.borderSubtle : Color.clear),
-                        lineWidth: isKeyboardFocused ? 1.5 : 0.5
+                        isKeyboardFocused ? ArchivePalette.accentWarm : (isHovering ? typeAccentColor.opacity(0.25) : Color.clear),
+                        lineWidth: isKeyboardFocused ? 1.5 : 0.6
                     )
             )
             .onHover { isHovering = $0 }

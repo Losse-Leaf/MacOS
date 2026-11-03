@@ -232,7 +232,6 @@ public struct QuickCaptureView: View {
                 RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                     .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
             )
-            .accessibilityLabel("正文")
             .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { providers in
                 handlePasteCommand(providers)
             }
@@ -371,13 +370,12 @@ public struct QuickCaptureView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
                 Spacer(minLength: ArchiveSpacing.xs)
-                Button("粘贴剪贴板图片 (⌘V)") {
+                Button("粘贴剪贴板图片") {
                     pasteImageFromPasteboard()
                 }
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .medium))
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.accentWarm)
-                .keyboardShortcut("v", modifiers: [.command])
                 .accessibilityLabel("粘贴剪贴板图片")
             }
         }

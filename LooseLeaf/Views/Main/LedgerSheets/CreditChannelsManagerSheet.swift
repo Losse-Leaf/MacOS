@@ -43,6 +43,7 @@ public struct CreditChannelsManagerSheet: View {
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.cancelAction)
             }
 
             Text("配置常用的信用卡、花呗或白条渠道及每月固定还款日（1~31 日），记账勾选分期时将自动核算剩余期数与待还负债。")

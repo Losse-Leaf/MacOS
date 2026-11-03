@@ -69,6 +69,7 @@ public struct NewWishSheet: View {
             }
 
             TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(3...5)
@@ -86,12 +87,14 @@ public struct NewWishSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("存入心愿单") {
+                Button(isSubmitting ? "存入中…" : "存入心愿单 ⌘↩") {
                     submitWish()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -204,6 +207,7 @@ public struct EditWishSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
             TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(3...5)
@@ -221,12 +225,14 @@ public struct EditWishSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("保存修改") {
+                Button(isSubmitting ? "保存中…" : "保存修改 ⌘↩") {
                     updateWish()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -328,17 +334,19 @@ public struct ResolveWishSheet: View {
                 )
             }
 
-            // 实付金额
-            HStack(spacing: ArchiveSpacing.xs) {
-                Text("实付金额 ¥")
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("0.00", text: $actualCostYuan)
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
-                    .padding(6)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            // 实付金额（理性拔草时不展示实付金额）
+            if resolutionType != "relinquished" {
+                HStack(spacing: ArchiveSpacing.xs) {
+                    Text("实付金额 ¥")
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    TextField("0.00", text: $actualCostYuan)
+                        .textFieldStyle(.plain)
+                        .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                        .padding(6)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
@@ -391,12 +399,14 @@ public struct ResolveWishSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("确认圆满归册") {
+                Button(isSubmitting ? "归册中…" : "确认圆满归册 ⌘↩") {
                     submitResolve()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(isSubmitting)
             }
         }

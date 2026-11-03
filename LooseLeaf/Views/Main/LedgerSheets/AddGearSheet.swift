@@ -133,6 +133,17 @@ public struct AddGearSheet: View {
                     }
                 }
 
+            if createTransaction && !isInstallment {
+                let options = appState.paymentMethods.isEmpty
+                    ? ["微信支付", "支付宝", "银行卡", "现金"]
+                    : appState.paymentMethods
+                PaperSelect(
+                    selection: $paymentMethod,
+                    options: options.map { PaperSelectOption(value: $0, label: $0) },
+                    label: "扣款账户："
+                )
+            }
+
             if isInstallment && createTransaction {
                 if appState.creditChannels.isEmpty {
                     Text("信贷分期需要先在「资产大盘 → 渠道管理」中登记渠道与每月还款日。")
@@ -180,12 +191,14 @@ public struct AddGearSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("添置并纳入大盘") {
+                Button(isSubmitting ? "添置中…" : "添置并纳入大盘 ⌘↩") {
                     submitAddGear()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }

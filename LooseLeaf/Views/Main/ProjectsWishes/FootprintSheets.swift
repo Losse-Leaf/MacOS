@@ -53,12 +53,14 @@ public struct NewFootprintSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("镌刻票根并伴生入流") {
+                Button(isSubmitting ? "镌刻中…" : "镌刻票根并伴生入流 ⌘↩") {
                     submitFootprint()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -157,12 +159,14 @@ public struct EditFootprintSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("保存票根修改") {
+                Button(isSubmitting ? "保存中…" : "保存票根修改 ⌘↩") {
                     updateFootprint()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }

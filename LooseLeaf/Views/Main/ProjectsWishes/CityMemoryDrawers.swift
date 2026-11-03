@@ -12,6 +12,7 @@ import SwiftUI
 public struct CityMemoryDrawerSheet: View {
     let cityCode: String
     let cityName: String
+    var onSelectEntry: ((LifeEntry) -> Void)? = nil
     var onDismiss: () -> Void
 
     @State private var drawer: CityMemoryDrawerResponse?
@@ -33,6 +34,7 @@ public struct CityMemoryDrawerSheet: View {
                 Button("关闭") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
@@ -83,24 +85,36 @@ public struct CityMemoryDrawerSheet: View {
                                 .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
                             ForEach(d.entries) { entry in
-                                VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
-                                    HStack {
-                                        Text(entry.title.isEmpty ? "散页手记" : entry.title)
-                                            .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                        Spacer()
-                                        Text(entry.parsedDate.dotDate)
-                                            .font(ArchiveTypography.monoScale(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                Button {
+                                    onSelectEntry?(entry)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+                                        HStack {
+                                            Text(entry.title.isEmpty ? "散页手记" : entry.title)
+                                                .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                            Spacer()
+                                            Text(entry.parsedDate.dotDate)
+                                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                        }
+                                        Text(entry.content)
+                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .lineLimit(3)
                                     }
-                                    Text(entry.content)
-                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                                        .foregroundStyle(ArchivePalette.inkSecondary)
-                                        .lineLimit(3)
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(ArchivePalette.archiveSubtle)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                    )
                                 }
-                                .padding(10)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                                .buttonStyle(.plain)
+                                .paperHover()
+                                .paperButtonFocusRing()
                             }
                         }
                     }
@@ -141,6 +155,7 @@ public struct CityMemoryDrawerSheet: View {
 public struct ProvinceMemoryDrawerSheet: View {
     let adcode: String
     let provinceName: String
+    var onSelectEntry: ((LifeEntry) -> Void)? = nil
     var onDismiss: () -> Void
 
     @State private var drawer: ProvinceMemoryDrawerResponse?
@@ -162,6 +177,7 @@ public struct ProvinceMemoryDrawerSheet: View {
                 Button("关闭") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
             }
 
             Divider().overlay(ArchivePalette.borderSubtle)
@@ -213,7 +229,7 @@ public struct ProvinceMemoryDrawerSheet: View {
                                 Text("到访城市分布")
                                     .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
-                                HStack(spacing: 6) {
+                                FlowTagLayout(spacing: 6) {
                                     ForEach(d.visitedCities) { city in
                                         Text("\(city.cityName) (\(city.visitCount))")
                                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
@@ -234,24 +250,36 @@ public struct ProvinceMemoryDrawerSheet: View {
                                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                                 ForEach(d.entries) { entry in
-                                    VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
-                                        HStack {
-                                            Text(entry.title.isEmpty ? "散页随笔" : entry.title)
-                                                .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
-                                                .foregroundStyle(ArchivePalette.inkPrimary)
-                                            Spacer()
-                                            Text(entry.parsedDate.dotDate)
-                                                .font(ArchiveTypography.monoScale(size: 10.5))
-                                                .foregroundStyle(ArchivePalette.inkMuted)
+                                    Button {
+                                        onSelectEntry?(entry)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+                                            HStack {
+                                                Text(entry.title.isEmpty ? "散页随笔" : entry.title)
+                                                    .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                                Spacer()
+                                                Text(entry.parsedDate.dotDate)
+                                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                            }
+                                            Text(entry.content)
+                                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                                .lineLimit(3)
                                         }
-                                        Text(entry.content)
-                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                                            .foregroundStyle(ArchivePalette.inkSecondary)
-                                            .lineLimit(3)
+                                        .padding(10)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(ArchivePalette.archiveSubtle)
+                                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                        )
                                     }
-                                    .padding(10)
-                                    .background(ArchivePalette.archiveSubtle)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .buttonStyle(.plain)
+                                    .paperHover()
+                                    .paperButtonFocusRing()
                                 }
                             }
                         }

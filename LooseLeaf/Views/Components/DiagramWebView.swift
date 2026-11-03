@@ -87,18 +87,28 @@ public struct DiagramWebView: NSViewRepresentable {
 /// 图表 HTML 生成器 (遵循 diagram-design 技能 Editorial 纸墨规范)
 public enum DiagramHTMLBuilder {
 
+    /// 转义 JSON 字符串（反斜杠、双引号与换行符）避免注入或脚本语法错误
+    private static func escapeJSONString(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+         .replacingOccurrences(of: "\n", with: "\\n")
+         .replacingOccurrences(of: "\r", with: "")
+         .replacingOccurrences(of: "\t", with: " ")
+    }
+
     /// 生成 ECharts / SVG 日历图 HTML
     public static func buildCalendarChartHTML(
         year: Int,
         entryCounts: [String: Int],
         isDark: Bool
     ) -> String {
-        let paper = isDark ? "#2d3142" : "#f5f5f5"
-        let paper2 = isDark ? "#393e53" : "#ececec"
-        let ink = isDark ? "#f5f5f5" : "#2d3142"
-        let inkMuted = isDark ? "#bfc0c0" : "#4f5d75"
-        let _ = isDark ? "#f08a59" : "#bf4520"
-        let accentMoss = isDark ? "#8cb369" : "#5b7050"
+        let paper = isDark ? "rgb(20, 19, 18)" : "rgb(249, 248, 245)"
+        let paper2 = isDark ? "rgb(29, 27, 25)" : "rgb(242, 240, 235)"
+        let ink = isDark ? "rgb(237, 232, 225)" : "rgb(24, 23, 22)"
+        let inkMuted = isDark ? "rgb(131, 126, 117)" : "rgb(116, 113, 105)"
+        let accentMossLight = isDark ? "rgba(92, 136, 112, 0.27)" : "rgba(63, 90, 74, 0.27)"
+        let accentMossMedium = isDark ? "rgba(92, 136, 112, 0.53)" : "rgba(63, 90, 74, 0.53)"
+        let accentMoss = isDark ? "rgb(92, 136, 112)" : "rgb(63, 90, 74)"
 
         // 构造数据序列 [[ "YYYY-MM-DD", count ], ...]
         var dataEntries: [String] = []
@@ -181,9 +191,9 @@ public enum DiagramHTMLBuilder {
                     textStyle: { color: '\(inkMuted)', fontSize: 11 },
                     inRange: {
                       color: [
-                        '\(isDark ? "rgba(245,245,245,0.06)" : "rgba(45,49,66,0.06)")',
-                        '\(accentMoss)44',
-                        '\(accentMoss)88',
+                        '\(isDark ? "rgba(237,232,225,0.06)" : "rgba(24,23,22,0.06)")',
+                        '\(accentMossLight)',
+                        '\(accentMossMedium)',
                         '\(accentMoss)'
                       ]
                     }
@@ -197,12 +207,12 @@ public enum DiagramHTMLBuilder {
                     range: '\(year)',
                     splitLine: {
                       show: true,
-                      lineStyle: { color: '\(isDark ? "rgba(245,245,245,0.12)" : "rgba(45,49,66,0.12)")', width: 1 }
+                      lineStyle: { color: '\(isDark ? "rgba(237,232,225,0.10)" : "rgba(24,23,22,0.08)")', width: 1 }
                     },
                     itemStyle: {
                       color: '\(paper)',
                       borderWidth: 0.5,
-                      borderColor: '\(isDark ? "rgba(245,245,245,0.15)" : "rgba(45,49,66,0.15)")'
+                      borderColor: '\(isDark ? "rgba(237,232,225,0.12)" : "rgba(24,23,22,0.10)")'
                     },
                     yearLabel: { show: false },
                     monthLabel: {
@@ -250,30 +260,32 @@ public enum DiagramHTMLBuilder {
         categories: [String: [(id: Int, title: String, date: String, type: String)]],
         isDark: Bool
     ) -> String {
-        let paper = isDark ? "#2d3142" : "#f5f5f5"
-        let paper2 = isDark ? "#393e53" : "#ececec"
-        let ink = isDark ? "#f5f5f5" : "#2d3142"
-        let inkMuted = isDark ? "#bfc0c0" : "#4f5d75"
-        let accent = isDark ? "#f08a59" : "#bf4520"
+        let paper = isDark ? "rgb(20, 19, 18)" : "rgb(249, 248, 245)"
+        let paper2 = isDark ? "rgb(29, 27, 25)" : "rgb(242, 240, 235)"
+        let ink = isDark ? "rgb(237, 232, 225)" : "rgb(24, 23, 22)"
+        let inkMuted = isDark ? "rgb(131, 126, 117)" : "rgb(116, 113, 105)"
+        let accent = isDark ? "rgb(204, 93, 62)" : "rgb(162, 79, 43)"
 
         // 构造 Tree 数据结构: 根节点 -> 分类分支 -> 事件叶子节点
         var categoryNodes: [String] = []
         for (catName, entries) in categories {
             var leafNodes: [String] = []
             for item in entries.prefix(12) {
-                let cleanTitle = item.title.replacingOccurrences(of: "\"", with: "\\\"")
+                let cleanTitle = escapeJSONString(item.title)
+                let cleanDate = escapeJSONString(item.date)
                 leafNodes.append("""
                 {
                   "name": "\(cleanTitle)",
-                  "value": "\(item.date)",
+                  "value": "\(cleanDate)",
                   "entryId": \(item.id),
                   "itemStyle": { "borderColor": "\(accent)" }
                 }
                 """)
             }
+            let cleanCatName = escapeJSONString(catName)
             categoryNodes.append("""
             {
-              "name": "\(catName) (\(entries.count))",
+              "name": "\(cleanCatName) (\(entries.count))",
               "children": [ \(leafNodes.joined(separator: ", ")) ]
             }
             """)
@@ -307,11 +319,30 @@ public enum DiagramHTMLBuilder {
               height: 100%;
               min-height: 480px;
             }
+            .fallback-notice {
+              display: none;
+              padding: 24px;
+              color: \(inkMuted);
+              font-size: 13px;
+              text-align: center;
+              line-height: 1.6;
+            }
           </style>
         </head>
         <body>
           <div id="chart-container"></div>
+          <div id="fallback" class="fallback-notice">树图引擎离线或载入中，可使用顶部切换至原生树谱视图…</div>
           <script>
+            function escapeHtml(str) {
+              if (!str) return '';
+              return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+            }
+
             function notifyEntry(id) {
               if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.diagramBridge) {
                 window.webkit.messageHandlers.diagramBridge.postMessage({ type: 'selectEntry', id: id });
@@ -319,82 +350,89 @@ public enum DiagramHTMLBuilder {
             }
 
             try {
-              var chartDom = document.getElementById('chart-container');
-              var myChart = echarts.init(chartDom, null, { renderer: 'svg' });
-              var treeData = \(treeDataJSON);
+              if (typeof echarts === 'undefined') {
+                var fb = document.getElementById('fallback');
+                if (fb) fb.style.display = 'block';
+              } else {
+                var chartDom = document.getElementById('chart-container');
+                var myChart = echarts.init(chartDom, null, { renderer: 'svg' });
+                var treeData = \(treeDataJSON);
 
-              var option = {
-                backgroundColor: 'transparent',
-                tooltip: {
-                  trigger: 'item',
-                  triggerOn: 'mousemove',
-                  backgroundColor: '\(paper2)',
-                  borderColor: '\(accent)',
-                  textStyle: { color: '\(ink)', fontSize: 12 },
-                  formatter: function(p) {
-                    if (p.data.value) {
-                      return '<b>' + p.data.name + '</b><br/>发生时刻：' + p.data.value + '<br/>(点击打开详情)';
-                    }
-                    return p.data.name;
-                  }
-                },
-                series: [
-                  {
-                    type: 'tree',
-                    data: [treeData],
-                    top: '6%',
-                    left: '12%',
-                    bottom: '6%',
-                    right: '24%',
-                    symbolSize: 8,
-                    edgeShape: 'polyline', // 直角拐角连接线 (Orthogonal connectors 严格对标 diagram-design 规范)
-                    lineStyle: {
-                      color: '\(inkMuted)',
-                      width: 1.2,
-                      curveness: 0
-                    },
-                    itemStyle: {
-                      color: '\(paper)',
-                      borderColor: '\(accent)',
-                      borderWidth: 1.5
-                    },
-                    label: {
-                      position: 'left',
-                      verticalAlign: 'middle',
-                      align: 'right',
-                      fontSize: 12,
-                      color: '\(ink)'
-                    },
-                    leaves: {
-                      label: {
-                        position: 'right',
-                        verticalAlign: 'middle',
-                        align: 'left',
-                        fontSize: 11,
-                        color: '\(ink)'
+                var option = {
+                  backgroundColor: 'transparent',
+                  tooltip: {
+                    trigger: 'item',
+                    triggerOn: 'mousemove',
+                    backgroundColor: '\(paper2)',
+                    borderColor: '\(accent)',
+                    textStyle: { color: '\(ink)', fontSize: 12 },
+                    formatter: function(p) {
+                      if (p.data.value) {
+                        return '<b>' + escapeHtml(p.data.name) + '</b><br/>发生时刻：' + escapeHtml(p.data.value) + '<br/>(点击打开详情)';
                       }
-                    },
-                    emphasis: {
-                      focus: 'descendant'
-                    },
-                    expandAndCollapse: true,
-                    animationDuration: 400
+                      return escapeHtml(p.data.name);
+                    }
+                  },
+                  series: [
+                    {
+                      type: 'tree',
+                      data: [treeData],
+                      top: '6%',
+                      left: '12%',
+                      bottom: '6%',
+                      right: '24%',
+                      symbolSize: 8,
+                      edgeShape: 'polyline', // 直角拐角连接线 (Orthogonal connectors 严格对标 diagram-design 规范)
+                      lineStyle: {
+                        color: '\(inkMuted)',
+                        width: 1.2,
+                        curveness: 0
+                      },
+                      itemStyle: {
+                        color: '\(paper)',
+                        borderColor: '\(accent)',
+                        borderWidth: 1.5
+                      },
+                      label: {
+                        position: 'left',
+                        verticalAlign: 'middle',
+                        align: 'right',
+                        fontSize: 12,
+                        color: '\(ink)'
+                      },
+                      leaves: {
+                        label: {
+                          position: 'right',
+                          verticalAlign: 'middle',
+                          align: 'left',
+                          fontSize: 11,
+                          color: '\(ink)'
+                        }
+                      },
+                      emphasis: {
+                        focus: 'descendant'
+                      },
+                      expandAndCollapse: true,
+                      animationDuration: 400
+                    }
+                  ]
+                };
+
+                myChart.setOption(option);
+                myChart.on('click', function(params) {
+                  if (params.data && params.data.entryId) {
+                    notifyEntry(params.data.entryId);
                   }
-                ]
-              };
+                });
 
-              myChart.setOption(option);
-              myChart.on('click', function(params) {
-                if (params.data && params.data.entryId) {
-                  notifyEntry(params.data.entryId);
-                }
-              });
-
-              window.addEventListener('resize', function() {
-                myChart.resize();
-              });
+                window.addEventListener('resize', function() {
+                  myChart.resize();
+                });
+              }
             } catch(e) {
               console.error(e);
+              var fb = document.getElementById('fallback');
+              if (fb) fb.style.display = 'block';
             }
           </script>
         </body>

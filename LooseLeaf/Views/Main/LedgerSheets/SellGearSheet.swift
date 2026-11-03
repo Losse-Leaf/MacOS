@@ -19,60 +19,46 @@ public struct SellGearSheet: View {
     @State private var errorText: String?
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
-            Text("出闲置 · 转售器材回血")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        PaperSheetScaffold(
+            title: "出闲置 · 转售器材回血",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isSubmitting,
+            isSubmitDisabled: (FormatUtils.parseYuanToCents(soldPriceYuan) ?? 0) <= 0,
+            submitTitle: "确认转售归档",
+            onCancel: onDismiss,
+            onSubmit: submitSell
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                Text("转让设备：\(gear.name) (\(gear.spec ?? gear.category))")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
 
-            Text("转让设备：\(gear.name) (\(gear.spec ?? gear.category))")
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
-                .foregroundStyle(ArchivePalette.inkSecondary)
-
-            if let boughtPrice = gear.priceCents, boughtPrice > 0 {
-                Text("原购入成本：\(FormatUtils.formattedYuan(cents: boughtPrice, includeSymbol: true))")
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-            }
-
-            TextField("转售金额", text: $soldPriceYuan)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 14))
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            TextField("流转手记", text: $note)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if let errorText {
-                Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { onDismiss() }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                Spacer()
-                Button("确认转售归档") {
-                    submitSell()
+                if let boughtPrice = gear.priceCents, boughtPrice > 0 {
+                    Text("原购入成本：\(FormatUtils.formattedYuan(cents: boughtPrice, includeSymbol: true))")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                        .foregroundStyle(ArchivePalette.inkMuted)
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .disabled(isSubmitting || (FormatUtils.parseYuanToCents(soldPriceYuan) ?? 0) <= 0)
+
+                TextField("转售金额（元）", text: $soldPriceYuan)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.monoScale(size: 14))
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                TextField("流转手记", text: $note)
+                    .textFieldStyle(.plain)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                if let errorText {
+                    Text(errorText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.compact,
-            idealWidth: ArchiveSheetWidth.compact,
-            maxWidth: ArchiveSheetWidth.compact
-        )
-        .background(ArchivePalette.archivePaper)
     }
 
     private func submitSell() {

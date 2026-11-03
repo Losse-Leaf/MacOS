@@ -26,15 +26,16 @@ struct HubDevicesSettingsView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
             settingsFeedbackBanner(feedback: authFeedback, error: authError)
+            let badge = appState.hubConnectionBadgeState
             // 中枢连接状态
-            settingsCardSection(title: "数据中枢连接", caption: appState.isPaired ? "已接入中枢网络" : "尚未配对") {
+            settingsCardSection(title: "数据中枢连接", caption: appState.isPaired ? (appState.isOnline ? "已接入中枢网络" : "中枢离线 · 发件箱就绪") : "尚未配对") {
                 HStack(spacing: ArchiveSpacing.m) {
                     Circle()
-                        .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .fill(badge.dotColor)
                         .frame(width: 8, height: 8)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
-                        Text(appState.isPaired ? "数据中枢已连接" : "未配对中枢节点")
+                        Text(appState.isPaired ? "数据中枢节点 (\(badge.label))" : "未配对中枢节点")
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                                                 // 关键：文案要与**事实**相符。
@@ -261,13 +262,12 @@ struct HubDevicesSettingsView: View {
     private var unpairedInputBar: some View {
         HStack(spacing: ArchiveSpacing.s) {
             TextField("输入或粘贴配对工单号 (Ticket) 或深链…", text: $ticketURIInput)
-                .accessibilityLabel("配对工单号或深链")
+                .accessibilityLabel("配对工单号或深链输入框")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archivePaper)
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                .accessibilityLabel("配对工单号或深链输入框")
 
             Button {
                 performTicketPairing()

@@ -39,6 +39,8 @@ public struct LooseLeafApp: App {
             appState.editingTransaction = nil
         } else if appState.highlightedEntry != nil {
             appState.highlightedEntry = nil
+        } else if appState.detailWindowEntry != nil {
+            appState.detailWindowEntry = nil
         }
     }
 
@@ -78,6 +80,7 @@ public struct LooseLeafApp: App {
                         Label("全局档案检索", systemImage: ArchiveIcon.search.systemName)
                     }
                     .help("全局档案检索 (⌘K)")
+                    .disabled(appState.hasOpenOverlay)
 
                     Button {
                         Task { @MainActor in
@@ -87,6 +90,7 @@ public struct LooseLeafApp: App {
                         Label("同步档案", systemImage: ArchiveIcon.sync.systemName)
                     }
                     .help("全量同步中枢档案 (⌘R)")
+                    .disabled(appState.hasOpenOverlay || !appState.isPaired || appState.isLoading || appState.isFlushingOutbox)
 
                     Button {
                         appState.showNewEntrySheet = true
@@ -94,6 +98,7 @@ public struct LooseLeafApp: App {
                         Label("记一笔", systemImage: ArchiveIcon.add.systemName)
                     }
                     .help("记一笔 (⌘N)")
+                    .disabled(appState.hasOpenOverlay)
                 }
             }
         }
@@ -230,7 +235,16 @@ public struct LooseLeafApp: App {
         Window("散页详情", id: "detail") {
             Group {
                 if let entry = appState.detailWindowEntry {
-                    StreamEntryDetailView(entry: entry, appState: appState)
+                    StreamEntryDetailView(
+                        entry: entry,
+                        appState: appState,
+                        onClose: {
+                            appState.detailWindowEntry = nil
+                        },
+                        onDeleteTransaction: { tx in
+                            appState.deleteTransactionAction(tx)
+                        }
+                    )
                         .frame(minWidth: 520, minHeight: 380)
                         .background(ArchivePalette.archivePaper)
                 } else {

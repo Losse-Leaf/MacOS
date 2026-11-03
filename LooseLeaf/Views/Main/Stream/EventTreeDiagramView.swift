@@ -49,14 +49,21 @@ public struct EventTreeDiagramView: View {
         let projectEntries = entries.filter { $0.type == "project" }
         let wishEntries = entries.filter { $0.type == "wish" }
         let txEntries = entries.filter { $0.type == "transaction" }
+        let gearEntries = entries.filter { $0.type == "gear" }
+        let otherEntries = entries.filter { !["life", "travel", "project", "wish", "transaction", "gear"].contains($0.type) }
 
-        return [
+        var list = [
             CategoryBranch(id: "life", label: "日常随笔", icon: "pencil.line", tint: ArchivePalette.accentMoss, entries: lifeEntries),
             CategoryBranch(id: "travel", label: "山川行迹", icon: "airplane", tint: ArchivePalette.accentWarm, entries: travelEntries),
             CategoryBranch(id: "project", label: "造物沉淀", icon: "hammer", tint: Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle), entries: projectEntries),
             CategoryBranch(id: "wish", label: "心愿清单", icon: "sparkles", tint: Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle), entries: wishEntries),
-            CategoryBranch(id: "transaction", label: "柴米油盐", icon: "yensign.circle", tint: Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle), entries: txEntries)
+            CategoryBranch(id: "transaction", label: "柴米油盐", icon: "yensign.circle", tint: Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle), entries: txEntries),
+            CategoryBranch(id: "gear", label: "行囊装备", icon: "cube.box", tint: Color("SpectrumShopping", bundle: ArchiveResourceBundle.bundle), entries: gearEntries)
         ]
+        if !otherEntries.isEmpty {
+            list.append(CategoryBranch(id: "other", label: "其它漫录", icon: "ellipsis.circle", tint: ArchivePalette.inkSecondary, entries: otherEntries))
+        }
+        return list
     }
 
     private var activeBranches: [CategoryBranch] {
@@ -89,51 +96,56 @@ public struct EventTreeDiagramView: View {
     // MARK: - 顶栏工具条
 
     private var treeToolbar: some View {
-        HStack(spacing: ArchiveSpacing.m) {
-            HStack(spacing: ArchiveSpacing.s) {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 13))
-                    .foregroundStyle(ArchivePalette.accentWarm)
+        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+            HStack(alignment: .center, spacing: ArchiveSpacing.m) {
+                HStack(spacing: ArchiveSpacing.s) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 13))
+                        .foregroundStyle(ArchivePalette.accentWarm)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("时间流 · 事件树谱图")
-                        .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                    Text("以形态分支与直角树谱梳理 \(entries.count) 篇在册生活事件")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("时间流 · 事件树谱图")
+                            .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Text("以形态分支与直角树谱梳理 \(entries.count) 篇在册生活事件")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
                 }
-            }
 
-            Spacer()
+                Spacer()
 
-            // 分类筛选胶囊
-            HStack(spacing: 4) {
-                PaperPillButton(title: "全部形态", isSelected: selectedCategoryId == "all") {
-                    selectedCategoryId = "all"
-                }
-                ForEach(branches) { b in
-                    if !b.entries.isEmpty {
+                // 引擎切换
+                HStack(spacing: 4) {
+                    ForEach(TreeEngineMode.allCases) { mode in
                         PaperPillButton(
-                            title: "\(b.label) (\(b.entries.count))",
-                            isSelected: selectedCategoryId == b.id
+                            title: mode.rawValue,
+                            isSelected: engineMode == mode
                         ) {
-                            selectedCategoryId = b.id
+                            engineMode = mode
                         }
                     }
                 }
             }
 
-            // 引擎切换
-            HStack(spacing: 4) {
-                ForEach(TreeEngineMode.allCases) { mode in
-                    PaperPillButton(
-                        title: mode.rawValue,
-                        isSelected: engineMode == mode
-                    ) {
-                        engineMode = mode
+            // 分类筛选胶囊（横向平滑滚动，根治窄屏下溢出与文字挤压）
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "全部形态", isSelected: selectedCategoryId == "all") {
+                        selectedCategoryId = "all"
+                    }
+                    ForEach(branches) { b in
+                        if !b.entries.isEmpty {
+                            PaperPillButton(
+                                title: "\(b.label) (\(b.entries.count))",
+                                isSelected: selectedCategoryId == b.id
+                            ) {
+                                selectedCategoryId = b.id
+                            }
+                        }
                     }
                 }
+                .padding(.vertical, 2)
             }
         }
     }
@@ -142,21 +154,26 @@ public struct EventTreeDiagramView: View {
 
     private var nativeTreeView: some View {
         ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .center, spacing: 0) {
                 // 1. 根节点 (Root Node) 居中呈现
-                HStack {
-                    Spacer()
-                    rootNodeView
-                    Spacer()
-                }
+                rootNodeView
 
-                // 2. 根部到一级分支的主母线 (Orthogonal Trunk to Bus)
-                HStack {
-                    Spacer()
-                    Rectangle()
-                        .fill(ArchivePalette.borderSubtle)
-                        .frame(width: 1.5, height: 20)
-                    Spacer()
+                // 2. 根部到一级分支的主母线与横向总线 (Orthogonal Trunk to Bus)
+                Rectangle()
+                    .fill(ArchivePalette.accentWarm.opacity(0.45))
+                    .frame(width: 1.5, height: 16)
+
+                if activeBranches.count > 1 {
+                    // 横向正交总线 (Bus Bar)
+                    GeometryReader { geo in
+                        Path { path in
+                            let midY = geo.size.height / 2
+                            path.move(to: CGPoint(x: 80, y: midY))
+                            path.addLine(to: CGPoint(x: max(geo.size.width - 80, 80), y: midY))
+                        }
+                        .stroke(ArchivePalette.borderSubtle, lineWidth: 1.5)
+                    }
+                    .frame(height: 10)
                 }
 
                 // 3. 各大形态分支横向并排展开 (Level 1 Branches & Event Leaves)
@@ -165,7 +182,7 @@ public struct EventTreeDiagramView: View {
                         branchColumnView(branch)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 16)
             }
             .padding(.vertical, 16)
             .frame(minWidth: 840)
@@ -183,7 +200,7 @@ public struct EventTreeDiagramView: View {
                 Text("《散页》生活档案馆")
                     .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("ROOT · \(entries.count) EVENTS")
+                Text("散页总卷 · \(entries.count) 篇在册留痕")
                     .font(ArchiveTypography.monoScale(size: 9))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
@@ -198,7 +215,7 @@ public struct EventTreeDiagramView: View {
         )
     }
 
-    /// 单个形态分支列 (包含分支父节点 + 直角分支线 + 叶子节点事件卡片)
+    /// 单个形态分支列 (包含分支父节点 + 垂直连续骨干引线 + 树枝连接叶子节点)
     private func branchColumnView(_ branch: CategoryBranch) -> some View {
         VStack(alignment: .center, spacing: 0) {
             // 一级分支头节点 (Category Node)
@@ -222,46 +239,60 @@ public struct EventTreeDiagramView: View {
                     .stroke(branch.tint.opacity(0.6), lineWidth: 1)
             )
 
-            // 直角延伸主干引线 (Orthogonal Branch Spine)
+            // 直角延伸主干引线 (Orthogonal Branch Spine Top)
             Rectangle()
-                .fill(branch.tint.opacity(0.3))
+                .fill(branch.tint.opacity(0.35))
                 .frame(width: 1.5, height: 16)
 
-            // 叶子节点列表 (最多展示最近 10 条事件)
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(branch.entries.prefix(8)) { entry in
-                    leafNodeItemView(entry, tint: branch.tint)
+            // 叶子节点列表 (连续垂直树干 + ├── 与 └── 分支引线)
+            let shownEntries = Array(branch.entries.prefix(8))
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(shownEntries.enumerated()), id: \.element.id) { index, entry in
+                    let isLast = index == shownEntries.count - 1 && branch.entries.count <= 8
+                    leafNodeItemView(entry, tint: branch.tint, isLast: isLast)
                 }
 
                 if branch.entries.count > 8 {
-                    Text("… 还有 \(branch.entries.count - 8) 条手稿沉淀")
-                        .font(ArchiveTypography.monoScale(size: 10))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.top, 4)
-                        .padding(.leading, 18)
+                    HStack(spacing: 0) {
+                        Rectangle()
+                            .fill(branch.tint.opacity(0.35))
+                            .frame(width: 1.5, height: 24)
+                            .padding(.leading, 10)
+                        Text("… 还有 \(branch.entries.count - 8) 条在册手稿")
+                            .font(ArchiveTypography.monoScale(size: 10))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(.leading, 8)
+                    }
                 }
             }
         }
-        .frame(minWidth: 155, maxWidth: 190)
+        .frame(minWidth: 160, maxWidth: 195)
     }
 
-    /// 单个事件叶子节点 (Leaf Node)
-    private func leafNodeItemView(_ entry: LifeEntry, tint: Color) -> some View {
+    /// 单个事件叶子节点 (Leaf Node 带连续直角折线连接)
+    private func leafNodeItemView(_ entry: LifeEntry, tint: Color, isLast: Bool) -> some View {
         let isHovered = hoveredEntryId == entry.id
 
         return HStack(alignment: .top, spacing: 0) {
-            // 直角树枝分支引线 (Orthogonal Elbow Connector)
-            HStack(spacing: 0) {
+            // 直角连接折线 (├── 或 └──)
+            ZStack(alignment: .topLeading) {
+                // 垂直主干 (若为末节点则折角处终止，否则贯穿到底)
                 Rectangle()
-                    .fill(tint.opacity(0.4))
-                    .frame(width: 1.5, height: 18)
-                Rectangle()
-                    .fill(tint.opacity(0.4))
-                    .frame(width: 10, height: 1.5)
-            }
-            .padding(.top, 10)
+                    .fill(tint.opacity(0.35))
+                    .frame(width: 1.5)
+                    .frame(maxHeight: isLast ? 22 : .infinity)
+                    .padding(.leading, 10)
 
-            // 叶子节点小矩形 (rx=6，12px 名称 + 9px 等宽日期)
+                // 水平折角引线 (向右伸向卡片)
+                Rectangle()
+                    .fill(tint.opacity(0.35))
+                    .frame(width: 8, height: 1.5)
+                    .padding(.leading, 10)
+                    .padding(.top, 22)
+            }
+            .frame(width: 20)
+
+            // 叶子节点卡片
             Button {
                 onSelectEntry(entry)
             } label: {
@@ -297,6 +328,7 @@ public struct EventTreeDiagramView: View {
                 )
             }
             .buttonStyle(.plain)
+            .padding(.vertical, 3)
             .onHover { isHovered in
                 hoveredEntryId = isHovered ? entry.id : nil
             }
@@ -308,7 +340,7 @@ public struct EventTreeDiagramView: View {
 
     private var echartsTreeView: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("ECharts 树图引擎 · 直角折线拓扑 (Polyline Tree)")
+            Text("交互树图画卷 · 直角折线拓扑")
                 .font(ArchiveTypography.monoScale(size: 11))
                 .foregroundStyle(ArchivePalette.inkMuted)
 

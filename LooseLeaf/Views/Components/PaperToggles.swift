@@ -40,8 +40,9 @@ public struct PaperCheckboxToggleStyle: ToggleStyle {
             }
         }
         .buttonStyle(.plain)
+        .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
         // 自绘控件需显式补齐开关语义，VoiceOver 才能朗读选中状态
-        .accessibilityAddTraits(.isSelected)
+        .accessibilityAddTraits(.isToggle)
         .accessibilityValue(configuration.isOn ? "已勾选" : "未勾选")
     }
 }
@@ -82,9 +83,10 @@ public struct PaperSwitchToggleStyle: ToggleStyle {
             }
         }
         .buttonStyle(.plain)
+        .paperButtonFocusRing(cornerRadius: ArchiveRadius.md)
         // 自绘控件需显式补齐开关语义，VoiceOver 才能朗读开合状态
-        .accessibilityAddTraits(.isSelected)
-        .accessibilityValue(configuration.isOn ? "已开启" : "未关闭")
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(configuration.isOn ? "已开启" : "已关闭")
     }
 }
 

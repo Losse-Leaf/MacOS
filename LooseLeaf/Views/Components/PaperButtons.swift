@@ -105,8 +105,13 @@ public struct PaperHoverModifier: ViewModifier {
 
 public extension View {
     /// 纸面悬停反馈（卡片 / 缩略图等可交互面板）
-    func paperHover() -> some View {
-        modifier(PaperHoverModifier())
+    @ViewBuilder
+    func paperHover(enabled: Bool = true) -> some View {
+        if enabled {
+            modifier(PaperHoverModifier())
+        } else {
+            self
+        }
     }
 
     /// 按钮的纸本焦点环（键盘导航时显形）

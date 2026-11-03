@@ -120,12 +120,26 @@ public struct TravelAtlasView: View {
             }
         }
         .sheet(item: $selectedDrawerCity) { sel in
-            CityMemoryDrawerSheet(cityCode: sel.code, cityName: sel.name) {
+            CityMemoryDrawerSheet(
+                cityCode: sel.code,
+                cityName: sel.name,
+                onSelectEntry: { entry in
+                    selectedDrawerCity = nil
+                    appState.highlightedEntry = entry
+                }
+            ) {
                 selectedDrawerCity = nil
             }
         }
         .sheet(item: $selectedDrawerProvince) { sel in
-            ProvinceMemoryDrawerSheet(adcode: sel.adcode, provinceName: sel.name) {
+            ProvinceMemoryDrawerSheet(
+                adcode: sel.adcode,
+                provinceName: sel.name,
+                onSelectEntry: { entry in
+                    selectedDrawerProvince = nil
+                    appState.highlightedEntry = entry
+                }
+            ) {
                 selectedDrawerProvince = nil
             }
         }
@@ -214,25 +228,43 @@ public struct TravelAtlasView: View {
             }
             .horizontalFadeMask()
 
-            let displayRegions = selectedRegion == "all" ? Self.regions : Self.regions.filter { $0.name == selectedRegion }
             let byProvince = footprintsByProvince
+            let rawRegions = selectedRegion == "all" ? Self.regions : Self.regions.filter { $0.name == selectedRegion }
+            let displayRegions = rawRegions.compactMap { reg -> (name: String, provinces: [(name: String, short: String, adcode: String)])? in
+                let visible = reg.provinces.filter { prov in
+                    if sealFilter == "all" { return true }
+                    let count = byProvince[String(prov.adcode.prefix(2))]?.count ?? 0
+                    return count > 0
+                }
+                guard !visible.isEmpty else { return nil }
+                return (name: reg.name, provinces: visible)
+            }
 
-            ForEach(displayRegions, id: \.name) { reg in
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    Text(reg.name)
-                        .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.accentWarm)
+            if displayRegions.isEmpty {
+                ArchiveEmptyState(
+                    systemName: "map",
+                    title: "尚无已钤印省份",
+                    message: "在时间流记录游历手稿或添加足迹票根，即可点亮对应的山川方印。",
+                    primaryTitle: "查看全谱 34 省",
+                    primaryAction: { sealFilter = "all" }
+                )
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                ForEach(displayRegions, id: \.name) { reg in
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        Text(reg.name)
+                            .font(ArchiveTypography.editorialSerif(size: 14, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.accentWarm)
 
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                        ForEach(reg.provinces, id: \.adcode) { prov in
-                            let provinceFootprints = byProvince[String(prov.adcode.prefix(2))] ?? []
-                            if sealFilter == "all" || !provinceFootprints.isEmpty {
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            ForEach(reg.provinces, id: \.adcode) { prov in
+                                let provinceFootprints = byProvince[String(prov.adcode.prefix(2))] ?? []
                                 provinceStampCell(prov: prov, footprints: provinceFootprints)
                             }
                         }
                     }
+                    .padding(.bottom, 6)
                 }
-                .padding(.bottom, 6)
             }
         }
     }
@@ -302,7 +334,7 @@ public struct TravelAtlasView: View {
         .disabled(!isLit)
         .accessibilityLabel(isLit ? "\(prov.name)，已钤印 \(litCount) 程" : "\(prov.name)，待踏访")
         .accessibilityHint(isLit ? "打开该省份的山河回忆抽屉" : "")
-        .paperHover()
+        .paperHover(enabled: isLit)
     }
 
     // MARK: - 4. 典藏票根架
@@ -340,11 +372,15 @@ public struct TravelAtlasView: View {
                                     .frame(width: 105, alignment: .leading)
                                     .padding(ArchiveSpacing.m)
 
-                                    // 齿孔虚线
-                                    Rectangle()
-                                        .fill(ArchivePalette.borderDivider)
-                                        .frame(width: 0.5)
-                                        .padding(.vertical, ArchiveSpacing.s)
+                                    // 齿孔虚线 (Perforated ticket line)
+                                    Path { p in
+                                        p.move(to: CGPoint(x: 0.5, y: 0))
+                                        p.addLine(to: CGPoint(x: 0.5, y: 1000))
+                                    }
+                                    .stroke(ArchivePalette.borderDivider, style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+                                    .frame(width: 1)
+                                    .clipped()
+                                    .padding(.vertical, ArchiveSpacing.s)
 
                                     // 右联：游记正券
                                     VStack(alignment: .leading, spacing: 6) {

@@ -4,14 +4,23 @@ import AppKit
     /// 散页详情视图 (Entry Detail)
 /// 从 StreamView 拆出：既用于主窗口内的详情弹层，也用于「在新窗口打开」的独立详情窗口。
 struct StreamEntryDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     let entry: LifeEntry
     let appState: AppState
+    var onClose: (() -> Void)? = nil
     /// 编辑该条手稿
     var onEditEntry: (LifeEntry) -> Void = { _ in }
     /// 编辑该笔账目
     var onEditTransaction: (Transaction) -> Void = { _ in }
     /// 删除该笔账目
     var onDeleteTransaction: (Transaction) -> Void = { _ in }
+
+    private func handleClose() {
+        appState.highlightedEntry = nil
+        appState.detailWindowEntry = nil
+        onClose?()
+        dismiss()
+    }
 
     var body: some View {
         let isTx = (entry.type == "transaction")
@@ -31,7 +40,7 @@ struct StreamEntryDetailView: View {
                     if isTx {
                         if let tx = matchingTx {
                             Button("编辑账目") {
-                                appState.highlightedEntry = nil
+                                handleClose()
                                 onEditTransaction(tx)
                             }
                             .font(ArchiveTypography.bodySans(size: 12))
@@ -42,11 +51,11 @@ struct StreamEntryDetailView: View {
                                 appState.askConfirm(
                                     title: ArchiveSharedCopy.transactionDeleteTitle,
                                     message: ArchiveSharedCopy.transactionDeleteMessage,
-                                confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
+                                    confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
                                     danger: true
                                 ) {
+                                    handleClose()
                                     onDeleteTransaction(tx)
-                                    appState.highlightedEntry = nil
                                 }
                             }
                             .font(ArchiveTypography.bodySans(size: 12))
@@ -56,7 +65,7 @@ struct StreamEntryDetailView: View {
                     } else {
                         Button("编辑手稿") {
                             let target = entry
-                            appState.highlightedEntry = nil
+                            handleClose()
                             onEditEntry(target)
                         }
                         .font(ArchiveTypography.bodySans(size: 12))
@@ -76,7 +85,7 @@ struct StreamEntryDetailView: View {
                                 confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
                                 danger: true
                             ) {
-                                appState.highlightedEntry = nil
+                                handleClose()
                                 appState.deleteEntryAction(entry)
                             }
                         }
@@ -86,8 +95,9 @@ struct StreamEntryDetailView: View {
                     }
                 }
                 Button("关闭") {
-                    appState.highlightedEntry = nil
+                    handleClose()
                 }
+                .keyboardShortcut(.cancelAction)
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 .paperButtonFocusRing()
             }

@@ -151,11 +151,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if sender.isHidden {
+            sender.unhide(nil)
+        }
         if !flag {
             // 优先唤回主工作台窗口，避免把浮动捕捉面板当成主窗口
             let mainWindow = sender.windows.first { $0.identifier?.rawValue == "main" }
                 ?? sender.windows.first { $0.canBecomeMain }
-            mainWindow?.makeKeyAndOrderFront(nil)
+            if let win = mainWindow {
+                if win.isMiniaturized {
+                    win.deminiaturize(nil)
+                }
+                win.makeKeyAndOrderFront(nil)
+            }
             sender.activate(ignoringOtherApps: true)
         }
         return true
@@ -338,6 +346,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.backgroundColor = .clear
             panel.hasShadow = true
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.setFrameAutosaveName("LooseLeafQuickCapturePanel")
 
             let rootView = QuickCaptureView(appState: AppState.shared) { [weak self] in
                 self?.closeQuickCapturePanel()
@@ -350,20 +359,25 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let panel = quickCapturePanel else { return }
-        // 面板出现在鼠标所在的屏幕（多显示器友好），回退到主屏
-        let mouseLocation = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main
-        if let screen = targetScreen {
-            let frame = screen.visibleFrame
-            let x = frame.midX - 190
-            let y = frame.maxY - 460
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
+        // 优先使用用户之前拖拽保存的窗口位置，仅当未保存或不在任何有效屏幕内时回退到光标所在屏幕
+        let hasSavedFrame = panel.setFrameUsingName("LooseLeafQuickCapturePanel")
+        let isOnScreen = NSScreen.screens.contains { NSIntersectsRect($0.frame, panel.frame) }
+        if !hasSavedFrame || !isOnScreen {
+            let mouseLocation = NSEvent.mouseLocation
+            let targetScreen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main
+            if let screen = targetScreen {
+                let frame = screen.visibleFrame
+                let x = frame.midX - 190
+                let y = frame.maxY - 460
+                panel.setFrameOrigin(NSPoint(x: x, y: y))
+            }
         }
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     public func closeQuickCapturePanel() {
+        quickCapturePanel?.saveFrame(usingName: "LooseLeafQuickCapturePanel")
         quickCapturePanel?.orderOut(nil)
     }
 }

@@ -18,6 +18,9 @@ public struct PaperCityPicker: View {
     @State private var isPickerPresented: Bool = false
     @State private var searchKeyword: String = ""
     @State private var activeProvince: String = "北京"
+    @State private var hoveredCityCode: String? = nil
+    @State private var hoveredProvince: String? = nil
+    @FocusState private var isTriggerFocused: Bool
 
     public init(
         selectedCode: Binding<String>,
@@ -31,6 +34,18 @@ public struct PaperCityPicker: View {
         self.placeholder = placeholder
         self.label = label
         self.isFullWidth = isFullWidth
+    }
+
+    private func openPicker() {
+        searchKeyword = ""
+        if let firstProv = allProvinces.first, activeProvince.isEmpty {
+            activeProvince = firstProv
+        }
+        // 已授权时静默刷新定位；未授权不在打开弹层的瞬间突然弹权限框
+        if LocationManager.shared.isAuthorized {
+            LocationManager.shared.fetchCurrentLocation()
+        }
+        isPickerPresented = true
     }
 
     /// 已选城市的展示文案。
@@ -69,20 +84,36 @@ public struct PaperCityPicker: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            // 外层不再用 Button 包裹：内部「清除」若嵌在 Button 里会同时触发打开弹层（双动作）
-            HStack(spacing: 5) {
-                Image(systemName: "map")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+            // 容器内并列主选择 Button 与清除图标 Button，消除嵌套事件冲突同时接入原生 Tab 焦点
+            HStack(spacing: 0) {
+                Button {
+                    openPicker()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "map")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
 
-                Text(displayText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
-                    .lineLimit(1)
+                        Text(displayText)
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
+                            .lineLimit(1)
 
-                if isFullWidth {
-                    Spacer(minLength: 4)
+                        if isFullWidth {
+                            Spacer(minLength: 4)
+                        }
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, ArchiveSpacing.s)
+                    .padding(.vertical, isFullWidth ? 7 : 4.5)
                 }
+                .buttonStyle(.plain)
+                .focused($isTriggerFocused)
+                .accessibilityLabel("选择省市，当前为 \(displayText)")
 
                 if isSelected {
                     // 统一图标按钮：命中区不小于指针可点下限
@@ -95,28 +126,9 @@ public struct PaperCityPicker: View {
                         selectedCode = ""
                         selectedName = ""
                     }
+                    .padding(.trailing, ArchiveSpacing.xs)
                 }
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7))
-                    .foregroundStyle(ArchivePalette.inkMuted)
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                searchKeyword = ""
-                if let firstProv = allProvinces.first, activeProvince.isEmpty {
-                    activeProvince = firstProv
-                }
-                // 已授权时静默刷新定位；未授权不在打开弹层的瞬间突然弹权限框
-                if LocationManager.shared.isAuthorized {
-                    LocationManager.shared.fetchCurrentLocation()
-                }
-                isPickerPresented = true
-            }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel("选择省市，当前为 \(displayText)")
-            .padding(.horizontal, ArchiveSpacing.s)
-            .padding(.vertical, isFullWidth ? 7 : 4.5)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .background(ArchivePalette.archivePaper)
             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
@@ -124,6 +136,7 @@ public struct PaperCityPicker: View {
                 RoundedRectangle(cornerRadius: ArchiveRadius.xs)
                     .stroke(isSelected ? ArchivePalette.accentWarm.opacity(0.4) : ArchivePalette.borderDivider, lineWidth: 0.5)
             )
+            .paperFocusRing(isFocused: isTriggerFocused, cornerRadius: ArchiveRadius.xs)
             .popover(isPresented: $isPickerPresented, arrowEdge: .bottom) {
                 cityPopoverContent
             }
@@ -222,6 +235,7 @@ public struct PaperCityPicker: View {
                     ScrollView {
                         LazyVStack(spacing: ArchiveSpacing.xxs) {
                             ForEach(filtered) { city in
+                                let isHovered = hoveredCityCode == city.code
                                 Button {
                                     selectedCode = city.code
                                     selectedName = city.name
@@ -233,12 +247,17 @@ public struct PaperCityPicker: View {
                                             .foregroundStyle(ArchivePalette.inkPrimary)
                                         Spacer()
                                     }
+                                    .contentShape(Rectangle())
                                     .padding(.horizontal, ArchiveSpacing.s)
                                     .padding(.vertical, ArchiveSpacing.xs)
-                                    .background(ArchivePalette.archivePaper)
+                                    .background(isHovered ? ArchivePalette.archiveSubtle : ArchivePalette.archivePaper)
                                     .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
                                 .buttonStyle(.plain)
+                                .onHover { h in
+                                    if h { hoveredCityCode = city.code }
+                                    else if hoveredCityCode == city.code { hoveredCityCode = nil }
+                                }
                             }
                         }
                     }
@@ -252,6 +271,7 @@ public struct PaperCityPicker: View {
                         LazyVStack(spacing: ArchiveSpacing.xxs) {
                             ForEach(allProvinces, id: \.self) { prov in
                                 let isProvActive = prov == activeProvince
+                                let isHovered = hoveredProvince == prov
                                 Button {
                                     activeProvince = prov
                                 } label: {
@@ -261,12 +281,17 @@ public struct PaperCityPicker: View {
                                             .foregroundStyle(isProvActive ? ArchivePalette.accentWarm : ArchivePalette.inkPrimary)
                                         Spacer()
                                     }
+                                    .contentShape(Rectangle())
                                     .padding(.horizontal, ArchiveSpacing.s)
                                     .padding(.vertical, ArchiveSpacing.xs)
-                                    .background(isProvActive ? ArchivePalette.accentWarm.opacity(0.12) : Color.clear)
+                                    .background(isProvActive ? ArchivePalette.accentWarm.opacity(0.12) : (isHovered ? ArchivePalette.archiveSubtle.opacity(0.6) : Color.clear))
                                     .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
                                 .buttonStyle(.plain)
+                                .onHover { h in
+                                    if h { hoveredProvince = prov }
+                                    else if hoveredProvince == prov { hoveredProvince = nil }
+                                }
                                 .accessibilityLabel(prov)
                                 .accessibilityValue(isProvActive ? "已选中" : "未选中")
                                 .accessibilityAddTraits(isProvActive ? .isSelected : AccessibilityTraits())
@@ -285,6 +310,8 @@ public struct PaperCityPicker: View {
                     ScrollView {
                         LazyVStack(spacing: ArchiveSpacing.xxs) {
                             ForEach(citiesInProv) { city in
+                                let isSelectedCity = selectedCode == city.code
+                                let isHovered = hoveredCityCode == city.code
                                 Button {
                                     selectedCode = city.code
                                     selectedName = city.name
@@ -297,14 +324,19 @@ public struct PaperCityPicker: View {
                                         Spacer()
                                         Image(systemName: "checkmark")
                                             .font(.system(size: 8))
-                                            .foregroundStyle(selectedCode == city.code ? ArchivePalette.accentWarm : Color.clear)
+                                            .foregroundStyle(isSelectedCity ? ArchivePalette.accentWarm : Color.clear)
                                     }
+                                    .contentShape(Rectangle())
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
-                                    .background(ArchivePalette.archivePaper)
+                                    .background(isSelectedCity ? ArchivePalette.accentWarm.opacity(0.08) : (isHovered ? ArchivePalette.archiveSubtle : ArchivePalette.archivePaper))
                                     .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
                                 .buttonStyle(.plain)
+                                .onHover { h in
+                                    if h { hoveredCityCode = city.code }
+                                    else if hoveredCityCode == city.code { hoveredCityCode = nil }
+                                }
                                 .accessibilityLabel(city.name)
                                 .accessibilityValue(selectedCode == city.code ? "已选中" : "未选中")
                                 .accessibilityAddTraits(selectedCode == city.code ? .isSelected : AccessibilityTraits())

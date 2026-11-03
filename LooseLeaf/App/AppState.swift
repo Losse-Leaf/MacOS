@@ -103,6 +103,48 @@ public enum QuickCaptureTab: String, CaseIterable, Sendable {
     case ledger = "快速记账"
 }
 
+/// 全仓统一中枢连接徽标状态 (唯一事实源：驱动侧栏、设置顶栏、中枢管理与关于页)
+public enum HubConnectionBadgeState: Sendable, Equatable {
+    case unpaired
+    case offline
+    case syncFailed(count: Int)
+    case syncing
+    case pendingUpload(count: Int)
+    case online
+
+    public var label: String {
+        switch self {
+        case .unpaired:
+            return "未配对中枢"
+        case .offline:
+            return "离线发件箱守护"
+        case .syncFailed(let count):
+            return "同步失败 \(count) 条"
+        case .syncing:
+            return "同步中…"
+        case .pendingUpload(let count):
+            return "待同步 \(count) 条"
+        case .online:
+            return "中枢就绪"
+        }
+    }
+
+    public var dotColor: Color {
+        switch self {
+        case .online:
+            return ArchivePalette.accentMoss
+        case .syncing:
+            return Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
+        case .pendingUpload, .offline:
+            return ArchivePalette.accentWarm
+        case .syncFailed:
+            return ArchivePalette.accentWarm
+        case .unpaired:
+            return ArchivePalette.inkMuted
+        }
+    }
+}
+
 /// 跨窗口持久化快速捕捉草稿容器 (@Observable)
 /// 统一 MenuBar 与悬浮窗状态实例，消除草稿割裂
 @Observable
@@ -579,6 +621,33 @@ public final class AppState {
             || highlightedEntry != nil
             || editingEntry != nil
             || editingTransaction != nil
+            || detailWindowEntry != nil
+    }
+
+    /// 全局中枢连接状态派生（唯一事实源，统一驱动侧栏、设置顶栏、中枢管理与关于页）
+    public var hubConnectionBadgeState: HubConnectionBadgeState {
+        guard isPaired else { return .unpaired }
+        guard isOnline else { return .offline }
+        var pending = 0
+        var failed = 0
+        for entry in entries {
+            switch entry.syncStatus ?? "synced" {
+            case "pending_create": pending += 1
+            case "failed": failed += 1
+            default: break
+            }
+        }
+        for tx in transactions {
+            switch tx.syncStatus ?? "synced" {
+            case "pending_create": pending += 1
+            case "failed": failed += 1
+            default: break
+            }
+        }
+        if failed > 0 { return .syncFailed(count: failed) }
+        if isFlushingOutbox { return .syncing }
+        if pending > 0 { return .pendingUpload(count: pending) }
+        return .online
     }
 
     public func requestStreamSearchFocus() {
@@ -875,6 +944,18 @@ public final class AppState {
         return map
     }
 
+    /// 时间流展示形态枚举（事件分类树 / 编年事件流 / 事件树谱全景）
+    public enum StreamTimelineDisplayMode: String, CaseIterable, Identifiable, Sendable {
+        case eventCategoryTree = "事件分类树"
+        case chronologicalTree = "编年事件流"
+        case treeDiagram = "事件树谱全景"
+
+        public var id: String { rawValue }
+    }
+
+    /// 当前选中的时间流展示形态（默认事件分类树）
+    public var streamTimelineMode: StreamTimelineDisplayMode = .eventCategoryTree
+
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
     public var streamRows: [StreamRow] {
         let key = Self.streamRowsCacheKey(
@@ -888,11 +969,15 @@ public final class AppState {
         }
         ArchivePerformance.mark(.render, "streamRows.recompute")
         let list = filteredStreamEntries
+        let rows = Self.buildStreamRows(for: list)
+        streamRowsMemo = (key, rows)
+        return rows
+    }
+
+    /// 为指定条目列表构建时间流显示行（计算紧凑时间标签与 >= 14 天年轮留白）
+    public static func buildStreamRows(for list: [LifeEntry]) -> [StreamRow] {
         var rows: [StreamRow] = []
         rows.reserveCapacity(list.count)
-        // 关键：循环内复用上一轮解析结果。
-        // 原实现对每一行调两次 `parsedDate`（当前行 + 上一行），
-        // 5000 条就是 10000 次 DateFormatter 解析；现在每条只解析一次。
         var previousParsed: FormatUtils.ParsedBeijingDate?
         var previousValidDate: Date?
         for entry in list {
@@ -908,7 +993,6 @@ public final class AppState {
             previousParsed = parsed
             previousValidDate = parsed.isValid ? parsed.date : nil
         }
-        streamRowsMemo = (key, rows)
         return rows
     }
 
@@ -1272,21 +1356,48 @@ public final class AppState {
 
     // MARK: - 键盘流导航（⌘↑ / ⌘↓ / ⌘↩）
 
-    /// 在筛选后的时间流中上下移动键盘焦点（首次按下选中第一条）
+    /// 当前视口实际展现次序的手稿列表（事件分类树按分群顺序，编年流按倒序）
+    public var displayedStreamEntries: [LifeEntry] {
+        if streamTimelineMode == .eventCategoryTree && selectedCategory == .all {
+            let defs = ["life", "travel", "project", "wish", "transaction", "gear"]
+            var bucket: [String: [LifeEntry]] = [:]
+            for entry in filteredStreamEntries {
+                bucket[entry.type, default: []].append(entry)
+            }
+            var result: [LifeEntry] = []
+            for type in defs {
+                if let items = bucket[type] {
+                    result.append(contentsOf: items)
+                }
+            }
+            let known = Set(defs)
+            for (type, items) in bucket where !known.contains(type) {
+                result.append(contentsOf: items)
+            }
+            return result
+        } else {
+            return filteredStreamEntries
+        }
+    }
+
+    /// 在筛选后的时间流中上下移动键盘焦点（首次按下正向选首条，反向选末条）
     public func moveSelection(by delta: Int) {
-        let list = filteredStreamEntries
+        let list = displayedStreamEntries
         guard !list.isEmpty else { return }
-        var index = keyboardFocusedEntryId.flatMap { id in
-            list.firstIndex(where: { $0.id == id })
-        } ?? 0
-        index = min(max(index + delta, 0), list.count - 1)
-        keyboardFocusedEntryId = list[index].id
+        let targetIndex: Int
+        if let currentId = keyboardFocusedEntryId,
+           let currentIndex = list.firstIndex(where: { $0.id == currentId }) {
+            targetIndex = min(max(currentIndex + delta, 0), list.count - 1)
+        } else {
+            targetIndex = delta >= 0 ? 0 : list.count - 1
+        }
+        keyboardFocusedEntryId = list[targetIndex].id
     }
 
     /// 打开当前键盘聚焦的散页详情
     public func openKeyboardFocusedEntry() {
         guard let id = keyboardFocusedEntryId,
-              let entry = filteredStreamEntries.first(where: { $0.id == id }) else { return }
+              let entry = entries.first(where: { $0.id == id }) else { return }
         highlightedEntry = entry
     }
 

@@ -106,12 +106,14 @@ public struct NewProjectSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("创建造物项目") {
+                Button(isSubmitting ? "创建中…" : "创建造物项目 ⌘↩") {
                     submitProject()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }
@@ -269,12 +271,14 @@ public struct EditProjectSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("保存项目修改") {
+                Button(isSubmitting ? "保存中…" : "保存项目修改 ⌘↩") {
                     updateProject()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             }
         }

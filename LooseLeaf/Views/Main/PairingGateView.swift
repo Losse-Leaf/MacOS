@@ -223,7 +223,7 @@ public struct PairingGateView: View {
             }
 
             TextField("looseleaf://pair?hub=…&ticket=… 或配对工单 Ticket", text: $pairLinkInput)
-                .accessibilityLabel("配对工单或深链")
+                .accessibilityLabel("配对工单或深链输入框")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                 .padding(ArchiveSpacing.s)
@@ -233,7 +233,6 @@ public struct PairingGateView: View {
                     RoundedRectangle(cornerRadius: ArchiveRadius.sm)
                         .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
                 )
-                .accessibilityLabel("配对链接或工单输入框")
                 .disabled(isSubmitting)
                 .onSubmit {
                     performPairLinkPairing()
@@ -331,13 +330,12 @@ public struct PairingGateView: View {
         ) {
             VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                 TextField("http://localhost:8088", text: $appState.hubURLString)
-                    .accessibilityLabel("中枢地址")
+                    .accessibilityLabel("数据中枢地址")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
                     .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                    .accessibilityLabel("数据中枢地址")
 
                 settingsFeedbackBanner(feedback: nil, error: hubConfigError)
             }

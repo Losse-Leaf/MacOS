@@ -19,6 +19,7 @@ public struct CuratorDossierView: View {
     @State private var editManifesto: String = ""
     @State private var newAvatarKey: String?
     @State private var isUploadingAvatar: Bool = false
+    @State private var isSavingProfile: Bool = false
     @State private var avatarPreviewImage: NSImage?
     @State private var selectedGearCategory: String = "all"
     @State private var selectedHeatmapDate: String? = nil
@@ -157,36 +158,13 @@ public struct CuratorDossierView: View {
 
                 // 2. 生活刻度 · 编年时间日历图与年度卷宗
                 VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-                    HStack {
-                        HStack(spacing: ArchiveSpacing.s) {
-                            Text("生活刻度 · 时光日历图")
-                                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-                            Text("（累计在册 \(appState.entries.count) 篇记录）")
-                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            appState.showAlmanacSheet = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "book.closed")
-                                    .font(.system(size: 11))
-                                Text("年度生活年鉴画卷")
-                                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                            }
-                        }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                        .paperButtonFocusRing()
-                    }
-
                     LifeCalendarChartView(
                         entryCounts: appState.entryCountsByDate,
                         totalCount: appState.entries.count,
-                        selectedDate: $selectedHeatmapDate
+                        selectedDate: $selectedHeatmapDate,
+                        onOpenAlmanac: {
+                            appState.showAlmanacSheet = true
+                        }
                     )
 
                     // 点击具体日期后展开当日手记速览抽屉 (严格 1:1 对标 Web 端 AboutView.vue)
@@ -375,77 +353,20 @@ public struct CuratorDossierView: View {
     private func gearGrid(_ displayedGear: [GearItem]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.m) {
             ForEach(displayedGear) { gear in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(gear.category)
-                            .font(ArchiveTypography.monoScale(size: 10.5))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Spacer()
-                        Text(gear.status == "sold" ? "已转让回血" : "服役中")
-                            .font(ArchiveTypography.monoScale(size: 10.5))
-                            .foregroundStyle(gear.status == "sold" ? ArchivePalette.inkMuted : ArchivePalette.accentMoss)
-                    }
-
-                    Text(gear.name)
-                        .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-
-                    if let spec = gear.spec, !spec.isEmpty {
-                        Text(spec)
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                    }
-
-                    HStack {
-                        if let price = gear.priceCents, price > 0 {
-                            Text("购入 \(FormatUtils.formattedYuan(cents: price, includeSymbol: true))")
-                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-
-                        if let sold = gear.soldPriceCents, sold > 0 {
-                            Text("回血 \(FormatUtils.formattedYuan(cents: sold, includeSymbol: true))")
-                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                .foregroundStyle(ArchivePalette.accentMoss)
-                        }
-
-                        Spacer()
-
-                        if gear.status != "sold" {
-                            Button("转让回血") {
-                                sellingGear = gear
-                            }
-                            .font(ArchiveTypography.bodySans(size: 10.5))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        }
-
-                        PaperIconButton(
-                            systemName: ArchiveIcon.delete.systemName,
-                            label: "删除设备",
-                            help: "删除设备",
-                            size: 10.5,
-                            tint: ArchivePalette.inkMuted
+                GearAssetCardView(
+                    gear: gear,
+                    onSell: { sellingGear = $0 },
+                    onDelete: { g in
+                        appState.askConfirm(
+                            title: ArchiveSharedCopy.gearDeleteTitle,
+                            message: ArchiveSharedCopy.gearDeleteMessage,
+                            confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
+                            danger: true
                         ) {
-                            appState.askConfirm(
-                                title: ArchiveSharedCopy.gearDeleteTitle,
-                                message: ArchiveSharedCopy.gearDeleteMessage,
-                                confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
-                                danger: true
-                            ) {
-                                deleteGear(gear)
-                            }
+                            deleteGear(g)
                         }
                     }
-                }
-                .padding(ArchiveCardMetrics.padding)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                .overlay(
-                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
-                .paperHover()
             }
         }
     }
@@ -458,7 +379,7 @@ public struct CuratorDossierView: View {
     }
 
     private var editProfileSheetView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("修订主理人档案")
                 .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
@@ -492,17 +413,27 @@ public struct CuratorDossierView: View {
             }
             .padding(.vertical, ArchiveSpacing.xxs)
 
-            TextField("主理人称谓", text: $editName)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("主理人称谓")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("主理人称谓", text: $editName)
+                    .textFieldStyle(.plain)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
 
-            TextField("主理人身份", text: $editTitle)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("主理人身份")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("主理人身份", text: $editTitle)
+                    .textFieldStyle(.plain)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
 
             HStack(spacing: ArchiveSpacing.s) {
                 // 关键（2026-10-25 修复）：不再维护 editCityCode/editLocationCode 死状态 ——
@@ -526,26 +457,43 @@ public struct CuratorDossierView: View {
                 )
             }
 
-            TextField("近况题记", text: $editMotto)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("近况题记")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("近况题记", text: $editMotto)
+                    .textFieldStyle(.plain)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
 
-            TextField("副标题", text: $editBio)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("副标题（生活简介）")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("副标题", text: $editBio, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(2...4)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
 
             // 关键（2026-10-25 修复）：manifesto 补上输入框 ——
             // 原先档案页展示宣言、请求也恒带该字段，编辑表单里却没有它的容身之处，
             // 「修订档案」永远改不了宣言（后端有、客户端不用）。
-            TextField("主理人宣言", text: $editManifesto)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("主理人宣言")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                TextField("主理人宣言", text: $editManifesto, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(2...4)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+            }
 
             if let dossierError {
                 Text(dossierError)
@@ -557,9 +505,13 @@ public struct CuratorDossierView: View {
                 Button("取消") { showEditProfileSheet = false }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .disabled(isSavingProfile)
                 Spacer()
-                Button("保存档案") {
+                Button(isSavingProfile ? "保存中…" : "保存档案") {
+                    guard !isSavingProfile else { return }
+                    isSavingProfile = true
                     Task { @MainActor in
+                        defer { isSavingProfile = false }
                         let trimmedCity = editCity.trimmingCharacters(in: .whitespacesAndNewlines)
                         let trimmedLoc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
                         let req = UpdateProfileRequest(
@@ -584,6 +536,7 @@ public struct CuratorDossierView: View {
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .disabled(isSavingProfile)
             }
             .padding(.top, 4)
         }

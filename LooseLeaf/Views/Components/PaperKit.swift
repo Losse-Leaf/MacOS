@@ -214,6 +214,7 @@ public struct PaperSheetScaffold<Content: View>: View {
     private let title: String
     private let width: CGFloat
     private let isSubmitting: Bool
+    private let isSubmitDisabled: Bool
     private let submitTitle: String
     private let onCancel: () -> Void
     private let onSubmit: () -> Void
@@ -223,6 +224,7 @@ public struct PaperSheetScaffold<Content: View>: View {
         title: String,
         width: CGFloat = ArchiveSheetWidth.standard,
         isSubmitting: Bool = false,
+        isSubmitDisabled: Bool = false,
         submitTitle: String = "保存",
         onCancel: @escaping () -> Void,
         onSubmit: @escaping () -> Void,
@@ -231,6 +233,7 @@ public struct PaperSheetScaffold<Content: View>: View {
         self.title = title
         self.width = width
         self.isSubmitting = isSubmitting
+        self.isSubmitDisabled = isSubmitDisabled
         self.submitTitle = submitTitle
         self.onCancel = onCancel
         self.onSubmit = onSubmit
@@ -253,6 +256,7 @@ public struct PaperSheetScaffold<Content: View>: View {
                 Button("取消", action: onCancel)
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button {
                     onSubmit()
@@ -265,7 +269,7 @@ public struct PaperSheetScaffold<Content: View>: View {
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
-                .disabled(isSubmitting)
+                .disabled(isSubmitting || isSubmitDisabled)
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }

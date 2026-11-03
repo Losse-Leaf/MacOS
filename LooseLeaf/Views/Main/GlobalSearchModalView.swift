@@ -80,16 +80,26 @@ public struct GlobalSearchModalView: View {
                     .onKeyPress(keys: [.upArrow, .downArrow, .return]) { press in
                         let hits = presentation.allHits
                         guard !hits.isEmpty else { return .ignored }
-                        let current = highlightedHitId.flatMap { id in hits.firstIndex { $0.scrollId == id } } ?? 0
                         switch press.key {
                         case .upArrow:
-                            highlightedHitId = hits[(current - 1 + hits.count) % hits.count].scrollId
+                            if let currentId = highlightedHitId, let current = hits.firstIndex(where: { $0.scrollId == currentId }) {
+                                highlightedHitId = hits[(current - 1 + hits.count) % hits.count].scrollId
+                            } else {
+                                highlightedHitId = hits.last?.scrollId
+                            }
                             return .handled
                         case .downArrow:
-                            highlightedHitId = hits[(current + 1) % hits.count].scrollId
+                            if let currentId = highlightedHitId, let current = hits.firstIndex(where: { $0.scrollId == currentId }) {
+                                highlightedHitId = hits[(current + 1) % hits.count].scrollId
+                            } else {
+                                highlightedHitId = hits.first?.scrollId
+                            }
                             return .handled
                         case .return:
-                            activateHit(hits[current])
+                            let target = highlightedHitId.flatMap { id in hits.first(where: { $0.scrollId == id }) } ?? hits.first
+                            if let target {
+                                activateHit(target)
+                            }
                             return .handled
                         default:
                             return .ignored
@@ -236,7 +246,7 @@ public struct GlobalSearchModalView: View {
                                 .foregroundStyle(ArchivePalette.inkMuted)
                         }
                     }
-                    Text("ESC 关闭 · 单击卡片查阅详情")
+                    Text("↑↓ 选择 · ↵ 打开 · ESC 关闭")
                         .font(ArchiveTypography.monoScale(size: 10.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -256,7 +266,11 @@ public struct GlobalSearchModalView: View {
             let key = presentationKey
             let corpus = appState.searchableEntries
             let remote = appState.globalSearchResult
-            presentation = presentationMemo.presentation(key: key, corpus: corpus, remote: remote)
+            let pres = presentationMemo.presentation(key: key, corpus: corpus, remote: remote)
+            presentation = pres
+            if highlightedHitId == nil, let first = pres.allHits.first {
+                highlightedHitId = first.scrollId
+            }
         }
     }
 
@@ -308,13 +322,14 @@ public struct GlobalSearchModalView: View {
     }
 
     private func entryResultCard(_ entry: LifeEntry, isHighlighted: Bool) -> some View {
-        Button {
+        let badgeText = EntryType(rawValue: entry.type)?.badgeLabel ?? entry.type
+        return Button {
             onSelectEntry(entry)
             onDismiss()
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("[\(entry.type.uppercased())]")
+                    Text("[\(badgeText)]")
                         .font(ArchiveTypography.monoScale(size: 10, weight: .semibold))
                         .foregroundStyle(ArchivePalette.accentWarm)
 

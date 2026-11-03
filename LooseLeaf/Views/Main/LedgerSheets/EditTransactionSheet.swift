@@ -259,12 +259,14 @@ public struct EditTransactionSheet: View {
                 Button("取消") { onDismiss() }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                     .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("保存修订") {
+                Button(isSubmitting ? "保存中…" : "保存修订 ⌘↩") {
                     saveChanges()
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
                 .paperButtonFocusRing()
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(isSubmitting || (FormatUtils.parseYuanToCents(amountYuan) ?? 0) <= 0)
             }
         }

@@ -105,12 +105,13 @@ public struct SettingsView: View {
 
             Spacer()
 
+            let badge = appState.hubConnectionBadgeState
             HStack(spacing: ArchiveSpacing.s) {
                 Circle()
-                    .fill(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                    .fill(badge.dotColor)
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
-                Text(appState.isPaired ? "中枢在线" : "未配对")
+                Text(badge.label)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                 Text("v\(UpdateChecker.shared.currentVersion)")
@@ -118,8 +119,8 @@ public struct SettingsView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(appState.isPaired ? "中枢在线" : "未配对")
-            .help(appState.isPaired ? "数据中枢已连接: \(appState.hubURLString)" : "尚未配对生活数据中枢")
+            .accessibilityLabel(badge.label)
+            .help(appState.isPaired ? "数据中枢节点: \(appState.hubURLString) (\(badge.label))" : "尚未配对生活数据中枢")
         }
         .padding(.horizontal, ArchiveSpacing.l)
         .frame(height: 46)

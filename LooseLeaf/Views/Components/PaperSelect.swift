@@ -36,7 +36,9 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
     public var disabled: Bool
 
     @State private var isOpen: Bool = false
+    @State private var hoveredValue: T? = nil
     @FocusState private var isTriggerFocused: Bool
+    @FocusState private var isPopoverFocused: Bool
 
     public init(
         selection: Binding<T>,
@@ -54,6 +56,16 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
 
     private var selectedOption: PaperSelectOption<T>? {
         options.first { $0.value == selection }
+    }
+
+    private func moveSelection(delta: Int) {
+        guard !options.isEmpty else { return }
+        let currentTarget = hoveredValue ?? selection
+        let currentIndex = options.firstIndex { $0.value == currentTarget } ?? 0
+        let nextIndex = min(max(currentIndex + delta, 0), options.count - 1)
+        let target = options[nextIndex].value
+        hoveredValue = target
+        selection = target
     }
 
     public var body: some View {
@@ -118,8 +130,10 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                             LazyVStack(spacing: 1) {
                                 ForEach(options) { opt in
                                     let isSelected = opt.value == selection
+                                    let isHovered = hoveredValue == opt.value
                                     Button {
                                         selection = opt.value
+                                        hoveredValue = opt.value
                                         isOpen = false
                                     } label: {
                                         HStack(spacing: 6) {
@@ -153,12 +167,17 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                                                     .foregroundStyle(ArchivePalette.accentWarm)
                                             }
                                         }
+                                        .contentShape(Rectangle())
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
-                                        .background(isSelected ? ArchivePalette.archiveSubtle : Color.clear)
+                                        .background(isSelected ? ArchivePalette.archiveSubtle : (isHovered ? ArchivePalette.archiveSubtle.opacity(0.55) : Color.clear))
                                         .clipShape(RoundedRectangle(cornerRadius: 3))
                                     }
                                     .buttonStyle(.plain)
+                                    .onHover { h in
+                                        if h { hoveredValue = opt.value }
+                                        else if hoveredValue == opt.value { hoveredValue = nil }
+                                    }
                                     .accessibilityLabel(opt.label)
                                     .accessibilityValue(isSelected ? "已选中" : "未选中")
                                     .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
@@ -171,6 +190,31 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                 .padding(6)
                 .frame(minWidth: 140, maxWidth: 260)
                 .background(ArchivePalette.archivePaper)
+                .focusable()
+                .focused($isPopoverFocused)
+                .onAppear {
+                    hoveredValue = selection
+                    isPopoverFocused = true
+                }
+                .onKeyPress(.upArrow) {
+                    moveSelection(delta: -1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    moveSelection(delta: 1)
+                    return .handled
+                }
+                .onKeyPress(.return) {
+                    if let hoveredValue {
+                        selection = hoveredValue
+                    }
+                    isOpen = false
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    isOpen = false
+                    return .handled
+                }
             }
         }
     }

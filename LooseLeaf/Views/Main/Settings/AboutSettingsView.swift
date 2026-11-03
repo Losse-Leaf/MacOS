@@ -159,15 +159,16 @@ struct AboutSettingsView: View {
 
                 settingsRowDivider
 
+                let badge = appState.hubConnectionBadgeState
                 settingsCardRow(
                     icon: "server.rack",
-                    iconColor: appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm,
+                    iconColor: badge.dotColor,
                     title: "数据中枢",
                     subtitle: appState.isPaired ? appState.hubURLString : "未配对中枢 (单机离线状态)"
                 ) {
-                    Text(appState.isPaired ? "已连接" : "离线")
+                    Text(badge.label)
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .foregroundStyle(badge.dotColor)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(ArchivePalette.archivePaper)

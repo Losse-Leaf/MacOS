@@ -9,6 +9,8 @@ public struct EditEntrySheetView: View {
     public var onSave: @MainActor (UpdateEntryRequest) async throws -> Void
     public var onCancel: () -> Void
 
+    @State private var editType: EntryType
+    @State private var editOccurredAt: Date
     @State private var editTitle: String
     @State private var editContent: String
     @State private var editCityCode: String
@@ -26,6 +28,8 @@ public struct EditEntrySheetView: View {
         self.entry = entry
         self.onSave = onSave
         self.onCancel = onCancel
+        _editType = State(initialValue: EntryType(rawValue: entry.type) ?? .life)
+        _editOccurredAt = State(initialValue: FormatUtils.parseFlexDate(entry.occurredAt) ?? Date())
         _editTitle = State(initialValue: entry.title)
         _editContent = State(initialValue: entry.content)
         _editCityCode = State(initialValue: entry.cityCode ?? "")
@@ -34,28 +38,62 @@ public struct EditEntrySheetView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("编辑生活手稿")
-                .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        PaperSheetScaffold(
+            title: "编辑生活手稿",
+            width: ArchiveSheetWidth.standard,
+            isSubmitting: isSaving,
+            submitTitle: "保存修改",
+            onCancel: onCancel,
+            onSubmit: { Task { await save() } }
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
+                // 手稿类型切换
+                HStack(spacing: 6) {
+                    Text("类型：")
+                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
 
-            TextField("标题", text: $editTitle)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                .padding(8)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                    ForEach(EntryType.allCases) { t in
+                        PaperPillButton(
+                            title: t.label,
+                            isSelected: editType == t
+                        ) {
+                            editType = t
+                        }
+                    }
+                }
 
-            TextField("手稿正文…", text: $editContent, axis: .vertical)
-                .font(ArchiveTypography.bodySans(size: 13))
-                .lineLimit(6...14)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                // 发生时刻
+                PaperDatePicker(selection: $editOccurredAt, enableTime: true, label: "发生时刻：")
 
-            PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "选择城市…")
+                TextField("标题（可留空由正文第一行派生）", text: $editTitle)
+                    .accessibilityLabel("手稿标题")
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
 
-            // 照片相纸附件管理与增删
-            VStack(alignment: .leading, spacing: 6) {
+                TextField("手稿正文…", text: $editContent, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 13))
+                    .lineLimit(6...14)
+                    .padding(8)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
+
+                PaperCityPicker(selectedCode: $editCityCode, selectedName: $editCityName, placeholder: "选择城市…")
+
+                // 照片相纸附件管理与增删
+                VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("手账影像相纸 (\(editAttachments.count))")
                         .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
@@ -103,7 +141,7 @@ public struct EditEntrySheetView: View {
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .font(.system(size: 15))
-                                            .foregroundStyle(Color.white, ArchivePalette.inkPrimary.opacity(0.85))
+                                            .foregroundStyle(ArchivePalette.archivePaper, ArchivePalette.inkPrimary.opacity(0.85))
                                     }
                                     .buttonStyle(.plain)
                                     .padding(2)
@@ -116,46 +154,24 @@ public struct EditEntrySheetView: View {
                 }
             }
 
-            if let saveError {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                    Text(saveError)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .lineLimit(3)
-                    Spacer(minLength: 0)
+                if let saveError {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                        Text(saveError)
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .lineLimit(3)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .padding(8)
+                    .background(ArchivePalette.accentWarm.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("保存失败：\(saveError)")
                 }
-                .foregroundStyle(ArchivePalette.accentWarm)
-                .padding(8)
-                .background(ArchivePalette.accentWarm.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("保存失败：\(saveError)")
-            }
-
-            HStack {
-                Spacer()
-
-                Button("取消") {
-                    onCancel()
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-                .disabled(isSaving)
-
-                Button(isSaving ? "保存中…" : "保存修改 ⌘↩") {
-                    Task { await save() }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(isSaving || isUploading || (editTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && editContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
         }
-        .padding(24)
-        .frame(width: 520)
-        .background(ArchivePalette.archivePaper)
     }
 
     private func save() async {
@@ -171,24 +187,14 @@ public struct EditEntrySheetView: View {
             return
         }
         let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 关键：用户**显式清空**城市时，按契约 A 发 `clear_city: true`，
-        // 服务端据此清空 city_code（优先于 city_code 字段）。
-        // 原先 code 回落 entry.cityCode 且城市字段发 nil（省略）——
-        // 后端按「保持原值」处理，用户清了城市保存后原样还在，
-        // 等于「清空」这条操作静默失效。
-        //
-        // 城市只认 PaperCityPicker 显式选择的 editCityCode：自由文本反查
-        // （location 含城市名即静默挂码）会绕过后端「仅认显式 city_code」
-        // 的收紧，且与散页地点是两回事（旧散页的 location 是具体地点，
-        // 反查出一个城市码纯属误挂）。
         let cityCleared = cleanCity.isEmpty && editCityCode.isEmpty
         let code: String? = editCityCode.isEmpty ? nil : editCityCode
         let req = UpdateEntryRequest(
-            type: entry.type,
+            type: editType.rawValue,
             title: cleanTitle,
             // 空串是显式清空；nil 会被后端当作保持原值。
             content: cleanContent,
-            occurredAt: entry.occurredAt,
+            occurredAt: FormatUtils.beijingISOString(from: editOccurredAt),
             location: cleanCity,
             cityCode: code,
             cityName: cleanCity,

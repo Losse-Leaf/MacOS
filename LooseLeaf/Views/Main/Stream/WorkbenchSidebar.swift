@@ -9,29 +9,8 @@ import AppKit
 /// 4. 完美融合交通灯安全间隙与无感知窗口拖拽区域
 
 struct WorkbenchSidebar: View {
-    /// 底部状态文案：把「待同步 / 同步失败」的条数显性化，
-    /// 否则用户只能靠猜为什么新内容没出现在中枢。
-    private var statusLabel: String {
-        var pending = 0
-        var failed = 0
-        for entry in appState.entries {
-            switch entry.syncStatus ?? "synced" {
-            case "pending_create": pending += 1
-            case "failed": failed += 1
-            default: break
-            }
-        }
-        for tx in appState.transactions {
-            switch tx.syncStatus ?? "synced" {
-            case "pending_create": pending += 1
-            case "failed": failed += 1
-            default: break
-            }
-        }
-        if failed > 0 { return "同步失败 \(failed) 条" }
-        if pending > 0 { return "待同步 \(pending) 条" }
-        if appState.isFlushingOutbox { return "同步中…" }
-        return appState.isOnline ? "中枢就绪" : "离线发件箱守护"
+    private var badgeState: HubConnectionBadgeState {
+        appState.hubConnectionBadgeState
     }
 
     @Bindable var appState: AppState
@@ -145,13 +124,13 @@ struct WorkbenchSidebar: View {
                 // 中枢就绪状态与快捷记账提示
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(appState.isOnline ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
+                        .fill(badgeState.dotColor)
                         .frame(width: 5.5, height: 5.5)
 
-                    Text(statusLabel)
+                    Text(badgeState.label)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(ArchivePalette.inkMuted)
-                        .accessibilityLabel(statusLabel)
+                        .accessibilityLabel(badgeState.label)
 
                     if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
                         Button {
@@ -163,29 +142,36 @@ struct WorkbenchSidebar: View {
                                 .underline()
                         }
                         .buttonStyle(.plain)
+                        .paperButtonFocusRing(cornerRadius: 3)
                         .help("把所有待同步 / 同步失败的内容重新上传到中枢")
                         .accessibilityLabel("重新上传全部待同步内容")
                     }
 
                     Spacer()
 
-                    HStack(spacing: 3) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text("⇧⌘L")
-                            .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1.5)
-                            .background(ArchivePalette.archivePaper.opacity(0.85))
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
+                    Button {
+                        (NSApp.delegate as? AppDelegate)?.toggleQuickCapturePanel()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Text(AppDelegate.hotKeyDisplayName)
+                                .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1.5)
+                                .background(ArchivePalette.archivePaper.opacity(0.85))
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                )
+                        }
                     }
-                    .help("呼出极速闪念与记账悬浮面板 (⇧⌘L)")
+                    .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 3)
+                    .help("呼出极速闪念与记账悬浮面板 (\(AppDelegate.hotKeyDisplayName))")
                 }
             }
             .padding(.horizontal, 12)
@@ -245,6 +231,7 @@ struct WorkbenchSidebar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .paperButtonFocusRing(cornerRadius: ArchiveRadius.sm)
             .animation(.easeOut(duration: 0.14), value: selected)
             .animation(.easeOut(duration: 0.1), value: isHovering)
             .onHover { isHovering = $0 }

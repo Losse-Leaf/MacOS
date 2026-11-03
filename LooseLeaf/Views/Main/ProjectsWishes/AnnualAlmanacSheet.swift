@@ -38,16 +38,28 @@ public struct AnnualAlmanacSheet: View {
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 Spacer()
-                HStack(spacing: 6) {
-                    ForEach(availableYears, id: \.self) { yr in
-                        PaperPillButton(title: "\(yr) 年", isSelected: selectedYear == yr) {
-                            selectedYear = yr
+                HStack(spacing: 8) {
+                    if availableYears.count > 4 {
+                        PaperSelect(
+                            selection: $selectedYear,
+                            options: availableYears.map { PaperSelectOption(value: $0, label: "\($0) 年") },
+                            label: "年份："
+                        )
+                        .onChange(of: selectedYear) { _, _ in
                             Task { await loadAlmanac() }
+                        }
+                    } else {
+                        ForEach(availableYears, id: \.self) { yr in
+                            PaperPillButton(title: "\(yr) 年", isSelected: selectedYear == yr) {
+                                selectedYear = yr
+                                Task { await loadAlmanac() }
+                            }
                         }
                     }
                     Button("关闭") { onDismiss() }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         .paperButtonFocusRing()
+                        .keyboardShortcut(.cancelAction)
                 }
             }
 
@@ -94,7 +106,7 @@ public struct AnnualAlmanacSheet: View {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.s) {
                                 seasonCard(title: "春生 · 春季篇", entry: a.highlights.spring, tint: ArchivePalette.accentMoss)
                                 seasonCard(title: "夏长 · 夏季篇", entry: a.highlights.summer, tint: ArchivePalette.accentWarm)
-                                seasonCard(title: "秋收 · 秋季篇", entry: a.highlights.autumn, tint: Color(red: 0.83, green: 0.53, blue: 0.02))
+                                seasonCard(title: "秋收 · 秋季篇", entry: a.highlights.autumn, tint: ArchivePalette.categoryColor(for: "餐饮"))
                                 seasonCard(title: "冬藏 · 冬季篇", entry: a.highlights.winter, tint: ArchivePalette.inkSecondary)
                             }
                         }

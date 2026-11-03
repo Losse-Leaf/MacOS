@@ -22,15 +22,6 @@ public struct StreamView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var isOnThisDayExpanded: Bool = true
 
-    public enum StreamTimelineDisplayMode: String, CaseIterable, Identifiable {
-        case eventCategoryTree = "事件分类树"
-        case chronologicalTree = "编年事件流"
-        case treeDiagram = "事件树谱全景"
-
-        public var id: String { rawValue }
-    }
-    @State private var streamTimelineMode: StreamTimelineDisplayMode = .eventCategoryTree
-
     // 管理模式：编辑与删除状态
     // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
     // 行为闭包只捕获 AppState 单例 → 整轮时间流共享同一份 actions 引用
@@ -67,7 +58,6 @@ public struct StreamView: View {
                         if visitedSections.contains(.stream) {
                             sectionContentView(for: .stream)
                                 .modifier(WorkbenchCanvasMaxWidth(maxWidth: 960))
-                                .padding(.bottom, 48)
                                 .opacity(appState.activeSection == .stream ? 1 : 0)
                                 .allowsHitTesting(appState.activeSection == .stream)
                                 .zIndex(appState.activeSection == .stream ? 1 : 0)
@@ -77,7 +67,6 @@ public struct StreamView: View {
                             let section = appState.activeSection
                             sectionContentView(for: section)
                                 .modifier(WorkbenchCanvasMaxWidth(maxWidth: 1120))
-                                .padding(.bottom, WorkbenchSection.configurationSections.contains(section) ? 0 : 48)
                                 .transition(.opacity)
                         }
                     }
@@ -110,6 +99,7 @@ public struct StreamView: View {
 
                 }
             }
+            .accessibilityHidden(appState.hasOpenOverlay)
 
             // 暗房全屏看图灯箱
             if let att = appState.lightboxAttachment {
@@ -314,7 +304,7 @@ public struct StreamView: View {
         let rows: [AppState.StreamRow]
     }
 
-    private func groupRowsByEventCategory(_ rows: [AppState.StreamRow]) -> [EventCategoryGroup] {
+    private func groupEntriesByEventCategory(_ entries: [LifeEntry]) -> [EventCategoryGroup] {
         let defs: [(type: String, title: String, icon: String, tint: Color)] = [
             ("life", "日常随笔事件", "pencil.line", ArchivePalette.accentMoss),
             ("travel", "山川游历事件", "airplane", ArchivePalette.accentWarm),
@@ -324,27 +314,27 @@ public struct StreamView: View {
             ("gear", "随身器物事件", "shippingbox", Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle))
         ]
 
-        var bucket: [String: [AppState.StreamRow]] = [:]
-        for row in rows {
-            bucket[row.entry.type, default: []].append(row)
+        var bucket: [String: [LifeEntry]] = [:]
+        for entry in entries {
+            bucket[entry.type, default: []].append(entry)
         }
 
         var groups: [EventCategoryGroup] = []
         for def in defs {
-            if let catRows = bucket[def.type], !catRows.isEmpty {
+            if let catEntries = bucket[def.type], !catEntries.isEmpty {
                 groups.append(EventCategoryGroup(
                     id: def.type,
                     title: def.title,
                     icon: def.icon,
                     tint: def.tint,
-                    rows: catRows
+                    rows: AppState.buildStreamRows(for: catEntries)
                 ))
             }
         }
         let knownTypes = Set(defs.map(\.type))
-        var remaining: [AppState.StreamRow] = []
-        for (type, catRows) in bucket where !knownTypes.contains(type) {
-            remaining.append(contentsOf: catRows)
+        var remaining: [LifeEntry] = []
+        for (type, catEntries) in bucket where !knownTypes.contains(type) {
+            remaining.append(contentsOf: catEntries)
         }
         if !remaining.isEmpty {
             groups.append(EventCategoryGroup(
@@ -352,7 +342,7 @@ public struct StreamView: View {
                 title: "其它漫游事件",
                 icon: "circle.grid.2x2",
                 tint: ArchivePalette.inkMuted,
-                rows: remaining
+                rows: AppState.buildStreamRows(for: remaining)
             ))
         }
         return groups
@@ -537,7 +527,7 @@ public struct StreamView: View {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
                             .font(.system(size: 11))
                             .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(streamTimelineMode.rawValue)
+                        Text(appState.streamTimelineMode.rawValue)
                             .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                     }
@@ -545,19 +535,19 @@ public struct StreamView: View {
                     Spacer()
 
                     HStack(spacing: 4) {
-                        ForEach(StreamTimelineDisplayMode.allCases) { mode in
+                        ForEach(AppState.StreamTimelineDisplayMode.allCases) { mode in
                             PaperPillButton(
                                 title: mode.rawValue,
-                                isSelected: streamTimelineMode == mode
+                                isSelected: appState.streamTimelineMode == mode
                             ) {
-                                streamTimelineMode = mode
+                                appState.streamTimelineMode = mode
                             }
                         }
                     }
                 }
                 .padding(.top, 4)
 
-                if streamTimelineMode == .treeDiagram {
+                if appState.streamTimelineMode == .treeDiagram {
                     EventTreeDiagramView(entries: appState.entries) { selectedEntry in
                         appState.highlightedEntry = selectedEntry
                     }
@@ -570,11 +560,11 @@ public struct StreamView: View {
                         } else {
                             emptyStreamPlaceholder
                         }
-                    } else if streamTimelineMode == .eventCategoryTree && appState.selectedCategory == .all {
+                    } else if appState.streamTimelineMode == .eventCategoryTree && appState.selectedCategory == .all {
                         // 按事件形态分类分群呈现的树状时间轴 (彻底去卡片化，自然融入纸张画布)
                         // 关键：使用 Section 维持 LazyVStack 对每一条事件节点的真正按需懒加载 (Virtualization)，
                         // 彻底避免常规 VStack 导致整库数百条卡片同时实例化造成主线程卡死
-                        let groups = groupRowsByEventCategory(rows)
+                        let groups = groupEntriesByEventCategory(appState.filteredStreamEntries)
                         LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(groups) { group in
                                 Section {
@@ -618,7 +608,9 @@ public struct StreamView: View {
                     }
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 48)
         }
         .scrollPosition(id: $keyboardScrollPosition)
         .onChange(of: appState.searchFocusRequest) { _, _ in
@@ -748,30 +740,43 @@ public struct StreamView: View {
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(appState.onThisDayEntries.prefix(4)) { entry in
-                        HStack(alignment: .firstTextBaseline) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(entry.title.isEmpty ? (entry.content.isEmpty ? "无题散页" : entry.content) : entry.title)
-                                    .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                                    .lineLimit(1)
-
-                                Text(entry.content)
-                                    .font(ArchiveTypography.bodySans(size: 11))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Text(entry.parsedDate.dotDate)
-                                .font(ArchiveTypography.monoScale(size: 10.5))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                        }
-                        .padding(8)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        let mainText = entry.title.isEmpty ? (entry.content.isEmpty ? "无题散页" : entry.content) : entry.title
+                        Button {
                             appState.highlightedEntry = entry
+                        } label: {
+                            HStack(alignment: .firstTextBaseline) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(mainText)
+                                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                        .lineLimit(1)
+
+                                    if !entry.title.isEmpty && !entry.content.isEmpty {
+                                        Text(entry.content)
+                                            .font(ArchiveTypography.bodySans(size: 11))
+                                            .foregroundStyle(ArchivePalette.inkSecondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                Text(entry.parsedDate.dotDate)
+                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .foregroundStyle(ArchivePalette.accentWarm)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .paperHover()
+                        .paperButtonFocusRing()
+                        .accessibilityLabel("那年今日：\(mainText)，\(entry.parsedDate.dotDate)")
                     }
                 }
             }
@@ -902,7 +907,8 @@ public struct StreamView: View {
     // MARK: - 全库跨模块关联检索发现 (Global Search Cross-Module Discovery)
 
     private func globalSearchCrossModuleBanner(res: GlobalSearchResponse) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let totalHits = res.footprints.count + res.wishes.count + res.projects.count
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkle.magnifyingglass")
                     .font(.system(size: 13, weight: .semibold))
@@ -911,14 +917,22 @@ public struct StreamView: View {
                     .font(ArchiveTypography.editorialSerif(size: 14, weight: .bold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
-                Text("跨模块命中 \(res.footprints.count + res.wishes.count + res.projects.count) 项")
+                Text("跨模块命中 \(totalHits) 项")
                     .font(ArchiveTypography.monoScale(size: 11))
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 Spacer()
 
                 Button {
-                    appState.activeSection = .atlas
+                    if !res.footprints.isEmpty {
+                        appState.activeSection = .atlas
+                    } else if !res.wishes.isEmpty {
+                        appState.activeSection = .wishes
+                    } else if !res.projects.isEmpty {
+                        appState.activeSection = .projects
+                    } else {
+                        appState.showSearchModal = true
+                    }
                 } label: {
                     HStack(spacing: 4) {
                         Text("前往探索全库")

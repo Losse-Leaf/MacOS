@@ -208,6 +208,7 @@ struct CategoriesSettingsView: View {
             }
         }
     }
+}
 
 // MARK: - 流式自适应换行布局 (FlowTagLayout)
 
@@ -256,5 +257,4 @@ public struct FlowTagLayout: Layout {
             currentX += size.width + spacing
         }
     }
-}
 }

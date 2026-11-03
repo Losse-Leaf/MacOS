@@ -20,6 +20,7 @@ public struct LifeCalendarChartView: View {
     public let entryCounts: [String: Int]
     public let totalCount: Int
     @Binding public var selectedDate: String?
+    public var onOpenAlmanac: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var displayMode: CalendarDisplayMode = .monthGrid
@@ -29,11 +30,13 @@ public struct LifeCalendarChartView: View {
     public init(
         entryCounts: [String: Int],
         totalCount: Int,
-        selectedDate: Binding<String?> = .constant(nil)
+        selectedDate: Binding<String?> = .constant(nil),
+        onOpenAlmanac: (() -> Void)? = nil
     ) {
         self.entryCounts = entryCounts
         self.totalCount = totalCount
         self._selectedDate = selectedDate
+        self.onOpenAlmanac = onOpenAlmanac
 
         let now = FormatUtils.beijingCurrentYearMonth()
         _currentYear = State(initialValue: now.year)
@@ -97,6 +100,22 @@ public struct LifeCalendarChartView: View {
             }
 
             Spacer()
+
+            if let onOpenAlmanac {
+                Button {
+                    onOpenAlmanac()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 11))
+                        Text("年鉴画卷")
+                            .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
+                .help("查看年度生活年鉴画卷")
+            }
 
             // 模式切换胶囊
             HStack(spacing: 4) {
@@ -239,7 +258,7 @@ public struct LifeCalendarChartView: View {
                     if count > 0 && cell.isCurrentMonth {
                         Text("\(count)")
                             .font(ArchiveTypography.monoScale(size: 9, weight: .bold))
-                            .foregroundStyle(count >= 3 ? Color.white : ArchivePalette.accentMoss)
+                            .foregroundStyle(count >= 3 ? ArchivePalette.archivePaper : ArchivePalette.accentMoss)
                             .padding(.horizontal, 3.5)
                             .padding(.vertical, 0.5)
                             .background(
@@ -354,11 +373,11 @@ public struct LifeCalendarChartView: View {
                     let isSelected = selectedDate == cell.dateKey
                     let style = cellDensityStyle(for: count)
 
-                    RoundedRectangle(cornerRadius: 1)
+                    RoundedRectangle(cornerRadius: 1.5)
                         .fill(cell.isCurrentMonth ? style.fill : ArchivePalette.inkMuted.opacity(0.04))
-                        .frame(height: 7)
+                        .frame(height: 9.5)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 1)
+                            RoundedRectangle(cornerRadius: 1.5)
                                 .stroke(
                                     isSelected
                                         ? ArchivePalette.accentWarm
@@ -366,11 +385,13 @@ public struct LifeCalendarChartView: View {
                                     lineWidth: isSelected ? 1.2 : 0.6
                                 )
                         )
+                        .contentShape(Rectangle())
                         .onTapGesture {
                             guard cell.isCurrentMonth else { return }
                             selectedDate = (selectedDate == cell.dateKey) ? nil : cell.dateKey
                         }
                         .help("\(cell.dateKey) · \(count) 篇")
+                        .accessibilityLabel("\(cell.dateKey)，\(count) 篇手稿")
                 }
             }
         }

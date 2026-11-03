@@ -715,11 +715,11 @@ public struct LedgerAssetsView: View {
                                     .frame(height: 16)
                                     .overlay(ArchivePalette.borderSubtle)
 
-                                PaperSelect(
-                                    selection: $formRepaymentDay,
-                                    options: (1...31).map { PaperSelectOption(value: $0, label: "每月 \($0) 日") },
-                                    label: "每月还款日："
-                                )
+                                if let ch = availableCreditChannels.first(where: { $0.code == formInstallmentChannelCode }) {
+                                    Text("还款日跟随渠道：每月 \(ch.repaymentDay) 日")
+                                        .font(ArchiveTypography.monoScale(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
 
                                 Spacer()
 
@@ -805,128 +805,20 @@ public struct LedgerAssetsView: View {
     private func gearGrid(_ gearList: [GearItem]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             ForEach(gearList) { gear in
-                gearCard(gear)
-            }
-        }
-    }
-
-    private func gearCard(_ gear: GearItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(gear.category)
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(ArchivePalette.archivePaper)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                Spacer()
-
-                Text(gear.status == "sold" ? "已转售回血" : "服役中")
-                    .font(ArchiveTypography.monoScale(size: 10.5))
-                    .foregroundStyle(gear.status == "sold" ? ArchivePalette.inkMuted : ArchivePalette.accentMoss)
-            }
-
-            Text(gear.name)
-                .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .lineLimit(1)
-
-            if let spec = gear.spec, !spec.isEmpty {
-                Text(spec)
-                    .font(ArchiveTypography.monoScale(size: 10.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .lineLimit(1)
-            }
-
-            HStack {
-                if let price = gear.priceCents, price > 0 {
-                    Text("购入 \(FormatUtils.formattedYuan(cents: price, includeSymbol: true))")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-
-                if let sold = gear.soldPriceCents, sold > 0 {
-                    Text("回血 \(FormatUtils.formattedYuan(cents: sold, includeSymbol: true))")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.accentMoss)
-                }
-
-                Spacer()
-
-                if gear.status != "sold" {
-                    Button("转售回血") {
-                        sellingGear = gear
+                GearAssetCardView(
+                    gear: gear,
+                    onSell: { sellingGear = $0 },
+                    onDelete: { g in
+                        appState.askConfirm(
+                            title: ArchiveSharedCopy.gearDeleteTitle,
+                            message: ArchiveSharedCopy.gearDeleteMessage,
+                            confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
+                            danger: true
+                        ) {
+                            deleteGear(g)
+                        }
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                }
-
-                PaperIconButton(
-                    systemName: ArchiveIcon.delete.systemName,
-                    label: "删除设备",
-                    help: "删除设备",
-                    size: 10.5,
-                    tint: ArchivePalette.inkMuted
-                ) {
-                    appState.askConfirm(
-                        title: ArchiveSharedCopy.gearDeleteTitle,
-                        message: ArchiveSharedCopy.gearDeleteMessage,
-                        confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
-                        danger: true
-                    ) {
-                        deleteGear(gear)
-                    }
-                }
-            }
-            .padding(.top, 2)
-        }
-        .padding(ArchiveSpacing.m)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-        .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-        )
-        .paperHover()
-        .contextMenu {
-            if gear.status != "sold" {
-                Button {
-                    sellingGear = gear
-                } label: {
-                    Label("转售回血", systemImage: "dollarsign.circle")
-                }
-            }
-            Button(role: .destructive) {
-                appState.askConfirm(
-                    title: ArchiveSharedCopy.gearDeleteTitle,
-                    message: ArchiveSharedCopy.gearDeleteMessage,
-                    confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
-                    danger: true
-                ) {
-                    deleteGear(gear)
-                }
-            } label: {
-                Label("删除设备", systemImage: ArchiveIcon.delete.systemName)
-            }
-            Divider()
-            Button {
-                NSPasteboard.general.clearContents()
-                SecureClipboard.copy(gear.name)
-                appState.showTemporaryBanner("已拷贝设备名称至剪贴板")
-            } label: {
-                Label("拷贝设备名称", systemImage: "doc.on.doc")
-            }
-            if let spec = gear.spec, !spec.isEmpty {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    SecureClipboard.copy(spec)
-                    appState.showTemporaryBanner("已拷贝规格型号至剪贴板")
-                } label: {
-                    Label("拷贝规格型号", systemImage: "text.quote")
-                }
+                )
             }
         }
     }
@@ -1325,7 +1217,7 @@ public struct LedgerAssetsView: View {
                     installmentMonths: isInst ? months : nil,
                     installmentMonthlyPay: monthlyPay,
                     installmentRemainMonths: isInst ? months : nil,
-                    repaymentDay: isInst ? formRepaymentDay : nil,
+                    repaymentDay: isInst ? (availableCreditChannels.first(where: { $0.code == formInstallmentChannelCode })?.repaymentDay ?? formRepaymentDay) : nil,
                     linkGearAsset: formLinkGear,
                     gearCategory: formLinkGear ? formGearCategory : nil,
                     gearSpec: formLinkGear ? formGearSpec : nil

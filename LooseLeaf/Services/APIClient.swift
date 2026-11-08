@@ -791,7 +791,7 @@ public actor APIClient {
     // MARK: - 5. 造物、心愿单与旅游足迹 (Projects, Wishes & Footprints)
 
     public func fetchProjects() async throws -> [Project] {
-        try await performEnvelopeRequest(path: "/api/v1/projects")
+        try await performEnvelopeRequest(path: "/api/v1/projects?limit=0")
     }
 
     public func createProject(_ req: CreateProjectRequest) async throws -> Project {

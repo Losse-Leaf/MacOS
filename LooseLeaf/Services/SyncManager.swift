@@ -113,6 +113,27 @@ public final class SyncManager {
         saveSnapshot(latest)
     }
 
+    /// 旧版增量账目分页会把真实软删行误判为末页，提前停止后仍推进游标，
+    /// 导致 offset 之后的变更永久漏拉。升级后首次注水完成时清空一次账目游标，
+    /// 强制下一次账目同步走全量，把可能漏掉的记录补回来。
+    ///
+    /// - Parameter defaults: 可注入，便于测试；生产使用 `.standard`。
+    public func resetLedgerCursorForPaginationFixIfNeeded(defaults: UserDefaults = .standard) {
+        guard Self.consumeLedgerPaginationFixReset(defaults: defaults) else { return }
+        guard !(snapshot.lastTransactionsSyncCursor ?? "").isEmpty else { return }
+        var latest = snapshot
+        latest.lastTransactionsSyncCursor = nil
+        saveSnapshot(latest, critical: true)
+    }
+
+    /// 返回 true 表示本次升级后尚未执行过账目游标重置；调用即标记完成。
+    nonisolated static func consumeLedgerPaginationFixReset(defaults: UserDefaults = .standard) -> Bool {
+        let key = "looseleaf.sync.ledgerPaginationFixCursorReset.v1"
+        guard !defaults.bool(forKey: key) else { return false }
+        defaults.set(true, forKey: key)
+        return true
+    }
+
     // MARK: - 本地临时 ID 生成
 
     private nonisolated(unsafe) static var tempIdSequence: Int = 0
@@ -247,6 +268,7 @@ public final class SyncManager {
                     self.hasHydrated = true
                     self.lastLoadFailureMessage = message
                     self.onLocalDataWarning?(message)
+                    self.resetLedgerCursorForPaginationFixIfNeeded()
                     return
                 }
                 guard let loaded = result.snapshot else {
@@ -255,6 +277,7 @@ public final class SyncManager {
                     if self.snapshotRevision > 0 {
                         self.saveSnapshot(self.snapshot, critical: true)
                     }
+                    self.resetLedgerCursorForPaginationFixIfNeeded()
                     return
                 }
 
@@ -289,6 +312,7 @@ public final class SyncManager {
                         self.onSnapshotUpdated?(loaded)
                     }
                 }
+                self.resetLedgerCursorForPaginationFixIfNeeded()
             }
 
             // 关键：磁盘快照里的媒体地址是**上次退出时**签发的，

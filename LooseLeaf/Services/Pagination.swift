@@ -10,10 +10,14 @@ enum Pagination {
     static let maxEntries = 50_000
     static let maxTransactions = 20_000
 
-    /// 增量分页只按非墓碑行推进 offset：purge 墓碑由首页注入，不占服务端 offset。
-    /// 若把墓碑算进 offset，会跳过服务端真实行，造成静默漏拉。
-    static func activeTransactionCount(_ batch: [Transaction]) -> Int {
-        batch.filter { ($0.deletedAt ?? "").isEmpty }.count
+    /// 增量账目分页的下一页 offset；返回 nil 表示已到最后一页。
+    ///
+    /// 服务端 `limit` 只作用于数据库行；purge 墓碑是在结果之后额外追加的，
+    /// 不占 offset。真实软删行虽然 `deleted_at` 非空，但仍然占 offset。
+    /// 客户端无法仅凭 `deleted_at` 区分两者，所以终止条件必须用原始批次大小，
+    /// 推进量固定为页大小。墓碑把短页撑到满页时最多多一次空页请求，不会跳行。
+    static func nextTransactionOffset(currentOffset: Int, batchSize: Int, batchLimit: Int) -> Int? {
+        batchSize < batchLimit ? nil : currentOffset + batchLimit
     }
 
     /// 分页拉取生活档案。
@@ -70,12 +74,16 @@ enum Pagination {
             )
             all.append(contentsOf: batch)
             // 增量首页会额外注入 purge 墓碑；墓碑不占服务端 offset，
-            // 因此分页终止与 offset 推进都只能按「非墓碑行」计数。
-            let activeCount = activeTransactionCount(batch)
-            if activeCount < batchLimit {
+            // 但真实软删行仍占 offset。两者 deleted_at 都非空，无法区分，
+            // 因此按服务端原始页大小判断终止与推进。
+            guard let nextOffset = nextTransactionOffset(
+                currentOffset: offset,
+                batchSize: batch.count,
+                batchLimit: batchLimit
+            ) else {
                 break
             }
-            offset += activeCount
+            offset = nextOffset
             batchIndex += 1
             if all.count >= maxTransactions { break }
         }

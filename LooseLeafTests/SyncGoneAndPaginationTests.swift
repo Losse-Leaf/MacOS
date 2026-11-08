@@ -4,7 +4,8 @@ import XCTest
 /// 同步一致性复核的 macOS 回归测试：
 /// - CREATE 返回 410 Gone 时丢弃本地乐观行与发件箱项（账目还要回滚汇总）；
 /// - DELETE 返回 404 时视为目标已不存在，消费事件并删除本地行；
-/// - 增量账目分页只按非墓碑行推进 offset。
+/// - 增量账目分页按服务端原始页大小推进 offset（真实软删行也占 offset）。
+/// - 升级后一次性清空账目游标，强制全量补拉旧版可能漏掉的记录。
 @MainActor
 final class SyncGoneAndPaginationTests: XCTestCase {
 
@@ -142,28 +143,29 @@ final class SyncGoneAndPaginationTests: XCTestCase {
 
     // MARK: - 增量分页 offset
 
-    func test05_ActiveTransactionCountIgnoresPurgeTombstones() {
-        let batch = [
-            transaction(1),
-            transaction(2).withDeletedAt("2026-11-08T10:00:00+08:00"),
-            transaction(3),
-            transaction(4).withDeletedAt("2026-11-08T11:00:00+08:00")
-        ]
-
+    func test05_NextTransactionOffsetUsesRawBatchSize() {
+        // 500 条里包含真实软删行：旧实现只数活跃行，会误判末页。
         XCTAssertEqual(
-            Pagination.activeTransactionCount(batch),
-            2,
-            "墓碑不占服务端 offset，不能算进分页推进"
+            Pagination.nextTransactionOffset(currentOffset: 0, batchSize: 500, batchLimit: 500),
+            500
         )
         XCTAssertEqual(
-            Pagination.activeTransactionCount([transaction(1).withDeletedAt("2026-11-08T10:00:00+08:00")]),
-            0
+            Pagination.nextTransactionOffset(currentOffset: 500, batchSize: 500, batchLimit: 500),
+            1000
         )
+        // 500 真实行 + 10 条 purge 墓碑：服务端 offset 只前进了 500。
         XCTAssertEqual(
-            Pagination.activeTransactionCount([transaction(1).withDeletedAt("")]),
-            1,
-            "空字符串 deleted_at 是活跃行"
+            Pagination.nextTransactionOffset(currentOffset: 0, batchSize: 510, batchLimit: 500),
+            500
         )
+        // 495 真实行 + 10 条墓碑：批次 505 看似满页，实际已到末页；
+        // 按 500 推进最多多一次空页请求，不会跳过真实行。
+        XCTAssertEqual(
+            Pagination.nextTransactionOffset(currentOffset: 0, batchSize: 505, batchLimit: 500),
+            500
+        )
+        XCTAssertNil(Pagination.nextTransactionOffset(currentOffset: 0, batchSize: 499, batchLimit: 500))
+        XCTAssertNil(Pagination.nextTransactionOffset(currentOffset: 0, batchSize: 0, batchLimit: 500))
     }
 
     func test06_MergedTransactionsRemovesPurgeTombstone() {
@@ -177,6 +179,42 @@ final class SyncGoneAndPaginationTests: XCTestCase {
         )
 
         XCTAssertTrue(merged.isEmpty, "purge 墓碑必须让本地账目消失，而不是留下幽灵行")
+    }
+
+    // MARK: - 一次性游标重置
+
+    func test07_LedgerPaginationFixResetRunsOnce() {
+        let suiteName = "looseleaf-test-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("无法创建测试 UserDefaults")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        SyncManager.shared.saveSnapshot(
+            LocalArchiveSnapshot(
+                transactions: [transaction(1)],
+                lastTransactionsSyncCursor: "2026-11-08T10:00:00Z"
+            )
+        )
+
+        SyncManager.shared.resetLedgerCursorForPaginationFixIfNeeded(defaults: defaults)
+        XCTAssertNil(
+            SyncManager.shared.currentSnapshot().lastTransactionsSyncCursor,
+            "升级后首次注水必须清空账目游标，强制全量补拉"
+        )
+
+        SyncManager.shared.saveSnapshot(
+            LocalArchiveSnapshot(
+                transactions: [transaction(1)],
+                lastTransactionsSyncCursor: "2026-11-08T11:00:00Z"
+            )
+        )
+        SyncManager.shared.resetLedgerCursorForPaginationFixIfNeeded(defaults: defaults)
+        XCTAssertEqual(
+            SyncManager.shared.currentSnapshot().lastTransactionsSyncCursor,
+            "2026-11-08T11:00:00Z",
+            "一次性重置不能每轮都清空游标"
+        )
     }
 }
 

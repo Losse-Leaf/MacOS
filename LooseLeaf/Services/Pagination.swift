@@ -10,6 +10,12 @@ enum Pagination {
     static let maxEntries = 50_000
     static let maxTransactions = 20_000
 
+    /// 增量分页只按非墓碑行推进 offset：purge 墓碑由首页注入，不占服务端 offset。
+    /// 若把墓碑算进 offset，会跳过服务端真实行，造成静默漏拉。
+    static func activeTransactionCount(_ batch: [Transaction]) -> Int {
+        batch.filter { ($0.deletedAt ?? "").isEmpty }.count
+    }
+
     /// 分页拉取生活档案。
     /// - Parameter onFirstPage: 第一页到达时的回调（用于让 UI 立即渲染首屏内容，
     ///   而不必等待全部页拉完）。原实现要等所有页拉完才返回，
@@ -63,10 +69,13 @@ enum Pagination {
                 useETag: useETagOnFirstBatch && batchIndex == 0
             )
             all.append(contentsOf: batch)
-            if batch.count < batchLimit {
+            // 增量首页会额外注入 purge 墓碑；墓碑不占服务端 offset，
+            // 因此分页终止与 offset 推进都只能按「非墓碑行」计数。
+            let activeCount = activeTransactionCount(batch)
+            if activeCount < batchLimit {
                 break
             }
-            offset += batch.count
+            offset += activeCount
             batchIndex += 1
             if all.count >= maxTransactions { break }
         }

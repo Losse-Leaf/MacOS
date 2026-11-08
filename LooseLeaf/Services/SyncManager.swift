@@ -823,6 +823,11 @@ public final class SyncManager {
                 // 永久错误：记录保留在时间流并标记为失败，用户可重试
                 markEntryFailed(tempId: tempId, reason: apiErr.localizedDescription)
                 throw apiErr
+            case .serverError(410, _):
+                // 服务端该记录已被软删后物理清理（purge）：本地乐观行与 CREATE
+                // 都不再需要，直接丢弃，避免用户对着一条永远同步不上去的幽灵行。
+                discardGoneEntry(tempId: tempId)
+                throw apiErr
             case .serverError(let code, _) where (400..<500).contains(code):
                 // 关键：**所有 4xx** 都是永久错误，不只是 400。
                 // 原先只覆盖 400，于是 409 / 413 / 415 / 422 会落进下面的
@@ -1004,6 +1009,15 @@ public final class SyncManager {
         Self.logger.error("Entry \(tempId) marked as failed: \(reason, privacy: .public)")
     }
 
+    /// 服务端返回 410 Gone：记录已被软删后物理清理，本地临时行与发件箱项一并丢弃。
+    func discardGoneEntry(tempId: Int) {
+        var latest = snapshot
+        latest.entries.removeAll { $0.id == tempId }
+        latest.outbox.removeAll { $0.localTempId == tempId }
+        saveSnapshot(latest)
+        Self.logger.info("Entry \(tempId) discarded: server reports 410 Gone")
+    }
+
     /// 提交新记账流水（在线直接落库，离线或网络阻断时写入本地 Outbox 乐观更新）
     public func submitTransaction(_ req: CreateTransactionRequest) async throws -> (transaction: Transaction, queuedOffline: Bool) {
         let stableReq = stableTransactionRequest(req)
@@ -1099,6 +1113,11 @@ public final class SyncManager {
             case .unauthorized:
                 markTransactionFailed(tempId: tempId, reason: apiErr.localizedDescription)
                 throw apiErr
+            case .serverError(410, _):
+                // 服务端该记录已被软删后物理清理（purge）：丢弃本地乐观账目
+                // 并回滚汇总，避免一笔永远同步不上去的幽灵支出。
+                discardGoneTransaction(tempId: tempId)
+                throw apiErr
             case .serverError(let code, _) where (400..<500).contains(code):
                 // 同上：所有 4xx 都是永久错误
                 markTransactionFailed(tempId: tempId, reason: apiErr.localizedDescription)
@@ -1186,6 +1205,50 @@ public final class SyncManager {
         guard touched || hadOutboxItem else { return }
         saveSnapshot(latest)
         Self.logger.error("Transaction \(tempId) marked as failed: \(reason, privacy: .public)")
+    }
+
+    /// 服务端返回 410 Gone：账目已被软删后物理清理，丢弃本地乐观账目并回滚汇总。
+    func discardGoneTransaction(tempId: Int) {
+        var latest = snapshot
+        if let removed = latest.transactions.first(where: { $0.id == tempId }),
+           Self.isInSummaryMonth(removed.occurredAt, summary: latest.transactionSummary) {
+            Self.applySummaryDelta(
+                &latest.transactionSummary,
+                category: removed.category,
+                type: removed.type,
+                amount: -removed.amount
+            )
+        }
+        latest.transactions.removeAll { $0.id == tempId }
+        latest.outbox.removeAll { $0.localTempId == tempId }
+        saveSnapshot(latest)
+        Self.logger.info("Transaction \(tempId) discarded: server reports 410 Gone")
+    }
+
+    /// DELETE 返回 404：服务端已经没有这条记录，本地删除与消费事件即可。
+    func discardGoneDelete(item: OutboxItem) {
+        guard let targetId = item.targetServerId else { return }
+        var latest = snapshot
+        switch item.kind {
+        case .deleteEntry:
+            latest.entries.removeAll { $0.id == targetId }
+        case .deleteTransaction:
+            if let removed = latest.transactions.first(where: { $0.id == targetId }),
+               Self.isInSummaryMonth(removed.occurredAt, summary: latest.transactionSummary) {
+                Self.applySummaryDelta(
+                    &latest.transactionSummary,
+                    category: removed.category,
+                    type: removed.type,
+                    amount: -removed.amount
+                )
+            }
+            latest.transactions.removeAll { $0.id == targetId }
+        default:
+            break
+        }
+        latest.outbox.removeAll { $0.id == item.id }
+        saveSnapshot(latest)
+        Self.logger.info("Outbox delete \(item.id.uuidString) finished: server reports 404 Not Found")
     }
 
     /// 用户主动同步（⌘R）时，把已暂停的死信重新放回队列。
@@ -1303,6 +1366,24 @@ public final class SyncManager {
                     }
                 }
             } catch let apiErr as APIError {
+                if case .serverError(410, _) = apiErr {
+                    switch item.kind {
+                    case .createEntry:
+                        self.discardGoneEntry(tempId: item.localTempId)
+                    case .createTransaction:
+                        self.discardGoneTransaction(tempId: item.localTempId)
+                    default:
+                        self.handleOutboxFailure(item: item, error: apiErr)
+                    }
+                    continue
+                }
+                // DELETE 的 404 是「目标已经不存在」，与成功等价：删掉本地行并消费事件，
+                // 而不是当成永久失败暂停在发件箱里。
+                if case .serverError(404, _) = apiErr,
+                   item.kind == .deleteEntry || item.kind == .deleteTransaction {
+                    self.discardGoneDelete(item: item)
+                    continue
+                }
                 self.handleOutboxFailure(item: item, error: apiErr)
             } catch {
                 self.handleOutboxFailure(item: item, error: APIError.networkFailure(error.localizedDescription))

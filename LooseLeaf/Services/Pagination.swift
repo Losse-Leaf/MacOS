@@ -36,7 +36,7 @@ enum Pagination {
             if page == 1 {
                 await onFirstPage?(response.total, response.entries)
             }
-            if response.entries.count < pageSize || all.count >= response.total {
+            if response.entries.count < pageSize {
                 break
             }
             if all.count >= maxEntries { break }
@@ -90,7 +90,7 @@ enum Pagination {
                 status: status
             )
             all.append(contentsOf: response.wishes)
-            if response.wishes.count < pageSize || all.count >= response.total {
+            if response.wishes.count < pageSize {
                 break
             }
             page += 1

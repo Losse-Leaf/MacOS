@@ -1774,6 +1774,12 @@ public final class AppState {
         // 死信重新排队（否则自动同步永远跳过它们）
         SyncManager.shared.resetPausedOutboxItems()
 
+        // 若后台正在 flushOutbox，避免并发触发第二套重传请求导致竞态
+        guard !SyncManager.shared.isFlushingOutbox else {
+            showTemporaryBanner("同步队列正在上传中（共 \(count) 条待同步内容）")
+            return count
+        }
+
         // 关键：先取**快照**再逐条重传。
         // 边遍历边重传会边改集合（重传会把状态改回「待同步」），
         // 遍历行为不可预期。

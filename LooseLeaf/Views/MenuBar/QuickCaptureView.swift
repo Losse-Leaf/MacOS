@@ -79,8 +79,7 @@ public struct QuickCaptureView: View {
             }
             .padding(ArchiveSpacing.m)
         }
-        .frame(width: 380)
-        .frame(maxHeight: 460)
+        .frame(width: 380, height: 440)
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         .onAppear {
             isContentFocused = true
@@ -223,7 +222,7 @@ public struct QuickCaptureView: View {
             .textFieldStyle(.plain)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
             .foregroundStyle(ArchivePalette.inkPrimary)
-            .lineLimit(4...7)
+            .lineLimit(5, reservesSpace: true)
             .focused($isContentFocused)
             .padding(ArchiveSpacing.s)
             .background(ArchivePalette.archivePaper)

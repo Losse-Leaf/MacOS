@@ -131,12 +131,10 @@ public struct QuickLedgerView: View {
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Spacer(minLength: 0)
-                if let parsed = resolvedQuickParsed {
-                    Text("\(parsed.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: parsed.amountCents, includeSymbol: true)) · \(parsed.category)")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                        .lineLimit(1)
-                }
+                Text(resolvedQuickParsed.map { "\($0.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: $0.amountCents, includeSymbol: true)) · \($0.category)" } ?? "自动识别金额与类目")
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .semibold))
+                    .foregroundStyle(resolvedQuickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted.opacity(0.65))
+                    .lineLimit(1)
             }
 
             TextField("记一笔账，如：42.5 咖啡…", text: $smartInput)
@@ -226,6 +224,7 @@ public struct QuickLedgerView: View {
                     }
                 }
             }
+            .frame(minHeight: 62, alignment: .top)
         }
     }
 

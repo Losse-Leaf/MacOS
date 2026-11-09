@@ -39,7 +39,7 @@ struct EntryPaperTextArea: View {
         TextField(placeholder, text: $text, axis: .vertical)
             .textFieldStyle(.plain)
             .font(font)
-            .lineLimit(lineLimit)
+            .lineLimit(lineLimit.lowerBound, reservesSpace: true)
             .padding(padding)
             .background(ArchivePalette.archiveSubtle)
             .clipShape(RoundedRectangle(cornerRadius: 6))

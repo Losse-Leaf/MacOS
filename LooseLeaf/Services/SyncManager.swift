@@ -501,12 +501,16 @@ public final class SyncManager {
             // 也应让 UI 重新赋值。content 通常很长，交给 updatedAt 兜底。
             mix(entry.title, into: &hash)
             mix(entry.type, into: &hash)
+            mix(UInt64(entry.content.utf8.count), into: &hash)
             mix(entry.occurredAt, into: &hash)
             mix(entry.location ?? "", into: &hash)
+            mix(entry.cityCode ?? "", into: &hash)
             mix(entry.cityName ?? "", into: &hash)
+            mix(entry.gearId ?? "", into: &hash)
             mix(entry.deletedAt ?? "", into: &hash)
             mix(UInt64(entry.projectId ?? 0), into: &hash)
             mix(UInt64(entry.wishId ?? 0), into: &hash)
+            mix(UInt64(bitPattern: Int64(entry.footprintId ?? 0)), into: &hash)
             for attachment in entry.attachments {
                 mix(UInt64(attachment.id), into: &hash)
                 mix(attachment.objectKey, into: &hash)
@@ -530,11 +534,19 @@ public final class SyncManager {
             mix(UInt64(bitPattern: tx.amount), into: &hash)
             mix(tx.occurredAt, into: &hash)
             mix(tx.title, into: &hash)
+            mix(tx.note ?? "", into: &hash)
+            mix(tx.cityCode ?? "", into: &hash)
             mix(tx.paymentMethod ?? "", into: &hash)
             mix(tx.isInstallment == true ? "1" : "0", into: &hash)
+            mix(tx.installmentChannelCode ?? "", into: &hash)
             mix(UInt64(bitPattern: tx.installmentTotalAmount ?? 0), into: &hash)
             mix(UInt64(tx.installmentMonths ?? 0), into: &hash)
+            mix(UInt64(bitPattern: tx.installmentMonthlyPay ?? 0), into: &hash)
+            mix(UInt64(tx.installmentRemainMonths ?? 0), into: &hash)
+            mix(UInt64(tx.repaymentDay ?? 0), into: &hash)
+            mix(UInt64(bitPattern: Int64(tx.wishId ?? 0)), into: &hash)
             mix(UInt64(bitPattern: Int64(tx.footprintId ?? 0)), into: &hash)
+            mix(tx.deletedAt ?? "", into: &hash)
             let updated = tx.updatedAt ?? ""
             if !updated.isEmpty, updated > maxUpdatedAt { maxUpdatedAt = updated }
         }
@@ -937,6 +949,25 @@ public final class SyncManager {
     /// 界面上只剩一句「删除失败」，网络恢复后也不会补删，
     /// 而 `OutboxActionKind.deleteEntry` 这条链路形同虚设。
     public func enqueueDelete(kind: OutboxActionKind, localTempId: Int, targetServerId: Int) {
+        var latest = snapshot
+        switch kind {
+        case .deleteEntry:
+            latest.entries.removeAll { $0.id == targetServerId }
+        case .deleteTransaction:
+            if let removed = latest.transactions.first(where: { $0.id == targetServerId }),
+               Self.isInSummaryMonth(removed.occurredAt, summary: latest.transactionSummary) {
+                Self.applySummaryDelta(
+                    &latest.transactionSummary,
+                    category: removed.category,
+                    type: removed.type,
+                    amount: -removed.amount
+                )
+            }
+            latest.transactions.removeAll { $0.id == targetServerId }
+        default:
+            break
+        }
+        snapshot = latest
         appendOutbox(kind, localTempId: localTempId, targetServerId: targetServerId)
     }
 
@@ -1065,6 +1096,13 @@ public final class SyncManager {
             footprintId: req.footprintId,
             cityCode: req.cityCode,
             occurredAt: req.occurredAt,
+            isInstallment: req.isInstallment,
+            installmentChannelCode: req.installmentChannelCode,
+            installmentTotalAmount: req.installmentTotalAmount,
+            installmentMonths: req.installmentMonths,
+            installmentMonthlyPay: req.installmentMonthlyPay,
+            installmentRemainMonths: req.installmentRemainMonths,
+            repaymentDay: req.repaymentDay,
             syncStatus: "pending_create"
         )
 
@@ -1570,6 +1608,15 @@ public final class SyncManager {
         var outboxByID = Dictionary(loaded.outbox.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for item in current.outbox { outboxByID[item.id] = item }
         merged.outbox = outboxByID.values.sorted { $0.createdAt < $1.createdAt }
+
+        let pendingDeletedEntryIds = Set(merged.outbox.compactMap { $0.kind == .deleteEntry ? $0.targetServerId : nil })
+        if !pendingDeletedEntryIds.isEmpty {
+            merged.entries.removeAll { pendingDeletedEntryIds.contains($0.id) }
+        }
+        let pendingDeletedTxIds = Set(merged.outbox.compactMap { $0.kind == .deleteTransaction ? $0.targetServerId : nil })
+        if !pendingDeletedTxIds.isEmpty {
+            merged.transactions.removeAll { pendingDeletedTxIds.contains($0.id) }
+        }
 
         if (merged.lastEntriesSyncCursor ?? "").isEmpty {
             merged.lastEntriesSyncCursor = loaded.lastEntriesSyncCursor

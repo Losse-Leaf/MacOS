@@ -483,11 +483,11 @@ public struct LedgerAssetsView: View {
                         submitQuickLine()
                     }
 
-                if let parsed = quickParsed {
-                    Text("\(parsed.category) · \(FormatUtils.formattedYuan(cents: parsed.amountCents, includeSymbol: true))")
-                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
+                Text(quickParsed.map { "\($0.category) · \(FormatUtils.formattedYuan(cents: $0.amountCents, includeSymbol: true))" } ?? "输入金额与摘要自动识别")
+                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                    .foregroundStyle(quickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted.opacity(0.65))
+                    .lineLimit(1)
+                    .frame(width: 148, alignment: .trailing)
 
                 Button {
                     submitQuickLine()
@@ -550,7 +550,7 @@ public struct LedgerAssetsView: View {
                             TextField("0.00", text: $formAmountYuan)
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.monoScale(size: 13.5, weight: .semibold))
-                                .frame(minWidth: 80, idealWidth: 120, maxWidth: 160)
+                                .frame(width: 140)
                         }
                         .padding(.horizontal, ArchiveSpacing.s)
                         .padding(.vertical, 5)
@@ -723,12 +723,12 @@ public struct LedgerAssetsView: View {
 
                                 Spacer()
 
-                                if let totalCents = FormatUtils.parseYuanToCents(formAmountYuan), totalCents > 0 {
-                                    let monthlyCents = totalCents / Int64(max(1, formInstallmentMonths))
-                                    Text("每期约 \(FormatUtils.formattedYuan(cents: monthlyCents, includeSymbol: true))")
-                                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
-                                }
+                                let totalCents = FormatUtils.parseYuanToCents(formAmountYuan) ?? 0
+                                let monthlyCents = totalCents > 0 ? totalCents / Int64(max(1, formInstallmentMonths)) : 0
+                                Text(totalCents > 0 ? "每期约 \(FormatUtils.formattedYuan(cents: monthlyCents, includeSymbol: true))" : "输入金额后自动核算每期")
+                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(totalCents > 0 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                                    .lineLimit(1)
                             }
                         }
                         .padding(10)

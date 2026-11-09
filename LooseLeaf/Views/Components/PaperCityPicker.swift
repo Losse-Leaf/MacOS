@@ -130,6 +130,7 @@ public struct PaperCityPicker: View {
                 }
             }
             .frame(maxWidth: isFullWidth ? .infinity : nil)
+            .frame(height: isFullWidth ? 32 : 28)
             .background(ArchivePalette.archivePaper)
             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
             .overlay(
@@ -222,47 +223,48 @@ public struct PaperCityPicker: View {
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 3. 内容展示：搜索模式 vs 两级省市点选模式
+            // 3. 内容展示：搜索模式 vs 两级省市点选模式（锁定固定尺寸 225.5 × 210，杜绝输入时 NSPopover 尺寸抖动）
             if !searchKeyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let filtered = CityDictionary.searchCities(searchKeyword)
-                if filtered.isEmpty {
-                    Text("未检索到匹配的省市")
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 20)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: ArchiveSpacing.xxs) {
-                            ForEach(filtered) { city in
-                                let isHovered = hoveredCityCode == city.code
-                                Button {
-                                    selectedCode = city.code
-                                    selectedName = city.name
-                                    isPickerPresented = false
-                                } label: {
-                                    HStack {
-                                        Text("\(city.province) · \(city.name)")
-                                            .font(ArchiveTypography.bodySans(size: 11.5))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                        Spacer()
+                Group {
+                    if filtered.isEmpty {
+                        Text("未检索到匹配的省市")
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: ArchiveSpacing.xxs) {
+                                ForEach(filtered) { city in
+                                    let isHovered = hoveredCityCode == city.code
+                                    Button {
+                                        selectedCode = city.code
+                                        selectedName = city.name
+                                        isPickerPresented = false
+                                    } label: {
+                                        HStack {
+                                            Text("\(city.province) · \(city.name)")
+                                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                            Spacer()
+                                        }
+                                        .contentShape(Rectangle())
+                                        .padding(.horizontal, ArchiveSpacing.s)
+                                        .padding(.vertical, ArchiveSpacing.xs)
+                                        .background(isHovered ? ArchivePalette.archiveSubtle : ArchivePalette.archivePaper)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
                                     }
-                                    .contentShape(Rectangle())
-                                    .padding(.horizontal, ArchiveSpacing.s)
-                                    .padding(.vertical, ArchiveSpacing.xs)
-                                    .background(isHovered ? ArchivePalette.archiveSubtle : ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                }
-                                .buttonStyle(.plain)
-                                .onHover { h in
-                                    if h { hoveredCityCode = city.code }
-                                    else if hoveredCityCode == city.code { hoveredCityCode = nil }
+                                    .buttonStyle(.plain)
+                                    .onHover { h in
+                                        if h { hoveredCityCode = city.code }
+                                        else if hoveredCityCode == city.code { hoveredCityCode = nil }
+                                    }
                                 }
                             }
                         }
                     }
-                    .frame(height: 200)
                 }
+                .frame(width: 225.5, height: 210)
             } else {
                 // 两级联动省市选择面板 (免键盘纯点选)
                 HStack(spacing: 0) {

@@ -81,7 +81,7 @@ public struct EditEntrySheetView: View {
                 TextField("手稿正文…", text: $editContent, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 13))
-                    .lineLimit(6...14)
+                    .lineLimit(8, reservesSpace: true)
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))

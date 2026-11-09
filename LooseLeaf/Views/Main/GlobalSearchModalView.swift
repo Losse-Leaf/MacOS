@@ -106,22 +106,22 @@ public struct GlobalSearchModalView: View {
                         }
                     }
 
-                if !query.isEmpty {
-                    Button("清空") {
-                        query = ""
-                        debouncedQuery = ""
-                        appState.clearGlobalSearchResult()
-                        presentation = .empty
-                        isSearchingRemote = false
-                    }
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                Button("清空") {
+                    query = ""
+                    debouncedQuery = ""
+                    appState.clearGlobalSearchResult()
+                    presentation = .empty
+                    isSearchingRemote = false
                 }
+                .font(ArchiveTypography.monoScale(size: 11))
+                .foregroundStyle(ArchivePalette.inkMuted)
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(ArchivePalette.archiveSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .opacity(query.isEmpty ? 0 : 1)
+                .disabled(query.isEmpty)
 
                 Button {
                     onDismiss()

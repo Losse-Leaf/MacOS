@@ -223,11 +223,14 @@ public struct EditTransactionSheet: View {
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
-                if let cents = FormatUtils.parseYuanToCents(amountYuan), cents > 0, installmentMonths > 0 {
-                    Text("每期 ¥\(FormatUtils.formattedYuan(cents: cents / Int64(installmentMonths))) · 总额 ¥\(FormatUtils.formattedYuan(cents: cents))")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
+                let cents = FormatUtils.parseYuanToCents(amountYuan) ?? 0
+                let validInstallment = cents > 0 && installmentMonths > 0
+                Text(validInstallment
+                     ? "每期 ¥\(FormatUtils.formattedYuan(cents: cents / Int64(installmentMonths))) · 总额 ¥\(FormatUtils.formattedYuan(cents: cents))"
+                     : "输入有效金额后自动核算每期应还")
+                    .font(ArchiveTypography.monoScale(size: 11))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
             }
 
             // 明确告知「会取消分期」——破坏性操作不能静默发生

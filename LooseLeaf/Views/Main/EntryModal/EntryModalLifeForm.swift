@@ -28,22 +28,21 @@ struct EntryModalLifeForm: View {
                 lineLimit: 6...16
             )
 
-            // 派生出的标题预览（让人知道标题是怎么来的，也方便反悔改写）
-            if !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .accessibilityHidden(true)
-                    Text("标题将取正文首行：\(FormatUtils.derivedTitle(from: draft.content))")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("标题将自动取正文首行")
+            // 派生出的标题预览（让人知道标题是怎么来的，也方便反悔改写；恒驻单行杜绝打字瞬间 26pt 跳变）
+            let hasContent = !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            HStack(spacing: 6) {
+                Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .accessibilityHidden(true)
+                Text(hasContent ? "标题将取正文首行：\(FormatUtils.derivedTitle(from: draft.content))" : "标题将自动取正文首行")
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("标题将自动取正文首行")
 
             HStack(spacing: 12) {
                 PaperDatePicker(selection: $draft.occurredAt, enableTime: true, label: "发生时刻")

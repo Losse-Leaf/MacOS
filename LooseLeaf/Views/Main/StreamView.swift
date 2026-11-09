@@ -423,7 +423,7 @@ public struct StreamView: View {
 
                     // 检索与操作胶囊工具条
                     HStack(spacing: 8) {
-                        // 模糊搜索框 (⌘F)
+                        // 模糊搜索框 (⌘F)：外层胶囊锁定固定宽度 260，防止聚焦或输入时挤压右侧分类胶囊
                         HStack(spacing: 6) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 11))
@@ -433,8 +433,7 @@ public struct StreamView: View {
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.bodySans(size: 12))
                                 .focused($isSearchFocused)
-                                .frame(width: isSearchFocused ? 260 : 200)
-                                .animation(.easeOut(duration: 0.16), value: isSearchFocused)
+                                .frame(maxWidth: .infinity)
                                 .onChange(of: localSearchText) { _, newVal in
                                     // 关键：**任何**变化都要先清掉旧的跨模块命中。
                                     // 原先只在清空时清，于是输入新词之后、
@@ -458,22 +457,22 @@ public struct StreamView: View {
                                     .controlSize(.mini)
                                     .padding(.trailing, 2)
                             }
-                            if !localSearchText.isEmpty {
-                                Button {
-                                    localSearchText = ""
-                                    appState.searchQuery = ""
-                                    appState.globalSearchResult = nil
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .accessibilityLabel("清空搜索关键词")
-                                .buttonStyle(.plain)
+                            Button {
+                                localSearchText = ""
+                                appState.searchQuery = ""
+                                appState.globalSearchResult = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
                             }
+                            .accessibilityLabel("清空搜索关键词")
+                            .buttonStyle(.plain)
+                            .opacity(localSearchText.isEmpty ? 0 : 1)
+                            .disabled(localSearchText.isEmpty)
                         }
                         .padding(.horizontal, 10)
-                        .frame(height: 32)
+                        .frame(width: 260, height: 32)
                         .background(ArchivePalette.archivePaper)
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         .overlay(

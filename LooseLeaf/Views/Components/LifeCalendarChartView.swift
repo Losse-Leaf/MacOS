@@ -10,7 +10,6 @@ import AppKit
 public enum CalendarDisplayMode: String, CaseIterable, Identifiable {
     case monthGrid = "月历视界"
     case annualMatrix = "年度全景"
-    case echarts = "ECharts 画卷"
 
     public var id: String { rawValue }
 }
@@ -62,8 +61,6 @@ public struct LifeCalendarChartView: View {
                     monthCalendarView
                 case .annualMatrix:
                     annualMatrixView
-                case .echarts:
-                    echartsInteractiveView
                 }
             }
 
@@ -400,35 +397,6 @@ public struct LifeCalendarChartView: View {
         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
     }
 
-    // MARK: - 3. ECharts 交互画卷 (Interactive ECharts View)
-
-    private var echartsInteractiveView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("ECharts 日历坐标系热力图 · \(String(currentYear)) 年")
-                    .font(ArchiveTypography.monoScale(size: 11.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                Spacer()
-                Text("支持拖拽悬停与精确日期交互")
-                    .font(ArchiveTypography.bodySans(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-            }
-
-            DiagramWebView(
-                htmlContent: DiagramHTMLBuilder.buildCalendarChartHTML(
-                    year: currentYear,
-                    entryCounts: entryCounts,
-                    isDark: colorScheme == .dark
-                ),
-                onSelectDate: { dateStr in
-                    selectedDate = (selectedDate == dateStr) ? nil : dateStr
-                }
-            )
-            .frame(height: 220)
-            .background(ArchivePalette.archiveSubtle.opacity(0.3))
-            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-        }
-    }
 
     // MARK: - 底栏色阶图例
 

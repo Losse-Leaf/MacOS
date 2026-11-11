@@ -29,6 +29,15 @@ public struct LedgerAssetsView: View {
     @State private var formInstallmentMonths: Int = 12
     @State private var formRepaymentDay: Int = 10
 
+    public enum LedgerSubTab: String, CaseIterable, Identifiable {
+        case ledger = "收支流水"
+        case gear = "随身固资与信贷"
+
+        public var id: String { rawValue }
+    }
+
+    @State private var activeSubTab: LedgerSubTab = .ledger
+
     // 筛选与弹窗
     @State private var selectedYear: Int = FormatUtils.beijingCurrentYearMonth().year
     @State private var selectedMonth: Int = FormatUtils.beijingCurrentYearMonth().month
@@ -156,36 +165,38 @@ public struct LedgerAssetsView: View {
 
         ScrollView {
             // LazyVStack 作为 ScrollView 的直接子视图，长列表才具备真正的懒加载能力
-            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
+            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                 headerSection
 
                 if let overview = appState.assetsOverview {
                     assetsOverviewGrid(overview)
                 }
 
-                monthlySpectrumCard
+                if activeSubTab == .ledger {
+                    monthlySpectrumCard
 
-                // 双模记账控制台
-                dualModeComposerCard
+                    // 双模记账控制台
+                    dualModeComposerCard
 
-                // 账目流水明细 (标题与筛选)
-                transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
+                    // 账目流水明细 (标题与单行筛选)
+                    transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
 
-                // 账目流水明细 (空态或流水列表)
-                if transactions.isEmpty {
-                    transactionsEmptyState
+                    // 账目流水明细 (空态或流水列表)
+                    if transactions.isEmpty {
+                        transactionsEmptyState
+                    } else {
+                        transactionsList(transactions)
+                    }
                 } else {
-                    transactionsList(transactions)
-                }
+                    // 随身器物固资货架 (标题)
+                    gearAssetsHeaderSection(gearCount: gearList.count)
 
-                // 随身器物固资货架 (标题)
-                gearAssetsHeaderSection(gearCount: gearList.count)
-
-                // 随身器物固资货架 (空态或货架网格)
-                if gearList.isEmpty {
-                    gearEmptyState
-                } else {
-                    gearGrid(gearList)
+                    // 随身器物固资货架 (空态或货架网格)
+                    if gearList.isEmpty {
+                        gearEmptyState
+                    } else {
+                        gearGrid(gearList)
+                    }
                 }
             }
             .padding(ArchiveSpacing.xl)
@@ -255,39 +266,55 @@ public struct LedgerAssetsView: View {
     // MARK: - 1. 页眉
 
     private var headerSection: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
-                Text("柴米油盐 · 独立账本与净资产中枢")
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                Text("每一笔收支皆有归处 · 个人净资产与日常流水总览")
-                    .font(ArchiveTypography.bodySans(size: 12.5))
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: ArchiveSpacing.m) {
+                    Text("资产大盘与记账")
+                        .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    // 账本 / 固资信贷子分栏切换
+                    HStack(spacing: 4) {
+                        ForEach(LedgerSubTab.allCases) { tab in
+                            PaperPillButton(
+                                title: tab.rawValue,
+                                isSelected: activeSubTab == tab
+                            ) {
+                                activeSubTab = tab
+                            }
+                        }
+                    }
+                }
+                Text("个人净资产与日常流水总览 · 每一笔收支皆有归处")
+                    .font(ArchiveTypography.bodySans(size: 12))
                     .foregroundStyle(ArchivePalette.inkSecondary)
             }
             Spacer()
 
             HStack(spacing: ArchiveSpacing.s) {
-                Button {
-                    showCreditChannelsSheet = true
-                } label: {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: "creditcard")
-                        Text("信贷分期渠道")
+                if activeSubTab == .gear {
+                    Button {
+                        showCreditChannelsSheet = true
+                    } label: {
+                        HStack(spacing: ArchiveSpacing.xs) {
+                            Image(systemName: "creditcard")
+                            Text("信贷分期渠道")
+                        }
                     }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
 
-                Button {
-                    showAddGearSheet = true
-                } label: {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: "plus.circle")
-                        Text("添置随身设备")
+                    Button {
+                        showAddGearSheet = true
+                    } label: {
+                        HStack(spacing: ArchiveSpacing.xs) {
+                            Image(systemName: "plus.circle")
+                            Text("添置随身设备")
+                        }
                     }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .paperButtonFocusRing()
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
 
                 Button {
                     if let currentInit = appState.assetsOverview?.initialLiquidBalance {
@@ -297,7 +324,7 @@ public struct LedgerAssetsView: View {
                 } label: {
                     HStack(spacing: ArchiveSpacing.xs) {
                         Image(systemName: "slider.horizontal.3")
-                        Text("校准初始流动资金")
+                        Text("校准底数")
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))

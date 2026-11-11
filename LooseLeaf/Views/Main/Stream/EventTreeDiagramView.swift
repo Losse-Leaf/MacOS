@@ -9,21 +9,12 @@
 import SwiftUI
 import AppKit
 
-/// 树图呈现引擎
-public enum TreeEngineMode: String, CaseIterable, Identifiable {
-    case nativeTree = "原生矢量树谱"
-    case echartsTree = "ECharts 交互树图"
-
-    public var id: String { rawValue }
-}
-
 /// 事件树谱全景视图
 public struct EventTreeDiagramView: View {
     public let entries: [LifeEntry]
     public var onSelectEntry: (LifeEntry) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var engineMode: TreeEngineMode = .nativeTree
     @State private var selectedCategoryId: String = "all"
     @State private var hoveredEntryId: Int? = nil
 
@@ -75,17 +66,13 @@ public struct EventTreeDiagramView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            // 控制栏：标题、分支筛选与引擎切换
+            // 控制栏：标题与分支筛选
             treeToolbar
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 主画布
-            if engineMode == .nativeTree {
-                nativeTreeView
-            } else {
-                echartsTreeView
-            }
+            // 主画布：纯原生直角折线树谱
+            nativeTreeView
         }
         .padding(ArchiveSpacing.l)
         .background(ArchivePalette.archivePaper)
@@ -114,18 +101,6 @@ public struct EventTreeDiagramView: View {
                 }
 
                 Spacer()
-
-                // 引擎切换
-                HStack(spacing: 4) {
-                    ForEach(TreeEngineMode.allCases) { mode in
-                        PaperPillButton(
-                            title: mode.rawValue,
-                            isSelected: engineMode == mode
-                        ) {
-                            engineMode = mode
-                        }
-                    }
-                }
             }
 
             // 分类筛选胶囊（横向平滑滚动，根治窄屏下溢出与文字挤压）
@@ -338,32 +313,5 @@ public struct EventTreeDiagramView: View {
 
     // MARK: - ECharts 交互树图 (ECharts Tree View)
 
-    private var echartsTreeView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("交互树图画卷 · 直角折线拓扑")
-                .font(ArchiveTypography.monoScale(size: 11))
-                .foregroundStyle(ArchivePalette.inkMuted)
 
-            let catData: [String: [(id: Int, title: String, date: String, type: String)]] = branches.reduce(into: [:]) { dict, b in
-                dict[b.label] = b.entries.map {
-                    (id: $0.id, title: $0.title.isEmpty ? "无题散页" : $0.title, date: FormatUtils.parseOccurredDate($0.occurredAt).dateKey, type: $0.type)
-                }
-            }
-
-            DiagramWebView(
-                htmlContent: DiagramHTMLBuilder.buildEventTreeChartHTML(
-                    categories: catData,
-                    isDark: colorScheme == .dark
-                ),
-                onSelectEntry: { id in
-                    if let target = entries.first(where: { $0.id == id }) {
-                        onSelectEntry(target)
-                    }
-                }
-            )
-            .frame(height: 440)
-            .background(ArchivePalette.archiveSubtle.opacity(0.3))
-            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-        }
-    }
 }

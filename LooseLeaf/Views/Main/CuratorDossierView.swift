@@ -7,8 +7,6 @@ public struct CuratorDossierView: View {
     @Bindable var appState: AppState
 
     @State private var showEditProfileSheet: Bool = false
-    @State private var showAddGearSheet: Bool = false
-    @State private var sellingGear: GearItem?
     @State private var dossierError: String?
     @State private var editName: String = ""
     @State private var editTitle: String = ""
@@ -31,10 +29,11 @@ public struct CuratorDossierView: View {
     public var body: some View {
         let prof = appState.profile
         // 一次性绑定固资筛选结果，避免 body 内重复全量过滤
-        let gearCategories = Array(Set(prof.edcGear.map { $0.category })).sorted()
+        let inServiceGear = prof.edcGear.filter { $0.status != "sold" }
+        let gearCategories = Array(Set(inServiceGear.map { $0.category })).sorted()
         let displayedGear = selectedGearCategory == "all"
-            ? prof.edcGear
-            : prof.edcGear.filter { $0.category == selectedGearCategory }
+            ? inServiceGear
+            : inServiceGear.filter { $0.category == selectedGearCategory }
 
         ScrollView {
             // LazyVStack 作为 ScrollView 直接子视图，长列表才具备懒加载能力
@@ -52,109 +51,10 @@ public struct CuratorDossierView: View {
                 }
 
                 // 1. 主理人名片与暗房肖像
-                HStack(alignment: .top, spacing: 20) {
-                    if !prof.avatarUrl.isEmpty, let url = APIClient.shared.resolveMediaURL(prof.avatarUrl) {
-                        FilmFrameView(
-                            imageURL: url,
-                            caption: "银盐肖像",
-                            metaText: prof.displayCity.isEmpty ? nil : prof.displayCity,
-                            maxHeight: 180
-                        )
-                        .frame(width: 180)
-                    }
+                profileCard(prof)
 
-                    VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                        HStack {
-                            Text(prof.name.isEmpty ? "主理人档案待填写" : prof.name)
-                                .font(ArchiveTypography.editorialSerif(size: 22, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-
-                            if !prof.title.isEmpty {
-                                Text(prof.title)
-                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                                    .foregroundStyle(ArchivePalette.inkSecondary)
-                                    .padding(.horizontal, ArchiveSpacing.s)
-                                    .padding(.vertical, 3)
-                                    .background(ArchivePalette.archiveSubtle)
-                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            }
-
-                            Spacer()
-
-                            Button {
-                                appState.showStatsSheet = true
-                            } label: {
-                                HStack(spacing: ArchiveSpacing.xs) {
-                                    Image(systemName: "chart.bar")
-                                        .font(.system(size: 11))
-                                    Text("生活统计")
-                                }
-                            }
-                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                            .paperButtonFocusRing()
-                            .help("查看生活统计卡片 (⌘⌥S)")
-
-                            Button("修订档案") {
-                                editName = prof.name
-                                editTitle = prof.title
-                                editCity = prof.currentCity
-                                editLocation = prof.location
-                                editMotto = prof.motto
-                                editBio = prof.bio
-                                editManifesto = prof.manifesto
-                                showEditProfileSheet = true
-                            }
-                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                            .paperButtonFocusRing()
-                        }
-
-                        if !prof.displayCity.isEmpty {
-                            HStack(spacing: 5) {
-                                Image(systemName: "location")
-                                    .font(.system(size: 11))
-                                let coordText: String = {
-                                    if !prof.location.isEmpty && !prof.currentCity.isEmpty && prof.location != prof.currentCity {
-                                        return "常居：\(prof.location) · 当下：\(prof.currentCity)"
-                                    } else if !prof.currentCity.isEmpty {
-                                        return "当下坐标：\(prof.currentCity)"
-                                    } else {
-                                        return "常居坐标：\(prof.location)"
-                                    }
-                                }()
-                                Text(coordText)
-                                    .font(ArchiveTypography.monoScale(size: 11.5))
-                            }
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                        }
-
-                        if !prof.motto.isEmpty {
-                            Text("“\(prof.motto)”")
-                                .font(ArchiveTypography.editorialSerif(size: 15))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .padding(.top, 2)
-                        }
-
-                        if !prof.bio.isEmpty {
-                            Text(prof.bio)
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
-                                .foregroundStyle(ArchivePalette.inkSecondary)
-                        }
-
-                        if !prof.manifesto.isEmpty {
-                            Text(prof.manifesto)
-                                .font(ArchiveTypography.bodySans(size: 12.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(.top, 4)
-                        }
-                    }
-                }
-                .padding(18)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                )
+                // 1.5 生活刻度核心指标大盘
+                statsOverviewGrid
 
                 // 2. 生活刻度 · 编年时间日历图与年度卷宗
                 VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
@@ -169,82 +69,7 @@ public struct CuratorDossierView: View {
 
                     // 点击具体日期后展开当日手记速览抽屉 (严格 1:1 对标 Web 端 AboutView.vue)
                     if let dateKey = selectedHeatmapDate {
-                        // 走记忆化的按日索引，不再每次 body 求值都全量解析一遍日期
-                        let selectedDateEntries = appState.entriesByDateKey[dateKey] ?? []
-
-                        LazyVStack(alignment: .leading, spacing: 10) {
-                            Divider().overlay(ArchivePalette.borderSubtle)
-
-                            HStack {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "calendar")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.accentWarm)
-                                    Text("\(dateKey) 当日记录 (\(selectedDateEntries.count) 条)")
-                                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
-                                        .foregroundStyle(ArchivePalette.inkPrimary)
-                                }
-
-                                Spacer()
-
-                                Button {
-                                    selectedHeatmapDate = nil
-                                } label: {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: ArchiveIcon.close.systemName)
-                                            .font(.system(size: 10, weight: .bold))
-                                        Text("关闭速览")
-                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                                    }
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            if selectedDateEntries.isEmpty {
-                                Text("该日未留下公开或私密手记。")
-                                    .font(ArchiveTypography.editorialSerif(size: 11.5))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .padding(.vertical, 6)
-                            } else {
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.s) {
-                                    ForEach(selectedDateEntries) { item in
-                                        Button {
-                                            appState.highlightedEntry = item
-                                        } label: {
-                                            VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
-                                                HStack {
-                                                    Text(item.title.isEmpty ? "无题散页" : item.title)
-                                                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
-                                                        .foregroundStyle(ArchivePalette.inkPrimary)
-                                                        .lineLimit(1)
-                                                    Spacer()
-                                                    Text(FormatUtils.parseOccurredDate(item.occurredAt).time)
-                                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                                }
-
-                                                if !item.content.isEmpty {
-                                                    Text(item.content)
-                                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                                                        .foregroundStyle(ArchivePalette.inkSecondary)
-                                                        .lineLimit(1)
-                                                }
-                                            }
-                                            .padding(10)
-                                            .background(ArchivePalette.archivePaper)
-                                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.top, 4)
+                        dayEntriesDrawer(dateKey: dateKey)
                     }
                 }
                 .padding(18)
@@ -256,9 +81,9 @@ public struct CuratorDossierView: View {
                 )
 
                 // 3. 随身器物图鉴 (EDC Gear) — 标题与分类筛选
-                gearHeaderSection(gearCategories: gearCategories)
+                gearHeaderSection(gearCategories: gearCategories, count: inServiceGear.count)
 
-                // 3b. 随身器物图鉴 — 空态或货架网格（作为 ScrollView 子级渲染，保留懒加载能力）
+                // 3b. 随身器物图鉴 — 空态或货架网格
                 if displayedGear.isEmpty {
                     gearEmptyState
                 } else {
@@ -270,21 +95,6 @@ public struct CuratorDossierView: View {
         .sheet(isPresented: $showEditProfileSheet) {
             editProfileSheetView
         }
-        .sheet(item: $sellingGear) { gear in
-            SellGearSheet(gear: gear) {
-                sellingGear = nil
-            } onSold: {
-                Task { @MainActor in
-                    await appState.loadConfigAndProfile()
-                    await appState.loadTransactionsAndAssets(forceFull: false)
-                }
-            }
-        }
-        .sheet(isPresented: $showAddGearSheet) {
-            AddGearSheet(appState: appState) {
-                showAddGearSheet = false
-            }
-        }
         .sheet(isPresented: $appState.showAlmanacSheet) {
             AnnualAlmanacSheet {
                 appState.showAlmanacSheet = false
@@ -292,42 +102,282 @@ public struct CuratorDossierView: View {
         }
     }
 
+    // MARK: - 1. 主理人名片
+
+    private func profileCard(_ prof: CuratorProfile) -> some View {
+        HStack(alignment: .top, spacing: 20) {
+            if !prof.avatarUrl.isEmpty, let url = APIClient.shared.resolveMediaURL(prof.avatarUrl) {
+                FilmFrameView(
+                    imageURL: url,
+                    caption: "银盐肖像",
+                    metaText: prof.displayCity.isEmpty ? nil : prof.displayCity,
+                    maxHeight: 180
+                )
+                .frame(width: 180)
+            }
+
+            VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                HStack {
+                    Text(prof.name.isEmpty ? "主理人档案待填写" : prof.name)
+                        .font(ArchiveTypography.editorialSerif(size: 22, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+
+                    if !prof.title.isEmpty {
+                        Text(prof.title)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .padding(.horizontal, ArchiveSpacing.s)
+                            .padding(.vertical, 3)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    }
+
+                    Spacer()
+
+                    Button("修订档案") {
+                        editName = prof.name
+                        editTitle = prof.title
+                        editCity = prof.currentCity
+                        editLocation = prof.location
+                        editMotto = prof.motto
+                        editBio = prof.bio
+                        editManifesto = prof.manifesto
+                        showEditProfileSheet = true
+                    }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
+                }
+
+                if !prof.displayCity.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "location")
+                            .font(.system(size: 11))
+                        let coordText: String = {
+                            if !prof.location.isEmpty && !prof.currentCity.isEmpty && prof.location != prof.currentCity {
+                                return "常居：\(prof.location) · 当下：\(prof.currentCity)"
+                            } else if !prof.currentCity.isEmpty {
+                                return "当下坐标：\(prof.currentCity)"
+                            } else {
+                                return "常居坐标：\(prof.location)"
+                            }
+                        }()
+                        Text(coordText)
+                            .font(ArchiveTypography.monoScale(size: 11.5))
+                    }
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                if !prof.motto.isEmpty {
+                    Text("“\(prof.motto)”")
+                        .font(ArchiveTypography.editorialSerif(size: 15))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .padding(.top, 2)
+                }
+
+                if !prof.bio.isEmpty {
+                    Text(prof.bio)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                }
+
+                if !prof.manifesto.isEmpty {
+                    Text(prof.manifesto)
+                        .font(ArchiveTypography.bodySans(size: 12.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.top, 4)
+                }
+            }
+        }
+        .padding(18)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - 1.5 生活刻度核心指标大盘
+
+    private var statsOverviewGrid: some View {
+        let entriesCount = appState.stats.totalEntries > 0 ? appState.stats.totalEntries : appState.entries.count
+        let photosCount = appState.stats.totalPhotos > 0 ? appState.stats.totalPhotos : appState.entries.reduce(0) { $0 + $1.attachments.count }
+        let projectsCount = appState.stats.totalProjects > 0 ? appState.stats.totalProjects : appState.projects.count
+        let expenseCents = appState.stats.monthExpense > 0 ? appState.stats.monthExpense : appState.transactionSummary.totalExpense
+
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: ArchiveSpacing.m)], spacing: ArchiveSpacing.m) {
+            statMetricCard(
+                title: "生活印记",
+                value: "\(entriesCount)",
+                unit: "篇",
+                accent: ArchivePalette.inkPrimary
+            )
+            statMetricCard(
+                title: "胶卷相片",
+                value: "\(photosCount)",
+                unit: "张",
+                accent: ArchivePalette.accentMoss
+            )
+            statMetricCard(
+                title: "造物项目",
+                value: "\(projectsCount)",
+                unit: "件",
+                accent: Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
+            )
+            statMetricCard(
+                title: "本月支出",
+                value: FormatUtils.formattedYuan(cents: expenseCents, includeSymbol: true),
+                unit: "",
+                accent: ArchivePalette.accentWarm
+            )
+        }
+    }
+
+    private func statMetricCard(title: String, value: String, unit: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(ArchiveTypography.bodySans(size: 11.5))
+                .foregroundStyle(ArchivePalette.inkMuted)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(ArchiveTypography.monoScale(size: 18, weight: .semibold))
+                    .foregroundStyle(accent)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(ArchiveTypography.editorialSerif(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(ArchiveSpacing.m)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - 当日手记速览抽屉
+
+    private func dayEntriesDrawer(dateKey: String) -> some View {
+        let selectedDateEntries = appState.entriesByDateKey[dateKey] ?? []
+
+        return LazyVStack(alignment: .leading, spacing: 10) {
+            Divider().overlay(ArchivePalette.borderSubtle)
+
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                    Text("\(dateKey) 当日记录 (\(selectedDateEntries.count) 条)")
+                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                }
+
+                Spacer()
+
+                Button {
+                    selectedHeatmapDate = nil
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: ArchiveIcon.close.systemName)
+                            .font(.system(size: 10, weight: .bold))
+                        Text("关闭速览")
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    }
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if selectedDateEntries.isEmpty {
+                Text("该日未留下公开或私密手记。")
+                    .font(ArchiveTypography.editorialSerif(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.vertical, 6)
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.s) {
+                    ForEach(selectedDateEntries) { item in
+                        Button {
+                            appState.highlightedEntry = item
+                        } label: {
+                            VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+                                HStack {
+                                    Text(item.title.isEmpty ? "无题散页" : item.title)
+                                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                                        .foregroundStyle(ArchivePalette.inkPrimary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(FormatUtils.parseOccurredDate(item.occurredAt).time)
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+
+                                if !item.content.isEmpty {
+                                    Text(item.content)
+                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                        .foregroundStyle(ArchivePalette.inkSecondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(10)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
     // MARK: - 随身器物图鉴分区
 
     /// 图鉴标题与分类筛选胶囊
-    private func gearHeaderSection(gearCategories: [String]) -> some View {
+    private func gearHeaderSection(gearCategories: [String], count: Int) -> some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             HStack(alignment: .center) {
-                Text("随身器物与桌面装备图鉴 (\(appState.profile.edcGear.count))")
+                Text("在役随身器物 (\(count) 件)")
                     .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                 Spacer()
 
                 Button {
-                    showAddGearSheet = true
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.activeSection = .ledger
+                    }
                 } label: {
                     HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: ArchiveIcon.add.systemName)
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("添置随身设备")
-                            .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                        Text("前往资产大盘管理器物")
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 10, weight: .semibold))
                     }
+                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                 .paperButtonFocusRing()
+                .help("在资产页管理随身固资、折旧与出让")
             }
 
             // 分类筛选胶囊（首尾渐隐提示可横向滚动）
             if gearCategories.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        PaperPillButton(title: "全部 (\(appState.profile.edcGear.count))", isSelected: selectedGearCategory == "all") {
+                        PaperPillButton(title: "全部 (\(count))", isSelected: selectedGearCategory == "all") {
                             selectedGearCategory = "all"
                         }
                         ForEach(gearCategories, id: \.self) { cat in
-                            let count = appState.profile.edcGear.filter { $0.category == cat }.count
-                            PaperPillButton(title: "\(cat) (\(count))", isSelected: selectedGearCategory == cat) {
+                            let catCount = appState.profile.edcGear.filter { $0.status != "sold" && $0.category == cat }.count
+                            PaperPillButton(title: "\(cat) (\(catCount))", isSelected: selectedGearCategory == cat) {
                                 selectedGearCategory = cat
                             }
                         }
@@ -338,43 +388,27 @@ public struct CuratorDossierView: View {
         }
     }
 
-    /// 器物空态：提供明确的行动召唤（添置随身设备）
+    /// 器物空态
     private var gearEmptyState: some View {
         ArchiveEmptyState(
             systemName: ArchiveIcon.gear.systemName,
-            title: "尚无该分类随身器物记录",
-            message: "点击「添置随身设备」录入您的相机、镜头或 EDC 装备，服役中的固资将实时计入净资产大盘。",
-            primaryTitle: "添置随身设备",
-            primaryAction: { showAddGearSheet = true }
+            title: "尚无在役随身器物记录",
+            message: "在资产大盘中登记相机、镜头或 EDC 装备后，在役器物将自动陈列于此。",
+            primaryTitle: "前往资产大盘",
+            primaryAction: {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    appState.activeSection = .ledger
+                }
+            }
         )
     }
 
-    /// 器物货架网格（作为 ScrollView 子级渲染，保留懒加载能力）
+    /// 器物货架网格（作为主理人只读陈列橱窗，管理与出让统归资产大盘）
     private func gearGrid(_ displayedGear: [GearItem]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.m) {
             ForEach(displayedGear) { gear in
-                GearAssetCardView(
-                    gear: gear,
-                    onSell: { sellingGear = $0 },
-                    onDelete: { g in
-                        appState.askConfirm(
-                            title: ArchiveSharedCopy.gearDeleteTitle,
-                            message: ArchiveSharedCopy.gearDeleteMessage,
-                            confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
-                            danger: true
-                        ) {
-                            deleteGear(g)
-                        }
-                    }
-                )
+                GearAssetCardView(gear: gear)
             }
-        }
-    }
-
-    private func deleteGear(_ gear: GearItem) {
-        // 走 AppState 的动作：删除后登记 ⌘Z 撤销（误删可以原样找回）
-        Task { @MainActor in
-            await appState.deleteGearAction(gear)
         }
     }
 

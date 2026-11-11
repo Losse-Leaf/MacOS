@@ -23,8 +23,6 @@ public struct LooseLeafApp: App {
             appState.dismissConfirm()
         } else if appState.showSearchModal {
             appState.showSearchModal = false
-        } else if appState.showStatsSheet {
-            appState.showStatsSheet = false
         } else if appState.showNewEntrySheet {
             appState.showNewEntrySheet = false
         } else if appState.lightboxAttachment != nil {
@@ -198,8 +196,8 @@ public struct LooseLeafApp: App {
 
                 Divider()
 
-                Button("生活刻度统计…") {
-                    appState.showStatsSheet = true
+                Button("生活刻度与主理人…") {
+                    appState.activeSection = .dossier
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
 

@@ -26,11 +26,6 @@ public struct StreamView: View {
     // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
     // 行为闭包只捕获 AppState 单例 → 整轮时间流共享同一份 actions 引用
     // → SwiftUI 能跳过内容没变的卡片。
-    // 全局检索关联发现弹窗
-    @State private var inspectingSearchFootprint: Footprint?
-    @State private var inspectingSearchWish: Wish?
-    @State private var inspectingSearchProject: Project?
-
     @State private var visitedSections: Set<WorkbenchSection> = [.stream]
 
     public init(appState: AppState) {
@@ -157,34 +152,24 @@ public struct StreamView: View {
                         onSelectEntry: { entry in
                             appState.highlightedEntry = entry
                         },
-                        onSelectFootprint: { fp in
-                            inspectingSearchFootprint = fp
+                        onSelectFootprint: { _ in
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                appState.activeSection = .atlas
+                            }
                         },
-                        onSelectWish: { wish in
-                            inspectingSearchWish = wish
+                        onSelectWish: { _ in
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                appState.activeSection = .wishes
+                            }
                         },
-                        onSelectProject: { proj in
-                            inspectingSearchProject = proj
+                        onSelectProject: { _ in
+                            withAnimation(.easeInOut(duration: 0.12)) {
+                                appState.activeSection = .projects
+                            }
                         }
                     )
                 }
                 .zIndex(120)
-            }
-
-            // 生活刻度统计弹窗 (⌘⌥S)
-            if appState.showStatsSheet {
-                PaperModalOverlay(onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        appState.showStatsSheet = false
-                    }
-                }) {
-                    StatsModalView(appState: appState) {
-                        withAnimation(.easeInOut(duration: 0.16)) {
-                            appState.showStatsSheet = false
-                        }
-                    }
-                }
-                .zIndex(115)
             }
 
             // 全局统一纸本确认 / 警示弹窗 (对标 Web ConfirmDialog.vue)
@@ -216,15 +201,6 @@ public struct StreamView: View {
         .sheet(item: $appState.highlightedEntry) { entry in
             entryDetailSheet(entry: entry)
         }
-        .sheet(item: $inspectingSearchFootprint) { fp in
-            searchFootprintDetailSheet(fp: fp)
-        }
-        .sheet(item: $inspectingSearchWish) { wish in
-            searchWishDetailSheet(wish: wish)
-        }
-        .sheet(item: $inspectingSearchProject) { project in
-            searchProjectDetailSheet(project: project)
-        }
         .onAppear {
             visitedSections.insert(appState.activeSection)
         }
@@ -238,8 +214,6 @@ public struct StreamView: View {
                 appState.dismissConfirm()
             } else if appState.showSearchModal {
                 withAnimation(.easeInOut(duration: 0.16)) { appState.showSearchModal = false }
-            } else if appState.showStatsSheet {
-                withAnimation(.easeInOut(duration: 0.16)) { appState.showStatsSheet = false }
             } else if appState.showNewEntrySheet {
                 withAnimation(.easeInOut(duration: 0.16)) { appState.showNewEntrySheet = false }
             } else if appState.lightboxAttachment != nil {
@@ -292,92 +266,6 @@ public struct StreamView: View {
                 }
             }
         )
-    }
-
-    // MARK: - 事件分类分组模型与辅助函数
-
-    private struct EventCategoryGroup: Identifiable {
-        let id: String
-        let title: String
-        let icon: String
-        let tint: Color
-        let rows: [AppState.StreamRow]
-    }
-
-    private func groupEntriesByEventCategory(_ entries: [LifeEntry]) -> [EventCategoryGroup] {
-        let defs: [(type: String, title: String, icon: String, tint: Color)] = [
-            ("life", "日常随笔事件", "pencil.line", ArchivePalette.accentMoss),
-            ("travel", "山川游历事件", "airplane", ArchivePalette.accentWarm),
-            ("project", "造物演进事件", "hammer", Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)),
-            ("wish", "心愿印记事件", "sparkles", Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle)),
-            ("transaction", "柴米油盐事件", "yensign.circle", Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle)),
-            ("gear", "随身器物事件", "shippingbox", Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle))
-        ]
-
-        var bucket: [String: [LifeEntry]] = [:]
-        for entry in entries {
-            bucket[entry.type, default: []].append(entry)
-        }
-
-        var groups: [EventCategoryGroup] = []
-        for def in defs {
-            if let catEntries = bucket[def.type], !catEntries.isEmpty {
-                groups.append(EventCategoryGroup(
-                    id: def.type,
-                    title: def.title,
-                    icon: def.icon,
-                    tint: def.tint,
-                    rows: AppState.buildStreamRows(for: catEntries)
-                ))
-            }
-        }
-        let knownTypes = Set(defs.map(\.type))
-        var remaining: [LifeEntry] = []
-        for (type, catEntries) in bucket where !knownTypes.contains(type) {
-            remaining.append(contentsOf: catEntries)
-        }
-        if !remaining.isEmpty {
-            groups.append(EventCategoryGroup(
-                id: "other",
-                title: "其它漫游事件",
-                icon: "circle.grid.2x2",
-                tint: ArchivePalette.inkMuted,
-                rows: AppState.buildStreamRows(for: remaining)
-            ))
-        }
-        return groups
-    }
-
-    @ViewBuilder
-    private func categoryBranchHeader(for group: EventCategoryGroup) -> some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(ArchivePalette.archivePaper)
-                    .frame(width: 22, height: 22)
-                Circle()
-                    .stroke(group.tint, lineWidth: 1.8)
-                    .frame(width: 22, height: 22)
-                Image(systemName: group.icon)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(group.tint)
-            }
-
-            Text(group.title)
-                .font(ArchiveTypography.editorialSerif(size: 14.5, weight: .bold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            Text("(\(group.rows.count) 条事件)")
-                .font(ArchiveTypography.monoScale(size: 10.5))
-                .foregroundStyle(ArchivePalette.inkMuted)
-
-            Rectangle()
-                .fill(ArchivePalette.borderDivider.opacity(0.6))
-                .frame(height: 0.6)
-        }
-        .padding(.top, 12)
-        .padding(.bottom, 4)
-        .background(ArchivePalette.archivePaper)
     }
 
     // MARK: - 右侧时间流主画布
@@ -435,32 +323,11 @@ public struct StreamView: View {
                                 .focused($isSearchFocused)
                                 .frame(maxWidth: .infinity)
                                 .onChange(of: localSearchText) { _, newVal in
-                                    // 关键：**任何**变化都要先清掉旧的跨模块命中。
-                                    // 原先只在清空时清，于是输入新词之后、
-                                    // 新结果返回之前，横幅里显示的还是**上一个关键词**
-                                    // 命中的足迹/心愿/项目。
-                                    appState.globalSearchResult = nil
-                                    if newVal.isEmpty {
-                                        appState.searchQuery = ""
-                                    }
+                                    appState.searchQuery = newVal
                                 }
-                                .task(id: localSearchText) {
-                                    guard !localSearchText.isEmpty else { return }
-                                    do {
-                                        try await Task.sleep(nanoseconds: 180_000_000)
-                                        appState.searchQuery = localSearchText
-                                        await appState.performGlobalSearch(query: localSearchText)
-                                    } catch {}
-                                }
-                            if appState.isGlobalSearching {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                    .padding(.trailing, 2)
-                            }
                             Button {
                                 localSearchText = ""
                                 appState.searchQuery = ""
-                                appState.globalSearchResult = nil
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.system(size: 11))
@@ -514,13 +381,7 @@ public struct StreamView: View {
                 // 3. 迷你山河印谱概览
                 miniAtlasWidgetCard
 
-                // 4.1 全库跨模块检索关联发现 (足迹 / 心愿 / 造物)
-                if !appState.searchQuery.isEmpty, let res = appState.globalSearchResult,
-                   (!res.footprints.isEmpty || !res.wishes.isEmpty || !res.projects.isEmpty) {
-                    globalSearchCrossModuleBanner(res: res)
-                }
-
-                // 5. 按照事件的树图（时间轴）
+                // 4. 树图与时间轴
                 HStack(alignment: .center) {
                     HStack(spacing: ArchiveSpacing.xs) {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
@@ -559,35 +420,8 @@ public struct StreamView: View {
                         } else {
                             emptyStreamPlaceholder
                         }
-                    } else if appState.streamTimelineMode == .eventCategoryTree && appState.selectedCategory == .all {
-                        // 按事件形态分类分群呈现的树状时间轴 (彻底去卡片化，自然融入纸张画布)
-                        // 关键：使用 Section 维持 LazyVStack 对每一条事件节点的真正按需懒加载 (Virtualization)，
-                        // 彻底避免常规 VStack 导致整库数百条卡片同时实例化造成主线程卡死
-                        let groups = groupEntriesByEventCategory(appState.filteredStreamEntries)
-                        LazyVStack(alignment: .leading, spacing: 6) {
-                            ForEach(groups) { group in
-                                Section {
-                                    ForEach(group.rows) { row in
-                                        let entry = row.entry
-                                        if row.gapDays >= 14 {
-                                            TemporalGapDivider(days: row.gapDays)
-                                        }
-                                        TimelineEntryCardView(
-                                            entry: entry,
-                                            timeLabel: row.timeLabel,
-                                            transaction: matchingTransaction(for: entry),
-                                            isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
-                                            actions: timelineActions
-                                        )
-                                        .id(entry.id)
-                                    }
-                                } header: {
-                                    categoryBranchHeader(for: group)
-                                }
-                            }
-                        }
                     } else {
-                        // 编年事件流 / 单事件分类分支 (纵向连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
+                        // 编年时间流 (纵向连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
                         LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(rows) { row in
                                 let entry = row.entry
@@ -902,393 +736,4 @@ public struct StreamView: View {
         .frame(width: 540)
         .background(ArchivePalette.archivePaper)
     }
-
-    // MARK: - 全库跨模块关联检索发现 (Global Search Cross-Module Discovery)
-
-    private func globalSearchCrossModuleBanner(res: GlobalSearchResponse) -> some View {
-        let totalHits = res.footprints.count + res.wishes.count + res.projects.count
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Text("全库关联发现")
-                    .font(ArchiveTypography.editorialSerif(size: 14, weight: .bold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-
-                Text("跨模块命中 \(totalHits) 项")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-
-                Spacer()
-
-                Button {
-                    if !res.footprints.isEmpty {
-                        appState.activeSection = .atlas
-                    } else if !res.wishes.isEmpty {
-                        appState.activeSection = .wishes
-                    } else if !res.projects.isEmpty {
-                        appState.activeSection = .projects
-                    } else {
-                        appState.showSearchModal = true
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("前往探索全库")
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // 1. 足迹发现
-            if !res.footprints.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("山川行迹票根 (\(res.footprints.count))")
-                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(res.footprints) { fp in
-                                Button {
-                                    inspectingSearchFootprint = fp
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "mappin.and.ellipse")
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(ArchivePalette.accentWarm)
-                                        Text(fp.cityName.isEmpty ? fp.cityCode : fp.cityName)
-                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                        if let title = fp.title, !title.isEmpty {
-                                            Text("· \(title)")
-                                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                                .foregroundStyle(ArchivePalette.inkSecondary)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.8)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. 心愿发现
-            if !res.wishes.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("三维心愿单 (\(res.wishes.count))")
-                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(res.wishes) { wish in
-                                Button {
-                                    inspectingSearchWish = wish
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: wish.status == "fulfilled" ? "checkmark.circle.fill" : "sparkles")
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(wish.status == "fulfilled" ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
-                                        Text(wish.title)
-                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                            .lineLimit(1)
-                                        if wish.budget > 0 {
-                                            Text(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))
-                                                .font(ArchiveTypography.monoScale(size: 11))
-                                                .foregroundStyle(ArchivePalette.inkMuted)
-                                        }
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.8)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 3. 造物发现
-            if !res.projects.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("造物与项目 (\(res.projects.count))")
-                        .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(res.projects) { project in
-                                Button {
-                                    inspectingSearchProject = project
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "hammer.fill")
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(ArchivePalette.inkSecondary)
-                                        Text(project.title)
-                                            .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                            .lineLimit(1)
-                                        if let sub = project.subtitle, !sub.isEmpty {
-                                            Text("· \(sub)")
-                                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                                .foregroundStyle(ArchivePalette.inkMuted)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.8)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .background(ArchivePalette.archiveSubtle.opacity(0.85))
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
-        .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.md)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
-        )
-    }
-
-    private func searchFootprintDetailSheet(fp: Footprint) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("山川行迹 · 票根")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Spacer()
-                Button("关闭") {
-                    inspectingSearchFootprint = nil
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(fp.title?.isEmpty == false ? fp.title! : fp.cityName)
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-
-                HStack(spacing: 8) {
-                    Text(fp.cityName.isEmpty ? fp.cityCode : "\(fp.cityName) (\(fp.cityCode))")
-                        .font(ArchiveTypography.bodySans(size: 12, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                    Text("· 到访：\(FormatUtils.formatDate(fp.visitedAt))")
-                        .font(ArchiveTypography.monoScale(size: 11.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    if let dep = fp.departedAt, !dep.isEmpty {
-                        Text("至 \(FormatUtils.formatDate(dep))")
-                            .font(ArchiveTypography.monoScale(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                }
-            }
-
-            if let note = fp.note, !note.isEmpty {
-                Text(note)
-                    .font(ArchiveTypography.bodySans(size: 13.5))
-                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
-                    .padding(.top, 4)
-            }
-
-            HStack {
-                Button("前往山川行迹查看全部 →") {
-                    inspectingSearchFootprint = nil
-                    appState.activeSection = .atlas
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                Spacer()
-            }
-            .padding(.top, 8)
-        }
-        .padding(24)
-        .frame(width: 480)
-        .background(ArchivePalette.archivePaper)
-    }
-
-    private func searchWishDetailSheet(wish: Wish) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(wish.kind == "travel" ? "旅程愿望" : (wish.kind == "milestone" ? "里程碑" : "心愿单"))
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Spacer()
-                Button("关闭") {
-                    inspectingSearchWish = nil
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(wish.title)
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-
-                HStack(spacing: 10) {
-                    Text(wish.status == "fulfilled" ? "已圆满" : "待实现")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(wish.status == "fulfilled" ? ArchivePalette.accentMoss : ArchivePalette.accentWarm)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                    if wish.budget > 0 {
-                        Text("预算 \(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))")
-                            .font(ArchiveTypography.monoScale(size: 12))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                    }
-
-                    if let target = wish.targetDate, !target.isEmpty {
-                        Text("目标 \(FormatUtils.formatDate(target))")
-                            .font(ArchiveTypography.monoScale(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                }
-            }
-
-            if let spec = wish.spec, !spec.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("规格与意向")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Text(spec)
-                        .font(ArchiveTypography.bodySans(size: 12.5))
-                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.85))
-                }
-            }
-
-            if let note = wish.note, !note.isEmpty {
-                Text(note)
-                    .font(ArchiveTypography.bodySans(size: 13))
-                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
-            }
-
-            HStack {
-                Button("前往心愿清单查看全部 →") {
-                    inspectingSearchWish = nil
-                    appState.activeSection = .wishes
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                Spacer()
-            }
-            .padding(.top, 8)
-        }
-        .padding(24)
-        .frame(width: 480)
-        .background(ArchivePalette.archivePaper)
-    }
-
-    private func searchProjectDetailSheet(project: Project) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("造物与项目")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Spacer()
-                Button("关闭") {
-                    inspectingSearchProject = nil
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(project.title)
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-
-                if let sub = project.subtitle, !sub.isEmpty {
-                    Text(sub)
-                        .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                }
-
-                HStack(spacing: 8) {
-                    if let cat = project.category, !cat.isEmpty {
-                        Text(cat)
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(ArchivePalette.archiveSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                    }
-                    if let st = project.status, !st.isEmpty {
-                        Text(st)
-                            .font(ArchiveTypography.monoScale(size: 11))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                    }
-                }
-            }
-
-            if !project.description.isEmpty {
-                Text(project.description)
-                    .font(ArchiveTypography.bodySans(size: 13))
-                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
-            }
-
-            if let story = project.story, !story.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("造物始末与手记")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    Text(story)
-                        .font(ArchiveTypography.bodySans(size: 12.5))
-                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.85))
-                }
-            }
-
-            HStack {
-                Button("前往岁时造物查看全部 →") {
-                    inspectingSearchProject = nil
-                    appState.activeSection = .projects
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                Spacer()
-            }
-            .padding(.top, 8)
-        }
-        .padding(24)
-        .frame(width: 480)
-        .background(ArchivePalette.archivePaper)
-    }
-
-    // MARK: - 暗房全屏看图灯箱 (EditorialLightboxView)
 }

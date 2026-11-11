@@ -262,7 +262,6 @@ public final class AppState {
         set { navigation.newEntryInitialCityName = newValue }
     }
     public var showAlmanacSheet: Bool = false
-    public var showStatsSheet: Bool = false
     public var showSearchModal: Bool = false
     public var selectedCategory: ArchiveCategory {
         get { navigation.selectedCategory }
@@ -612,7 +611,6 @@ public final class AppState {
     public var hasOpenOverlay: Bool {
         activeConfirmDialog != nil
             || showSearchModal
-            || showStatsSheet
             || showNewEntrySheet
             || lightboxAttachment != nil
             // 关键：详情 / 编辑两个弹层也要算进去。
@@ -944,17 +942,16 @@ public final class AppState {
         return map
     }
 
-    /// 时间流展示形态枚举（事件分类树 / 编年事件流 / 事件树谱全景）
+    /// 时间流展示形态枚举（编年事件流 / 事件树谱全景）
     public enum StreamTimelineDisplayMode: String, CaseIterable, Identifiable, Sendable {
-        case eventCategoryTree = "事件分类树"
         case chronologicalTree = "编年事件流"
-        case treeDiagram = "事件树谱全景"
+        case treeDiagram = "事件树谱"
 
         public var id: String { rawValue }
     }
 
-    /// 当前选中的时间流展示形态（默认事件分类树）
-    public var streamTimelineMode: StreamTimelineDisplayMode = .eventCategoryTree
+    /// 当前选中的时间流展示形态（默认编年事件流）
+    public var streamTimelineMode: StreamTimelineDisplayMode = .chronologicalTree
 
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
     public var streamRows: [StreamRow] {
@@ -1356,28 +1353,9 @@ public final class AppState {
 
     // MARK: - 键盘流导航（⌘↑ / ⌘↓ / ⌘↩）
 
-    /// 当前视口实际展现次序的手稿列表（事件分类树按分群顺序，编年流按倒序）
+    /// 当前视口实际展现次序的手稿列表（编年倒序）
     public var displayedStreamEntries: [LifeEntry] {
-        if streamTimelineMode == .eventCategoryTree && selectedCategory == .all {
-            let defs = ["life", "travel", "project", "wish", "transaction", "gear"]
-            var bucket: [String: [LifeEntry]] = [:]
-            for entry in filteredStreamEntries {
-                bucket[entry.type, default: []].append(entry)
-            }
-            var result: [LifeEntry] = []
-            for type in defs {
-                if let items = bucket[type] {
-                    result.append(contentsOf: items)
-                }
-            }
-            let known = Set(defs)
-            for (type, items) in bucket where !known.contains(type) {
-                result.append(contentsOf: items)
-            }
-            return result
-        } else {
-            return filteredStreamEntries
-        }
+        filteredStreamEntries
     }
 
     /// 在筛选后的时间流中上下移动键盘焦点（首次按下正向选首条，反向选末条）

@@ -6,13 +6,13 @@ import SwiftUI
 
 public struct GearAssetCardView: View {
     public let gear: GearItem
-    public var onSell: (GearItem) -> Void
-    public var onDelete: (GearItem) -> Void
+    public var onSell: ((GearItem) -> Void)?
+    public var onDelete: ((GearItem) -> Void)?
 
     public init(
         gear: GearItem,
-        onSell: @escaping (GearItem) -> Void,
-        onDelete: @escaping (GearItem) -> Void
+        onSell: ((GearItem) -> Void)? = nil,
+        onDelete: ((GearItem) -> Void)? = nil
     ) {
         self.gear = gear
         self.onSell = onSell
@@ -64,7 +64,7 @@ public struct GearAssetCardView: View {
 
                 Spacer()
 
-                if gear.status != "sold" {
+                if gear.status != "sold", let onSell {
                     Button("转让回血") {
                         onSell(gear)
                     }
@@ -73,14 +73,16 @@ public struct GearAssetCardView: View {
                     .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
-                PaperIconButton(
-                    systemName: ArchiveIcon.delete.systemName,
-                    label: "删除设备",
-                    help: "删除设备",
-                    size: 10.5,
-                    tint: ArchivePalette.inkMuted
-                ) {
-                    onDelete(gear)
+                if let onDelete {
+                    PaperIconButton(
+                        systemName: ArchiveIcon.delete.systemName,
+                        label: "删除设备",
+                        help: "删除设备",
+                        size: 10.5,
+                        tint: ArchivePalette.inkMuted
+                    ) {
+                        onDelete(gear)
+                    }
                 }
             }
             .padding(.top, 2)
@@ -94,17 +96,19 @@ public struct GearAssetCardView: View {
         )
         .paperHover()
         .contextMenu {
-            if gear.status != "sold" {
+            if gear.status != "sold", let onSell {
                 Button {
                     onSell(gear)
                 } label: {
                     Label("转让回血", systemImage: "dollarsign.circle")
                 }
             }
-            Button(role: .destructive) {
-                onDelete(gear)
-            } label: {
-                Label("删除设备", systemImage: ArchiveIcon.delete.systemName)
+            if let onDelete {
+                Button(role: .destructive) {
+                    onDelete(gear)
+                } label: {
+                    Label("删除设备", systemImage: ArchiveIcon.delete.systemName)
+                }
             }
             Divider()
             Button {

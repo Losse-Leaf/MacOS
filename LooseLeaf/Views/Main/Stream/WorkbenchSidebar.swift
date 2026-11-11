@@ -56,7 +56,7 @@ struct WorkbenchSidebar: View {
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 导航菜单项：6 大内容板块 + 5 个配置条目（扁平化后原「配置中心」tab 直接进侧栏）
+            // 导航菜单项：6 大内容板块 + 统一系统设置入口
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("生活卷宗")
@@ -79,37 +79,15 @@ struct WorkbenchSidebar: View {
                     Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
                         .padding(.vertical, 6)
 
-                    // 系统配置组标题（可点击折叠/展开）
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.16)) {
-                            isSystemGroupCollapsed.toggle()
-                            UserDefaults.standard.set(isSystemGroupCollapsed, forKey: "looseleaf_ui_system_group_collapsed")
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("系统配置")
-                            Image(systemName: isSystemGroupCollapsed ? "chevron.right" : "chevron.down")
-                                .font(.system(size: 7.5, weight: .semibold))
-                        }
-                        .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 3)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isSystemGroupCollapsed ? "展开系统配置分组" : "折叠系统配置分组")
-
-                    if !isSystemGroupCollapsed {
-                        ForEach(WorkbenchSection.configurationSections) { section in
-                            WorkbenchNavRow(
-                                section: section,
-                                selected: appState.activeSection == section
-                            ) {
-                                guard appState.activeSection != section else { return }
-                                onSelect(section)
-                            }
-                        }
+                    // 统一系统设置入口（对齐 macOS HIG）
+                    WorkbenchNavRow(
+                        section: .preferences,
+                        selected: WorkbenchSection.configurationSections.contains(appState.activeSection),
+                        customTitle: "偏好与设置",
+                        customIcon: "gearshape"
+                    ) {
+                        guard !WorkbenchSection.configurationSections.contains(appState.activeSection) else { return }
+                        onSelect(.preferences)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -189,6 +167,8 @@ struct WorkbenchSidebar: View {
     struct WorkbenchNavRow: View {
         let section: WorkbenchSection
         let selected: Bool
+        var customTitle: String? = nil
+        var customIcon: String? = nil
         let action: () -> Void
 
         @State private var isHovering: Bool = false
@@ -196,14 +176,14 @@ struct WorkbenchSidebar: View {
         var body: some View {
             Button(action: action) {
                 HStack(spacing: 8) {
-                    Image(systemName: section.icon)
+                    Image(systemName: customIcon ?? section.icon)
                         .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
                         .imageScale(.medium)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                         .frame(width: 18)
 
-                    Text(section.title)
+                    Text(customTitle ?? section.title)
                         .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
                         .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
 

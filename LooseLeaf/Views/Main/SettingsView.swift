@@ -92,16 +92,20 @@ public struct SettingsView: View {
         .background(ArchivePalette.archivePaper)
     }
 
-    // MARK: - 扁平化后的精简页眉（tab 已由侧栏承担，这里只做身份标识）
+    // MARK: - 统一设置中心顶栏与分段切换器
     private var pinnedSectionHeader: some View {
-        HStack(spacing: ArchiveSpacing.s) {
-            Image(systemName: selectedTab.iconName)
-                .font(.system(size: ArchiveTypography.Scale.heading))
-                .foregroundStyle(ArchivePalette.accentWarm)
-                .accessibilityHidden(true)
-            Text(selectedTab.rawValue)
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        HStack(spacing: ArchiveSpacing.m) {
+            // macOS 风格分段标签栏
+            HStack(spacing: 4) {
+                ForEach(SettingsTab.allCases) { tab in
+                    PaperPillButton(
+                        title: tab.rawValue,
+                        isSelected: selectedTab == tab
+                    ) {
+                        selectedTab = tab
+                    }
+                }
+            }
 
             Spacer()
 
@@ -123,7 +127,7 @@ public struct SettingsView: View {
             .help(appState.isPaired ? "数据中枢节点: \(appState.hubURLString) (\(badge.label))" : "尚未配对生活数据中枢")
         }
         .padding(.horizontal, ArchiveSpacing.l)
-        .frame(height: 46)
+        .frame(height: 48)
         .background(ArchivePalette.archivePaper)
     }
 }

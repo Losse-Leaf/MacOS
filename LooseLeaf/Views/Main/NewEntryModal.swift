@@ -27,18 +27,14 @@ public struct NewEntryModal: View {
         case life = "life"
         case travel = "travel"
         case project = "project"
-        case wish = "wish"
-        case transaction = "transaction"
 
         public var id: String { rawValue }
 
         public var label: String {
             switch self {
-            case .life: return "日常"
-            case .travel: return "游历"
-            case .project: return "造物"
-            case .wish: return "心愿"
-            case .transaction: return "账目"
+            case .life: return "日常散页"
+            case .travel: return "山川游历"
+            case .project: return "造物手记"
             }
         }
 
@@ -46,9 +42,7 @@ public struct NewEntryModal: View {
             switch self {
             case .life: return "身边小事、随笔思考与定格光影"
             case .travel: return "山川行迹与漫游记忆，点亮城市足迹图谱"
-            case .project: return "立项新造物或为进行中的项目追加手记"
-            case .wish: return "许下好物器物、远方旅程或人生里程碑"
-            case .transaction: return "记录日常收支、旅行花销、信贷分期或固定资产"
+            case .project: return "为进行中或已归档的造物项目追加演进手记"
             }
         }
 
@@ -57,8 +51,6 @@ public struct NewEntryModal: View {
             case .life: return "leaf"
             case .travel: return "airplane"
             case .project: return "hammer"
-            case .wish: return "sparkles"
-            case .transaction: return "creditcard"
             }
         }
     }
@@ -114,10 +106,6 @@ public struct NewEntryModal: View {
                             EntryModalTravelForm(draft: draft, appState: appState, media: media)
                         case .project:
                             EntryModalProjectForm(draft: draft, appState: appState, media: media)
-                        case .wish:
-                            EntryModalWishForm(draft: draft, media: media)
-                        case .transaction:
-                            EntryModalTransactionForm(draft: draft, appState: appState)
                         }
                     }
                     .id(selectedKind)
@@ -140,14 +128,11 @@ public struct NewEntryModal: View {
         // 账目选的「圆满心愿」也常驻草稿（开关联动泄漏）。
         .onChange(of: selectedKind) { _, newKind in
             switch newKind {
-            case .travel, .transaction:
-                // 游历与账目表单都有足迹选择器，保留用户选择
+            case .travel:
+                // 游历表单有足迹选择器，保留用户选择
                 break
-            case .life, .project, .wish:
+            case .life, .project:
                 draft.selectedFootprintId = nil
-            }
-            if newKind != .transaction {
-                draft.selectedWishId = nil
             }
         }
         .onDisappear {
@@ -314,8 +299,6 @@ public struct NewEntryModal: View {
         case .life: return "定格散页 (⌘↵)"
         case .travel: return "点亮游历 (⌘↵)"
         case .project: return draft.projectMode == "new" ? "立项造物 (⌘↵)" : "追加手记 (⌘↵)"
-        case .wish: return "许下心愿 (⌘↵)"
-        case .transaction: return "记下这笔账 (⌘↵)"
         }
     }
 
@@ -368,31 +351,17 @@ public struct NewEntryModal: View {
                     try await submitTravel()
                 case .project:
                     try await submitProject()
-                case .wish:
-                    try await submitWish()
-                case .transaction:
-                    try await submitTransaction()
                 }
                 clearDraft()
                 didSubmitSuccessfully = true
                 if appState.enablesHapticFeedback {
                     ArchiveFeedback.success()
                 }
-                // 只有 life / travel 走 submitQuickCapture 的乐观写入；
-                // project / wish / transaction 在此处直接调 API，必须把对应领域重新拉一次，
-                // 否则用户刚创建的项目/心愿/账目不会出现在界面上（直到下一次全量同步）。
-                switch selectedKind {
-                case .life, .travel:
-                    break
-                case .project:
+                if selectedKind == .project {
                     await appState.loadProjectsWishesFootprints()
                     if draft.projectMode == "entry" {
                         await appState.loadEntries(forceFull: false)
                     }
-                case .wish:
-                    await appState.loadProjectsWishesFootprints()
-                case .transaction:
-                    await appState.loadTransactionsAndAssets(forceFull: false)
                 }
                 await appState.loadConfigAndProfile()
                 onDismiss()
@@ -471,78 +440,6 @@ public struct NewEntryModal: View {
             )
             _ = try await APIClient.shared.createEntry(req)
         }
-    }
-
-    private func submitWish() async throws {
-        guard !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "心愿名称不能为空"])
-        }
-        let budgetCents = FormatUtils.parseYuanToCents(draft.wishBudgetYuan) ?? 0
-        let finalSpec = draft.wishKind == "item" ? (draft.wishSpec.isEmpty ? nil : draft.wishSpec) : nil
-        let finalCityCode = draft.wishKind == "travel" ? (draft.wishCityCode.isEmpty ? nil : draft.wishCityCode) : nil
-        let finalCityName = draft.wishKind == "travel" ? (draft.wishCityName.isEmpty ? nil : draft.wishCityName) : nil
-
-        let req = CreateWishRequest(
-            title: draft.title.trimmingCharacters(in: .whitespacesAndNewlines),
-            kind: draft.wishKind,
-            note: draft.content.isEmpty ? nil : draft.content,
-            spec: finalSpec,
-            cityCode: finalCityCode,
-            cityName: finalCityName,
-            budget: budgetCents,
-            targetDate: FormatUtils.beijingDateString(from: draft.wishTargetDate),
-            attachmentIds: media.uploadedAttachments.map(\.id)
-        )
-        _ = try await APIClient.shared.createWish(req)
-    }
-
-    private func submitTransaction() async throws {
-        guard let cents = FormatUtils.parseYuanToCents(draft.txAmountYuan), cents > 0 else {
-            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "请输入有效金额"])
-        }
-        let isExp = draft.txType == "expense"
-        let wantsInstallment = isExp && draft.isInstallment
-        // 关键：还款日**单源化** —— 有渠道时账单还款日 = 渠道还款日，
-        // 客户端一律派生、绝不自采（原先发幽灵常量 10，把渠道定义的还款日整个覆盖掉）。
-        let selectedChannel = appState.creditChannels.first { $0.code == draft.installmentChannel }
-        if wantsInstallment {
-            guard let selectedChannel else {
-                throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "请先在信贷渠道管理中登记并选择分期渠道"])
-            }
-            guard selectedChannel.repaymentDay >= 1 && selectedChannel.repaymentDay <= 31 else {
-                throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "分期渠道还款日无效（须在 1~31 日之间）"])
-            }
-        }
-        let installmentPay: Int64? = (wantsInstallment && draft.installmentMonths > 0) ? (cents / Int64(draft.installmentMonths)) : nil
-        // 标题与备注不再同文双写：标题取正文首行（与日常形态同一套派生口径），
-        // 空正文回落类目名；备注存全文。
-        let derivedTxTitle = FormatUtils.derivedTitle(from: draft.content)
-
-        let req = CreateTransactionRequest(
-            amount: cents,
-            type: draft.txType,
-            category: draft.txCategory,
-            title: derivedTxTitle.isEmpty ? draft.txCategory : derivedTxTitle,
-            note: draft.content.isEmpty ? nil : draft.content,
-            paymentMethod: draft.txPaymentMethod,
-            wishId: draft.selectedWishId,
-            footprintId: draft.selectedFootprintId,
-            cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
-            occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
-            isInstallment: wantsInstallment,
-            installmentChannelCode: wantsInstallment ? draft.installmentChannel : nil,
-            installmentTotalAmount: wantsInstallment ? cents : nil,
-            installmentMonths: wantsInstallment ? draft.installmentMonths : nil,
-            installmentMonthlyPay: installmentPay,
-            installmentRemainMonths: wantsInstallment ? draft.installmentMonths : nil,
-            repaymentDay: wantsInstallment ? selectedChannel?.repaymentDay : nil,
-            linkGearAsset: isExp && draft.syncToGear,
-            gearCategory: (isExp && draft.syncToGear) ? draft.gearCategory : nil,
-            gearSpec: (isExp && draft.syncToGear) ? (draft.gearSpec.isEmpty ? nil : draft.gearSpec) : nil
-        )
-        // 走 SyncManager 而不是直连 API：离线时进入持久化 Outbox，
-        // 并复用其乐观插入与重试逻辑（此前离线提交会直接失败）。
-        _ = try await SyncManager.shared.submitTransaction(req)
     }
 
     // MARK: - 粘贴装裱

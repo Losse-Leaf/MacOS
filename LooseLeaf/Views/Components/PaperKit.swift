@@ -250,6 +250,9 @@ public struct PaperSheetScaffold<Content: View>: View {
 
             content()
 
+            // 矮内容时把按钮行推到卡底，高内容时 Spacer 塌缩为 0，不额外占用空间。
+            Spacer(minLength: 0)
+
             Divider().overlay(ArchivePalette.borderSubtle)
 
             HStack {

@@ -46,6 +46,8 @@ public struct CityMemoryDrawerSheet: View {
                 Text(errorText)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
+                    .lineLimit(8)
+                    .clipped()
                     .frame(minHeight: 200, maxHeight: 360, alignment: .topLeading)
             } else if let d = drawer {
                 ScrollView {
@@ -190,6 +192,8 @@ public struct ProvinceMemoryDrawerSheet: View {
                 Text(errorText)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
+                    .lineLimit(8)
+                    .clipped()
                     .frame(minHeight: 200, maxHeight: 380, alignment: .topLeading)
             } else if let d = drawer {
                 ScrollView {

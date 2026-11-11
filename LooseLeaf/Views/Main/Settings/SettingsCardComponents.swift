@@ -118,7 +118,7 @@ public func settingsFeedbackBanner(feedback: String?, error: String?) -> some Vi
     }
 
     return feedbackRow(text: feedbackText ?? "", icon: icon, tint: tint)
-        .frame(height: ArchiveSpacing.l * 2, alignment: .leading)
+        .frame(minHeight: ArchiveSpacing.l * 2, alignment: .topLeading)
         .opacity(feedbackText == nil ? 0 : 1)
         .accessibilityElement(children: .combine)
 }
@@ -131,7 +131,7 @@ private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
             .accessibilityHidden(true)
         Text(text)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-            .lineLimit(1)
+            .lineLimit(2)
             .truncationMode(.tail)
         Spacer(minLength: 0)
     }

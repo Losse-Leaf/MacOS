@@ -280,7 +280,7 @@ public enum InstallmentEditing {
             //
             // isInstallment 透传**原始的可选值**：
             // nil = 省略（服务端保持原值）；false = 显式「不是分期」但**不带** clear_installment
-            // （后端契约：单传 false 仍保持原值，这是为了保护老客户端）。
+            // （三态契约：单传 false 仍保持原值，只有 true 才降级）。
             guard transaction.isInstallment == true else {
                 return InstallmentEditFields(
                     isInstallment: transaction.isInstallment,
@@ -423,9 +423,8 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     /// 显式声明「本次要取消分期」
     ///
     /// 关键：单发 `is_installment: false` **不足以**表达「取消分期」。
-    /// 后端的新契约是「不带 clear_installment 就保持原值」——
-    /// 因为已发布的老客户端（`Bool` 不可选，必定发 false）压根不知道可以不传。
-    /// 若把 false 直接当成「取消分期」，老用户编辑一次账目就会毁掉分期负债。
+    /// 后端契约是三态：不带 `clear_installment` 就保持原值，
+    /// 只有 `true` 才真的降级并清空账期字段。
     public var clearInstallment: Bool
     public var installmentChannelCode: String?
     public var installmentTotalAmount: Int64?

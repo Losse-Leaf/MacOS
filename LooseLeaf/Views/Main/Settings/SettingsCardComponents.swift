@@ -98,14 +98,29 @@ extension View {
 /// 设置页统一操作反馈条：错误（朱砂）优先、成功（苔绿）其次，同位互斥展示。
 /// 全局函数（非 View 扩展方法），便于在任意 `body` 内作为独立节点插入。
 public func settingsFeedbackBanner(feedback: String?, error: String?) -> some View {
-    Group {
-        if let error, !error.isEmpty {
-            feedbackRow(text: error, icon: "exclamationmark.octagon.fill", tint: ArchivePalette.accentWarm)
-        } else if let feedback, !feedback.isEmpty {
-            feedbackRow(text: feedback, icon: "checkmark.seal.fill", tint: ArchivePalette.accentMoss)
-        }
+    // 错误（朱砂）优先、成功（苔绿）其次，同位互斥；两者皆无时反馈槽仍常驻，
+    // 仅隐藏内容，避免测试/保存配置后插入一行把下方 Divider 与操作按钮栏整体下推。
+    let feedbackText: String?
+    let tint: Color
+    let icon: String
+    if let error, !error.isEmpty {
+        feedbackText = error
+        tint = ArchivePalette.accentWarm
+        icon = "exclamationmark.octagon.fill"
+    } else if let feedback, !feedback.isEmpty {
+        feedbackText = feedback
+        tint = ArchivePalette.accentMoss
+        icon = "checkmark.seal.fill"
+    } else {
+        feedbackText = nil
+        tint = ArchivePalette.inkMuted
+        icon = "checkmark.seal.fill"
     }
-    .accessibilityElement(children: .combine)
+
+    return feedbackRow(text: feedbackText ?? "", icon: icon, tint: tint)
+        .frame(height: ArchiveSpacing.l * 2, alignment: .leading)
+        .opacity(feedbackText == nil ? 0 : 1)
+        .accessibilityElement(children: .combine)
 }
 
 /// 反馈条内部单行：图标 + 文案
@@ -116,7 +131,8 @@ private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
             .accessibilityHidden(true)
         Text(text)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(1)
+            .truncationMode(.tail)
         Spacer(minLength: 0)
     }
     .foregroundStyle(tint)

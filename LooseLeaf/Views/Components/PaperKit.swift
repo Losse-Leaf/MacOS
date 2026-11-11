@@ -261,10 +261,12 @@ public struct PaperSheetScaffold<Content: View>: View {
                 Button {
                     onSubmit()
                 } label: {
-                    if isSubmitting {
-                        ProgressView().controlSize(.small)
-                    } else {
+                    ZStack {
                         Text(submitTitle)
+                            .opacity(isSubmitting ? 0 : 1)
+                        ProgressView()
+                            .controlSize(.small)
+                            .opacity(isSubmitting ? 1 : 0)
                     }
                 }
                 .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
@@ -275,6 +277,9 @@ public struct PaperSheetScaffold<Content: View>: View {
         }
         .padding(ArchiveSpacing.l)
         .frame(minWidth: width * 0.86, idealWidth: width, maxWidth: width)
+        // 统一高度基线（下限而非固定高度）：调用方在 content() 内增删单行错误文案时
+        // sheet 不再重新定高居中；内容超过基线时仍可自适应增高，不遮挡内容。
+        .frame(minHeight: 300, alignment: .top)
         .background(ArchivePalette.archivePaper)
         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.lg))
         .overlay(

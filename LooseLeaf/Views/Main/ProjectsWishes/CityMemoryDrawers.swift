@@ -41,11 +41,12 @@ public struct CityMemoryDrawerSheet: View {
 
             if isLoading {
                 ProgressView("正在翻找属地散页与相纸…")
-                    .frame(maxWidth: .infinity, minHeight: 200)
+                    .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 360)
             } else if let errorText {
                 Text(errorText)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
+                    .frame(minHeight: 200, maxHeight: 360, alignment: .topLeading)
             } else if let d = drawer {
                 ScrollView {
                     VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
@@ -119,7 +120,7 @@ public struct CityMemoryDrawerSheet: View {
                         }
                     }
                 }
-                .frame(maxHeight: 360)
+                .frame(minHeight: 200, maxHeight: 360)
             } else {
                 // 兜底分支：抽屉为空且无错误时给出明确说明，避免内容区整片空白
                 ArchiveEmptyState(
@@ -127,7 +128,7 @@ public struct CityMemoryDrawerSheet: View {
                     title: "暂无该城市的回忆抽屉",
                     message: "这座城市尚未沉淀公开或私密散页，可在时间流中补记一段漫游手记。"
                 )
-                .frame(minHeight: 200)
+                .frame(minHeight: 200, maxHeight: 360)
             }
         }
         .padding(22)
@@ -184,11 +185,12 @@ public struct ProvinceMemoryDrawerSheet: View {
 
             if isLoading {
                 ProgressView("正在聚合全省行迹票根与属地手记…")
-                    .frame(maxWidth: .infinity, minHeight: 200)
+                    .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 380)
             } else if let errorText {
                 Text(errorText)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
+                    .frame(minHeight: 200, maxHeight: 380, alignment: .topLeading)
             } else if let d = drawer {
                 ScrollView {
                     VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
@@ -285,7 +287,7 @@ public struct ProvinceMemoryDrawerSheet: View {
                         }
                     }
                 }
-                .frame(maxHeight: 380)
+                .frame(minHeight: 200, maxHeight: 380)
             } else {
                 // 兜底分支：抽屉为空且无错误时给出明确说明，避免内容区整片空白
                 ArchiveEmptyState(
@@ -293,7 +295,7 @@ public struct ProvinceMemoryDrawerSheet: View {
                     title: "暂无该省份的山河回忆抽屉",
                     message: "这片山河尚未沉淀行迹票根与属地手记，可在山川印谱中继续点亮城市。"
                 )
-                .frame(minHeight: 200)
+                .frame(minHeight: 200, maxHeight: 380)
             }
         }
         .padding(22)

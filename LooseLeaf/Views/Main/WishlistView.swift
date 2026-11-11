@@ -93,11 +93,13 @@ public struct WishlistView: View {
 
                 filterPillsSection(stats: stats)
 
-                if let err = errorMessage {
-                    Text(err)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
+                Text(errorMessage ?? "")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(height: ArchiveSpacing.xl, alignment: .leading)
+                    .opacity(errorMessage == nil ? 0 : 1)
 
                 if appState.isLoading {
                     // 加载中：与「真的为空」区分，避免用户误以为心愿被清空

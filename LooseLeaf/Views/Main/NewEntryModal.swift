@@ -262,6 +262,15 @@ public struct NewEntryModal: View {
                 .foregroundStyle(ArchivePalette.inkMuted)
             }
 
+            Toggle(isOn: $draft.isPrivate) {
+                Text("仅自己可见（私密）")
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .tint(ArchivePalette.inkPrimary)
+
             Spacer()
 
             Button("取消") {
@@ -385,7 +394,8 @@ public struct NewEntryModal: View {
             // 日常表单没有足迹选择器：不读草稿里的关联 id（防跨形态泄漏）
             footprintId: nil,
             attachmentIds: media.uploadedAttachments.map(\.id),
-            occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
+            occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
+            isPrivate: draft.isPrivate
         )
     }
 
@@ -402,7 +412,8 @@ public struct NewEntryModal: View {
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
             footprintId: draft.selectedFootprintId,
             attachmentIds: media.uploadedAttachments.map(\.id),
-            occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
+            occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
+            isPrivate: draft.isPrivate
         )
     }
 
@@ -417,7 +428,8 @@ public struct NewEntryModal: View {
                 description: draft.newProjectDesc.isEmpty ? draft.newProjectTitle : draft.newProjectDesc,
                 category: draft.newProjectCategory.isEmpty ? nil : draft.newProjectCategory,
                 status: draft.newProjectStatus,
-                githubUrl: draft.newProjectGithub.isEmpty ? nil : draft.newProjectGithub
+                githubUrl: draft.newProjectGithub.isEmpty ? nil : draft.newProjectGithub,
+                isPrivate: draft.isPrivate
             )
             _ = try await APIClient.shared.createProject(req)
         } else {
@@ -435,6 +447,7 @@ public struct NewEntryModal: View {
                 projectId: draft.selectedProjectId,
                 wishId: nil,
                 footprintId: nil,
+                isPrivate: draft.isPrivate,
                 attachmentIds: media.uploadedAttachments.map(\.id)
             )
             _ = try await APIClient.shared.createEntry(req)

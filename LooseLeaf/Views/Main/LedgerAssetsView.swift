@@ -47,7 +47,6 @@ public struct LedgerAssetsView: View {
     @State private var selectedCategoryFilter: String = "全部"
     @State private var showCalibrateBalanceSheet: Bool = false
     @State private var showAddGearSheet: Bool = false
-    @State private var showCreditChannelsSheet: Bool = false
     @State private var editingTransaction: Transaction?
     @State private var sellingGear: GearItem?
     @State private var initialBalanceYuanInput: String = ""
@@ -207,11 +206,6 @@ public struct LedgerAssetsView: View {
         .sheet(isPresented: $showAddGearSheet) {
             addGearSheetView
         }
-        .sheet(isPresented: $showCreditChannelsSheet) {
-            CreditChannelsManagerSheet(appState: appState) {
-                showCreditChannelsSheet = false
-            }
-        }
         .sheet(item: $editingTransaction) { tx in
             editTransactionSheetView(tx)
         }
@@ -293,17 +287,6 @@ public struct LedgerAssetsView: View {
 
             HStack(spacing: ArchiveSpacing.s) {
                 if activeSubTab == .gear {
-                    Button {
-                        showCreditChannelsSheet = true
-                    } label: {
-                        HStack(spacing: ArchiveSpacing.xs) {
-                            Image(systemName: "creditcard")
-                            Text("信贷分期渠道")
-                        }
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-
                     Button {
                         showAddGearSheet = true
                     } label: {
@@ -716,13 +699,6 @@ public struct LedgerAssetsView: View {
                                 .horizontalFadeMask()
 
                                 Spacer()
-
-                                Button("管理渠道…") {
-                                    showCreditChannelsSheet = true
-                                }
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                                .buttonStyle(.plain)
-                                .foregroundStyle(ArchivePalette.accentWarm)
                             }
 
                             HStack(spacing: ArchiveSpacing.m) {

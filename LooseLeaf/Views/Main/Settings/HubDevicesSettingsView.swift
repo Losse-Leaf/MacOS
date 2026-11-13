@@ -60,7 +60,7 @@ struct HubDevicesSettingsView: View {
 
             // 本机客户端置顶展示
             let currentDeviceId = CredentialStore.getDeviceId()
-            let selfDev = appState.trustedDevices.first(where: { $0.deviceId == currentDeviceId })
+            let selfDev = appState.trustedDevices.first(where: { $0.isCurrent == true || $0.deviceId == currentDeviceId })
             settingsCardSection(title: "当前使用的设备") {
                 HStack(spacing: ArchiveSpacing.m) {
                     ZStack {

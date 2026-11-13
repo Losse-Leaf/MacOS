@@ -220,6 +220,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     /// 器物伴生散页（器物 id 为字符串）
     public var gearId: String?
     public var footprintId: Int?
+    public var isPrivate: Bool
     public var attachments: [Attachment]
     public var deletedAt: String?
     public var createdAt: String?
@@ -243,6 +244,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         case wish
         case gearId = "gear_id"
         case footprintId = "footprint_id"
+        case isPrivate = "is_private"
         case attachments
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -265,6 +267,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         wish: Wish? = nil,
         gearId: String? = nil,
         footprintId: Int? = nil,
+        isPrivate: Bool = false,
         attachments: [Attachment] = [],
         deletedAt: String? = nil,
         createdAt: String? = nil,
@@ -285,6 +288,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         self.wish = wish
         self.gearId = gearId
         self.footprintId = footprintId
+        self.isPrivate = isPrivate
         self.attachments = attachments
         self.deletedAt = deletedAt
         self.createdAt = createdAt
@@ -308,6 +312,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         wish = try? container.decodeIfPresent(Wish.self, forKey: .wish)
         gearId = try? container.decodeIfPresent(String.self, forKey: .gearId)
         footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
+        isPrivate = (try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)) ?? false
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
         deletedAt = try? container.decodeIfPresent(String.self, forKey: .deletedAt)
         createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
@@ -376,6 +381,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
     public var projectId: Int?
     public var wishId: Int?
     public var footprintId: Int?
+    public var isPrivate: Bool?
     public var attachmentIds: [Int]
     /// 幂等创建键（契约 C）：离线发件箱 CREATE 事件在入队时生成 UUID 并
     /// **持久化进载荷**，重试/复活复用同一个 —— 服务端按它查重，
@@ -394,6 +400,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         case projectId = "project_id"
         case wishId = "wish_id"
         case footprintId = "footprint_id"
+        case isPrivate = "is_private"
         case attachmentIds = "attachment_ids"
         case clientRequestId = "client_request_id"
     }
@@ -409,6 +416,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         projectId: Int? = nil,
         wishId: Int? = nil,
         footprintId: Int? = nil,
+        isPrivate: Bool? = nil,
         attachmentIds: [Int] = [],
         clientRequestId: String? = nil
     ) {
@@ -422,6 +430,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         self.projectId = projectId
         self.wishId = wishId
         self.footprintId = footprintId
+        self.isPrivate = isPrivate
         self.attachmentIds = attachmentIds
         self.clientRequestId = clientRequestId
     }
@@ -443,6 +452,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
     public var projectId: Int?
     public var wishId: Int?
     public var footprintId: Int?
+    public var isPrivate: Bool?
     public var attachmentIds: [Int]?
 
     enum CodingKeys: String, CodingKey {
@@ -457,6 +467,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         case projectId = "project_id"
         case wishId = "wish_id"
         case footprintId = "footprint_id"
+        case isPrivate = "is_private"
         case attachmentIds = "attachment_ids"
     }
 
@@ -472,6 +483,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         projectId: Int? = nil,
         wishId: Int? = nil,
         footprintId: Int? = nil,
+        isPrivate: Bool? = nil,
         attachmentIds: [Int]? = nil
     ) {
         self.type = type
@@ -485,6 +497,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         self.projectId = projectId
         self.wishId = wishId
         self.footprintId = footprintId
+        self.isPrivate = isPrivate
         self.attachmentIds = attachmentIds
     }
 }

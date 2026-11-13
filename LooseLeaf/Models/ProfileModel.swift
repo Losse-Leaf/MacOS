@@ -268,6 +268,7 @@ public struct TrustedDevice: Codable, Identifiable, Equatable, Sendable {
     public var status: String
     public var pairedAt: String
     public var lastActiveAt: String
+    public var isCurrent: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -278,6 +279,7 @@ public struct TrustedDevice: Codable, Identifiable, Equatable, Sendable {
         case status
         case pairedAt = "paired_at"
         case lastActiveAt = "last_active_at"
+        case isCurrent = "is_current"
     }
 }
 
@@ -293,6 +295,7 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
     public var githubUrl: String?
     public var status: String?
     public var order: Int?
+    public var isPrivate: Bool?
     public var createdAt: String?
     public var updatedAt: String?
 
@@ -306,6 +309,7 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
         case githubUrl = "github_url"
         case status
         case order
+        case isPrivate = "is_private"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -320,6 +324,7 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
         githubUrl: String? = nil,
         status: String? = "Active",
         order: Int? = 0,
+        isPrivate: Bool? = false,
         createdAt: String? = nil,
         updatedAt: String? = nil
     ) {
@@ -332,6 +337,7 @@ public struct Project: Codable, Identifiable, Equatable, Sendable {
         self.githubUrl = githubUrl
         self.status = status
         self.order = order
+        self.isPrivate = isPrivate
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -358,6 +364,7 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
     public var lifeEntryId: Int?
     public var footprintId: Int?
     public var gearId: String?
+    public var isPrivate: Bool?
     public var attachments: [Attachment]
     public var createdAt: String?
     public var updatedAt: String?
@@ -382,6 +389,7 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         case lifeEntryId = "life_entry_id"
         case footprintId = "footprint_id"
         case gearId = "gear_id"
+        case isPrivate = "is_private"
         case attachments
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -408,6 +416,7 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         lifeEntryId = try? container.decodeIfPresent(Int.self, forKey: .lifeEntryId)
         footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
         gearId = try? container.decodeIfPresent(String.self, forKey: .gearId)
+        isPrivate = try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
         createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try? container.decodeIfPresent(String.self, forKey: .updatedAt)
@@ -475,6 +484,7 @@ public struct CreateWishRequest: Codable, Sendable {
     /// 用 web 传了图，再用 mac 改个字，图片就没了）。
     /// nil = 本次不携带附件字段（保持原样）。
     public var attachmentIds: [Int]?
+    public var isPrivate: Bool?
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -487,6 +497,7 @@ public struct CreateWishRequest: Codable, Sendable {
         case targetDate = "target_date"
         case plantedAt = "planted_at"
         case attachmentIds = "attachment_ids"
+        case isPrivate = "is_private"
     }
 
     public init(
@@ -499,7 +510,8 @@ public struct CreateWishRequest: Codable, Sendable {
         budget: Int64 = 0,
         targetDate: String? = nil,
         plantedAt: String? = nil,
-        attachmentIds: [Int] = []
+        attachmentIds: [Int] = [],
+        isPrivate: Bool? = nil
     ) {
         self.title = title
         self.kind = kind
@@ -511,6 +523,7 @@ public struct CreateWishRequest: Codable, Sendable {
         self.targetDate = targetDate
         self.plantedAt = plantedAt
         self.attachmentIds = attachmentIds
+        self.isPrivate = isPrivate
     }
 }
 
@@ -524,6 +537,7 @@ public struct Footprint: Codable, Identifiable, Equatable, Sendable {
     public var note: String?
     public var lifeEntryId: Int?
     public var wishId: Int?
+    public var isPrivate: Bool?
     public var attachments: [Attachment]
     public var entriesCount: Int?
     public var totalSpent: Int64?
@@ -541,6 +555,7 @@ public struct Footprint: Codable, Identifiable, Equatable, Sendable {
         case note
         case lifeEntryId = "life_entry_id"
         case wishId = "wish_id"
+        case isPrivate = "is_private"
         case attachments
         case entriesCount = "entries_count"
         case totalSpent = "total_spent"
@@ -560,6 +575,7 @@ public struct Footprint: Codable, Identifiable, Equatable, Sendable {
         note = try? container.decodeIfPresent(String.self, forKey: .note)
         lifeEntryId = try? container.decodeIfPresent(Int.self, forKey: .lifeEntryId)
         wishId = try? container.decodeIfPresent(Int.self, forKey: .wishId)
+        isPrivate = try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
         entriesCount = try? container.decodeIfPresent(Int.self, forKey: .entriesCount)
         totalSpent = try? container.decodeIfPresent(Int64.self, forKey: .totalSpent)
@@ -611,6 +627,7 @@ public struct CreateFootprintRequest: Codable, Sendable {
     public var departedAt: String?
     public var note: String?
     public var attachmentIds: [Int]
+    public var isPrivate: Bool?
 
     enum CodingKeys: String, CodingKey {
         case cityCode = "city_code"
@@ -620,6 +637,7 @@ public struct CreateFootprintRequest: Codable, Sendable {
         case departedAt = "departed_at"
         case note
         case attachmentIds = "attachment_ids"
+        case isPrivate = "is_private"
     }
 
     public init(
@@ -629,7 +647,8 @@ public struct CreateFootprintRequest: Codable, Sendable {
         visitedAt: String = FormatUtils.beijingDateString(),
         departedAt: String? = nil,
         note: String? = nil,
-        attachmentIds: [Int] = []
+        attachmentIds: [Int] = [],
+        isPrivate: Bool? = nil
     ) {
         self.cityCode = cityCode
         self.cityName = cityName
@@ -638,6 +657,7 @@ public struct CreateFootprintRequest: Codable, Sendable {
         self.departedAt = departedAt
         self.note = note
         self.attachmentIds = attachmentIds
+        self.isPrivate = isPrivate
     }
 }
 
@@ -831,6 +851,7 @@ public struct CreateProjectRequest: Codable, Sendable {
     /// 同样后端支持、Web 端的请求模型里有，桌面端补齐。
     /// 为 nil 时**不携带**该字段 —— 后端更新接口是指针语义，省略即保持原值。
     public var order: Int?
+    public var isPrivate: Bool?
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -841,6 +862,7 @@ public struct CreateProjectRequest: Codable, Sendable {
         case status
         case githubUrl = "github_url"
         case order
+        case isPrivate = "is_private"
     }
 
     public init(
@@ -851,7 +873,8 @@ public struct CreateProjectRequest: Codable, Sendable {
         category: String? = "开源造物",
         status: String? = "持续维护",
         githubUrl: String? = nil,
-        order: Int? = nil
+        order: Int? = nil,
+        isPrivate: Bool? = nil
     ) {
         self.title = title
         self.subtitle = subtitle
@@ -861,6 +884,7 @@ public struct CreateProjectRequest: Codable, Sendable {
         self.status = status
         self.githubUrl = githubUrl
         self.order = order
+        self.isPrivate = isPrivate
     }
 }
 

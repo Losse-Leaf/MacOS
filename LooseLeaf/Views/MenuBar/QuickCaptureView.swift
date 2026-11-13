@@ -32,6 +32,7 @@ public struct QuickCaptureView: View {
     @State private var isUploadingPhoto: Bool = false
     @State private var uploadProgress: Double = 0.0
     @State private var isSubmitting: Bool = false
+    @State private var isPrivate: Bool = false
     @State private var errorText: String?
     /// 提交成功后的面板内确认文案（就地反馈，不依赖全局横幅）
     @State private var successText: String?
@@ -282,6 +283,22 @@ public struct QuickCaptureView: View {
             .accessibilityLabel("补记历史时刻")
             .help("补记过去的时刻")
 
+            Button {
+                isPrivate.toggle()
+            } label: {
+                Image(systemName: isPrivate ? "lock.fill" : "lock.open")
+                    .font(.system(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(isPrivate ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                    .padding(ArchiveSpacing.xs)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPrivate ? "仅自己可见（私密）" : "公开可见（随展厅设置）")
+            .help(isPrivate ? "已设为仅自己可见（私密）" : "设为仅自己可见（私密）")
+
             Spacer(minLength: 0)
 
             Button {
@@ -531,9 +548,11 @@ public struct QuickCaptureView: View {
                     cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
                     cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
                     attachmentIds: draft.uploadedAttachments.map(\.id),
-                    occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt)
+                    occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
+                    isPrivate: isPrivate
                 )
                 draft.reset()
+                isPrivate = false
                 isSubmitting = false
                 presentSuccess(
                     queuedOffline

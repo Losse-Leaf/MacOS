@@ -16,6 +16,7 @@ public struct EditEntrySheetView: View {
     @State private var editCityCode: String
     @State private var editCityName: String
     @State private var editAttachments: [Attachment]
+    @State private var editIsPrivate: Bool
     @State private var isUploading: Bool = false
     @State private var isSaving: Bool = false
     @State private var saveError: String?
@@ -35,6 +36,7 @@ public struct EditEntrySheetView: View {
         _editCityCode = State(initialValue: entry.cityCode ?? "")
         _editCityName = State(initialValue: entry.cityName ?? entry.location ?? "")
         _editAttachments = State(initialValue: entry.attachments)
+        _editIsPrivate = State(initialValue: entry.isPrivate)
     }
 
     public var body: some View {
@@ -154,6 +156,20 @@ public struct EditEntrySheetView: View {
                 }
             }
 
+                Toggle(isOn: $editIsPrivate) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("仅自己可见（私密）")
+                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+                        Text("开启后展厅公开时不会展示此条记录")
+                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(ArchivePalette.inkPrimary)
+                .padding(.vertical, 4)
+
                 if let saveError {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -199,6 +215,7 @@ public struct EditEntrySheetView: View {
             cityCode: code,
             cityName: cleanCity,
             clearCity: cityCleared ? true : nil,
+            isPrivate: editIsPrivate,
             attachmentIds: editAttachments.map(\.id)
         )
         do {

@@ -1372,7 +1372,8 @@ public final class AppState {
         cityName: String? = nil,
         footprintId: Int? = nil,
         attachmentIds: [Int] = [],
-        occurredAt: String? = nil
+        occurredAt: String? = nil,
+        isPrivate: Bool = false
     ) async throws -> Bool {
         let finalLocation = (location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
             ? location!.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1399,6 +1400,7 @@ public final class AppState {
             cityCode: resolvedCode,
             cityName: resolvedCityName,
             footprintId: footprintId,
+            isPrivate: isPrivate,
             attachmentIds: attachmentIds
         )
 

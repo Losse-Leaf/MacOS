@@ -19,7 +19,6 @@ public struct LifeCalendarChartView: View {
     public let entryCounts: [String: Int]
     public let totalCount: Int
     @Binding public var selectedDate: String?
-    public var onOpenAlmanac: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var displayMode: CalendarDisplayMode = .monthGrid
@@ -29,13 +28,11 @@ public struct LifeCalendarChartView: View {
     public init(
         entryCounts: [String: Int],
         totalCount: Int,
-        selectedDate: Binding<String?> = .constant(nil),
-        onOpenAlmanac: (() -> Void)? = nil
+        selectedDate: Binding<String?> = .constant(nil)
     ) {
         self.entryCounts = entryCounts
         self.totalCount = totalCount
         self._selectedDate = selectedDate
-        self.onOpenAlmanac = onOpenAlmanac
 
         let now = FormatUtils.beijingCurrentYearMonth()
         _currentYear = State(initialValue: now.year)
@@ -97,22 +94,6 @@ public struct LifeCalendarChartView: View {
             }
 
             Spacer()
-
-            if let onOpenAlmanac {
-                Button {
-                    onOpenAlmanac()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 11))
-                        Text("年鉴画卷")
-                            .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-                .help("查看年度生活年鉴画卷")
-            }
 
             // 模式切换胶囊
             HStack(spacing: 4) {

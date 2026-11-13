@@ -1,19 +1,18 @@
 import SwiftUI
 import AppKit
 
-/// 全局统一五合一创作模态窗口 (NewEntryModal)
-/// 严格 1:1 对标 Web 端 `web/src/components/NewEntryModal.vue`：
-/// 1. 支持五大形态切换：日常 (life)、游历 (travel)、造物 (project)、心愿 (wish)、账目 (transaction)
+/// 全局统一三合一创作模态窗口 (NewEntryModal)
+/// 1. 支持三大形态切换：日常 (life)、游历 (travel)、造物 (project)
 /// 2. 具备自动草稿持久化能力 (looseleaf_entry_draft_v1)，意外关闭不丢稿
 /// 3. 日期绑定 PaperDatePicker，城市绑定 PaperCityPicker，支持图片附件装裱与相机 EXIF
 /// 4. 完美支持 ESC 键与右上角 X 快速退出，零硬编码颜色
 ///
 /// **架构说明（性能重构）**：
 /// 本 View 只负责「形态选择 + 附件区 + 底部操作栏 + 错误条 + 提交逻辑」；
-/// 五个形态的表单各自是独立子 View（`EntryModalLifeForm` 等），只挂载当前选中的那一个。
+/// 各形态的表单各自是独立子 View（`EntryModalLifeForm` 等），只挂载当前选中的那一个。
 /// 表单字段统一放在 `EntryDraft` (@Observable) 里由父子共享对象引用，
 /// 因此在任意输入框里敲一个字，都只会重绘**读取了该字段的那个子 View**，
-/// 父 body 与其它四个分支完全不再参与求值 —— 这正是「点击修改卡片或者创建内容很卡」的根治点。
+/// 父 body 与其它分支完全不再参与求值 —— 这正是「点击修改卡片或者创建内容很卡」的根治点。
 @MainActor
 public struct NewEntryModal: View {
     @Bindable var appState: AppState

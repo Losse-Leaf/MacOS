@@ -4,8 +4,6 @@ import SwiftUI
 public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case general = "偏好设置"
     case devices = "中枢与设备"
-    case backup = "存储与备份"
-    case categories = "分类字典"
     case about = "关于活页"
 
     public var id: String { rawValue }
@@ -14,8 +12,6 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: return ArchiveIcon.preferences.systemName
         case .devices: return ArchiveIcon.hub.systemName
-        case .backup: return ArchiveIcon.storage.systemName
-        case .categories: return ArchiveIcon.categories.systemName
         case .about: return ArchiveIcon.about.systemName
         }
     }
@@ -24,18 +20,15 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: return "纸墨外观与全局热键"
         case .devices: return "节点地址、受信任设备"
-        case .backup: return "R2 云存与中枢快照"
-        case .categories: return "收支类别与造物字典"
         case .about: return "版本状态与更新日志"
         }
     }
 }
 
 /// 活页集配置类导航外壳 (SettingsView)
-/// 扁平化后 5 个配置条目已直接进入左侧菜单栏；本文件只负责页眉与 tab 分发，
+/// 扁平化后 3 个配置条目已直接进入左侧菜单栏；本文件只负责页眉与 tab 分发，
 /// 各 tab 的完整实现拆分在 `Views/Main/Settings/` 下：
-/// PreferencesSettingsView / HubDevicesSettingsView / StorageBackupSettingsView /
-/// CategoriesSettingsView / AboutSettingsView
+/// PreferencesSettingsView / HubDevicesSettingsView / AboutSettingsView
 ///
 /// 结构约定（避免多层嵌套滚动）：
 /// 本文件是**唯一**持有 `ScrollView` 与外层留白的一层；
@@ -69,10 +62,6 @@ public struct SettingsView: View {
                             PreferencesSettingsView(appState: appState)
                         case .devices:
                             HubDevicesSettingsView(appState: appState)
-                        case .backup:
-                            StorageBackupSettingsView(appState: appState)
-                        case .categories:
-                            CategoriesSettingsView(appState: appState)
                         case .about:
                             AboutSettingsView(appState: appState)
                         }

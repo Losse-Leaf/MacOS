@@ -14,7 +14,6 @@ struct WorkbenchSidebar: View {
     }
 
     @Bindable var appState: AppState
-    @Binding var isSystemGroupCollapsed: Bool
     /// 选中板块的回调（由主视图统一处理状态同步）
     var onSelect: (WorkbenchSection) -> Void
 

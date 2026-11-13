@@ -170,7 +170,7 @@ public enum ArchiveElevation {
 /// 全应用只引用本枚举，避免同一语义在不同模块使用不同 SF Symbol。
 public enum ArchiveIcon {
     case stream, ledger, wishes, atlas, projects, dossier
-    case preferences, hub, storage, categories, about
+    case preferences, hub, about
     case entryLife, entryTravel, entryProject, entryWish, entryTransaction
     case search, sync, add, edit, delete, detail, close, location
     case export, gear, camera, lock, cloud
@@ -185,8 +185,6 @@ public enum ArchiveIcon {
         case .dossier: return "person.text.rectangle"
         case .preferences: return "slider.horizontal.3"
         case .hub: return "laptopcomputer.and.iphone"
-        case .storage: return "archivebox"
-        case .categories: return "tag"
         case .about: return "info.circle"
         case .entryLife: return "leaf"
         case .entryTravel: return "map"

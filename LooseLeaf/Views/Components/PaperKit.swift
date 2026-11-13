@@ -1,48 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 动效与减弱动态效果 (Reduce Motion Support)
-
-/// 全应用统一的「减弱动态效果」开关封装。
-/// macOS「系统设置 → 辅助功能 → 显示 → 减弱动态效果」开启后，所有非必要动效必须停止。
-public enum ArchiveMotionGate {
-    /// 依据系统偏好决定是否执行动画
-    public static func perform(_ reduceMotion: Bool, _ base: Animation, _ action: () -> Void) {
-        if reduceMotion {
-            action()
-        } else {
-            withAnimation(base, action)
-        }
-    }
-}
-
-public struct ArchiveReduceMotionModifier<V: Equatable>: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let animation: Animation?
-    let value: V
-
-    public func body(content: Content) -> some View {
-        content.animation(reduceMotion ? nil : animation, value: value)
-    }
-}
-
-public extension View {
-    /// 附加一段动效；当用户开启「减弱动态效果」时自动失效。
-    func archiveAnimation<V: Equatable>(_ animation: Animation?, value: V) -> some View {
-        modifier(ArchiveReduceMotionModifier(animation: animation, value: value))
-    }
-
-    /// 依据系统偏好执行动画的便捷方法（用于 `withAnimation` 场景）
-    func archiveAnimating<V: Equatable>(
-        _ animation: Animation,
-        value: V,
-        reduceMotion: Bool,
-        _ action: @escaping () -> Void
-    ) {
-        ArchiveMotionGate.perform(reduceMotion, animation, action)
-    }
-}
-
 // MARK: - 统一图标按钮 (Paper Icon Button)
 
 /// 全应用统一的图标按钮：

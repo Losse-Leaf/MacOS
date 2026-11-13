@@ -16,11 +16,8 @@ public struct StreamView: View {
 
     // 键盘流与检索状态
     @State private var keyboardScrollPosition: Int?
-    /// 系统配置分组折叠状态（持久化，避免每次启动都要重新展开 12 项）
-    @State private var isSystemGroupCollapsed: Bool = UserDefaults.standard.bool(forKey: "looseleaf_ui_system_group_collapsed")
     @State private var localSearchText: String = ""
     @FocusState private var isSearchFocused: Bool
-    @State private var isOnThisDayExpanded: Bool = true
 
     // 管理模式：编辑与删除状态
     // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
@@ -66,7 +63,7 @@ public struct StreamView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .archiveAnimation(.easeInOut(duration: 0.12), value: appState.activeSection)
+                    .animation(.easeInOut(duration: 0.12), value: appState.activeSection)
                     // 通知条改为浮层：不参与主画布布局，出现/消失不再导致内容跳动；
                     // 且三类提示可叠加（原先互斥，错误会被信息条遮住）。
                     .overlay(alignment: .top) {
@@ -243,10 +240,6 @@ public struct StreamView: View {
             SettingsView(appState: appState, pinnedTab: .general)
         case .hub:
             SettingsView(appState: appState, pinnedTab: .devices)
-        case .storage:
-            SettingsView(appState: appState, pinnedTab: .backup)
-        case .categories:
-            SettingsView(appState: appState, pinnedTab: .categories)
         case .about:
             SettingsView(appState: appState, pinnedTab: .about)
         }
@@ -257,7 +250,6 @@ public struct StreamView: View {
     private var workbenchSidebar: some View {
         WorkbenchSidebar(
             appState: appState,
-            isSystemGroupCollapsed: $isSystemGroupCollapsed,
             onSelect: { section in
                 guard appState.activeSection != section else { return }
                 visitedSections.insert(section)
@@ -378,65 +370,31 @@ public struct StreamView: View {
                     onThisDayBannerCard
                 }
 
-                // 3. 迷你山河印谱概览
-                miniAtlasWidgetCard
-
-                // 4. 树图与时间轴
-                HStack(alignment: .center) {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(appState.streamTimelineMode.rawValue)
-                            .font(ArchiveTypography.editorialSerif(size: 13, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                    }
-
-                    Spacer()
-
-                    HStack(spacing: 4) {
-                        ForEach(AppState.StreamTimelineDisplayMode.allCases) { mode in
-                            PaperPillButton(
-                                title: mode.rawValue,
-                                isSelected: appState.streamTimelineMode == mode
-                            ) {
-                                appState.streamTimelineMode = mode
-                            }
-                        }
-                    }
-                }
-                .padding(.top, 4)
-
-                if appState.streamTimelineMode == .treeDiagram {
-                    EventTreeDiagramView(entries: appState.entries) { selectedEntry in
-                        appState.highlightedEntry = selectedEntry
+                // 3. 编年时间流
+                let rows = appState.streamRows
+                if rows.isEmpty {
+                    // 加载中显示骨架屏（而非空态），避免用户误以为数据丢失
+                    if appState.isLoading {
+                        ArchiveSkeletonView(rowCount: 4)
+                    } else {
+                        emptyStreamPlaceholder
                     }
                 } else {
-                    let rows = appState.streamRows
-                    if rows.isEmpty {
-                        // 加载中显示骨架屏（而非空态），避免用户误以为数据丢失
-                        if appState.isLoading {
-                            ArchiveSkeletonView(rowCount: 4)
-                        } else {
-                            emptyStreamPlaceholder
-                        }
-                    } else {
-                        // 编年时间流 (纵向连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
-                        LazyVStack(alignment: .leading, spacing: 6) {
-                            ForEach(rows) { row in
-                                let entry = row.entry
-                                if row.gapDays >= 14 {
-                                    TemporalGapDivider(days: row.gapDays)
-                                }
-                                TimelineEntryCardView(
-                                    entry: entry,
-                                    timeLabel: row.timeLabel,
-                                    transaction: matchingTransaction(for: entry),
-                                    isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
-                                    actions: timelineActions
-                                )
-                                .id(entry.id)
+                    // 编年时间流 (纵向连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(rows) { row in
+                            let entry = row.entry
+                            if row.gapDays >= 14 {
+                                TemporalGapDivider(days: row.gapDays)
                             }
+                            TimelineEntryCardView(
+                                entry: entry,
+                                timeLabel: row.timeLabel,
+                                transaction: matchingTransaction(for: entry),
+                                isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
+                                actions: timelineActions
+                            )
+                            .id(entry.id)
                         }
                     }
                 }
@@ -639,77 +597,6 @@ public struct StreamView: View {
             .allowsHitTesting(false)
         }
     }
-
-    // MARK: - 3. 迷你山河印谱概览 (MiniAtlasWidget)
-    @ViewBuilder
-    private var miniAtlasWidgetCard: some View {
-        let litCities = Array(Set(appState.footprints.map { $0.cityName }))
-        if !litCities.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "map")
-                            .font(.system(size: 11))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text("山川印谱概览 · 已踏访 \(litCities.count) 座城邑 (\(appState.footprints.count) 次履迹)")
-                            .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        appState.activeSection = .atlas
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text("翻阅全谱与票根")
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9))
-                        }
-                        .font(ArchiveTypography.monoScale(size: 10.5))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // 最近踏足城市标签流
-                HStack(spacing: 6) {
-                    ForEach(appState.footprints.prefix(6)) { fp in
-                        Button {
-                            appState.activeSection = .atlas
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "location.fill")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
-                                Text(fp.cityName)
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(12)
-            .background(ArchivePalette.archiveSubtle.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-            )
-        }
-    }
-
-
-
 
     private func editEntrySheet(entry: LifeEntry) -> some View {
         EditEntrySheetView(entry: entry) { updated in

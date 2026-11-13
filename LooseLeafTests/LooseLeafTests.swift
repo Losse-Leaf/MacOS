@@ -399,33 +399,6 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertFalse(UpdateChecker.isVersion("1.1.9", greaterThan: "1.2.0"))
     }
 
-    // MARK: - 17. Multi-Format Export & Almanac / City Drawer Decoding Tests
-
-    func testMakeTransactionsCSVAndFullJSONExport() throws {
-        let tx = Transaction(
-            id: 1,
-            amount: 4250,
-            type: "expense",
-            category: "餐饮",
-            title: "手冲咖啡,燕麦奶",
-            note: "风味极佳",
-            paymentMethod: "微信支付",
-            cityCode: "330100",
-            occurredAt: "2026-10-14T09:30:00+08:00"
-        )
-        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
-        XCTAssertTrue(csv.hasPrefix("\u{FEFF}日期时间,收支类型,分类,标题,金额(元),金额(分),支付方式,城市代码,分期,备注"))
-        XCTAssertTrue(csv.contains("\"手冲咖啡,燕麦奶\""))
-        XCTAssertTrue(csv.contains("42.50,4250"))
-
-        var snap = LocalArchiveSnapshot()
-        snap.transactions = [tx]
-        // makeFullArchiveJSON 现为 throwing：编码失败必须可感知，不能静默返回 nil
-        let jsonData = try ArchiveExporter.makeFullArchiveJSON(snapshot: snap, projects: [], wishes: [], footprints: [])
-        XCTAssertFalse(jsonData.isEmpty)
-        XCTAssertTrue(String(data: jsonData, encoding: .utf8)?.contains("transactions") == true)
-    }
-
     // MARK: - 18. Spotlight Navigation & Update Checker Fallback Tests
 
     @MainActor
@@ -531,23 +504,6 @@ final class LooseLeafTests: XCTestCase {
     }
 
 
-    func testServerBackupItemDecodingAndFormatting() throws {
-        let json = """
-        {
-            "filename": "looseleaf-backup-20261018-120000.zip",
-            "size": 5242880,
-            "created_at": "2026-10-18T12:00:00+08:00",
-            "storage_type": "r2"
-        }
-        """.data(using: .utf8)!
-
-        let item = try JSONDecoder().decode(ServerBackupItem.self, from: json)
-        XCTAssertEqual(item.id, "looseleaf-backup-20261018-120000.zip")
-        XCTAssertEqual(item.storageTypeBadge, "Cloudflare R2")
-        XCTAssertEqual(item.formattedSize, "5.00 MB")
-        XCTAssertFalse(item.formattedDate.isEmpty)
-    }
-
     // MARK: - 20. 2026-10-18 审计回归用例
 
     func testMergedEntriesFullBranchIsSorted() {
@@ -563,20 +519,6 @@ final class LooseLeafTests: XCTestCase {
         // 旧实现用 Dictionary(uniqueKeysWithValues:) 会直接 trap
         let merged = SyncManager.mergedEntries(current: [first, second], incoming: [], isDelta: true)
         XCTAssertEqual(merged.count, 1)
-    }
-
-    func testCSVNeutralizesFormulaInjection() {
-        let tx = Transaction(
-            id: 1,
-            amount: 100,
-            category: "餐饮",
-            title: "=SUM(A1:A2)",
-            note: "@cmd",
-            occurredAt: "2026-10-14T09:30:00+08:00"
-        )
-        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
-        XCTAssertTrue(csv.contains("'=SUM(A1:A2)"), "以 = 开头的字段必须被中和")
-        XCTAssertTrue(csv.contains("'@cmd"), "以 @ 开头的字段必须被中和")
     }
 
     func testSemverPrereleaseComparison() {
@@ -688,23 +630,6 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(FormatUtils.parseYuanToCentsAllowZero("42.5"), 4250)
         XCTAssertEqual(FormatUtils.parseYuanToCentsAllowZero("0"), 0, "0 元必须能被区分于解析失败")
         XCTAssertNil(FormatUtils.parseYuanToCentsAllowZero("abc"))
-    }
-
-    /// CSV 公式注入：前导空格也必须被中和（Excel 会 trim 后执行）
-    func testCSVNeutralizesFormulaInjectionWithLeadingWhitespace() {
-        let tx = Transaction(
-            id: 99,
-            amount: 100,
-            type: "expense",
-            category: "餐饮",
-            title: " =cmd|'/c calc'!A1",
-            note: "",
-            paymentMethod: "现金",
-            cityCode: "330100",
-            occurredAt: "2026-10-14T09:30:00+08:00"
-        )
-        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
-        XCTAssertTrue(csv.contains("'=cmd"), "前导空格后的公式注入必须被中和：\(csv)")
     }
 
     /// Outbox 排序：乐观插入的记录必须按发生时间归位，而不是插到列表顶部

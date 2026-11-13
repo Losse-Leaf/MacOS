@@ -94,7 +94,6 @@ final class VisualSnapshotTests: XCTestCase {
         snapshot("05-侧栏", size: CGSize(width: 240, height: 620)) {
             WorkbenchSidebar(
                 appState: AppState.shared,
-                isSystemGroupCollapsed: .constant(false),
                 onSelect: { _ in }
             )
             .frame(width: 240, height: 620)
@@ -155,7 +154,7 @@ final class VisualSnapshotTests: XCTestCase {
         appState.activeSection = .stream
 
         snapshot("11-侧栏单独", size: CGSize(width: 225, height: 820)) {
-            WorkbenchSidebar(appState: appState, isSystemGroupCollapsed: .constant(false), onSelect: { _ in })
+            WorkbenchSidebar(appState: appState, onSelect: { _ in })
                 .frame(width: 225, height: 820)
                 .background(ArchivePalette.archivePaper)
         }

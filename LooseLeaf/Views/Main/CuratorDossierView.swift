@@ -19,7 +19,6 @@ public struct CuratorDossierView: View {
     @State private var isUploadingAvatar: Bool = false
     @State private var isSavingProfile: Bool = false
     @State private var avatarPreviewImage: NSImage?
-    @State private var selectedGearCategory: String = "all"
     @State private var selectedHeatmapDate: String? = nil
 
     public init(appState: AppState) {
@@ -28,12 +27,6 @@ public struct CuratorDossierView: View {
 
     public var body: some View {
         let prof = appState.profile
-        // 一次性绑定固资筛选结果，避免 body 内重复全量过滤
-        let inServiceGear = prof.edcGear.filter { $0.status != "sold" }
-        let gearCategories = Array(Set(inServiceGear.map { $0.category })).sorted()
-        let displayedGear = selectedGearCategory == "all"
-            ? inServiceGear
-            : inServiceGear.filter { $0.category == selectedGearCategory }
 
         ScrollView {
             // LazyVStack 作为 ScrollView 直接子视图，长列表才具备懒加载能力
@@ -61,10 +54,7 @@ public struct CuratorDossierView: View {
                     LifeCalendarChartView(
                         entryCounts: appState.entryCountsByDate,
                         totalCount: appState.entries.count,
-                        selectedDate: $selectedHeatmapDate,
-                        onOpenAlmanac: {
-                            appState.showAlmanacSheet = true
-                        }
+                        selectedDate: $selectedHeatmapDate
                     )
 
                     // 点击具体日期后展开当日手记速览抽屉 (严格 1:1 对标 Web 端 AboutView.vue)
@@ -79,26 +69,11 @@ public struct CuratorDossierView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                 )
-
-                // 3. 随身器物图鉴 (EDC Gear) — 标题与分类筛选
-                gearHeaderSection(gearCategories: gearCategories, count: inServiceGear.count)
-
-                // 3b. 随身器物图鉴 — 空态或货架网格
-                if displayedGear.isEmpty {
-                    gearEmptyState
-                } else {
-                    gearGrid(displayedGear)
-                }
             }
             .padding(ArchiveSpacing.xl)
         }
         .sheet(isPresented: $showEditProfileSheet) {
             editProfileSheetView
-        }
-        .sheet(isPresented: $appState.showAlmanacSheet) {
-            AnnualAlmanacSheet {
-                appState.showAlmanacSheet = false
-            }
         }
     }
 
@@ -337,79 +312,6 @@ public struct CuratorDossierView: View {
             }
         }
         .padding(.top, 4)
-    }
-
-    // MARK: - 随身器物图鉴分区
-
-    /// 图鉴标题与分类筛选胶囊
-    private func gearHeaderSection(gearCategories: [String], count: Int) -> some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            HStack(alignment: .center) {
-                Text("在役随身器物 (\(count) 件)")
-                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-
-                Spacer()
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        appState.activeSection = .ledger
-                    }
-                } label: {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Text("前往资产大盘管理器物")
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-                .help("在资产页管理随身固资、折旧与出让")
-            }
-
-            // 分类筛选胶囊（首尾渐隐提示可横向滚动）
-            if gearCategories.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        PaperPillButton(title: "全部 (\(count))", isSelected: selectedGearCategory == "all") {
-                            selectedGearCategory = "all"
-                        }
-                        ForEach(gearCategories, id: \.self) { cat in
-                            let catCount = appState.profile.edcGear.filter { $0.status != "sold" && $0.category == cat }.count
-                            PaperPillButton(title: "\(cat) (\(catCount))", isSelected: selectedGearCategory == cat) {
-                                selectedGearCategory = cat
-                            }
-                        }
-                    }
-                }
-                .horizontalFadeMask()
-            }
-        }
-    }
-
-    /// 器物空态
-    private var gearEmptyState: some View {
-        ArchiveEmptyState(
-            systemName: ArchiveIcon.gear.systemName,
-            title: "尚无在役随身器物记录",
-            message: "在资产大盘中登记相机、镜头或 EDC 装备后，在役器物将自动陈列于此。",
-            primaryTitle: "前往资产大盘",
-            primaryAction: {
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    appState.activeSection = .ledger
-                }
-            }
-        )
-    }
-
-    /// 器物货架网格（作为主理人只读陈列橱窗，管理与出让统归资产大盘）
-    private func gearGrid(_ displayedGear: [GearItem]) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: ArchiveSpacing.m) {
-            ForEach(displayedGear) { gear in
-                GearAssetCardView(gear: gear)
-            }
-        }
     }
 
     private var editProfileSheetView: some View {

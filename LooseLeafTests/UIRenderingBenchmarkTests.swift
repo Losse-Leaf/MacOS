@@ -390,7 +390,7 @@ final class UIRenderingBenchmarkTests: XCTestCase {
     func test01_MainSectionRenderingCost() {
         let appState = AppState.shared
         measure("侧栏 WorkbenchSidebar") {
-            WorkbenchSidebar(appState: appState, isSystemGroupCollapsed: .constant(false), onSelect: { _ in })
+            WorkbenchSidebar(appState: appState, onSelect: { _ in })
                 .frame(width: 225, height: 800)
         }
     }

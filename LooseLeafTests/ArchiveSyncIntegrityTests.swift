@@ -102,40 +102,6 @@ final class ArchiveSyncIntegrityTests: XCTestCase {
 
     // MARK: - 导出契约
 
-    func testFullArchiveJSONRoundTripKeepsEntries() throws {
-        var snap = LocalArchiveSnapshot()
-        snap.entries = [
-            LifeEntry(id: 1, title: "第一条", content: "正文", occurredAt: "2026-10-01T08:00:00+08:00")
-        ]
-        snap.transactions = [
-            Transaction(id: 1, amount: 4250, type: "expense", category: "餐饮", title: "咖啡", occurredAt: "2026-10-01T08:00:00+08:00")
-        ]
-
-        let data = try ArchiveExporter.makeFullArchiveJSON(snapshot: snap, projects: [], wishes: [], footprints: [])
-        let decoded = try JSONDecoder().decode(ArchiveExporter.FullArchiveExportPayload.self, from: data)
-        XCTAssertEqual(decoded.snapshot.entries.count, 1)
-        XCTAssertEqual(decoded.snapshot.entries.first?.title, "第一条")
-        XCTAssertEqual(decoded.snapshot.transactions.first?.amount, 4250)
-    }
-
-    func testCSVQuotesFieldsWithTabAndQuote() {
-        let tx = Transaction(
-            id: 1,
-            amount: 100,
-            type: "expense",
-            category: "餐饮",
-            title: "含\t制表符",
-            note: "含\"引号\"",
-            paymentMethod: "现金",
-            cityCode: "330100",
-            occurredAt: "2026-10-01T08:00:00+08:00"
-        )
-        let csv = ArchiveExporter.makeTransactionsCSV(transactions: [tx])
-        XCTAssertTrue(csv.hasPrefix("\u{FEFF}"), "CSV 必须带 UTF-8 BOM 以便 Excel 正确识别中文")
-        XCTAssertTrue(csv.contains("\"含\t制表符\""), "含制表符的字段必须加引号")
-        XCTAssertTrue(csv.contains("\"\"引号\"\""), "引号必须被转义为两个引号")
-    }
-
     func testMarkdownIncludesTitleAndAttachments() {
         var entry = LifeEntry(id: 1, title: "西湖散步", content: "风很轻", occurredAt: "2026-10-01T08:00:00+08:00")
         entry.attachments = [

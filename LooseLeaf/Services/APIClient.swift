@@ -426,25 +426,6 @@ public actor APIClient {
         return resp
     }
 
-    /// 签发新设备配对工单 (生成包含中枢地址与设备工单的配对深链)
-    public func initPairing(deviceHint: String = "macOS 工作台发起配对") async throws -> PairTicketResponse {
-        let req = PairInitRequest(hubUrl: baseURLString, deviceHint: deviceHint)
-        return try await performEnvelopeRequest(
-            path: "/api/v1/auth/pair/init",
-            method: "POST",
-            body: req
-        )
-    }
-
-    /// 切换配对节点时动态重新渲染纸墨二维码 (GET /api/v1/auth/pair/qr)
-    public func fetchPairQRCode(hubURL: String, ticket: String) async throws -> PairQRResponse {
-        let query = [
-            URLQueryItem(name: "hub", value: hubURL),
-            URLQueryItem(name: "ticket", value: ticket)
-        ]
-        return try await performEnvelopeRequest(path: "/api/v1/auth/pair/qr", queryItems: query)
-    }
-
     /// 获取已信任设备列表 (GET /api/v1/auth/devices)
     public func fetchTrustedDevices() async throws -> [TrustedDevice] {
         try await performEnvelopeRequest(path: "/api/v1/auth/devices")
@@ -562,25 +543,6 @@ public actor APIClient {
             }
             throw error
         }
-    }
-
-    public func addCategoryOption(scope: String, name: String) async throws -> CategoryOption {
-        struct Payload: Codable, Sendable {
-            let scope: String
-            let name: String
-        }
-        return try await performEnvelopeRequest(
-            path: "/api/v1/categories",
-            method: "POST",
-            body: Payload(scope: scope, name: name)
-        )
-    }
-
-    public func deleteCategoryOption(id: Int) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/categories/\(id)",
-            method: "DELETE"
-        )
     }
 
     /// 获取那年今日历史归档 (GET /api/v1/entries/on-this-day)
@@ -875,20 +837,6 @@ public actor APIClient {
         try await performEnvelopeRequest(path: "/api/v1/footprints/cities/\(escapePathComponent(cityCode))/drawer")
     }
 
-    /// 获取省级回忆抽屉聚合数据 (GET /api/v1/footprints/provinces/:adcode/drawer)
-    public func fetchProvinceMemoryDrawer(adcode: String) async throws -> ProvinceMemoryDrawerResponse {
-        try await performEnvelopeRequest(path: "/api/v1/footprints/provinces/\(escapePathComponent(adcode))/drawer")
-    }
-
-    /// 获取年度生活年鉴五幕聚合数据 (GET /api/v1/almanac/summary?year=...)
-    public func fetchAnnualAlmanac(year: Int? = nil) async throws -> AnnualAlmanacResponse {
-        var query: [URLQueryItem] = []
-        if let year {
-            query.append(URLQueryItem(name: "year", value: String(year)))
-        }
-        return try await performEnvelopeRequest(path: "/api/v1/almanac/summary", queryItems: query)
-    }
-
     // MARK: - 6. 媒体预签名与统一上传 (R2 Presign & Multipart Fallback)
 
     public func presignUpload(_ req: PresignUploadRequest) async throws -> PresignUploadResponse {
@@ -1036,96 +984,6 @@ public actor APIClient {
             // 刚上传完的附件也要能立刻用缩略图展示，
             // 否则在下次同步之前它仍会走原图（1.5MB / 4.4 秒）
             thumbnailUrl: res.thumbnailUrl
-        )
-    }
-
-    // MARK: - 9. 数据中枢全量快照备份与回滚 (System Backups)
-
-    public func fetchServerBackups() async throws -> [ServerBackupItem] {
-        try await performEnvelopeRequest(path: "/api/v1/system/backup/list")
-    }
-
-    public func createServerBackupNow() async throws -> ServerBackupItem {
-        try await performEnvelopeRequest(path: "/api/v1/system/backup/now", method: "POST")
-    }
-
-    public func deleteServerBackup(filename: String) async throws -> [ServerBackupItem] {
-        try await performEnvelopeRequest(path: "/api/v1/system/backup/\(escapePathComponent(filename))", method: "DELETE")
-    }
-
-    public func restoreServerBackup(filename: String) async throws {
-        struct RestoreReq: Encodable {
-            let filename: String
-        }
-        let _: RestoreBackupResponse = try await performEnvelopeRequest(
-            path: "/api/v1/system/backup/restore",
-            method: "POST",
-            body: RestoreReq(filename: filename)
-        )
-    }
-
-    public func downloadServerBackup(filename: String) async throws -> (Data, String) {
-        let (request, _) = try buildRequest(
-            path: "/api/v1/system/backup/download/\(escapePathComponent(filename))",
-            method: "GET",
-            timeout: 180
-        )
-        // 先用 download(for: 拿到临时文件（流式落盘，避免整包驻留内存），再读入 Data 交给既有调用方
-        let (tempURL, response): (URL, URLResponse)
-        do {
-            (tempURL, response) = try await session.download(for: request)
-        } catch {
-            throw APIError.networkFailure(error.localizedDescription)
-        }
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.networkFailure("下载响应无效")
-        }
-        if http.statusCode == 401 {
-            // 与 performEnvelopeRequest 同款「仅广播一次」节流
-            notifyUnauthorizedThrottled()
-            throw APIError.unauthorized("下载备份需要设备授权凭据")
-        }
-        guard http.statusCode == 200 else {
-            throw APIError.serverError(code: http.statusCode, message: "下载备份失败 (HTTP \(http.statusCode))")
-        }
-        let data = try Data(contentsOf: tempURL, options: .mappedIfSafe)
-        return (data, filename)
-    }
-
-    // MARK: - 10. 中枢云端对象存储与灾备管理 (Storage Management)
-
-    public func fetchStorageStatus() async throws -> StorageStatus {
-        try await performEnvelopeRequest(path: "/api/v1/storage/status")
-    }
-
-    public func testStorageConfig(_ payload: StorageConfigPayload) async throws -> StorageTestResponse {
-        try await performEnvelopeRequest(
-            path: "/api/v1/storage/test",
-            method: "POST",
-            body: payload
-        )
-    }
-
-    public func updateStorageConfig(_ payload: StorageConfigPayload) async throws -> StorageStatus {
-        try await performEnvelopeRequest(
-            path: "/api/v1/storage/config",
-            method: "PUT",
-            body: payload
-        )
-    }
-
-    public func resetStorageConfig() async throws -> StorageStatus {
-        try await performEnvelopeRequest(
-            path: "/api/v1/storage/config",
-            method: "DELETE"
-        )
-    }
-
-    public func migrateStorageMedia() async throws -> StorageMigrateResponse {
-        try await performEnvelopeRequest(
-            path: "/api/v1/storage/migrate",
-            method: "POST"
         )
     }
 }

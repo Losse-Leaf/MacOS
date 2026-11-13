@@ -43,8 +43,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     case dossier = "dossier"     // 主理人 (about)
     case preferences = "preferences" // 偏好设置
     case hub = "hub"             // 中枢与设备
-    case storage = "storage"     // 存储与备份
-    case categories = "categories" // 分类字典
     case about = "about"         // 关于活页
 
     public var id: String { rawValue }
@@ -54,9 +52,9 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         [.stream, .ledger, .wishes, .atlas, .projects, .dossier]
     }
 
-    /// 配置类条目：原「配置中心」内部的 5 个 tab，扁平后直接进侧栏
+    /// 配置类条目：扁平后直接进侧栏
     public static var configurationSections: [WorkbenchSection] {
-        [.preferences, .hub, .storage, .categories, .about]
+        [.preferences, .hub, .about]
     }
 
     /// 侧栏平铺的全部条目（内容 + 配置）
@@ -74,8 +72,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .dossier: return "主理人"
         case .preferences: return "偏好设置"
         case .hub: return "中枢与设备"
-        case .storage: return "存储与备份"
-        case .categories: return "分类字典"
         case .about: return "关于活页"
         }
     }
@@ -90,8 +86,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .dossier: return "person.text.rectangle"
         case .preferences: return "slider.horizontal.3"
         case .hub: return "laptopcomputer.and.iphone"
-        case .storage: return "archivebox"
-        case .categories: return "tag"
         case .about: return "info.circle"
         }
     }
@@ -261,7 +255,6 @@ public final class AppState {
         get { navigation.newEntryInitialCityName }
         set { navigation.newEntryInitialCityName = newValue }
     }
-    public var showAlmanacSheet: Bool = false
     public var showSearchModal: Bool = false
     public var selectedCategory: ArchiveCategory {
         get { navigation.selectedCategory }
@@ -941,17 +934,6 @@ public final class AppState {
         transactionIndexMemo = (transactionsRevision, map)
         return map
     }
-
-    /// 时间流展示形态枚举（编年事件流 / 事件树谱全景）
-    public enum StreamTimelineDisplayMode: String, CaseIterable, Identifiable, Sendable {
-        case chronologicalTree = "编年事件流"
-        case treeDiagram = "事件树谱"
-
-        public var id: String { rawValue }
-    }
-
-    /// 当前选中的时间流展示形态（默认编年事件流）
-    public var streamTimelineMode: StreamTimelineDisplayMode = .chronologicalTree
 
     /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
     public var streamRows: [StreamRow] {

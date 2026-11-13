@@ -54,31 +54,4 @@ final class EntryDraft {
     var newProjectStatus: String = "进行中"
     var newProjectGithub: String = ""
     var newProjectDesc: String = ""
-    var newProjectStory: String = ""
-
-    // MARK: - 心愿专有
-
-    var wishKind: String = "item" // item, travel, milestone
-    var wishBudgetYuan: String = ""
-    var wishSpec: String = ""
-    var wishCityCode: String = ""
-    var wishCityName: String = ""
-    var wishTargetDate: Date = Date()
-
-    // MARK: - 账目专有
-
-    var txType: String = "expense" // expense, income
-    var txAmountYuan: String = ""
-    var txCategory: String = "餐饮"
-    var txPaymentMethod: String = "微信支付"
-    var selectedWishId: Int?
-    var isInstallment: Bool = false
-    /// 分期渠道 code —— **无硬编码默认值**（2026-10-25 修复）：
-    /// 原先默认 "huabei"，用户渠道列表里没有花呗时 PaperSelect 显示占位符、
-    /// 提交却照发幽灵渠道。表单会在渠道列表就绪后把它归一到首项。
-    var installmentChannel: String = ""
-    var installmentMonths: Int = 12
-    var syncToGear: Bool = false
-    var gearCategory: String = "数码器材"
-    var gearSpec: String = ""
 }

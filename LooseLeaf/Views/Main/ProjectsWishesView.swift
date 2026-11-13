@@ -63,12 +63,6 @@ struct DrawerCitySelection: Identifiable, Equatable {
     let name: String
 }
 
-struct DrawerProvinceSelection: Identifiable, Equatable {
-    var id: String { adcode }
-    let adcode: String
-    let name: String
-}
-
 /// 统一样式与等高对齐的心愿典藏卡片 (WishCardView)
 struct WishCardView: View {
     let wish: Wish

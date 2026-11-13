@@ -414,21 +414,9 @@ enum EntryPasteboard {
             }
         }
 
-        // 2. 图片二进制数据（系统截图 / 图片 App 拷贝）
-        let jpegType = NSPasteboard.PasteboardType(UTType.jpeg.identifier)
-        for pasteType in [NSPasteboard.PasteboardType.png, jpegType, NSPasteboard.PasteboardType.tiff] {
-            if let data = board.data(forType: pasteType), !data.isEmpty {
-                return EntryPasteboardPayload(imageData: data, fileURLs: [])
-            }
-        }
-
-        // 3. 兜底：NSImage 兜底转 PNG
-        if let image = NSImage(pasteboard: board),
-           let tiffData = image.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmap.representation(using: .png, properties: [:]),
-           !pngData.isEmpty {
-            return EntryPasteboardPayload(imageData: pngData, fileURLs: [])
+        // 2. 其余二进制与 NSImage 兜底统一复用 DropLoader.readImageFromPasteboard()
+        if let data = DropLoader.readImageFromPasteboard() {
+            return EntryPasteboardPayload(imageData: data, fileURLs: [])
         }
 
         return EntryPasteboardPayload(imageData: nil, fileURLs: [])

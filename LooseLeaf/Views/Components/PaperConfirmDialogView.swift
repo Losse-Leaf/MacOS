@@ -1,21 +1,17 @@
 import SwiftUI
 
 /// 纸本确认与警示对话框 (PaperConfirmDialogView)
-/// 严格对标 Web ConfirmDialog.vue：
-/// - 纯正纸墨基底 (--bg-archive) 与细腻边框 (--border-subtle)
-/// - 警示标头 (朱砂 Vermilion 危险态与沉着墨黑)
-/// - 键盘回车快捷确认与 Esc 快捷取消
-/// - 触控板微震与活页声效反馈
 public struct PaperConfirmDialogView: View {
     let request: ConfirmDialogRequest
     var onDismiss: () -> Void
 
     @State private var isHoveringCancel: Bool = false
     @State private var isHoveringConfirm: Bool = false
-    /// 键盘焦点所在按钮（用于绘制纸本焦点环）
     @FocusState private var focusedAction: FocusAction?
 
-    /// 对话框内可获焦点的操作
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private enum FocusAction: Hashable {
         case cancel
         case confirm
@@ -28,19 +24,22 @@ public struct PaperConfirmDialogView: View {
 
     public var body: some View {
         ZStack {
-            // 背景半透明磨砂遮罩 (macOS 系统级 Vibrancy Material)
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(Color.black.opacity(0.32))
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    cancelAction()
+            Group {
+                if reduceTransparency {
+                    Color.black.opacity(0.62)
+                } else {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Color.black.opacity(0.32))
                 }
+            }
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                cancelAction()
+            }
 
-            // 弹窗本体
             VStack(alignment: .leading, spacing: 0) {
-                // 1. 标题栏
                 HStack(alignment: .center, spacing: 8) {
                     if request.danger {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -55,7 +54,6 @@ public struct PaperConfirmDialogView: View {
 
                     Spacer()
 
-                    // 统一图标按钮：命中区不小于指针可点下限
                     PaperIconButton(
                         systemName: ArchiveIcon.close.systemName,
                         label: "关闭确认对话框",
@@ -72,7 +70,6 @@ public struct PaperConfirmDialogView: View {
                 Divider()
                     .overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-                // 2. 正文提示词（危险态以朱砂色强调，确保一眼可辨）
                 Text(request.message)
                     .font(ArchiveTypography.editorialSerif(size: 13.5, weight: request.danger ? .medium : .regular))
                     .foregroundStyle(request.danger ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
@@ -81,11 +78,9 @@ public struct PaperConfirmDialogView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)
 
-                // 3. 底部操作栏
                 HStack(spacing: 10) {
                     Spacer()
 
-                    // 取消按钮
                     Button {
                         cancelAction()
                     } label: {
@@ -104,7 +99,6 @@ public struct PaperConfirmDialogView: View {
                     .accessibilityLabel(request.cancelText)
                     .accessibilityHint("按 Esc 键亦可取消")
 
-                    // 确认按钮 (主操作)
                     Button {
                         confirmAction()
                     } label: {
@@ -138,26 +132,38 @@ public struct PaperConfirmDialogView: View {
                 RoundedRectangle(cornerRadius: ArchiveRadius.md)
                     .stroke(ArchivePalette.borderSubtle, lineWidth: 1)
             )
-            .onTapGesture {
-                // 吸收点击，阻止遮罩冒泡
-            }
+            .onTapGesture {}
             .accessibilityElement(children: .contain)
             .accessibilityLabel(request.title)
-            .transition(.asymmetric(
-                insertion: .scale(scale: 0.96).combined(with: .opacity),
-                removal: .scale(scale: 0.96).combined(with: .opacity)
-            ))
+            .transition(
+                reduceMotion
+                    ? .opacity
+                    : .asymmetric(
+                        insertion: .scale(scale: 0.96).combined(with: .opacity),
+                        removal: .scale(scale: 0.96).combined(with: .opacity)
+                    )
+            )
+        }
+        .onAppear {
+            focusedAction = request.danger ? .cancel : .confirm
         }
         .onKeyPress(.escape) {
             cancelAction()
             return .handled
         }
+        .onKeyPress(.tab) {
+            focusedAction = (focusedAction == .cancel) ? .confirm : .cancel
+            return .handled
+        }
         .onKeyPress(.return) {
-            // 焦点落在按钮上时交由按钮自身处理，避免「确认」被触发两次
             if focusedAction != nil {
                 return .ignored
             }
-            confirmAction()
+            if request.danger {
+                cancelAction()
+            } else {
+                confirmAction()
+            }
             return .handled
         }
     }
@@ -168,7 +174,6 @@ public struct PaperConfirmDialogView: View {
     }
 
     private func confirmAction() {
-        // 触感确认（用户可在偏好设置中关闭）
         if AppState.shared.enablesHapticFeedback {
             ArchiveFeedback.light()
         }

@@ -47,33 +47,66 @@ public enum PaperImageExport {
         }
     }
 
-    /// 拷贝到剪贴板
+    /// 根据文件字节头魔数推断真实图片扩展名（解决缩略图接口 `/files/thumbnail` 无后缀问题）
+    public nonisolated static func inferredExtension(for data: Data, fallbackURL: URL? = nil) -> String {
+        if data.count >= 12 {
+            let bytes = [UInt8](data.prefix(12))
+            if bytes[0] == 0xFF, bytes[1] == 0xD8 { return "jpg" }
+            if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 { return "png" }
+            if bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46 { return "gif" }
+            if bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
+               bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50 { return "webp" }
+            if bytes[0] == 0x42, bytes[1] == 0x4D { return "tif" }
+            if bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 { return "heic" }
+        }
+        if let ext = fallbackURL?.pathExtension, !ext.isEmpty {
+            return ext.lowercased()
+        }
+        return "jpg"
+    }
+
+    /// 规范化导出默认文件名（确保携带有效图片扩展名）
+    public nonisolated static func normalizedFilename(_ raw: String?, fallbackURL: URL, data: Data? = nil) -> String {
+        let base = (raw?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? (fallbackURL.lastPathComponent.isEmpty || fallbackURL.lastPathComponent == "thumbnail"
+                ? "looseleaf-photo"
+                : fallbackURL.lastPathComponent)
+        let existingExt = (base as NSString).pathExtension
+        if !existingExt.isEmpty {
+            return base
+        }
+        let ext = data.map { inferredExtension(for: $0, fallbackURL: fallbackURL) }
+            ?? (fallbackURL.pathExtension.isEmpty ? "jpg" : fallbackURL.pathExtension.lowercased())
+        return "\(base).\(ext)"
+    }
+
+    /// 拷贝到剪贴板（接入 SecureClipboard 60 秒延时清除）
     public static func copyToClipboard(url: URL) async -> PaperImageExportResult {
         do {
             let data = try await data(for: url)
             guard let image = NSImage(data: data) else {
                 return .failure(message: "相纸格式无法识别")
             }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.writeObjects([image])
+            SecureClipboard.copy(image: image)
             return .success(message: "已拷贝相纸至剪贴板")
         } catch {
             return .failure(message: error.localizedDescription)
         }
     }
 
-    /// 在系统「预览」中打开
-    public static func openInSystemPreview(url: URL) async -> PaperImageExportResult {
+    /// 在系统「预览」中打开（0600 权限隔离临时文件 + 自动补全图片后缀 + 延迟清理）
+    public static func openInSystemPreview(url: URL, preferredFilename: String? = nil) async -> PaperImageExportResult {
         do {
             let data = try await data(for: url)
-            let tempPath = FileManager.default.temporaryDirectory
-                .appendingPathComponent("looseleaf-preview-\(UUID().uuidString)-\(url.lastPathComponent)")
+            let safeName = normalizedFilename(preferredFilename, fallbackURL: url, data: data)
+                .replacingOccurrences(of: "/", with: "-")
+            let previewDir = SyncManager.sharedStorageDirectory.appendingPathComponent("PreviewStaging", isDirectory: true)
+            try? FileManager.default.createDirectory(at: previewDir, withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: previewDir.path)
+            let tempPath = previewDir.appendingPathComponent("preview-\(UUID().uuidString.prefix(8))-\(safeName)")
             try data.write(to: tempPath, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempPath.path)
             NSWorkspace.shared.open(tempPath)
-            // 关键：**用完即删**。
-            // 原先每次预览一张 1.5MB 原图就在临时目录留一份，**从不删除** ——
-            // 只能靠系统临时目录的清理策略兜底。
-            // macOS 打开的文件句柄在文件被 unlink 后仍可读，所以这里可以安全删除。
             scheduleCleanup(of: tempPath)
             return .success(message: "已在「预览」中打开相纸")
         } catch {

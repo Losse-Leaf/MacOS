@@ -1,7 +1,6 @@
 // LifeCalendarChartView.swift
 // 生活刻度 · 时光日历图 (Life Calendar Chart)
-// 职责：取代原 GitHub 风格纯色块热力图，以真实公历月历/年历与 ECharts 架构交互呈现生活散页沉淀。
-// 遵循 diagram-design 技能 Editorial 纸墨色盘与 WCAG AA 对比度规范。
+// 职责：以真实公历月历与高性能 Canvas 年度矩阵呈现生活散页沉淀。
 
 import SwiftUI
 import AppKit
@@ -20,7 +19,6 @@ public struct LifeCalendarChartView: View {
     public let totalCount: Int
     @Binding public var selectedDate: String?
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var displayMode: CalendarDisplayMode = .monthGrid
     @State private var currentYear: Int
     @State private var currentMonth: Int
@@ -46,12 +44,10 @@ public struct LifeCalendarChartView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            // 顶栏：标题、模式切换器与手稿统计
             headerToolbar
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 主画布：按模式切换呈现
             Group {
                 switch displayMode {
                 case .monthGrid:
@@ -63,13 +59,12 @@ public struct LifeCalendarChartView: View {
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
 
-            // 底栏：纸墨色阶图例与月度统计小记
             footerLegendBar
         }
         .padding(ArchiveSpacing.m)
         .background(ArchivePalette.archivePaper)
         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
-        .paperElevation(1)
+        .paperElevation(1, cornerRadius: ArchiveRadius.md)
     }
 
     // MARK: - 顶栏与模式切换
@@ -95,7 +90,6 @@ public struct LifeCalendarChartView: View {
 
             Spacer()
 
-            // 模式切换胶囊
             HStack(spacing: 4) {
                 ForEach(CalendarDisplayMode.allCases) { mode in
                     PaperPillButton(
@@ -113,7 +107,6 @@ public struct LifeCalendarChartView: View {
 
     private var monthCalendarView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 月份导航条
             HStack {
                 HStack(spacing: 8) {
                     Button {
@@ -122,11 +115,13 @@ public struct LifeCalendarChartView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 24, height: 24)
+                            .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 14)
+                    .accessibilityLabel("上一月")
                     .help("查看上一月")
 
                     Text("\(String(currentYear)) 年 \(currentMonth) 月")
@@ -139,11 +134,13 @@ public struct LifeCalendarChartView: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 24, height: 24)
+                            .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 14)
+                    .accessibilityLabel("下一月")
                     .help("查看下一月")
 
                     if !isCurrentMonthActive {
@@ -161,12 +158,12 @@ public struct LifeCalendarChartView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         }
                         .buttonStyle(.plain)
+                        .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                     }
                 }
 
                 Spacer()
 
-                // 当月数据快报
                 let monthStats = calculateMonthStats(year: currentYear, month: currentMonth)
                 HStack(spacing: 12) {
                     Text("当月手稿：\(monthStats.totalEntries) 篇")
@@ -178,7 +175,6 @@ public struct LifeCalendarChartView: View {
                 }
             }
 
-            // 星期表头 (周一至周日)
             let weekdays = ["一", "二", "三", "四", "五", "六", "日"]
             HStack(spacing: 4) {
                 ForEach(weekdays.indices, id: \.self) { idx in
@@ -190,8 +186,7 @@ public struct LifeCalendarChartView: View {
             }
             .padding(.bottom, 2)
 
-            // 7 列日历网格
-            let cells = generateMonthCalendarCells(year: currentYear, month: currentMonth)
+            let cells = Self.monthCalendarCells(year: currentYear, month: currentMonth)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
                 ForEach(cells) { cell in
                     calendarDayCell(cell)
@@ -200,7 +195,6 @@ public struct LifeCalendarChartView: View {
         }
     }
 
-    /// 单个日历格子
     private func calendarDayCell(_ cell: CalendarDayCell) -> some View {
         let isSelected = selectedDate == cell.dateKey
         let count = entryCounts[cell.dateKey, default: 0]
@@ -208,20 +202,15 @@ public struct LifeCalendarChartView: View {
 
         return Button {
             guard cell.isCurrentMonth else {
-                // 点击非当月格子时，自动跳转到对应月份
-                if let parts = cell.dateKey.split(separator: "-").map(String.init) as [String]?,
-                   parts.count == 3, let y = Int(parts[0]), let m = Int(parts[1]) {
+                let parts = cell.dateKey.split(separator: "-").map(String.init)
+                if parts.count == 3, let y = Int(parts[0]), let m = Int(parts[1]) {
                     currentYear = y
                     currentMonth = m
                     selectedDate = cell.dateKey
                 }
                 return
             }
-            if selectedDate == cell.dateKey {
-                selectedDate = nil
-            } else {
-                selectedDate = cell.dateKey
-            }
+            selectedDate = (selectedDate == cell.dateKey) ? nil : cell.dateKey
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
@@ -270,10 +259,11 @@ public struct LifeCalendarChartView: View {
             .help("\(cell.dateKey) · \(count) 篇手稿留痕 (点击筛选)")
         }
         .buttonStyle(.plain)
+        .paperButtonFocusRing(cornerRadius: 3)
         .accessibilityLabel("\(cell.dateKey)，\(count) 篇手稿留痕")
     }
 
-    // MARK: - 2. 年度全景 (Annual Matrix View)
+    // MARK: - 2. 年度全景 (Annual Matrix View · 12 Canvas 轻量绘制)
 
     private var annualMatrixView: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -285,11 +275,13 @@ public struct LifeCalendarChartView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 24, height: 24)
+                            .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 14)
+                    .accessibilityLabel("上一年度")
                     .help("查看上一年度")
 
                     Text("\(String(currentYear)) 年度生活留痕矩阵")
@@ -302,82 +294,131 @@ public struct LifeCalendarChartView: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 24, height: 24)
+                            .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 14)
+                    .accessibilityLabel("下一年度")
                     .help("查看下一年度")
                 }
 
                 Spacer()
 
-                let yearCount = entryCounts.filter { $0.key.hasPrefix("\(currentYear)") }.values.reduce(0, +)
+                let yearPrefix = "\(currentYear)-"
+                let yearCount = entryCounts.reduce(into: 0) { acc, kv in
+                    if kv.key.hasPrefix(yearPrefix) { acc += kv.value }
+                }
                 Text("全年在册手稿：\(yearCount) 篇")
                     .font(ArchiveTypography.monoScale(size: 11.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            // 12 个月份的迷你月历网格 (4 列 × 3 行)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ForEach(1...12, id: \.self) { m in
-                    miniMonthGrid(year: currentYear, month: m)
+                    miniMonthCanvasCard(year: currentYear, month: m)
                 }
             }
         }
     }
 
-    /// 迷你月历小方块
-    private func miniMonthGrid(year: Int, month: Int) -> some View {
-        let cells = generateMonthCalendarCells(year: year, month: month)
-        let monthCount = cells.filter { $0.isCurrentMonth }.compactMap { entryCounts[$0.dateKey] }.reduce(0, +)
+    /// 单个迷你月历卡片：以单一 `Canvas` 替代原先 35~42 个独立 `RoundedRectangle` 子视图，
+    /// 全年子视图节点从 ~504 个骤降至 12 个，并收敛为 12 个月度无障碍摘要节点。
+    private func miniMonthCanvasCard(year: Int, month: Int) -> some View {
+        let cells = Self.monthCalendarCells(year: year, month: month)
+        let rowsCount = max(1, cells.count / 7)
+        let stats = calculateMonthStats(year: year, month: month)
+        let spacing: CGFloat = 2
+        let cellHeight: CGFloat = 9.5
+        let canvasHeight = CGFloat(rowsCount) * cellHeight + CGFloat(max(0, rowsCount - 1)) * spacing
 
         return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("\(month) 月")
-                    .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                Spacer()
-                if monthCount > 0 {
-                    Text("\(monthCount)")
-                        .font(ArchiveTypography.monoScale(size: 9.5))
-                        .foregroundStyle(ArchivePalette.accentMoss)
+            Button {
+                currentMonth = month
+                displayMode = .monthGrid
+            } label: {
+                HStack {
+                    Text("\(month) 月")
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Spacer()
+                    if stats.totalEntries > 0 {
+                        Text("\(stats.totalEntries)")
+                            .font(ArchiveTypography.monoScale(size: 9.5))
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                    }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .paperButtonFocusRing(cornerRadius: 2)
+            .help("切换至 \(year) 年 \(month) 月详图")
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
-                ForEach(cells) { cell in
-                    let count = entryCounts[cell.dateKey, default: 0]
-                    let isSelected = selectedDate == cell.dateKey
-                    let style = cellDensityStyle(for: count)
+            GeometryReader { geo in
+                let totalWidth = geo.size.width
+                let cellWidth = max(2, (totalWidth - spacing * 6) / 7)
 
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(cell.isCurrentMonth ? style.fill : ArchivePalette.inkMuted.opacity(0.04))
-                        .frame(height: 9.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .stroke(
-                                    isSelected
-                                        ? ArchivePalette.accentWarm
-                                        : (cell.isToday ? ArchivePalette.accentWarm : Color.clear),
-                                    lineWidth: isSelected ? 1.2 : 0.6
-                                )
+                Canvas { context, _ in
+                    for (index, cell) in cells.enumerated() {
+                        let col = index % 7
+                        let row = index / 7
+                        let rect = CGRect(
+                            x: CGFloat(col) * (cellWidth + spacing),
+                            y: CGFloat(row) * (cellHeight + spacing),
+                            width: cellWidth,
+                            height: cellHeight
                         )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard cell.isCurrentMonth else { return }
-                            selectedDate = (selectedDate == cell.dateKey) ? nil : cell.dateKey
+                        let path = Path(roundedRect: rect, cornerRadius: 1.5)
+                        let count = entryCounts[cell.dateKey, default: 0]
+                        let style = cellDensityStyle(for: count)
+                        let fill = cell.isCurrentMonth ? style.fill : ArchivePalette.inkMuted.opacity(0.04)
+                        context.fill(path, with: .color(fill))
+
+                        let isSelected = selectedDate == cell.dateKey
+                        if isSelected || cell.isToday {
+                            context.stroke(
+                                path,
+                                with: .color(ArchivePalette.accentWarm),
+                                lineWidth: isSelected ? 1.3 : 0.7
+                            )
+                        } else if cell.isCurrentMonth && style.lineWidth > 0 {
+                            context.stroke(
+                                path,
+                                with: .color(style.stroke),
+                                lineWidth: style.lineWidth
+                            )
                         }
-                        .help("\(cell.dateKey) · \(count) 篇")
-                        .accessibilityLabel("\(cell.dateKey)，\(count) 篇手稿")
+                    }
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    SpatialTapGesture().onEnded { value in
+                        let col = Int(value.location.x / (cellWidth + spacing))
+                        let row = Int(value.location.y / (cellHeight + spacing))
+                        guard (0..<7).contains(col), (0..<rowsCount).contains(row) else { return }
+                        let idx = row * 7 + col
+                        guard cells.indices.contains(idx) else { return }
+                        let tapped = cells[idx]
+                        guard tapped.isCurrentMonth else { return }
+                        selectedDate = (selectedDate == tapped.dateKey) ? nil : tapped.dateKey
+                    }
+                )
             }
+            .frame(height: canvasHeight)
         }
         .padding(8)
         .background(ArchivePalette.archiveSubtle.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(year)年\(month)月，共 \(stats.totalEntries) 篇手稿，活跃 \(stats.activeDays) 天")
+        .accessibilityHint("点击切换到该月月历详图")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            currentMonth = month
+            displayMode = .monthGrid
+        }
     }
-
 
     // MARK: - 底栏色阶图例
 
@@ -400,6 +441,8 @@ public struct LifeCalendarChartView: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 8)
+                    .accessibilityLabel("清空日期筛选")
                     .help("清空当前日期筛选")
                 }
             }
@@ -419,6 +462,7 @@ public struct LifeCalendarChartView: View {
                         RoundedRectangle(cornerRadius: 1.5)
                             .stroke(style.stroke, lineWidth: style.lineWidth)
                     )
+                    .accessibilityHidden(true)
             }
 
             Text("笔墨丰盛")
@@ -428,8 +472,7 @@ public struct LifeCalendarChartView: View {
         .padding(.top, 2)
     }
 
-
-    // MARK: - 日历计算辅助模型与纯函数
+    // MARK: - 日历计算辅助模型与记忆化网格
 
     private func stepMonth(by step: Int) {
         var newM = currentMonth + step
@@ -446,7 +489,7 @@ public struct LifeCalendarChartView: View {
     }
 
     private func calculateMonthStats(year: Int, month: Int) -> (totalEntries: Int, activeDays: Int) {
-        let prefix = String(format: "%04d-%02d", year, month)
+        let prefix = String(format: "%04d-%02d-", year, month)
         var total = 0
         var activeDays = 0
         for (dateKey, count) in entryCounts where dateKey.hasPrefix(prefix) {
@@ -462,7 +505,6 @@ public struct LifeCalendarChartView: View {
         let lineWidth: CGFloat
     }
 
-    /// 纸墨渐变色阶规范（单色调递增，遵循 diagram-design fill ramp 规则）
     private func cellDensityStyle(for count: Int) -> CalendarCellDensity {
         switch count {
         case 0:
@@ -498,7 +540,7 @@ public struct LifeCalendarChartView: View {
         }
     }
 
-    private struct CalendarDayCell: Identifiable {
+    private struct CalendarDayCell: Identifiable, Sendable {
         let id: String
         let dateKey: String
         let dayNumber: Int
@@ -506,8 +548,36 @@ public struct LifeCalendarChartView: View {
         let isToday: Bool
     }
 
-    /// 生成给定年月的完整 7 列月历网格（含前后月份补齐）
-    private func generateMonthCalendarCells(year: Int, month: Int) -> [CalendarDayCell] {
+    private struct MonthCacheKey: Hashable {
+        let year: Int
+        let month: Int
+        let todayKey: String
+    }
+
+    private static let cellsCacheLock = NSLock()
+    private nonisolated(unsafe) static var cellsCache: [MonthCacheKey: [CalendarDayCell]] = [:]
+
+    private static func monthCalendarCells(year: Int, month: Int) -> [CalendarDayCell] {
+        let todayKey = FormatUtils.beijingDateString(from: Date())
+        let cacheKey = MonthCacheKey(year: year, month: month, todayKey: todayKey)
+        cellsCacheLock.lock()
+        if let cached = cellsCache[cacheKey] {
+            cellsCacheLock.unlock()
+            return cached
+        }
+        cellsCacheLock.unlock()
+
+        let generated = buildMonthCalendarCells(year: year, month: month, todayKey: todayKey)
+        cellsCacheLock.lock()
+        if cellsCache.count > 48 {
+            cellsCache.removeAll(keepingCapacity: true)
+        }
+        cellsCache[cacheKey] = generated
+        cellsCacheLock.unlock()
+        return generated
+    }
+
+    private static func buildMonthCalendarCells(year: Int, month: Int, todayKey: String) -> [CalendarDayCell] {
         let cal = FormatUtils.beijingCalendar
         var comp = DateComponents()
         comp.year = year
@@ -520,20 +590,19 @@ public struct LifeCalendarChartView: View {
 
         let daysInMonth = range.count
         let weekday = cal.component(.weekday, from: firstDayOfMonth)
-        // 转换 weekday（周日为 1，周一为 2）到周一排首位（0 ~ 6）
         let leadingPadding = (weekday + 5) % 7
 
-        let todayKey = FormatUtils.beijingDateString(from: Date())
         var cells: [CalendarDayCell] = []
+        cells.reserveCapacity(42)
 
-        // 前导日期补齐（上月末尾）
         if leadingPadding > 0, let prevMonthLastDay = cal.date(byAdding: .day, value: -1, to: firstDayOfMonth) {
             let prevRange = cal.range(of: .day, in: .month, for: prevMonthLastDay) ?? (1..<30)
             let prevDaysInMonth = prevRange.count
+            let prevYear = cal.component(.year, from: prevMonthLastDay)
+            let prevMonth = cal.component(.month, from: prevMonthLastDay)
             for offset in (0..<leadingPadding).reversed() {
                 let d = prevDaysInMonth - offset
-                let cellDate = cal.date(byAdding: .day, value: -(offset + 1), to: firstDayOfMonth) ?? firstDayOfMonth
-                let key = FormatUtils.beijingDateString(from: cellDate)
+                let key = String(format: "%04d-%02d-%02d", prevYear, prevMonth, d)
                 cells.append(CalendarDayCell(
                     id: "prev-\(key)",
                     dateKey: key,
@@ -544,7 +613,6 @@ public struct LifeCalendarChartView: View {
             }
         }
 
-        // 当月日期
         for d in 1...daysInMonth {
             let key = String(format: "%04d-%02d-%02d", year, month, d)
             cells.append(CalendarDayCell(
@@ -556,13 +624,12 @@ public struct LifeCalendarChartView: View {
             ))
         }
 
-        // 尾随日期补齐（填满最后一周）
-        let totalCells = cells.count
-        let trailingPadding = (7 - (totalCells % 7)) % 7
-        if trailingPadding > 0, let lastDayOfMonth = cal.date(byAdding: .day, value: daysInMonth - 1, to: firstDayOfMonth) {
+        let trailingPadding = (7 - (cells.count % 7)) % 7
+        if trailingPadding > 0 {
+            let nextYear = month == 12 ? year + 1 : year
+            let nextMonth = month == 12 ? 1 : month + 1
             for offset in 1...trailingPadding {
-                let cellDate = cal.date(byAdding: .day, value: offset, to: lastDayOfMonth) ?? lastDayOfMonth
-                let key = FormatUtils.beijingDateString(from: cellDate)
+                let key = String(format: "%04d-%02d-%02d", nextYear, nextMonth, offset)
                 cells.append(CalendarDayCell(
                     id: "next-\(key)",
                     dateKey: key,

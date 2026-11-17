@@ -4,8 +4,8 @@ import Foundation
 /// 集中页大小、最大页数保险丝与终止条件，避免 AppState / 导出器各自维护一份
 /// 略有差异的翻页循环（此前存在三份拷贝，其中一份还是死代码）。
 enum Pagination {
-    /// 单次同步最多翻多少页，防止后端 total 异常导致死循环
-    static let maxPages = 200
+    /// 单次同步最多翻多少页，防止后端 total 异常导致死循环（50 条/页 × 1000 页 = 50,000 条）
+    static let maxPages = 1000
     /// 单次同步最多拉多少条记录（防止后端返回异常时把整机内存吃光）
     static let maxEntries = 50_000
     static let maxTransactions = 20_000
@@ -26,7 +26,7 @@ enum Pagination {
     ///   1,000 条档案时用户会盯着空白等待。
     static func fetchAllEntries(
         since: String?,
-        pageSize: Int = 100,
+        pageSize: Int = 50,
         useETagOnFirstPage: Bool = false,
         onFirstPage: (@Sendable (Int, [LifeEntry]) async -> Void)? = nil
     ) async throws -> [LifeEntry] {
@@ -34,7 +34,7 @@ enum Pagination {
         var all: [LifeEntry] = []
         all.reserveCapacity(pageSize)
         while page <= maxPages {
-            // 取消检查：用户切页 / 退出时必须能停下，而不是继续跑完 200 页
+            // 取消检查：用户切页 / 退出时必须能停下，而不是继续跑完所有页
             try Task.checkCancellation()
             let response = try await APIClient.shared.fetchEntries(
                 page: page,
@@ -46,7 +46,8 @@ enum Pagination {
             if page == 1 {
                 await onFirstPage?(response.total, response.entries)
             }
-            if response.entries.count < pageSize {
+            let effectivePageSize = response.pageSize > 0 ? min(pageSize, response.pageSize) : pageSize
+            if response.entries.count < effectivePageSize {
                 break
             }
             if all.count >= maxEntries { break }
@@ -91,7 +92,7 @@ enum Pagination {
     }
 
     static func fetchAllWishes(
-        pageSize: Int = 100,
+        pageSize: Int = 50,
         kind: String? = nil,
         status: String? = nil
     ) async throws -> [Wish] {
@@ -107,7 +108,8 @@ enum Pagination {
                 status: status
             )
             all.append(contentsOf: response.wishes)
-            if response.wishes.count < pageSize {
+            let effectivePageSize = response.pageSize > 0 ? min(pageSize, response.pageSize) : pageSize
+            if response.wishes.count < effectivePageSize {
                 break
             }
             page += 1

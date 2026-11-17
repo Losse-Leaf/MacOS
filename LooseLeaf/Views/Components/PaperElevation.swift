@@ -1,66 +1,42 @@
 // PaperElevation.swift
 // 纸张层级修饰符 (PaperElevationModifier)
-// 职责：为纸面卡片提供分层级的视觉分隔。
-//
-// 性能说明（重要）：SwiftUI 的 `.shadow()` 会对**整棵子树做离屏渲染**再模糊，
-// 实测（Debug，NSHostingView 真实渲染）：
-//   无阴影 / 纯描边      ≈   3 ms
-//   .shadow(radius: 2)   ≈  20 ms
-//   .shadow(radius: 6)   ≈  37 ms
-// 也就是说，单张卡片挂两层模糊阴影，开销是纯描边的 **12 倍以上**。
-// 时间流里若同时存在 20 张卡片，仅阴影一项就要 400~700ms —— 这正是「时间流很卡」的主因。
-//
-// 因此策略改为：
-//   level 1（卡片，最常见）→ 1pt 描边 + 极浅填充，**不使用模糊阴影**
-//   level 2（浮层 / 悬停）→ 描边 + 单层轻阴影
-//   level 3（模态弹层）→  描边 + 单层阴影（弹窗数量少，可接受）
-// 视觉上依然是「纸片浮在桌面上」，但层级由描边与填充承担，开销降到 1/12。
 
 import SwiftUI
 
-// MARK: - 纸张层级修饰符
-
-/// 纸张层级修饰符（以描边为主、阴影为辅）
+/// 纸张层级修饰符（以描边为主、阴影为辅；支持传入卡片真实 `cornerRadius` 消除描边切角错位）
 public struct PaperElevationModifier: ViewModifier {
     public var level: Int
+    public var cornerRadius: CGFloat
+
+    public init(level: Int = 1, cornerRadius: CGFloat = ArchiveCardMetrics.radius) {
+        self.level = level
+        self.cornerRadius = cornerRadius
+    }
 
     public func body(content: Content) -> some View {
         switch level {
         case 0:
-            // 贴面元素（按钮、内联控件）：**完全不加装饰**。
-            // 早期版本用 default 分支兜底 0，导致每个按钮都背上 radius 12 的模态阴影，
-            // 实测单个按钮 116ms —— 整屏按钮累计后就是「打开界面很卡」的主因。
             content
         case 1:
-            // 卡片：只用描边表达层级，不做模糊阴影（性能关键路径）
-            //
-            // 描边比原先略强一点：0.5pt 的 borderSubtle 在米白纸面上几乎看不见，
-            // 卡片与背景的边界发虚，一列卡片读下来像一块没有分栏的大板。
             content
                 .overlay(
-                    RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius)
+                    RoundedRectangle(cornerRadius: cornerRadius)
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        .allowsHitTesting(false)
                 )
         case 2:
-            // 浮层 / 悬停态：描边 + 略强一点的描边色，**不用模糊阴影**。
-            //
-            // 关键：level 2 最大的用武之地是「卡片悬停时抬升」。
-            // 而滚动时指针会扫过一张张卡片，悬停状态被反复触发 ——
-            // 每触发一次带模糊阴影的抬升，就要对整棵子树做一次离屏渲染。
-            // 实测：同一张卡片，非悬停 2.4ms，悬停（带 radius 3 阴影）19.6ms，
-            // **8 倍差距**。滚动中每秒能触发十几次，这些离屏渲染会把主线程打满，
-            // 于是「滑动卡顿」。抬升改由描边表达，视觉几乎无差别。
             content
                 .overlay(
-                    RoundedRectangle(cornerRadius: ArchiveCardMetrics.radius)
+                    RoundedRectangle(cornerRadius: cornerRadius)
                         .stroke(ArchivePalette.borderDivider, lineWidth: 0.8)
+                        .allowsHitTesting(false)
                 )
         default:
-            // 模态弹层：数量少，保留一层柔和阴影
             content
                 .overlay(
-                    RoundedRectangle(cornerRadius: ArchiveRadius.lg)
+                    RoundedRectangle(cornerRadius: cornerRadius)
                         .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        .allowsHitTesting(false)
                 )
                 .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 6)
         }
@@ -68,8 +44,7 @@ public struct PaperElevationModifier: ViewModifier {
 }
 
 public extension View {
-    /// 纸张层级（描边为主、阴影为辅）
-    func paperElevation(_ level: Int = 1) -> some View {
-        modifier(PaperElevationModifier(level: level))
+    func paperElevation(_ level: Int = 1, cornerRadius: CGFloat = ArchiveCardMetrics.radius) -> some View {
+        modifier(PaperElevationModifier(level: level, cornerRadius: cornerRadius))
     }
 }

@@ -1,17 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// 相纸灯箱 (Editorial Lightbox)
-/// 从 StreamView 拆出：原文件同时承载主工作台、灯箱、编辑弹窗与详情弹窗四类职责，
-/// 单文件过长会拖慢 Swift 增量编译，也让 diff 难以审阅。
-
-/// 暗房全屏沉浸式看图灯箱：支持触控板双指缩放、拖拽平移、双击 2x 放大、键盘左右键切图与原片系统预览
+/// 暗房全屏沉浸式看图灯箱 (Editorial Lightbox)
 public struct EditorialLightboxView: View {
     @State private var currentAttachment: Attachment
     let allAttachments: [Attachment]
     var onClose: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var noticeText: String?
@@ -26,18 +25,25 @@ public struct EditorialLightboxView: View {
         allAttachments.firstIndex(where: { $0.id == currentAttachment.id }) ?? 0
     }
 
+    private func resetZoom() {
+        scale = 1.0
+        lastScale = 1.0
+        offset = .zero
+        lastOffset = .zero
+    }
+
     public var body: some View {
         ZStack {
-            ArchivePalette.inkPrimary.opacity(0.92)
+            // 恒定胶片暗房黑底（不随系统深浅色反相为米白）
+            Color(red: 0.06, green: 0.06, blue: 0.055)
+                .opacity(0.94)
                 .ignoresSafeArea()
                 .onTapGesture {
                     if scale <= 1.0 {
                         onClose()
                     } else {
-                        withAnimation(.spring(response: 0.25)) {
-                            scale = 1.0
-                            offset = .zero
-                            lastOffset = .zero
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.25)) {
+                            resetZoom()
                         }
                     }
                 }
@@ -47,29 +53,34 @@ public struct EditorialLightboxView: View {
                     ZStack {
                         FilmFrameView(
                             imageURL: url,
+                            originalURL: url,
+                            preferredFilename: currentAttachment.originalFilename,
+                            intrinsicSize: (currentAttachment.width != nil && currentAttachment.height != nil)
+                                ? CGSize(width: currentAttachment.width!, height: currentAttachment.height!)
+                                : nil,
                             caption: currentAttachment.originalFilename,
                             metaText: (currentAttachment.width != nil && currentAttachment.height != nil)
                                 ? "\(currentAttachment.width!) × \(currentAttachment.height!) px"
                                 : nil,
                             maxHeight: 520,
-                            // 灯箱要原图才经得起放大；解码时降采样到
-                            // 780pt × 2 = 1560px，避免 4K 原图整幅进内存。
-                            // 卡片用的是 480px 缩略图，两者缓存键不同，不能共享字节。
-                            thumbnailMaxPixel: 1_560
+                            thumbnailMaxPixel: 1_560,
+                            onExportNotice: { message in
+                                noticeText = message
+                            }
                         )
                         .scaleEffect(scale)
                         .offset(offset)
                         .gesture(
                             MagnificationGesture()
                                 .onChanged { value in
-                                    scale = min(max(value, 0.8), 3.5)
+                                    scale = min(max(lastScale * value, 0.8), 4.0)
                                 }
                                 .onEnded { _ in
-                                    withAnimation(.spring(response: 0.25)) {
+                                    withAnimation(reduceMotion ? nil : .spring(response: 0.25)) {
                                         if scale < 1.0 {
-                                            scale = 1.0
-                                            offset = .zero
-                                            lastOffset = .zero
+                                            resetZoom()
+                                        } else {
+                                            lastScale = scale
                                         }
                                     }
                                 }
@@ -87,58 +98,69 @@ public struct EditorialLightboxView: View {
                                 } : nil
                         )
                         .onTapGesture(count: 2) {
-                            withAnimation(.spring(response: 0.25)) {
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.25)) {
                                 if scale > 1.0 {
-                                    scale = 1.0
-                                    offset = .zero
-                                    lastOffset = .zero
+                                    resetZoom()
                                 } else {
                                     scale = 2.0
+                                    lastScale = 2.0
                                 }
                             }
                         }
                     }
                     .frame(maxWidth: 780)
-
-                    // 左右翻页控制器与相册计数指示
-                    if allAttachments.count > 1 {
-                        HStack(spacing: 20) {
-                            Button {
-                                changePhoto(by: -1)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "chevron.left")
-                                    Text("上一张")
-                                }
-                            }
-                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                            .paperButtonFocusRing()
-                            .keyboardShortcut(.leftArrow, modifiers: [])
-                            .disabled(currentIndex == 0)
-
-                            Text("\(currentIndex + 1) / \(allAttachments.count)")
-                                .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.archivePaper)
-
-                            Button {
-                                changePhoto(by: 1)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text("下一张")
-                                    Image(systemName: "chevron.right")
-                                }
-                            }
-                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                            .paperButtonFocusRing()
-                            .keyboardShortcut(.rightArrow, modifiers: [])
-                            .disabled(currentIndex == allAttachments.count - 1)
-                        }
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.system(size: 30, weight: .light))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        Text("无法解析该张相纸地址")
+                            .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
                     }
+                    .padding(36)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+                }
 
-                    // 动作栏
-                    HStack(spacing: 10) {
+                if allAttachments.count > 1 {
+                    HStack(spacing: 20) {
                         Button {
-                            openInSystemPreview(url: url)
+                            changePhoto(by: -1)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text("上一张")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
+                        .keyboardShortcut(.leftArrow, modifiers: [])
+                        .disabled(currentIndex == 0)
+
+                        Text("\(currentIndex + 1) / \(allAttachments.count)")
+                            .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.inkPrimary)
+
+                        Button {
+                            changePhoto(by: 1)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("下一张")
+                                Image(systemName: "chevron.right")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                        .paperButtonFocusRing()
+                        .keyboardShortcut(.rightArrow, modifiers: [])
+                        .disabled(currentIndex == allAttachments.count - 1)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    if let url = APIClient.shared.resolveMediaURL(currentAttachment.url) {
+                        Button {
+                            openInSystemPreview(url: url, filename: currentAttachment.originalFilename)
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "macwindow.on.rectangle")
@@ -170,43 +192,41 @@ public struct EditorialLightboxView: View {
                         }
                         .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
                         .paperButtonFocusRing()
-
-                        Button("关闭 ESC") {
-                            onClose()
-                        }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                        .paperButtonFocusRing()
-                        .keyboardShortcut(.cancelAction)
                     }
 
-                    if let noticeText {
-                        Text(noticeText)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.accentWarm)
+                    Button("关闭 ESC") {
+                        onClose()
                     }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                    .paperButtonFocusRing()
+                    .keyboardShortcut(.cancelAction)
+                }
+
+                if let noticeText {
+                    Text(noticeText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }
             .padding(24)
         }
+        .environment(\.colorScheme, .dark)
     }
 
     private func changePhoto(by delta: Int) {
         let newIdx = currentIndex + delta
         guard allAttachments.indices.contains(newIdx) else { return }
-        withAnimation(.easeInOut(duration: 0.18)) {
-            scale = 1.0
-            offset = .zero
-            lastOffset = .zero
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            resetZoom()
+            noticeText = nil
             currentAttachment = allAttachments[newIdx]
         }
     }
 
-    // 关键：三件事统一走 `PaperImageExport`（原先在这里与相纸框里各写了一遍），
-    // 而且失败**必须给提示** —— 原先是 `try?` 一把梭，按钮点了毫无反应。
-    private func openInSystemPreview(url: URL) {
+    private func openInSystemPreview(url: URL, filename: String) {
         Task { @MainActor in
             noticeText = nil
-            switch await PaperImageExport.openInSystemPreview(url: url) {
+            switch await PaperImageExport.openInSystemPreview(url: url, preferredFilename: filename) {
             case .success(let message): noticeText = message
             case .failure(let message): noticeText = "⚠️ \(message)"
             }
@@ -225,14 +245,20 @@ public struct EditorialLightboxView: View {
 
     private func saveImageToDisk(url: URL, filename: String) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = filename.isEmpty ? "looseleaf-photo.jpg" : filename
-        if panel.runModal() == .OK, let targetURL = panel.url {
-            Task { @MainActor in
-                noticeText = nil
-                switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
-                case .success(let message): noticeText = message
-                case .failure(let message): noticeText = "⚠️ \(message)"
-                }
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = PaperImageExport.normalizedFilename(filename, fallbackURL: url)
+        Task { @MainActor in
+            let response: NSApplication.ModalResponse
+            if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                response = await panel.beginSheetModal(for: window)
+            } else {
+                response = await panel.begin()
+            }
+            guard response == .OK, let targetURL = panel.url else { return }
+            noticeText = nil
+            switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
+            case .success(let message): noticeText = message
+            case .failure(let message): noticeText = "⚠️ \(message)"
             }
         }
     }

@@ -3,30 +3,33 @@ import AppKit
 
 /// 工作台左侧导航栏 (Workbench Sidebar)
 /// 严格遵循 macOS HIG 与 macos-native-ui 规范：
-/// 1. 采用 macOS 系统级 Vibrancy 半透明磨砂材质 (NSVisualEffectView sidebar) 融合温润纸张底色
-/// 2. SF Symbols 全面升级为层次渲染 (hierarchical) 与 medium 缩放规范
-/// 3. 精雕细琢的原生侧栏选中微胶囊、左侧朱砂指示线与指针悬停反馈
-/// 4. 完美融合交通灯安全间隙与无感知窗口拖拽区域
-
+/// 1. 适配原生 `NavigationSplitView` 列宽调解与 `⌃⌘S` 侧栏折叠，去除硬编码 42pt 顶部空白
+/// 2. 「偏好与设置」唤起 macOS 标准独立 `Settings` 窗口 (`⌘,`)，不再霸占主画布
+/// 3. 完整适配「减少透明度」与「不靠颜色区分」系统级辅助偏好，底栏双行防挤压换行
 struct WorkbenchSidebar: View {
+    @Bindable var appState: AppState
+    var onSelect: (WorkbenchSection) -> Void
+
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var badgeState: HubConnectionBadgeState {
         appState.hubConnectionBadgeState
     }
 
-    @Bindable var appState: AppState
-    /// 选中板块的回调（由主视图统一处理状态同步）
-    var onSelect: (WorkbenchSection) -> Void
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             // 刊头印记 (100% 动态读取后端配置与主理人档案)
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     Image(systemName: "leaf.fill")
                         .font(.system(size: 13, weight: .medium))
                         .imageScale(.medium)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(ArchivePalette.accentMoss)
+                        .accessibilityHidden(true)
 
                     Text(appState.siteConfig.siteName.isEmpty ? "散页 · 时光手账" : appState.siteConfig.siteName)
                         .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
@@ -46,20 +49,15 @@ struct WorkbenchSidebar: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.top, 42)
-            .overlay(
-                WindowDragHandleView()
-                    .frame(height: 48),
-                alignment: .top
-            )
+            .padding(.top, 10)
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 导航菜单项：6 大内容板块 + 统一系统设置入口
+            // 导航菜单项：6 大生活内容板块 + 原生独立设置窗口入口
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("生活卷宗")
-                        .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkMuted)
                         .padding(.horizontal, 12)
                         .padding(.top, 2)
@@ -68,7 +66,8 @@ struct WorkbenchSidebar: View {
                     ForEach(WorkbenchSection.contentSections) { section in
                         WorkbenchNavRow(
                             section: section,
-                            selected: appState.activeSection == section
+                            selected: appState.activeSection == section,
+                            reduceMotion: reduceMotion
                         ) {
                             guard appState.activeSection != section else { return }
                             onSelect(section)
@@ -78,15 +77,17 @@ struct WorkbenchSidebar: View {
                     Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
                         .padding(.vertical, 6)
 
-                    // 统一系统设置入口（对齐 macOS HIG）
+                    // 唤起原生 macOS 独立设置窗口 (⌘,)
                     WorkbenchNavRow(
                         section: .preferences,
-                        selected: WorkbenchSection.configurationSections.contains(appState.activeSection),
-                        customTitle: "偏好与设置",
-                        customIcon: "gearshape"
+                        selected: false,
+                        customTitle: "偏好与设置…",
+                        customIcon: "gearshape",
+                        reduceMotion: reduceMotion
                     ) {
-                        guard !WorkbenchSection.configurationSections.contains(appState.activeSection) else { return }
-                        onSelect(.preferences)
+                        appState.navigation.settingsSelectedTab = .general
+                        openSettings()
+                        NSApp.activate(ignoringOtherApps: true)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -94,70 +95,93 @@ struct WorkbenchSidebar: View {
 
             Spacer(minLength: 8)
 
-            // 底部仅保留系统状态（配置入口已全部进侧栏）
-            VStack(alignment: .leading, spacing: 8) {
+            // 底部系统状态与极速捕捉热键徽标（紧凑双层防窄栏挤压竖排）
+            VStack(alignment: .leading, spacing: 6) {
                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
 
-                // 中枢就绪状态与快捷记账提示
                 HStack(spacing: 5) {
-                    Circle()
-                        .fill(badgeState.dotColor)
-                        .frame(width: 5.5, height: 5.5)
+                    if differentiateWithoutColor {
+                        Image(systemName: badgeState.symbolName)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(badgeState.dotColor)
+                            .accessibilityHidden(true)
+                    } else {
+                        Circle()
+                            .fill(badgeState.dotColor)
+                            .frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
 
                     Text(badgeState.label)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(ArchivePalette.inkMuted)
-                        .accessibilityLabel(badgeState.label)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 4)
 
                     if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
                         Button {
                             appState.reuploadAllPending()
                         } label: {
-                            Text("重传")
+                            Text("全部重传")
                                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.accentWarm)
                                 .underline()
+                                .lineLimit(1)
                         }
                         .buttonStyle(.plain)
                         .paperButtonFocusRing(cornerRadius: 3)
                         .help("把所有待同步 / 同步失败的内容重新上传到中枢")
                         .accessibilityLabel("重新上传全部待同步内容")
                     }
-
-                    Spacer()
-
-                    Button {
-                        (NSApp.delegate as? AppDelegate)?.toggleQuickCapturePanel()
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 8))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                            Text(AppDelegate.hotKeyDisplayName)
-                                .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1.5)
-                                .background(ArchivePalette.archivePaper.opacity(0.85))
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                                )
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .paperButtonFocusRing(cornerRadius: 3)
-                    .help("呼出极速闪念与记账悬浮面板 (\(AppDelegate.hotKeyDisplayName))")
                 }
+
+                Button {
+                    (NSApp.delegate as? AppDelegate)?.toggleQuickCapturePanel()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .accessibilityHidden(true)
+                        Text("极速闪念")
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(AppDelegate.hotKeyDisplayName)
+                            .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .lineLimit(1)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(ArchivePalette.archivePaper.opacity(reduceTransparency ? 1.0 : 0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                            )
+                    }
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 3)
+                .help("呼出极速闪念与记账悬浮面板 (\(AppDelegate.hotKeyDisplayName))")
+                .accessibilityLabel("呼出极速闪念与记账悬浮面板，快捷键 \(AppDelegate.hotKeyDisplayName)")
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 12)
         }
         .background {
-            ZStack {
-                WindowVibrancyView(material: .sidebar, blendingMode: .behindWindow)
-                ArchivePalette.archivePaper.opacity(0.78)
+            if reduceTransparency {
+                ArchivePalette.archiveSubtle
+            } else {
+                ZStack {
+                    WindowVibrancyView(material: .sidebar, blendingMode: .behindWindow)
+                    ArchivePalette.archivePaper.opacity(0.78)
+                }
             }
         }
     }
@@ -168,9 +192,14 @@ struct WorkbenchSidebar: View {
         let selected: Bool
         var customTitle: String? = nil
         var customIcon: String? = nil
+        var reduceMotion: Bool = false
         let action: () -> Void
 
         @State private var isHovering: Bool = false
+
+        private var effectiveTitle: String {
+            customTitle ?? section.title
+        }
 
         var body: some View {
             Button(action: action) {
@@ -182,9 +211,10 @@ struct WorkbenchSidebar: View {
                         .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                         .frame(width: 18)
 
-                    Text(customTitle ?? section.title)
+                    Text(effectiveTitle)
                         .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
                         .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
+                        .lineLimit(1)
 
                     Spacer()
                 }
@@ -211,11 +241,10 @@ struct WorkbenchSidebar: View {
             }
             .buttonStyle(.plain)
             .paperButtonFocusRing(cornerRadius: ArchiveRadius.sm)
-            .animation(.easeOut(duration: 0.14), value: selected)
-            .animation(.easeOut(duration: 0.1), value: isHovering)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: selected)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: isHovering)
             .onHover { isHovering = $0 }
-            .accessibilityLabel(section.title)
-            .accessibilityValue(selected ? "已选中" : "未选中")
+            .accessibilityLabel(effectiveTitle)
             .accessibilityAddTraits(selected ? .isSelected : AccessibilityTraits())
         }
 

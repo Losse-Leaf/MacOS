@@ -15,6 +15,8 @@ public struct PairingGateView: View {
     @State private var systemStatus: SystemStatus?
     @State private var probeError: String?
     @State private var showHubConfig: Bool = false
+    /// 地址配置弹窗内的局部草稿（点击取消时不污染 `appState.hubURLString`）
+    @State private var draftHubURL: String = ""
 
     // 配对链接 / 工单输入
     @State private var pairLinkInput: String = ""
@@ -22,6 +24,8 @@ public struct PairingGateView: View {
     @State private var errorMessage: String?
     /// 中枢地址弹窗内的校验错误（就地渲染，避免被弹窗遮挡）
     @State private var hubConfigError: String?
+    @FocusState private var isTicketFocused: Bool
+    @FocusState private var isHubFieldFocused: Bool
 
     public init(appState: AppState) {
         self.appState = appState
@@ -54,15 +58,17 @@ public struct PairingGateView: View {
                     // 2. 中枢连接状态胶囊
                     hubStatusPill
 
-                    // 3. 核心认证卡片
+                    // 3. 核心认证卡片（即使默认 localhost 探针失败，也常驻开放配对深链粘贴框——深链自带真实 hub 地址可直接覆盖接入）
                     VStack(spacing: ArchiveSpacing.l) {
                         if isProbing {
                             probingView
-                        } else if let err = probeError {
-                            connectionFailedView(error: err)
                         } else if systemStatus?.initialized == false {
                             uninitializedGuideView
                         } else {
+                            if let err = probeError {
+                                connectionFailedView(error: err)
+                                Divider().overlay(ArchivePalette.borderSubtle)
+                            }
                             pairedTicketView
                         }
                     }
@@ -97,6 +103,8 @@ public struct PairingGateView: View {
 
     private var hubStatusPill: some View {
         Button {
+            draftHubURL = appState.hubURLString
+            hubConfigError = nil
             showHubConfig = true
         } label: {
             HStack(spacing: ArchiveSpacing.s) {
@@ -121,6 +129,7 @@ public struct PairingGateView: View {
             .overlay(Capsule().stroke(ArchivePalette.borderSubtle, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+        .paperButtonFocusRing(cornerRadius: 14)
         .accessibilityLabel("配置数据中枢地址，当前为 \(appState.hubURLString)")
         .help("点击修改数据中枢地址")
     }
@@ -226,6 +235,7 @@ public struct PairingGateView: View {
                 .accessibilityLabel("配对工单或深链输入框")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
+                .focused($isTicketFocused)
                 .padding(ArchiveSpacing.s)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
@@ -314,7 +324,7 @@ public struct PairingGateView: View {
 
     // MARK: - 中枢地址配置弹窗
 
-    /// 中枢地址配置弹窗：统一 Sheet 骨架，校验错误就地渲染
+    /// 中枢地址配置弹窗：使用局部草稿状态，点击取消不污染全局地址
     private var hubConfigSheet: some View {
         PaperSheetScaffold(
             title: "配置数据中枢 Hub 地址",
@@ -329,22 +339,32 @@ public struct PairingGateView: View {
             }
         ) {
             VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                TextField("http://localhost:8088", text: $appState.hubURLString)
+                TextField("http://localhost:8088", text: $draftHubURL)
                     .accessibilityLabel("数据中枢地址")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+                    .focused($isHubFieldFocused)
                     .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .onSubmit {
+                        applyHubConfig()
+                    }
 
                 settingsFeedbackBanner(feedback: nil, error: hubConfigError)
+            }
+            .onAppear {
+                if draftHubURL.isEmpty {
+                    draftHubURL = appState.hubURLString
+                }
+                isHubFieldFocused = true
             }
         }
     }
 
     /// 校验并落盘新的中枢地址
     private func applyHubConfig() {
-        let trimmed = appState.hubURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draftHubURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
@@ -353,7 +373,6 @@ public struct PairingGateView: View {
             errorMessage = hubConfigError
             return
         }
-        // 必须真正落盘：此前只改了内存字段，"重新探测"仍然打旧地址
         APIClient.shared.setBaseURL(trimmed)
         appState.hubURLString = APIClient.shared.baseURLString
         hubConfigError = nil

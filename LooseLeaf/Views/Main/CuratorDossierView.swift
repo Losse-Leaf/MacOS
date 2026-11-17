@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// 主理人生活手记与器物图鉴视图 (CuratorDossierView)
 /// 严格遵守：100% 由 GET /api/v1/profile 动态驱动，严禁硬编码姓名或城市
@@ -20,6 +22,7 @@ public struct CuratorDossierView: View {
     @State private var isSavingProfile: Bool = false
     @State private var avatarPreviewImage: NSImage?
     @State private var selectedHeatmapDate: String? = nil
+    @FocusState private var isNameFocused: Bool
 
     public init(appState: AppState) {
         self.appState = appState
@@ -29,7 +32,6 @@ public struct CuratorDossierView: View {
         let prof = appState.profile
 
         ScrollView {
-            // LazyVStack 作为 ScrollView 直接子视图，长列表才具备懒加载能力
             LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
                 if let dossierError {
                     HStack(spacing: 6) {
@@ -57,7 +59,6 @@ public struct CuratorDossierView: View {
                         selectedDate: $selectedHeatmapDate
                     )
 
-                    // 点击具体日期后展开当日手记速览抽屉 (严格 1:1 对标 Web 端 AboutView.vue)
                     if let dateKey = selectedHeatmapDate {
                         dayEntriesDrawer(dateKey: dateKey)
                     }
@@ -84,6 +85,7 @@ public struct CuratorDossierView: View {
             if !prof.avatarUrl.isEmpty, let url = APIClient.shared.resolveMediaURL(prof.avatarUrl) {
                 FilmFrameView(
                     imageURL: url,
+                    originalURL: url,
                     caption: "银盐肖像",
                     metaText: prof.displayCity.isEmpty ? nil : prof.displayCity,
                     maxHeight: 180
@@ -117,6 +119,9 @@ public struct CuratorDossierView: View {
                         editMotto = prof.motto
                         editBio = prof.bio
                         editManifesto = prof.manifesto
+                        newAvatarKey = nil
+                        avatarPreviewImage = nil
+                        dossierError = nil
                         showEditProfileSheet = true
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
@@ -150,16 +155,22 @@ public struct CuratorDossierView: View {
                 }
 
                 if !prof.bio.isEmpty {
-                    Text(prof.bio)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    EditorialProseTextView(
+                        prof.bio,
+                        font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading),
+                        color: ArchivePalette.inkSecondary,
+                        lineSpacing: 3
+                    )
                 }
 
                 if !prof.manifesto.isEmpty {
-                    Text(prof.manifesto)
-                        .font(ArchiveTypography.bodySans(size: 12.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.top, 4)
+                    EditorialProseTextView(
+                        prof.manifesto,
+                        font: ArchiveTypography.bodySans(size: 12.5),
+                        color: ArchivePalette.inkMuted,
+                        lineSpacing: 3
+                    )
+                    .padding(.top, 4)
                 }
             }
         }
@@ -197,7 +208,7 @@ public struct CuratorDossierView: View {
                 title: "造物项目",
                 value: "\(projectsCount)",
                 unit: "件",
-                accent: Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
+                accent: ArchivePalette.categoryColor(for: "学习")
             )
             statMetricCard(
                 title: "本月支出",
@@ -264,8 +275,11 @@ public struct CuratorDossierView: View {
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     }
                     .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
                 }
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
             }
 
             if selectedDateEntries.isEmpty {
@@ -280,13 +294,19 @@ public struct CuratorDossierView: View {
                             appState.highlightedEntry = item
                         } label: {
                             VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
-                                HStack {
+                                HStack(spacing: 4) {
                                     Text(item.title.isEmpty ? "无题散页" : item.title)
                                         .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
                                         .foregroundStyle(ArchivePalette.inkPrimary)
                                         .lineLimit(1)
+                                    if item.isPrivate {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                            .accessibilityLabel("私密散页")
+                                    }
                                     Spacer()
-                                    Text(FormatUtils.parseOccurredDate(item.occurredAt).time)
+                                    Text(item.parsedDate.time)
                                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                         .foregroundStyle(ArchivePalette.inkMuted)
                                 }
@@ -307,6 +327,8 @@ public struct CuratorDossierView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .paperHover()
+                        .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                     }
                 }
             }
@@ -315,174 +337,165 @@ public struct CuratorDossierView: View {
     }
 
     private var editProfileSheetView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("修订主理人档案")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            HStack(spacing: ArchiveSpacing.m) {
-                if let avatarPreviewImage {
-                    Image(nsImage: avatarPreviewImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 44, height: 44)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(ArchivePalette.borderSubtle, lineWidth: 1))
-                }
-                Button {
-                    selectAndUploadAvatar()
-                } label: {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: "photo")
-                        Text(isUploadingAvatar ? "正在上传肖像…" : "更换肖像照片…")
+        PaperSheetScaffold(
+            title: "修订主理人档案",
+            width: ArchiveSheetWidth.standard,
+            isSubmitting: isSavingProfile,
+            isSubmitDisabled: isUploadingAvatar,
+            submitTitle: "保存档案 ⌘↩",
+            onCancel: {
+                newAvatarKey = nil
+                avatarPreviewImage = nil
+                showEditProfileSheet = false
+            },
+            onSubmit: saveProfile
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: ArchiveSpacing.m) {
+                    if let avatarPreviewImage {
+                        Image(nsImage: avatarPreviewImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(ArchivePalette.borderSubtle, lineWidth: 1))
                     }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-                .disabled(isUploadingAvatar)
-
-                if newAvatarKey != nil {
-                    Text("新肖像已就绪")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.accentMoss)
-                }
-            }
-            .padding(.vertical, ArchiveSpacing.xxs)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("主理人称谓")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("主理人称谓", text: $editName)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("主理人身份")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("主理人身份", text: $editTitle)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-            }
-
-            HStack(spacing: ArchiveSpacing.s) {
-                // 关键（2026-10-25 修复）：不再维护 editCityCode/editLocationCode 死状态 ——
-                // 后端档案只存城市**名称**（UpdateProfileRequest 无 code 字段），
-                // 原先反查出的 code 采集后从不发送。选择器的 code 半边用常量绑定承接即可，
-                // 城市名才是真正落库的值。
-                PaperCityPicker(
-                    selectedCode: .constant(""),
-                    selectedName: $editCity,
-                    placeholder: "点选当前城市…",
-                    label: "当前城市",
-                    isFullWidth: true
-                )
-
-                PaperCityPicker(
-                    selectedCode: .constant(""),
-                    selectedName: $editLocation,
-                    placeholder: "点选常居城市…",
-                    label: "常居城市",
-                    isFullWidth: true
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("近况题记")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("近况题记", text: $editMotto)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("副标题（生活简介）")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("副标题", text: $editBio, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(3, reservesSpace: true)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-            }
-
-            // 关键（2026-10-25 修复）：manifesto 补上输入框 ——
-            // 原先档案页展示宣言、请求也恒带该字段，编辑表单里却没有它的容身之处，
-            // 「修订档案」永远改不了宣言（后端有、客户端不用）。
-            VStack(alignment: .leading, spacing: 4) {
-                Text("主理人宣言")
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("主理人宣言", text: $editManifesto, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(3, reservesSpace: true)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-            }
-
-            if let dossierError {
-                Text(dossierError)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { showEditProfileSheet = false }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                    .disabled(isSavingProfile)
-                Spacer()
-                Button(isSavingProfile ? "保存中…" : "保存档案") {
-                    guard !isSavingProfile else { return }
-                    isSavingProfile = true
-                    Task { @MainActor in
-                        defer { isSavingProfile = false }
-                        let trimmedCity = editCity.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let trimmedLoc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let req = UpdateProfileRequest(
-                            name: editName,
-                            title: editTitle,
-                            bio: editBio,
-                            location: trimmedLoc,
-                            currentCity: trimmedCity,
-                            avatarKey: newAvatarKey ?? appState.profile.avatarKey,
-                            motto: editMotto,
-                            manifesto: editManifesto
-                        )
-                        do {
-                            _ = try await APIClient.shared.updateCuratorProfile(req)
-                            await appState.loadConfigAndProfile()
-                            dossierError = nil
-                            showEditProfileSheet = false
-                        } catch {
-                            dossierError = "档案保存失败：\(error.localizedDescription)"
+                    Button {
+                        selectAndUploadAvatar()
+                    } label: {
+                        HStack(spacing: ArchiveSpacing.xs) {
+                            Image(systemName: "photo")
+                            Text(isUploadingAvatar ? "正在上传肖像…" : "更换肖像照片…")
                         }
                     }
+                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                    .paperButtonFocusRing()
+                    .disabled(isUploadingAvatar)
+
+                    if newAvatarKey != nil {
+                        Text("新肖像已就绪")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                            .foregroundStyle(ArchivePalette.accentMoss)
+                    }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .disabled(isSavingProfile)
+                .padding(.vertical, ArchiveSpacing.xxs)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("主理人称谓")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    TextField("主理人称谓", text: $editName)
+                        .textFieldStyle(.plain)
+                        .focused($isNameFocused)
+                        .padding(ArchiveSpacing.s)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("主理人身份")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    TextField("主理人身份", text: $editTitle)
+                        .textFieldStyle(.plain)
+                        .padding(ArchiveSpacing.s)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
+
+                HStack(spacing: ArchiveSpacing.s) {
+                    PaperCityPicker(
+                        selectedCode: .constant(""),
+                        selectedName: $editCity,
+                        placeholder: "点选当前城市…",
+                        label: "当前城市",
+                        isFullWidth: true
+                    )
+
+                    PaperCityPicker(
+                        selectedCode: .constant(""),
+                        selectedName: $editLocation,
+                        placeholder: "点选常居城市…",
+                        label: "常居城市",
+                        isFullWidth: true
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("近况题记")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    TextField("近况题记", text: $editMotto)
+                        .textFieldStyle(.plain)
+                        .padding(ArchiveSpacing.s)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("副标题（生活简介）")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    TextField("副标题", text: $editBio, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(3...6)
+                        .padding(ArchiveSpacing.s)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("主理人宣言")
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    TextField("主理人宣言", text: $editManifesto, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(3...6)
+                        .padding(ArchiveSpacing.s)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                }
+
+                if let dossierError {
+                    Text(dossierError)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
-            .padding(.top, 4)
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.standard,
-            idealWidth: ArchiveSheetWidth.standard,
-            maxWidth: ArchiveSheetWidth.standard
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isNameFocused = true
+        }
+    }
+
+    private func saveProfile() {
+        guard !isSavingProfile, !isUploadingAvatar else { return }
+        isSavingProfile = true
+        Task { @MainActor in
+            defer { isSavingProfile = false }
+            let trimmedCity = editCity.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedLoc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+            let req = UpdateProfileRequest(
+                name: editName,
+                title: editTitle,
+                bio: editBio,
+                location: trimmedLoc,
+                currentCity: trimmedCity,
+                avatarKey: newAvatarKey ?? appState.profile.avatarKey,
+                motto: editMotto,
+                manifesto: editManifesto
+            )
+            do {
+                _ = try await APIClient.shared.updateCuratorProfile(req)
+                await appState.loadConfigAndProfile()
+                dossierError = nil
+                newAvatarKey = nil
+                avatarPreviewImage = nil
+                showEditProfileSheet = false
+            } catch {
+                dossierError = "档案保存失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     private func selectAndUploadAvatar() {
@@ -490,12 +503,13 @@ public struct CuratorDossierView: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url {
+
+        let handleSelection: @MainActor (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 isUploadingAvatar = true
+                defer { isUploadingAvatar = false }
                 do {
-                    // 沙箱：NSOpenPanel 选中的文件位于沙箱容器之外，
-                    // 必须取得安全作用域授权才能读取，否则读取会静默失败。
                     let processed = try await SandboxFileAccess.withAccess(to: url) { scopedURL in
                         try await ImageProcessor.processImageFileInBackground(
                             at: scopedURL,
@@ -514,13 +528,16 @@ public struct CuratorDossierView: View {
                 } catch {
                     dossierError = "肖像上传失败：\(error.localizedDescription)"
                 }
-                isUploadingAvatar = false
             }
+        }
+
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window, completionHandler: handleSelection)
+        } else {
+            panel.begin(completionHandler: handleSelection)
         }
     }
 }
-
-// MARK: - 预览 (Preview)
 
 #Preview("主理人档案") {
     CuratorDossierView(appState: ArchivePreviewFixtures.makeAppState())

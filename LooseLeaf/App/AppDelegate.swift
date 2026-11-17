@@ -266,21 +266,30 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerGlobalHotKeyFromPreferences() {
         let code = UserDefaults.standard.object(forKey: Self.hotKeyCodeKey) as? Int ?? Int(kVK_ANSI_L)
         let mods = UserDefaults.standard.object(forKey: Self.hotKeyModifiersKey) as? Int ?? Int(cmdKey | shiftKey)
-        registerGlobalHotKey(keyCode: code, modifiers: mods)
+        _ = registerGlobalHotKey(keyCode: code, modifiers: mods)
     }
 
-    /// 应用新的全局热键（注销旧注册、持久化偏好并立即生效）
-    public func applyHotKey(keyCode: Int, carbonModifiers: Int) {
+    /// 应用新的全局热键（注销旧注册、持久化偏好并立即生效；返回是否注册成功以便 UI 检测系统热键冲突）
+    @discardableResult
+    public func applyHotKey(keyCode: Int, carbonModifiers: Int) -> Bool {
+        let prevCode = UserDefaults.standard.object(forKey: Self.hotKeyCodeKey) as? Int ?? Int(kVK_ANSI_L)
+        let prevMods = UserDefaults.standard.object(forKey: Self.hotKeyModifiersKey) as? Int ?? Int(cmdKey | shiftKey)
         if let hotKeyRef {
             UnregisterEventHotKey(hotKeyRef)
             self.hotKeyRef = nil
         }
-        UserDefaults.standard.set(keyCode, forKey: Self.hotKeyCodeKey)
-        UserDefaults.standard.set(carbonModifiers, forKey: Self.hotKeyModifiersKey)
-        registerGlobalHotKey(keyCode: keyCode, modifiers: carbonModifiers)
+        if registerGlobalHotKey(keyCode: keyCode, modifiers: carbonModifiers) {
+            UserDefaults.standard.set(keyCode, forKey: Self.hotKeyCodeKey)
+            UserDefaults.standard.set(carbonModifiers, forKey: Self.hotKeyModifiersKey)
+            return true
+        }
+        // 注册冲突时自动回滚至原热键，防止热键彻底失效
+        _ = registerGlobalHotKey(keyCode: prevCode, modifiers: prevMods)
+        return false
     }
 
-    private func registerGlobalHotKey(keyCode: Int, modifiers: Int) {
+    @discardableResult
+    private func registerGlobalHotKey(keyCode: Int, modifiers: Int) -> Bool {
         if eventHandlerRef == nil {
             var eventType = EventTypeSpec(
                 eventClass: OSType(kEventClassKeyboard),
@@ -317,8 +326,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         if status == noErr {
             let display = Self.displayString(keyCode: keyCode, carbonModifiers: modifiers)
             Self.logger.info("Global hotkey registered: \(display, privacy: .public)")
+            return true
         } else {
             Self.logger.error("Global hotkey registration failed, status: \(status)")
+            return false
         }
     }
 
@@ -335,7 +346,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func showQuickCapturePanel() {
         if quickCapturePanel == nil {
             let panel = KeyableFloatingPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 380, height: 420),
+                contentRect: NSRect(x: 0, y: 0, width: 380, height: 450),
                 styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -344,13 +355,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.level = .floating
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
-            panel.isMovableByWindowBackground = true
+            // 仅顶栏 WindowDragHandleView 允许拖拽，防止点选分类胶囊或文本框时误拖动窗口
+            panel.isMovableByWindowBackground = false
             panel.backgroundColor = .clear
             panel.hasShadow = true
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.hidesOnDeactivate = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+            for btn: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+                panel.standardWindowButton(btn)?.isHidden = true
+            }
             panel.setFrameAutosaveName("LooseLeafQuickCapturePanel")
 
-            let rootView = QuickCaptureView(appState: AppState.shared) { [weak self] in
+            let rootView = QuickCapturePanelRootView(appState: AppState.shared) { [weak self] in
                 self?.closeQuickCapturePanel()
             }
             panel.contentView = NSHostingView(rootView: rootView)
@@ -370,17 +386,39 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             if let screen = targetScreen {
                 let frame = screen.visibleFrame
                 let x = frame.midX - 190
-                let y = frame.maxY - 460
+                let y = frame.maxY - 470
                 panel.setFrameOrigin(NSPoint(x: x, y: y))
             }
         }
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // 关键：利用 `.nonactivatingPanel` + `orderFrontRegardless` 原地浮现于当前全屏桌面 Space，
+        // 严禁调用 `NSApp.activate(ignoringOtherApps: true)` 把系统强制切回主窗口所在 Space！
+        panel.orderFrontRegardless()
+        panel.makeKey()
     }
 
     public func closeQuickCapturePanel() {
         quickCapturePanel?.saveFrame(usingName: "LooseLeafQuickCapturePanel")
         quickCapturePanel?.orderOut(nil)
+    }
+}
+
+/// 悬浮捕捉面板根容器：统一承接配对门禁校验与主题外观注入
+@MainActor
+private struct QuickCapturePanelRootView: View {
+    @Bindable var appState: AppState
+    let onClose: () -> Void
+
+    var body: some View {
+        Group {
+            if !appState.isPaired {
+                PairingGateView(appState: appState)
+                    .frame(width: 380, height: 460)
+                    .onExitCommand { onClose() }
+            } else {
+                QuickCaptureView(appState: appState, onClosePopover: onClose)
+            }
+        }
+        .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
     }
 }
 

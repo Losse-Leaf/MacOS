@@ -2,26 +2,15 @@ import SwiftUI
 
 /// 菜单栏极速记账界面 (QuickLedgerView)
 /// 遵循 docs/macos.md §1 & §3.1 规范：
-/// 支持“42.5 午餐咖啡”一句话语义快记（自动转为 4250 分整型）与大数字金额 + 大地色类目胶囊勾选
-/// 收支切换时类目网格必须跟随切换（收入类目 ↔ 支出类目），并重置为对应列表首项
+/// 支持“42.5 午餐咖啡”一句话语义快记（自动转为 4250 分整型）与大数字金额 + 大地色类目胶囊勾选；
+/// 草稿字段全部托管在 `appState.quickDraft`，切换「极速记录 / 快速记账」或在菜单栏与 ⌘⇧L 面板间切换永不丢输入。
 @MainActor
 public struct QuickLedgerView: View {
     @Bindable var appState: AppState
     var onSubmitted: (() -> Void)?
 
-    @State private var smartInput: String = ""
-    @State private var amountString: String = ""
-    @State private var titleString: String = ""
-    @State private var selectedType: String = "expense"
-    @State private var selectedCategory: String = "餐饮"
-    @State private var selectedPayment: String = "微信支付"
-    @State private var selectedCityCode: String = ""
-    @State private var selectedCityName: String = ""
-    @State private var occurredAt: Date = Date()
-    @State private var showDatePicker: Bool = false
     @State private var isSubmitting: Bool = false
     @State private var localError: String?
-    /// 提交成功后的面板内确认（菜单栏窗口看不到全局横幅，此处给出就地回执）
     @State private var localSuccess: String?
 
     @FocusState private var isSmartFieldFocused: Bool
@@ -31,64 +20,76 @@ public struct QuickLedgerView: View {
         self.onSubmitted = onSubmitted
     }
 
-    /// 当前收支形态下的可用类目
-    /// 收入形态必须使用 `incomeCategories`（工资收入 / 二手回血…），支出形态使用 `expenseCategories`
+    private var draft: QuickCaptureDraft {
+        appState.quickDraft
+    }
+
     private var activeCategories: [String] {
-        selectedType == "income" ? appState.incomeCategories : appState.expenseCategories
+        draft.ledgerSelectedType == "income" ? appState.incomeCategories : appState.expenseCategories
     }
 
-    /// 当前形态下的类目标题
     private var categorySectionTitle: String {
-        selectedType == "income" ? "收入类目" : "支出类目"
+        draft.ledgerSelectedType == "income" ? "收入类目" : "支出类目"
     }
 
-    /// 极速指令是否显式携带正负号（显式符号的优先级高于用户手动选择的收支形态）
     private var smartInputHasExplicitSign: Bool {
-        let trimmed = smartInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draft.ledgerSmartInput.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("+") || trimmed.hasPrefix("-")
     }
 
+    private var effectiveSelectedCategory: String {
+        if activeCategories.contains(draft.ledgerSelectedCategory) {
+            return draft.ledgerSelectedCategory
+        }
+        return activeCategories.first ?? "餐饮"
+    }
+
+    private var effectiveSelectedPayment: String {
+        if appState.paymentMethods.contains(draft.ledgerSelectedPayment) {
+            return draft.ledgerSelectedPayment
+        }
+        return appState.paymentMethods.first ?? "微信支付"
+    }
+
     private var resolvedQuickParsed: FormatUtils.QuickLedgerParsed? {
-        if !smartInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // 未显式带符号时把当前收支形态注入语义解析：
-            // 收入形态补 “+” 前缀，使类目推断也按收入口径工作（「+」由标签页形态决定，非用户手输）
+        if !draft.ledgerSmartInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let source: String
-            if selectedType == "income" && !smartInputHasExplicitSign {
-                source = "+" + smartInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            if draft.ledgerSelectedType == "income" && !smartInputHasExplicitSign {
+                source = "+" + draft.ledgerSmartInput.trimmingCharacters(in: .whitespacesAndNewlines)
             } else {
-                source = smartInput
+                source = draft.ledgerSmartInput
             }
             return FormatUtils.parseQuickLedgerInput(
                 source,
-                defaultCategory: selectedCategory,
+                defaultCategory: effectiveSelectedCategory,
                 knownCategories: activeCategories
             )
         }
-        guard let cents = FormatUtils.parseYuanToCents(amountString), cents > 0 else {
+        guard let cents = FormatUtils.parseYuanToCents(draft.ledgerAmountString), cents > 0 else {
             return nil
         }
-        let cleanTitle = titleString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTitle = draft.ledgerTitleString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cat = effectiveSelectedCategory
         return FormatUtils.QuickLedgerParsed(
             amountCents: cents,
-            type: selectedType,
-            category: selectedCategory,
-            title: cleanTitle.isEmpty ? selectedCategory : cleanTitle
+            type: draft.ledgerSelectedType,
+            category: cat,
+            title: cleanTitle.isEmpty ? cat : cleanTitle
         )
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-            // 1. 一句话极速语义记账框（主输入常驻可见，不随滚动移出视野）
+        @Bindable var draft = appState.quickDraft
+        return VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
             smartInputSection
 
-            // 2. 可滚动录入区（分项金额 / 类目胶囊网格 / 补记时刻）
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                     typeAmountSection
                     categorySection
-                    if showDatePicker {
+                    if draft.ledgerShowDatePicker {
                         HStack(spacing: ArchiveSpacing.s) {
-                            PaperDateTimePicker(selection: $occurredAt, label: "入账时间", showQuickShortcuts: true)
+                            PaperDateTimePicker(selection: $draft.ledgerOccurredAt, label: "入账时间", showQuickShortcuts: true)
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, ArchiveSpacing.xxs)
@@ -100,24 +101,21 @@ public struct QuickLedgerView: View {
             }
             .frame(minHeight: 150)
 
-            // 3. 固定提交条（支付方式 / 补记 / 属地 / 入账）
             submitBar
-
-            // 4. 就地反馈（错误与成功确认，紧贴提交按钮）
             feedbackBar
         }
         .frame(maxHeight: .infinity)
         .onAppear {
             isSmartFieldFocused = true
-            if let firstPay = appState.paymentMethods.first {
-                selectedPayment = firstPay
+            if draft.ledgerSelectedPayment.isEmpty, let firstPay = appState.paymentMethods.first {
+                draft.ledgerSelectedPayment = firstPay
             }
             normalizeSelectedCategory()
         }
-        .onChange(of: selectedType) { _, _ in
+        .onChange(of: draft.ledgerSelectedType) { _, _ in
             normalizeSelectedCategory()
         }
-        .onChange(of: smartInput) { _, _ in
+        .onChange(of: draft.ledgerSmartInput) { _, _ in
             syncTypeWithSmartInput()
         }
     }
@@ -125,7 +123,8 @@ public struct QuickLedgerView: View {
     // MARK: - 一句话极速语义记账框
 
     private var smartInputSection: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+        @Bindable var draft = appState.quickDraft
+        return VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
             HStack {
                 Text("极速指令输入")
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
@@ -133,11 +132,11 @@ public struct QuickLedgerView: View {
                 Spacer(minLength: 0)
                 Text(resolvedQuickParsed.map { "\($0.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: $0.amountCents, includeSymbol: true)) · \($0.category)" } ?? "自动识别金额与类目")
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .semibold))
-                    .foregroundStyle(resolvedQuickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted.opacity(0.65))
+                    .foregroundStyle(resolvedQuickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                     .lineLimit(1)
             }
 
-            TextField("记一笔账，如：42.5 咖啡…", text: $smartInput)
+            TextField("记一笔账，如：42.5 咖啡…", text: $draft.ledgerSmartInput)
                 .accessibilityLabel("快速记账自然语义输入")
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
@@ -159,12 +158,13 @@ public struct QuickLedgerView: View {
     // MARK: - 收支切换与分项金额
 
     private var typeAmountSection: some View {
-        HStack(spacing: ArchiveSpacing.s) {
+        @Bindable var draft = appState.quickDraft
+        return HStack(spacing: ArchiveSpacing.s) {
             HStack(spacing: ArchiveSpacing.xs) {
-                PaperPillButton(title: "支出", isSelected: selectedType == "expense") {
+                PaperPillButton(title: "支出", isSelected: draft.ledgerSelectedType == "expense") {
                     selectType("expense")
                 }
-                PaperPillButton(title: "收入", isSelected: selectedType == "income") {
+                PaperPillButton(title: "收入", isSelected: draft.ledgerSelectedType == "income") {
                     selectType("income")
                 }
             }
@@ -173,7 +173,7 @@ public struct QuickLedgerView: View {
                 Text("¥")
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkMuted)
-                TextField("0.00", text: $amountString)
+                TextField("0.00", text: $draft.ledgerAmountString)
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -189,7 +189,7 @@ public struct QuickLedgerView: View {
                     .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
             )
 
-            TextField("摘要说明", text: $titleString)
+            TextField("摘要说明", text: $draft.ledgerTitleString)
                 .textFieldStyle(.plain)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkPrimary)
@@ -208,19 +208,19 @@ public struct QuickLedgerView: View {
     // MARK: - 常用类目胶囊网格
 
     private var categorySection: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+        let currentCat = effectiveSelectedCategory
+        return VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
             Text(categorySectionTitle)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 .foregroundStyle(ArchivePalette.inkMuted)
 
-            // 数据源随收支类型切换：收入形态遍历 incomeCategories，支出形态遍历 expenseCategories
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 68), spacing: ArchiveSpacing.xs)], alignment: .leading, spacing: ArchiveSpacing.xs) {
                 ForEach(activeCategories, id: \.self) { category in
                     PaperPillButton(
                         title: category,
-                        isSelected: selectedCategory == category
+                        isSelected: currentCat == category
                     ) {
-                        selectedCategory = category
+                        appState.quickDraft.ledgerSelectedCategory = category
                     }
                 }
             }
@@ -250,39 +250,44 @@ public struct QuickLedgerView: View {
     // MARK: - 支付方式与提交栏
 
     private var submitBar: some View {
-        HStack(spacing: ArchiveSpacing.xs) {
+        @Bindable var draft = appState.quickDraft
+        let currentPay = effectiveSelectedPayment
+        return HStack(spacing: ArchiveSpacing.xs) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: ArchiveSpacing.xs) {
                     ForEach(appState.paymentMethods, id: \.self) { method in
+                        let isSelected = (currentPay == method)
                         Button {
-                            selectedPayment = method
+                            draft.ledgerSelectedPayment = method
                         } label: {
                             Text(method)
                                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                                .foregroundStyle(selectedPayment == method ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                                .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                                 .padding(.horizontal, ArchiveSpacing.xs)
-                                .padding(.vertical, ArchiveSpacing.xxs)
+                                .padding(.vertical, 4)
+                                .frame(minHeight: ArchiveHitTarget.minPointer)
                                 .background(
                                     RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                        .stroke(selectedPayment == method ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                        .stroke(isSelected ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: 0.5)
                                 )
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                         .accessibilityLabel("支付方式 \(method)")
-                        .accessibilityValue(selectedPayment == method ? "已选中" : "未选中")
+                        .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
                     }
                 }
             }
 
             Spacer(minLength: 0)
 
-            // 补记历史时刻（命中区不小于 28pt）
             Button {
-                showDatePicker.toggle()
+                draft.ledgerShowDatePicker.toggle()
             } label: {
                 Image(systemName: "clock")
                     .font(.system(size: ArchiveTypography.Scale.caption))
-                    .foregroundStyle(showDatePicker ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                    .foregroundStyle(draft.ledgerShowDatePicker ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                     .padding(ArchiveSpacing.xs)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
@@ -290,12 +295,13 @@ public struct QuickLedgerView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
             .accessibilityLabel("补记历史时刻")
             .help("补记过去发生的账目时刻")
 
             PaperCityPicker(
-                selectedCode: $selectedCityCode,
-                selectedName: $selectedCityName,
+                selectedCode: $draft.ledgerSelectedCityCode,
+                selectedName: $draft.ledgerSelectedCityName,
                 placeholder: appState.profile.displayCity.isEmpty ? "属地" : appState.profile.displayCity
             )
 
@@ -316,7 +322,7 @@ public struct QuickLedgerView: View {
         }
     }
 
-    // MARK: - 就地反馈（错误与成功确认）
+    // MARK: - 就地反馈
 
     @ViewBuilder
     private var feedbackBar: some View {
@@ -327,7 +333,6 @@ public struct QuickLedgerView: View {
         }
     }
 
-    /// 统一反馈条样式（错误暖色 / 成功苔绿）
     private func feedbackStrip(icon: String, text: String, tint: Color) -> some View {
         HStack(spacing: ArchiveSpacing.xs) {
             Image(systemName: icon)
@@ -348,33 +353,26 @@ public struct QuickLedgerView: View {
 
     // MARK: - 收支形态与类目联动
 
-    /// 切换收支类型：类目网格与当前类目必须同步切换（收入 ↔ 支出）
-    /// 并把当前类目重置为新类型列表的首项，避免出现「收入 + 餐饮」的越界组合
     private func selectType(_ type: String) {
-        // 重复点击当前形态时不做任何事，避免误重置用户已选的类目
-        guard type != selectedType else { return }
-        selectedType = type
-        selectedCategory = (type == "income" ? appState.incomeCategories : appState.expenseCategories).first ?? selectedCategory
+        guard type != draft.ledgerSelectedType else { return }
+        draft.ledgerSelectedType = type
+        draft.ledgerSelectedCategory = (type == "income" ? appState.incomeCategories : appState.expenseCategories).first ?? draft.ledgerSelectedCategory
     }
 
-    /// 校正当前类目是否仍存在于当前形态的类目字典中（字典刷新后自动回落）
     private func normalizeSelectedCategory() {
         let categories = activeCategories
-        guard !categories.contains(selectedCategory) else { return }
-        selectedCategory = categories.first ?? selectedCategory
+        guard !categories.contains(draft.ledgerSelectedCategory) else { return }
+        draft.ledgerSelectedCategory = categories.first ?? draft.ledgerSelectedCategory
     }
 
-    /// 极速指令自带正负号时（如 “+5000 工资收入”）自动切到对应收支形态与类目字典
-    /// 未带符号时不干预用户手动选择的收支形态
     private func syncTypeWithSmartInput() {
         guard smartInputHasExplicitSign else { return }
         guard let parsed = FormatUtils.parseQuickLedgerInput(
-            smartInput,
-            defaultCategory: selectedCategory,
-            // 类型尚未切换时，用两套字典一起识别，否则“工资收入”会被当成标题。
+            draft.ledgerSmartInput,
+            defaultCategory: effectiveSelectedCategory,
             knownCategories: appState.expenseCategories + appState.incomeCategories
         ) else { return }
-        guard parsed.type != selectedType else { return }
+        guard parsed.type != draft.ledgerSelectedType else { return }
         selectType(parsed.type)
     }
 
@@ -386,10 +384,9 @@ public struct QuickLedgerView: View {
         localError = nil
         localSuccess = nil
 
-        // 属地只来自 PaperCityPicker 的显式选择：自由文本反查会静默挂错城市
-        // （如「中山装衬衣」命中中山市、「重庆小面」命中重庆），且客户端反查后
-        // 以显式 city_code 发送恰好绕过后端「仅认显式码」的收紧，服务端无从拦截。
-        let cityCodeToSubmit: String? = selectedCityCode.isEmpty ? nil : selectedCityCode
+        let cityCodeToSubmit: String? = draft.ledgerSelectedCityCode.isEmpty ? nil : draft.ledgerSelectedCityCode
+        let payToSubmit = effectiveSelectedPayment
+        let dateToSubmit = draft.ledgerOccurredAt
 
         Task { @MainActor in
             do {
@@ -398,17 +395,11 @@ public struct QuickLedgerView: View {
                     type: parsed.type,
                     category: parsed.category,
                     title: parsed.title,
-                    paymentMethod: selectedPayment,
+                    paymentMethod: payToSubmit,
                     cityCode: cityCodeToSubmit,
-                    occurredAt: FormatUtils.beijingISOString(from: occurredAt)
+                    occurredAt: FormatUtils.beijingISOString(from: dateToSubmit)
                 )
-                smartInput = ""
-                amountString = ""
-                titleString = ""
-                selectedCityCode = ""
-                selectedCityName = ""
-                occurredAt = Date()
-                showDatePicker = false
+                draft.resetLedger()
                 isSubmitting = false
                 presentSuccess(
                     queuedOffline
@@ -422,12 +413,11 @@ public struct QuickLedgerView: View {
         }
     }
 
-    /// 提交成功回执：面板内展示片刻后再收起（菜单栏窗口看不到全局横幅）
     private func presentSuccess(_ message: String) {
         localSuccess = message
         localError = nil
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard localSuccess == message else { return }
             localSuccess = nil
             onSubmitted?()
@@ -437,7 +427,6 @@ public struct QuickLedgerView: View {
 
 // MARK: - 预览 (Preview)
 
-/// 预览用 mock 数据（复用 AppState 单例，仅注入面板所需的展示数据）
 @MainActor
 private enum QuickLedgerPreviewData {
     static var sample: AppState {

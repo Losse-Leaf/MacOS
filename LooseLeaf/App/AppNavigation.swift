@@ -27,6 +27,32 @@ public final class AppBanners {
     }
 }
 
+/// 时间流私密筛选维度
+public enum StreamPrivacyFilter: String, CaseIterable, Identifiable, Sendable {
+    case all = "all"
+    case privateOnly = "private_only"
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .all: return "全部"
+        case .privateOnly: return "仅私密"
+        }
+    }
+}
+
+/// 城市回忆抽屉精准定位目标（全局检索 ⌘K 联动）
+public struct CityJumpTarget: Equatable, Sendable {
+    public let code: String
+    public let name: String
+
+    public init(code: String, name: String) {
+        self.code = code
+        self.name = name
+    }
+}
+
 /// 导航与检索状态 (Navigation & Search)
 ///
 /// 与档案数据分离：切换板块、输入搜索词这类交互不会再让数据视图无谓重算。
@@ -37,10 +63,20 @@ public final class AppNavigation {
     public var activeSection: WorkbenchSection = .stream
     /// 当前分类视角
     public var selectedCategory: ArchiveCategory = .all
+    /// 时间流私密态筛选
+    public var streamPrivacyFilter: StreamPrivacyFilter = .all
     /// 时间流本地搜索词
     public var searchQuery: String = ""
     /// ⌘F 请求聚焦搜索框（自增 token 驱动 onChange）
     public var searchFocusRequest: Int = 0
+    /// 独立设置窗口当前激活标签页（支持 ⌘, 与 ⌥⌘1–3 联动）
+    public var settingsSelectedTab: SettingsTab = .general
+    /// 编程式唤起独立设置窗口的自增请求计数
+    public var settingsOpenToken: Int = 0
+    /// 全局检索 (⌘K) 精准跳转定位目标
+    public var highlightedFootprintCity: CityJumpTarget?
+    public var highlightedWishId: Int?
+    public var highlightedProjectId: Int?
     /// 新建散页时的初始形态（如从「造物」入口打开）
     public var newEntryInitialKind: String?
     public var newEntryInitialProjectId: Int?

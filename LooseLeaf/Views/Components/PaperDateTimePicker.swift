@@ -170,8 +170,8 @@ public struct PaperDatePicker: View {
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 年月双级翻页栏 (<< < YYYY年MM月 > >>，Text(verbatim:) 根绝 2,026 逗号 Bug)
-            HStack(spacing: 3) {
+            // 年月双级翻页栏（28pt 指针命中热区 + 焦点环）
+            HStack(spacing: 2) {
                 Button {
                     if let prevYear = cal.date(byAdding: .year, value: -1, to: displayMonthDate) {
                         displayMonthDate = prevYear
@@ -180,10 +180,13 @@ public struct PaperDatePicker: View {
                     Image(systemName: "chevron.left.2")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
-                        .padding(ArchiveSpacing.xs)
+                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 4)
                 .help("上一年")
+                .accessibilityLabel("上一年")
 
                 Button {
                     if let prevMonth = cal.date(byAdding: .month, value: -1, to: displayMonthDate) {
@@ -193,10 +196,13 @@ public struct PaperDatePicker: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
-                        .padding(ArchiveSpacing.xs)
+                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 4)
                 .help("上一月")
+                .accessibilityLabel("上一月")
 
                 Spacer()
 
@@ -215,10 +221,13 @@ public struct PaperDatePicker: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
-                        .padding(ArchiveSpacing.xs)
+                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 4)
                 .help("下一月")
+                .accessibilityLabel("下一月")
 
                 Button {
                     if let nextYear = cal.date(byAdding: .year, value: 1, to: displayMonthDate) {
@@ -228,15 +237,18 @@ public struct PaperDatePicker: View {
                     Image(systemName: "chevron.right.2")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
-                        .padding(ArchiveSpacing.xs)
+                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 4)
                 .help("下一年")
+                .accessibilityLabel("下一年")
             }
 
-            // 星期标尺
+            // 星期标尺（统一周一为首列，对齐 LifeCalendarChartView）
             HStack(spacing: 0) {
-                ForEach(["日", "一", "二", "三", "四", "五", "六"], id: \.self) { weekDay in
+                ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { weekDay in
                     Text(weekDay)
                         .font(ArchiveTypography.bodySans(size: 10.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
@@ -301,31 +313,40 @@ public struct PaperDatePicker: View {
 
                         Spacer()
 
-                        // 时分微调器
+                        // 时分微调器（抬升点击热区至 28×28pt）
                         HStack(spacing: ArchiveSpacing.xs) {
                             let currentHour = cal.component(.hour, from: selection)
                             let currentMin = cal.component(.minute, from: selection)
 
-                            HStack(spacing: ArchiveSpacing.xxs) {
-                                Button("-") { adjustHour(-1) }
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .padding(.horizontal, ArchiveSpacing.xs)
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("提前一小时")
+                            HStack(spacing: 0) {
+                                Button { adjustHour(-1) } label: {
+                                    Text("-")
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .paperButtonFocusRing(cornerRadius: 3)
+                                .accessibilityLabel("提前一小时")
+
                                 Text(String(format: "%02d", currentHour))
                                     .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                     .accessibilityLabel("当前小时")
                                     .accessibilityValue(String(format: "%02d", currentHour))
-                                Button("+") { adjustHour(1) }
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .padding(.horizontal, ArchiveSpacing.xs)
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("推迟一小时")
+
+                                Button { adjustHour(1) } label: {
+                                    Text("+")
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .paperButtonFocusRing(cornerRadius: 3)
+                                .accessibilityLabel("推迟一小时")
                             }
-                            .padding(.vertical, ArchiveSpacing.xxs)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(RoundedRectangle(cornerRadius: 3))
 
@@ -333,26 +354,35 @@ public struct PaperDatePicker: View {
                                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkMuted)
 
-                            HStack(spacing: ArchiveSpacing.xxs) {
-                                Button("-") { adjustMinute(-5) }
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .padding(.horizontal, ArchiveSpacing.xs)
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("提前五分钟")
+                            HStack(spacing: 0) {
+                                Button { adjustMinute(-5) } label: {
+                                    Text("-")
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .paperButtonFocusRing(cornerRadius: 3)
+                                .accessibilityLabel("提前五分钟")
+
                                 Text(String(format: "%02d", currentMin))
                                     .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                     .accessibilityLabel("当前分钟")
                                     .accessibilityValue(String(format: "%02d", currentMin))
-                                Button("+") { adjustMinute(5) }
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .padding(.horizontal, ArchiveSpacing.xs)
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("推迟五分钟")
+
+                                Button { adjustMinute(5) } label: {
+                                    Text("+")
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .paperButtonFocusRing(cornerRadius: 3)
+                                .accessibilityLabel("推迟五分钟")
                             }
-                            .padding(.vertical, ArchiveSpacing.xxs)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
@@ -468,10 +498,9 @@ public struct PaperDatePicker: View {
               let firstDayOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: date)) else {
             return []
         }
-        let firstWeekday = cal.component(.weekday, from: firstDayOfMonth) - 1 // 0 (Sunday) to 6
+        let mondayFirstOffset = (cal.component(.weekday, from: firstDayOfMonth) + 5) % 7
         var slots: [DaySlot] = []
-        // 月首之前的空位
-        for offset in 0..<firstWeekday {
+        for offset in 0..<mondayFirstOffset {
             slots.append(DaySlot(id: offset, date: nil))
         }
         for day in range {

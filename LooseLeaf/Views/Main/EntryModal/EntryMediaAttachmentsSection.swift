@@ -49,6 +49,20 @@ struct EntryMediaAttachmentsSection: View {
                 }
             }
         }
+        .padding(10)
+        .background(ArchivePalette.archiveSubtle.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                .strokeBorder(
+                    isMediaDropTargeted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle,
+                    style: StrokeStyle(lineWidth: isMediaDropTargeted ? 1.5 : 0.5, dash: [4, 3])
+                )
+                .allowsHitTesting(false)
+        )
+        .onDrop(of: [.image, .fileURL, .rawImage], isTargeted: $isMediaDropTargeted) { providers in
+            media.handleDrop(providers: providers)
+        }
     }
 
     // MARK: - 头部：标题 + 选图按钮 + 拖拽落点
@@ -91,17 +105,6 @@ struct EntryMediaAttachmentsSection: View {
             .disabled(media.isUploading)
             .help("从「照片」App 或访达拖拽照片到此处亦可装裱")
         }
-
-        // 拖拽装裱：与暗房保持一致的拖入体验
-        .onDrop(of: [.image, .fileURL, .rawImage], isTargeted: $isMediaDropTargeted) { providers in
-            media.handleDrop(providers: providers)
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(isMediaDropTargeted ? ArchivePalette.accentWarm : .clear, lineWidth: 1.5)
-                .padding(.vertical, 4)
-                .allowsHitTesting(false)
-        )
     }
 
     // MARK: - 单张相纸卡片

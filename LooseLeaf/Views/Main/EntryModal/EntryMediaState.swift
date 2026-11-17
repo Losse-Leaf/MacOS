@@ -146,13 +146,20 @@ final class EntryMediaState {
 
     // MARK: - 选图 / 拖拽
 
-    /// 从「照片」App / 访达选择相纸文件
+    /// 从「照片」App / 访达选择相纸文件（异步 Sheet 挂载，避免 `runModal()` 阻塞主线程 RunLoop）
     func pickAndUploadFromPanel() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image, .jpeg, .png, .heic, .rawImage]
         panel.allowsMultipleSelection = true
-        if panel.runModal() == .OK, !panel.urls.isEmpty {
-            enqueueFiles(panel.urls)
+        Task { @MainActor [weak self] in
+            let response: NSApplication.ModalResponse
+            if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                response = await panel.beginSheetModal(for: window)
+            } else {
+                response = await panel.begin()
+            }
+            guard response == .OK, !panel.urls.isEmpty else { return }
+            self?.enqueueFiles(panel.urls)
         }
     }
 
@@ -351,14 +358,20 @@ enum EntryThumbnailMaker {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             return nil
         }
-        let buffer = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            buffer,
+        // 关键：macOS 27 下 CGImageDestinationCreateWithData(NSMutableData, jpeg) 配合压缩质量
+        // 对带 Display P3 / 相机 ICC 配置的图片会在 CFDataReplaceBytes 触发 SIGTRAP 闪退。
+        // 与 ImageProcessor 对齐，统一先编码写入临时文件再读回内存。
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("looseleaf-thumb-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        guard let destination = CGImageDestinationCreateWithURL(
+            tempURL as CFURL,
             UTType.jpeg.identifier as CFString,
             1,
             nil
@@ -369,7 +382,7 @@ enum EntryThumbnailMaker {
             [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary
         )
         guard CGImageDestinationFinalize(destination) else { return nil }
-        return buffer as Data
+        return try? Data(contentsOf: tempURL)
     }
 }
 
@@ -393,32 +406,24 @@ struct EntryPasteboardPayload: Sendable {
 /// 其次取 PNG / JPEG / TIFF 二进制数据，最后用 `NSImage` 兜底转 PNG。
 enum EntryPasteboard {
 
-    /// 异步读取剪贴板相纸载荷（文件 IO 与 PNG 重编码都在后台线程，不阻塞主线程）
+    /// 异步读取剪贴板相纸载荷（主线程仅提取 NSPasteboard 引用，文件 IO 与 PNG 重编码在后台线程）
     static func readPayload() async -> EntryPasteboardPayload {
-        await Task.detached(priority: .userInitiated) {
-            readPayloadSync()
-        }.value
-    }
-
-    private static func readPayloadSync() -> EntryPasteboardPayload {
-        let board = NSPasteboard.general
-
-        // 1. 图片文件 URL（访达拷贝 / 截图工具写出的文件）
-        if let urls = board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
-            let imageURLs = urls.filter { url in
+        let imageURLs: [URL] = await MainActor.run {
+            let board = NSPasteboard.general
+            guard let urls = board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else {
+                return []
+            }
+            return urls.filter { url in
                 guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
                 return type.conforms(to: .image)
             }
-            if !imageURLs.isEmpty {
-                return EntryPasteboardPayload(imageData: nil, fileURLs: imageURLs)
-            }
         }
-
-        // 2. 其余二进制与 NSImage 兜底统一复用 DropLoader.readImageFromPasteboard()
-        if let data = DropLoader.readImageFromPasteboard() {
+        if !imageURLs.isEmpty {
+            return EntryPasteboardPayload(imageData: nil, fileURLs: imageURLs)
+        }
+        if let data = await DropLoader.readImageFromPasteboardAsync() {
             return EntryPasteboardPayload(imageData: data, fileURLs: [])
         }
-
         return EntryPasteboardPayload(imageData: nil, fileURLs: [])
     }
 }

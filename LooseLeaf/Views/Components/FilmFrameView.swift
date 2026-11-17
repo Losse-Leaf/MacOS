@@ -2,12 +2,19 @@ import SwiftUI
 import AppKit
 import CryptoKit
 import ImageIO
+import UniformTypeIdentifiers
 
 /// 胶片暗房装裱边框组件 (.film-frame)
 /// 严格遵循 docs/ecosystem.md §4.1.2 规范：
 /// 四周预留哑光衬纸留白，底部以等宽字体标注底片元数据与拍摄时间，带有相纸贴在日记本上的物理微隆起阴影
 public struct FilmFrameView: View {
     public var imageURL: URL?
+    /// 4K 原图地址（画面显示优先走缩略图 `imageURL`，右键拷贝/预览/导出/拖出一律优先走原图）
+    public var originalURL: URL?
+    /// 原始文件名（用于导出/预览补全真实扩展名，解决 `/files/thumbnail` 无后缀问题）
+    public var preferredFilename: String?
+    /// 原始像素宽高（用于在异步显影前精确锁定占位框比例，彻底消除 +80pt 列表跳动）
+    public var intrinsicSize: CGSize?
     public var localImage: NSImage?
     public var caption: String?
     public var metaText: String?
@@ -21,6 +28,9 @@ public struct FilmFrameView: View {
 
     public init(
         imageURL: URL? = nil,
+        originalURL: URL? = nil,
+        preferredFilename: String? = nil,
+        intrinsicSize: CGSize? = nil,
         localImage: NSImage? = nil,
         caption: String? = nil,
         metaText: String? = nil,
@@ -30,6 +40,9 @@ public struct FilmFrameView: View {
         onExportNotice: ((String) -> Void)? = nil
     ) {
         self.imageURL = imageURL
+        self.originalURL = originalURL
+        self.preferredFilename = preferredFilename
+        self.intrinsicSize = intrinsicSize
         self.localImage = localImage
         self.caption = caption
         self.metaText = metaText
@@ -39,25 +52,31 @@ public struct FilmFrameView: View {
         self.onExportNotice = onExportNotice
     }
 
+    private var exportTargetURL: URL? {
+        originalURL ?? imageURL
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 ArchivePalette.archivePaper
 
                 if let localImage {
+                    let displayMaxH = min(maxHeight, max(64, localImage.size.height))
                     Image(nsImage: localImage)
                         .interpolation(.high)
                         .antialiased(true)
                         .resizable()
                         .scaledToFit()
-                        .frame(maxHeight: maxHeight)
+                        .frame(maxHeight: displayMaxH)
                         .clipped()
                         .accessibilityLabel(caption ?? "相纸影像")
                 } else if let imageURL {
                     CachedFilmImageView(
                         url: imageURL,
                         maxHeight: maxHeight,
-                        maxPixelOverride: thumbnailMaxPixel
+                        maxPixelOverride: thumbnailMaxPixel,
+                        intrinsicSize: intrinsicSize
                     )
                 }
             }
@@ -104,6 +123,9 @@ public struct FilmFrameView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(onTap != nil ? .isButton : AccessibilityTraits())
         .accessibilityLabel(caption ?? "相纸")
+        .onDrag {
+            makeDragItemProvider()
+        }
         .contextMenu {
             Button {
                 copyFilmImage()
@@ -111,7 +133,7 @@ public struct FilmFrameView: View {
                 Label("拷贝相纸", systemImage: "doc.on.doc")
             }
 
-            if let url = imageURL {
+            if let url = exportTargetURL {
                 Button {
                     openInPreview(url: url)
                 } label: {
@@ -127,43 +149,89 @@ public struct FilmFrameView: View {
         }
     }
 
-    /// 拷贝相纸（统一走 `PaperImageExport`，失败要能说出来）
+    /// 构造支持拖出至访达/桌面保存原图的 NSItemProvider
+    private func makeDragItemProvider() -> NSItemProvider {
+        if let localImage {
+            return NSItemProvider(object: localImage)
+        }
+        guard let url = exportTargetURL else {
+            return NSItemProvider()
+        }
+        let provider = NSItemProvider()
+        let filenameHint = preferredFilename ?? caption
+        provider.suggestedName = (PaperImageExport.normalizedFilename(filenameHint, fallbackURL: url) as NSString).deletingPathExtension
+        provider.registerFileRepresentation(
+            forTypeIdentifier: UTType.image.identifier,
+            fileOptions: [],
+            visibility: .all
+        ) { completion in
+            Task { @MainActor in
+                do {
+                    let data = try await PaperImageExport.data(for: url)
+                    let safeName = PaperImageExport.normalizedFilename(filenameHint, fallbackURL: url, data: data)
+                        .replacingOccurrences(of: "/", with: "-")
+                    let dropDir = SyncManager.sharedStorageDirectory.appendingPathComponent("PreviewStaging", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: dropDir, withIntermediateDirectories: true)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dropDir.path)
+                    let fileURL = dropDir.appendingPathComponent("drag-\(UUID().uuidString.prefix(8))-\(safeName)")
+                    try data.write(to: fileURL, options: .atomic)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+                    completion(fileURL, false, nil)
+                } catch {
+                    completion(nil, false, error)
+                }
+            }
+            return nil
+        }
+        return provider
+    }
+
+    /// 拷贝相纸（统一走 `PaperImageExport` + `SecureClipboard` 60s 清理，优先取原图）
     private func copyFilmImage() {
         if let localImage {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.writeObjects([localImage])
+            SecureClipboard.copy(image: localImage)
             onExportNotice?("已拷贝相纸至剪贴板")
             return
         }
-        guard let imageURL else { return }
+        guard let targetURL = exportTargetURL else { return }
         Task { @MainActor in
-            switch await PaperImageExport.copyToClipboard(url: imageURL) {
+            switch await PaperImageExport.copyToClipboard(url: targetURL) {
             case .success(let message): onExportNotice?(message)
             case .failure(let message): onExportNotice?("⚠️ \(message)")
             }
         }
     }
 
-    /// 在系统「预览」中打开（统一走 `PaperImageExport`）
+    /// 在系统「预览」中打开（统一走 `PaperImageExport`，优先取原图并补全后缀）
     private func openInPreview(url: URL) {
+        let filenameHint = preferredFilename ?? caption
         Task { @MainActor in
-            switch await PaperImageExport.openInSystemPreview(url: url) {
+            switch await PaperImageExport.openInSystemPreview(url: url, preferredFilename: filenameHint) {
             case .success(let message): onExportNotice?(message)
             case .failure(let message): onExportNotice?("⚠️ \(message)")
             }
         }
     }
 
-    /// 导出落盘（统一走 `PaperImageExport`）
+    /// 导出落盘（异步 Sheet 挂载替代阻塞 `runModal()`，优先导出原图）
     private func saveFilmImage(url: URL) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = (caption?.isEmpty == false) ? "\(caption!).jpg" : url.lastPathComponent
-        if panel.runModal() == .OK, let targetURL = panel.url {
-            Task { @MainActor in
-                switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
-                case .success(let message): onExportNotice?(message)
-                case .failure(let message): onExportNotice?("⚠️ \(message)")
-                }
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = PaperImageExport.normalizedFilename(
+            preferredFilename ?? caption,
+            fallbackURL: url
+        )
+        Task { @MainActor in
+            let response: NSApplication.ModalResponse
+            if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                response = await panel.beginSheetModal(for: window)
+            } else {
+                response = await panel.begin()
+            }
+            guard response == .OK, let targetURL = panel.url else { return }
+            switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
+            case .success(let message): onExportNotice?(message)
+            case .failure(let message): onExportNotice?("⚠️ \(message)")
             }
         }
     }
@@ -196,15 +264,42 @@ public enum PaperImageCache {
         return c
     }()
 
-    /// 计算 NSImage 真实占用的位图内存（字节数），用于 NSCache cost
+    /// 计算 NSImage 真实占用的位图内存（字节数），用于 NSCache cost。
+    /// 兼容 `NSBitmapImageRep` 与 `NSImage(cgImage:size:)` 生成的 `NSCGImageSnapshotRep`（避免恒返回 1 字节导致 60MB 上限失效）。
     static func bitmapByteCost(of image: NSImage) -> Int {
         var total = 0
         for rep in image.representations {
             if let bitmap = rep as? NSBitmapImageRep {
                 total += bitmap.bytesPerRow * bitmap.pixelsHigh
+            } else if let cg = rep.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                total += cg.bytesPerRow * cg.height
+            } else if rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+                total += rep.pixelsWide * rep.pixelsHigh * 4
             }
         }
+        if total == 0, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            total = cg.bytesPerRow * cg.height
+        }
         return max(total, 1)
+    }
+
+    /// 主动清空两级内存图片缓存（主窗口关闭退驻菜单栏或收到内存告警时释放 ~120MB 位图池）
+    public static func clearMemoryCache() {
+        memoryCache.removeAllObjects()
+        originalMemoryCache.removeAllObjects()
+    }
+
+    /// 彻底清空内存与磁盘媒体缓存（解除设备配对或 401 吊销时零残留清理）
+    public static func clearAllCaches() {
+        clearMemoryCache()
+        touchLock.lock()
+        lastTouchedAt.removeAll()
+        touchLock.unlock()
+        let dir = diskCacheDirectory
+        writeQueue.async {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
     }
 
     /// 磁盘读取：并发受控（4 路），只做 `Data(contentsOf:)`，不做解码。
@@ -273,15 +368,21 @@ public enum PaperImageCache {
     /// 测试注入点：覆盖磁盘缓存目录，避免测试写入用户真实 MediaCache
     nonisolated(unsafe) static var overrideDirectory: URL?
 
-    public static var diskCacheDirectory: URL {
-        let dir: URL
-        if let overrideDirectory {
-            dir = overrideDirectory
-        } else {
-            dir = SyncManager.sharedStorageDirectory.appendingPathComponent("MediaCache", isDirectory: true)
-        }
+    private static let defaultDiskCacheDirectory: URL = {
+        let dir = SyncManager.sharedStorageDirectory.appendingPathComponent("MediaCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }()
+
+    private static let touchLock = NSLock()
+    nonisolated(unsafe) private static var lastTouchedAt: [String: Date] = [:]
+
+    public static var diskCacheDirectory: URL {
+        if let overrideDirectory {
+            try? FileManager.default.createDirectory(at: overrideDirectory, withIntermediateDirectories: true)
+            return overrideDirectory
+        }
+        return defaultDiskCacheDirectory
     }
 
     /// **稳定身份标识**：剥掉预签名参数后的 URL。
@@ -383,30 +484,45 @@ public enum PaperImageCache {
 
     private static func decodeThumbnailFromDisk(_ url: URL, maxPixel: Int) async -> NSImage? {
         let diskPath = diskFileURL(for: url)
-        guard let data = await readData(at: diskPath) else { return nil }
-        let image = await runOnQueue(decodeQueue) {
-            decodeThumbnail(from: data, maxPixel: maxPixel)
+        guard FileManager.default.fileExists(atPath: diskPath.path) else { return nil }
+        let decoded = await runOnQueue(decodeQueue) {
+            decodeThumbnail(at: diskPath, maxPixel: maxPixel)
         }
-        if let image {
+        if let (image, byteCost) = decoded {
             memoryCache.setObject(
                 image,
                 forKey: thumbKey(url, maxPixel: maxPixel),
-                cost: bitmapByteCost(of: image)
+                cost: byteCost
             )
+            touchDiskFile(at: diskPath)
+            return image
         }
-        touchDiskFile(at: diskPath)
-        return image
+        return nil
     }
 
-    private static func decodeThumbnail(from data: Data, maxPixel: Int) -> NSImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    private static func decodeThumbnail(at fileURL: URL, maxPixel: Int) -> (NSImage, Int)? {
+        let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, srcOpts as CFDictionary) else { return nil }
+        return createThumbnail(from: source, maxPixel: maxPixel)
+    }
+
+    private static func decodeThumbnail(from data: Data, maxPixel: Int) -> (NSImage, Int)? {
+        let srcOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, srcOpts as CFDictionary) else { return nil }
+        return createThumbnail(from: source, maxPixel: maxPixel)
+    }
+
+    private static func createThumbnail(from source: CGImageSource, maxPixel: Int) -> (NSImage, Int)? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixel
         ]
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        let cost = max(cgImage.bytesPerRow * cgImage.height, 1)
+        return (image, cost)
     }
 
     /// 下载完成后：指定尺寸缩略图在专用解码队列生成（await 回调用方），
@@ -418,14 +534,15 @@ public enum PaperImageCache {
     /// `withCheckedContinuation` 回到调用方；调用方仍要校验 `loadGeneration`，
     /// 避免过期 url 的解码结果回写。
     public static func storeDownloaded(rawData: Data, for url: URL, maxPixel: Int) async -> NSImage? {
-        let thumbnail = await runOnQueue(decodeQueue) {
+        let decoded = await runOnQueue(decodeQueue) {
             decodeThumbnail(from: rawData, maxPixel: maxPixel)
         }
-        if let thumbnail {
+        let thumbnail = decoded?.0
+        if let (image, byteCost) = decoded {
             memoryCache.setObject(
-                thumbnail,
+                image,
                 forKey: thumbKey(url, maxPixel: maxPixel),
-                cost: bitmapByteCost(of: thumbnail)
+                cost: byteCost
             )
         }
         enqueueDiskWrite(rawData, for: url)
@@ -505,11 +622,19 @@ public enum PaperImageCache {
         return diskImage
     }
 
-    /// 触达磁盘缓存文件：更新修改时间，使其成为「最近使用」
-    /// 否则淘汰策略按写入时间排序，热门老照片永远不被回收，冷门新图反而先被删。
+    /// 触达磁盘缓存文件：更新修改时间，使其成为「最近使用」（1 小时内节流免重复写 inode）
     private static func touchDiskFile(at url: URL) {
-        diskIOQueue.addOperation {
-            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        let path = url.path
+        let now = Date()
+        touchLock.lock()
+        if let last = lastTouchedAt[path], now.timeIntervalSince(last) < 3600 {
+            touchLock.unlock()
+            return
+        }
+        lastTouchedAt[path] = now
+        touchLock.unlock()
+        maintenanceQueue.async {
+            try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: path)
         }
     }
 
@@ -656,12 +781,14 @@ struct FilmImageLoadState {
     }
 }
 
-/// 支持内存首帧命中与平滑解码展示的相纸图像视图（消除长列表翻阅时的白屏闪烁）
+/// 支持内存首帧命中与平滑解码展示的相纸图像视图（消除长列表翻阅时的白屏闪烁与纵向高度抖动）
 public struct CachedFilmImageView: View {
     public let url: URL
     public let maxHeight: CGFloat
     /// 显式缩略图目标像素（nil = maxHeight × 2）
     public let maxPixelOverride: Int?
+    /// 已知原始像素宽高（用于占位框等比锁定与小尺寸图片防放大模糊）
+    public let intrinsicSize: CGSize?
 
     @State private var loadState: FilmImageLoadState
 
@@ -674,10 +801,25 @@ public struct CachedFilmImageView: View {
         maxPixelOverride ?? Self.thumbPixel(for: maxHeight)
     }
 
-    public init(url: URL, maxHeight: CGFloat, maxPixelOverride: Int? = nil) {
+    /// 结合原始像素宽高计算展示最大高度，防止小尺寸贴纸/图标在 Retina 下被拉伸 2 倍变糊
+    private var effectiveMaxHeight: CGFloat {
+        if let s = intrinsicSize, s.width > 0, s.height > 0 {
+            let logicalHeight = max(64, s.height / 2.0)
+            return min(maxHeight, logicalHeight)
+        }
+        return maxHeight
+    }
+
+    public init(
+        url: URL,
+        maxHeight: CGFloat,
+        maxPixelOverride: Int? = nil,
+        intrinsicSize: CGSize? = nil
+    ) {
         self.url = url
         self.maxHeight = maxHeight
         self.maxPixelOverride = maxPixelOverride
+        self.intrinsicSize = intrinsicSize
         // 只做缩略图内存命中（零 I/O）；磁盘降采样解码交给 .task 在后台完成
         _loadState = State(initialValue: FilmImageLoadState(
             url: url,
@@ -688,42 +830,57 @@ public struct CachedFilmImageView: View {
         ))
     }
 
+    @ViewBuilder
+    private func placeholderContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        if let s = intrinsicSize, s.width > 0, s.height > 0 {
+            Color.clear
+                .aspectRatio(s, contentMode: .fit)
+                .frame(maxHeight: effectiveMaxHeight)
+                .frame(maxWidth: .infinity)
+                .overlay { content() }
+        } else {
+            content()
+                .frame(maxWidth: .infinity, minHeight: min(140, maxHeight))
+        }
+    }
+
     public var body: some View {
-        // 注意：`.task(id: url)` 必须挂在**始终存在**的容器（ZStack）上。
-        // 原先它挂在「加载中」分支的 VStack 里，加载成功后该分支消失、
-        // `.task` 随之被卸载；灯箱切换附件时视图身份不变、只换 url，
-        // 于是新 url 永远不会触发加载，界面继续显示上一张图。
         ZStack {
             if loadState.url == url, let image = loadState.image {
+                let displayMaxH = maxPixelOverride == nil
+                    ? min(effectiveMaxHeight, max(64, image.size.height / 2.0))
+                    : maxHeight
                 Image(nsImage: image)
                     .interpolation(.high)
                     .antialiased(true)
                     .resizable()
                     .scaledToFit()
-                    .frame(maxHeight: maxHeight)
+                    .frame(maxHeight: displayMaxH)
                     .clipped()
             } else if loadState.url == url, loadState.hasFailed {
-                VStack(spacing: 6) {
-                    Image(systemName: "photo.artframe")
-                        .font(.system(size: 22))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .accessibilityHidden(true)
-                    Text("相纸载入暂缓")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                placeholderContainer {
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo.artframe")
+                            .font(.system(size: 22))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .accessibilityHidden(true)
+                        Text("相纸载入暂缓")
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
                 }
-                .frame(maxWidth: .infinity, minHeight: 140)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("相纸载入失败")
             } else {
-                VStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("相纸显影中…")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
+                placeholderContainer {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("相纸显影中…")
+                            .font(ArchiveTypography.monoScale(size: 11))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
                 }
-                .frame(maxWidth: .infinity, minHeight: 140)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("相纸载入中")
             }

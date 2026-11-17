@@ -65,12 +65,18 @@ public struct GearAssetCardView: View {
                 Spacer()
 
                 if gear.status != "sold", let onSell {
-                    Button("转让回血") {
+                    Button {
                         onSell(gear)
+                    } label: {
+                        Text("转让回血")
+                            .font(ArchiveTypography.bodySans(size: 10.5, weight: .medium))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .padding(.horizontal, 6)
+                            .frame(minHeight: ArchiveHitTarget.minPointer)
+                            .contentShape(Rectangle())
                     }
-                    .font(ArchiveTypography.bodySans(size: 10.5))
                     .buttonStyle(.plain)
-                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .paperButtonFocusRing(cornerRadius: 4)
                 }
 
                 if let onDelete {

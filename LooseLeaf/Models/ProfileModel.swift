@@ -484,6 +484,7 @@ public struct CreateWishRequest: Codable, Sendable {
     /// 用 web 传了图，再用 mac 改个字，图片就没了）。
     /// nil = 本次不携带附件字段（保持原样）。
     public var attachmentIds: [Int]?
+    public var clearAttachments: Bool?
     public var isPrivate: Bool?
 
     enum CodingKeys: String, CodingKey {
@@ -497,6 +498,7 @@ public struct CreateWishRequest: Codable, Sendable {
         case targetDate = "target_date"
         case plantedAt = "planted_at"
         case attachmentIds = "attachment_ids"
+        case clearAttachments = "clear_attachments"
         case isPrivate = "is_private"
     }
 
@@ -510,7 +512,8 @@ public struct CreateWishRequest: Codable, Sendable {
         budget: Int64 = 0,
         targetDate: String? = nil,
         plantedAt: String? = nil,
-        attachmentIds: [Int] = [],
+        attachmentIds: [Int]? = nil,
+        clearAttachments: Bool? = nil,
         isPrivate: Bool? = nil
     ) {
         self.title = title
@@ -523,6 +526,7 @@ public struct CreateWishRequest: Codable, Sendable {
         self.targetDate = targetDate
         self.plantedAt = plantedAt
         self.attachmentIds = attachmentIds
+        self.clearAttachments = clearAttachments
         self.isPrivate = isPrivate
     }
 }
@@ -626,7 +630,9 @@ public struct CreateFootprintRequest: Codable, Sendable {
     public var visitedAt: String
     public var departedAt: String?
     public var note: String?
-    public var attachmentIds: [Int]
+    /// 必须为可选：无图修订足迹时传 nil 省略字段，防止将 Web/移动端上传的旅程照片静默解绑
+    public var attachmentIds: [Int]?
+    public var clearAttachments: Bool?
     public var isPrivate: Bool?
 
     enum CodingKeys: String, CodingKey {
@@ -637,6 +643,7 @@ public struct CreateFootprintRequest: Codable, Sendable {
         case departedAt = "departed_at"
         case note
         case attachmentIds = "attachment_ids"
+        case clearAttachments = "clear_attachments"
         case isPrivate = "is_private"
     }
 
@@ -647,7 +654,8 @@ public struct CreateFootprintRequest: Codable, Sendable {
         visitedAt: String = FormatUtils.beijingDateString(),
         departedAt: String? = nil,
         note: String? = nil,
-        attachmentIds: [Int] = [],
+        attachmentIds: [Int]? = nil,
+        clearAttachments: Bool? = nil,
         isPrivate: Bool? = nil
     ) {
         self.cityCode = cityCode
@@ -657,6 +665,7 @@ public struct CreateFootprintRequest: Codable, Sendable {
         self.departedAt = departedAt
         self.note = note
         self.attachmentIds = attachmentIds
+        self.clearAttachments = clearAttachments
         self.isPrivate = isPrivate
     }
 }

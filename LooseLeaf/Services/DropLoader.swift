@@ -49,12 +49,67 @@ public enum DropLoader {
         return nil
     }
 
-    /// 异步读取系统通用剪贴板中的图像二进制数据。
-    /// 关键：整个读取过程（文件 IO + PNG 重编码）都在后台线程执行，
-    /// 原先的同步版本会让「⌘V 粘贴截图」在主线程卡住数百毫秒。
+    /// 主线程安全提取剪贴板原始载荷（避免在后台线程直接读写非线程安全的 NSPasteboard.general）
+    private enum RawPasteboardSnapshot: Sendable {
+        case directData(Data)
+        case fileURLs([URL])
+        case tiffData(Data)
+        case empty
+    }
+
+    @MainActor
+    private static func capturePasteboardSnapshotOnMain() -> RawPasteboardSnapshot {
+        let pb = NSPasteboard.general
+        let jpegType = NSPasteboard.PasteboardType(UTType.jpeg.identifier)
+        for pasteType in [NSPasteboard.PasteboardType.png, jpegType, NSPasteboard.PasteboardType.tiff] {
+            if let data = pb.data(forType: pasteType), !data.isEmpty {
+                return .directData(data)
+            }
+        }
+        var urls: [URL] = []
+        if let urlData = pb.data(forType: .fileURL),
+           let fileURL = URL(dataRepresentation: urlData, relativeTo: nil) {
+            urls.append(fileURL)
+        }
+        if let readURLs = pb.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+            urls.append(contentsOf: readURLs.filter(\.isFileURL))
+        }
+        if !urls.isEmpty {
+            return .fileURLs(urls)
+        }
+        if let image = NSImage(pasteboard: pb),
+           let tiffData = image.tiffRepresentation,
+           !tiffData.isEmpty {
+            return .tiffData(tiffData)
+        }
+        return .empty
+    }
+
+    /// 异步读取系统通用剪贴板中的图像二进制数据：
+    /// 主线程仅做 <1ms 的 NSPasteboard 内存快照捕获，文件读取与 PNG 重编码全部在后台线程完成。
     public static func readImageFromPasteboardAsync() async -> Data? {
-        await Task.detached(priority: .userInitiated) {
-            readImageFromPasteboard()
+        let snapshot = await MainActor.run { capturePasteboardSnapshotOnMain() }
+        return await Task.detached(priority: .userInitiated) {
+            switch snapshot {
+            case .directData(let data):
+                return data
+            case .fileURLs(let urls):
+                for url in urls {
+                    if let fileData = try? Data(contentsOf: url), !fileData.isEmpty {
+                        return fileData
+                    }
+                }
+                return nil
+            case .tiffData(let tiffData):
+                if let bitmap = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmap.representation(using: .png, properties: [:]),
+                   !pngData.isEmpty {
+                    return pngData
+                }
+                return tiffData
+            case .empty:
+                return nil
+            }
         }.value
     }
 
@@ -121,13 +176,15 @@ public enum DropLoader {
     ) async -> T? {
         await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
             let once = TimeoutContinuation(continuation)
-            Task {
-                let value = await operation()
-                once.resume(value)
+            let timeoutTask = Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return }
+                once.resume(nil)
             }
             Task {
-                try? await Task.sleep(for: .seconds(seconds))
-                once.resume(nil)
+                let value = await operation()
+                timeoutTask.cancel()
+                once.resume(value)
             }
         }
     }

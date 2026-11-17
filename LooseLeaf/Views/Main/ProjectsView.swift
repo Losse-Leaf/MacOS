@@ -1,21 +1,42 @@
 import SwiftUI
 
+/// 仅供 `ProjectsView` 按 `contentRevision` 缓存关联进展散页索引（避免每次 body 求值全量分组 5000+ 无关散页）
+@MainActor
+private final class ProjectEntriesIndexMemo {
+    var revision: Int = -1
+    var map: [Int: [LifeEntry]] = [:]
+
+    func index(for entries: [LifeEntry], revision: Int) -> [Int: [LifeEntry]] {
+        if self.revision == revision {
+            return map
+        }
+        var grouped: [Int: [LifeEntry]] = [:]
+        for entry in entries {
+            guard let pid = entry.projectId, (entry.deletedAt ?? "").isEmpty else { continue }
+            grouped[pid, default: []].append(entry)
+        }
+        self.revision = revision
+        self.map = grouped
+        return grouped
+    }
+}
+
 /// 造物项目独立主视图 (ProjectsView)
-/// 严格 1:1 对标 Web 端 `web/src/components/ProjectsView.vue`：
-/// 1. 标头：“造物项目 · 人生经历与实践章节” + “立项新项目”入口
-/// 2. 分类标签胶囊（开源项目/独立开发/硬件手作/写作出版等）与活跃/归档状态过滤
-/// 3. 项目陈列网格与编年进展手记瀑布流
-/// 4. 项目立项与编辑模态弹窗 (NewProjectSheet / EditProjectSheet)
+/// 1. 标头：“造物项目 · 人生经历与实践章节” + “立项新造物”入口
+/// 2. 分类标签胶囊与四态状态筛选
+/// 3. 项目陈列网格与可点击阅读的编年进展手记预览（支持 ⌘K 精准定位与 ⌘Z 撤销删除）
 @MainActor
 public struct ProjectsView: View {
     @Bindable var appState: AppState
 
     @State private var selectedCategory: String = "all"
-    @State private var selectedStatus: String = "all" // all, ProjectStatus.active.rawValue, ProjectStatus.archived.rawValue
+    @State private var selectedStatus: String = "all"
 
     @State private var showNewProjectSheet: Bool = false
     @State private var editingProject: Project?
     @State private var errorMessage: String?
+    @State private var highlightedId: Int?
+    @State private var entriesMemo = ProjectEntriesIndexMemo()
 
     public init(appState: AppState) {
         self.appState = appState
@@ -41,13 +62,11 @@ public struct ProjectsView: View {
     private var filteredProjects: [Project] {
         allProjects.filter { p in
             let matchCat = (selectedCategory == "all") || (p.category == selectedCategory)
-            // 状态匹配统一走 ProjectStatus 语义字典，兼容历史数据中的「持续维护」等表述
             let matchStatus = ProjectStatus.matches(p.status, selected: selectedStatus)
             return matchCat && matchStatus
         }
     }
 
-    /// 分类 → 项目数量（预先统计，避免在 ForEach 体内重复全量扫描）
     private var categoryCounts: [String: Int] {
         var counts: [String: Int] = [:]
         for project in allProjects {
@@ -57,41 +76,40 @@ public struct ProjectsView: View {
         return counts
     }
 
-    /// 项目 ID → 关联进展手记（预先建立索引，避免每张卡片触发一次全量过滤）
-    /// 未归属项目的散页归入 -1 桶，不参与任何项目的进展展示。
-    private var entriesByProjectId: [Int: [LifeEntry]] {
-        Dictionary(grouping: appState.entries, by: { $0.projectId ?? -1 })
-    }
-
     public var body: some View {
-        // 一次性绑定统计结果，避免同一份扫描在 body 内被重复触发
         let counts = categoryCounts
-        let entriesIndex = entriesByProjectId
+        let entriesIndex = entriesMemo.index(for: appState.entries, revision: appState.contentRevision)
 
-        ScrollView {
-            // LazyVStack 作为 ScrollView 直接子视图，长列表才具备懒加载能力
-            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
-                headerSection
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
+                    headerSection
 
-                filterPillsSection(counts: counts)
+                    filterPillsSection(counts: counts)
 
-                if let err = errorMessage {
-                    Text(err)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                        .foregroundStyle(ArchivePalette.accentWarm)
+                    if let err = errorMessage {
+                        Text(err)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                    }
+
+                    if appState.isLoading && allProjects.isEmpty {
+                        ProgressView("正在誊写造物项目档案…")
+                            .frame(maxWidth: .infinity, minHeight: 180)
+                    } else if filteredProjects.isEmpty {
+                        emptyPlaceholder
+                    } else {
+                        projectsGridSection(entriesIndex: entriesIndex)
+                    }
                 }
-
-                if appState.isLoading {
-                    // 加载中：与「真的为空」区分，避免用户误以为数据丢失
-                    ProgressView("正在誊写造物项目档案…")
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                } else if filteredProjects.isEmpty {
-                    emptyPlaceholder
-                } else {
-                    projectsGridSection(entriesIndex: entriesIndex)
-                }
+                .padding(ArchiveSpacing.xl)
             }
-            .padding(ArchiveSpacing.xl)
+            .onAppear {
+                consumeHighlightedProjectIfNeeded(proxy: proxy)
+            }
+            .onChange(of: appState.navigation.highlightedProjectId) { _, _ in
+                consumeHighlightedProjectIfNeeded(proxy: proxy)
+            }
         }
         .sheet(isPresented: $showNewProjectSheet) {
             NewProjectSheet(appState: appState) {
@@ -101,6 +119,24 @@ public struct ProjectsView: View {
         .sheet(item: $editingProject) { proj in
             EditProjectSheet(appState: appState, project: proj) {
                 editingProject = nil
+            }
+        }
+    }
+
+    private func consumeHighlightedProjectIfNeeded(proxy: ScrollViewProxy) {
+        guard let targetId = appState.navigation.highlightedProjectId else { return }
+        selectedCategory = "all"
+        selectedStatus = "all"
+        highlightedId = targetId
+        appState.navigation.highlightedProjectId = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            withAnimation(ArchiveMotion.standard) {
+                proxy.scrollTo(targetId, anchor: .center)
+            }
+            try? await Task.sleep(for: .seconds(2.4))
+            if highlightedId == targetId {
+                highlightedId = nil
             }
         }
     }
@@ -161,17 +197,19 @@ public struct ProjectsView: View {
             }
             .horizontalFadeMask()
 
-            HStack(spacing: 6) {
-                PaperPillButton(title: "全状态", isSelected: selectedStatus == "all") {
-                    selectedStatus = "all"
-                }
-                // 状态取值与 ProjectStatus 语义字典保持一致，新建的项目方可被正确筛出
-                ForEach(ProjectStatus.allCases) { st in
-                    PaperPillButton(title: st.displayName, isSelected: selectedStatus == st.rawValue) {
-                        selectedStatus = st.rawValue
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "全状态", isSelected: selectedStatus == "all") {
+                        selectedStatus = "all"
+                    }
+                    ForEach(ProjectStatus.allCases) { st in
+                        PaperPillButton(title: st.displayName, isSelected: selectedStatus == st.rawValue) {
+                            selectedStatus = st.rawValue
+                        }
                     }
                 }
             }
+            .horizontalFadeMask()
         }
     }
 
@@ -182,13 +220,14 @@ public struct ProjectsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ProjectCardView(
                         proj: proj,
+                        isHighlighted: highlightedId == proj.id,
                         onEdit: {
                             editingProject = proj
                         },
                         onDelete: {
                             appState.askConfirm(
                                 title: "确认删除该造物项目？",
-                                message: "删除后将移除该项目档案，关联的历史进展散页不会被删除。",
+                                message: "删除后将移除该项目档案，关联的历史进展散页不会被删除，可按 ⌘Z 撤销。",
                                 confirmText: "删除项目",
                                 danger: true
                             ) {
@@ -197,10 +236,9 @@ public struct ProjectsView: View {
                         }
                     )
 
-                    // 项目下属编年手记流预览
                     let projectEntries = entriesIndex[proj.id] ?? []
                     if !projectEntries.isEmpty {
-                        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
                             HStack {
                                 Text("进展手记 (\(projectEntries.count))")
                                     .font(ArchiveTypography.monoScale(size: 10.5))
@@ -214,31 +252,50 @@ public struct ProjectsView: View {
                                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                 .buttonStyle(.plain)
                                 .foregroundStyle(ArchivePalette.accentWarm)
+                                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                             }
                             .padding(.horizontal, ArchiveCardMetrics.padding)
                             .padding(.top, 8)
 
                             ForEach(projectEntries.prefix(3)) { entry in
-                                HStack(spacing: 6) {
-                                    Text(FormatUtils.parseOccurredDate(entry.occurredAt).dotDate)
-                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                    Text(entry.title.isEmpty ? entry.content : entry.title)
-                                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                                        .foregroundStyle(ArchivePalette.inkPrimary)
-                                        .lineLimit(1)
+                                Button {
+                                    appState.highlightedEntry = entry
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(entry.parsedDate.dotDate)
+                                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                        Text(entry.title.isEmpty ? entry.content : entry.title)
+                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 4)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 8.5, weight: .semibold))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                    }
+                                    .padding(.vertical, 3)
+                                    .padding(.horizontal, 6)
+                                    .contentShape(Rectangle())
                                 }
-                                .padding(.horizontal, ArchiveCardMetrics.padding)
+                                .buttonStyle(.plain)
+                                .paperHover()
+                                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
+                                .padding(.horizontal, ArchiveCardMetrics.padding - 6)
                             }
                         }
-                        .padding(.bottom, 12)
+                        .padding(.bottom, 10)
                     }
                 }
+                .id(proj.id)
                 .background(ArchivePalette.archiveSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                 .overlay(
                     RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                        .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                        .stroke(
+                            highlightedId == proj.id ? ArchivePalette.accentWarm : ArchivePalette.borderDivider,
+                            lineWidth: highlightedId == proj.id ? 1.5 : 0.5
+                        )
                 )
             }
         }
@@ -256,19 +313,16 @@ public struct ProjectsView: View {
     }
 
     private func deleteProject(_ proj: Project) {
+        errorMessage = nil
         Task { @MainActor in
             do {
-                try await APIClient.shared.deleteProject(id: proj.id)
-                // 造物的伴生散页要一并从时间流移除
-                await appState.refreshAfterSecondaryWrite()
+                try await appState.deleteProjectAction(proj)
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
     }
 }
-
-// MARK: - 预览 (Preview)
 
 #Preview("造物项目") {
     ProjectsView(appState: ArchivePreviewFixtures.makeAppState())

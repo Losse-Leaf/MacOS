@@ -22,14 +22,16 @@ public enum ArchiveShortcutReference {
             ArchiveShortcutItem(title: "全局档案检索", combination: "⌘K"),
             ArchiveShortcutItem(title: "时间流搜索框聚焦", combination: "⌘F"),
             ArchiveShortcutItem(title: "全量同步中枢档案", combination: "⌘R"),
+            ArchiveShortcutItem(title: "撤销最近一次删除操作", combination: "⌘Z"),
             ArchiveShortcutItem(title: "生活刻度统计", combination: "⌥⌘S"),
             ArchiveShortcutItem(title: "呼出极速手账悬浮窗", combination: AppDelegate.hotKeyDisplayName),
             ArchiveShortcutItem(title: "切换六大内容板块", combination: "⌘1 – ⌘6"),
-            ArchiveShortcutItem(title: "切换系统配置板块", combination: "⌥⌘1 – ⌥⌘5"),
+            ArchiveShortcutItem(title: "切换设置窗口分页", combination: "⌥⌘1 – ⌥⌘3"),
             ArchiveShortcutItem(title: "键盘流上下浏览", combination: "⌘↑ / ⌘↓"),
             ArchiveShortcutItem(title: "打开选中的散页", combination: "⌘↩"),
-            ArchiveShortcutItem(title: "关闭当前弹层", combination: "⌘W"),
-            ArchiveShortcutItem(title: "偏好设置", combination: "⌘,")
+            ArchiveShortcutItem(title: "关闭当前弹层或窗口", combination: "⌘W"),
+            ArchiveShortcutItem(title: "打开偏好设置窗口", combination: "⌘,"),
+            ArchiveShortcutItem(title: "查看快捷键速查", combination: "⌘/")
         ]
     }
 }

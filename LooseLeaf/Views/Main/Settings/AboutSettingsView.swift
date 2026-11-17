@@ -1,6 +1,7 @@
 import SwiftUI
+import AppKit
 
-/// 关于活页（左侧菜单「关于活页」入口）：版本状态、更新检查与系统诊断
+/// 关于活页（独立 Settings 窗口「关于活页」分页）：版本状态、完整性校验更新与系统诊断
 @MainActor
 struct AboutSettingsView: View {
     @Bindable var appState: AppState
@@ -17,7 +18,6 @@ struct AboutSettingsView: View {
         return VStack(spacing: ArchiveSpacing.l) {
             // 顶部 App 英雄刊头 (Hero Banner)
             VStack(spacing: ArchiveSpacing.m) {
-                // 真实 App 图标：与 Dock / 访达中展示的 AppIcon 完全一致
                 appIconView
                     .padding(.top, ArchiveSpacing.s)
 
@@ -30,7 +30,6 @@ struct AboutSettingsView: View {
                         .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkSecondary)
 
-                    // 100% 动态读取 Bundle 信息，绝不硬编码！
                     Text("版本 \(currentVersion) (Build \(currentBuild)) · 原生 Apple Silicon")
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
@@ -57,17 +56,21 @@ struct AboutSettingsView: View {
                         }
                         .padding(ArchiveCardMetrics.padding)
                     } else if checker.isUpdating {
-                        HStack(spacing: ArchiveSpacing.m) {
-                            ProgressView().controlSize(.small)
-                            VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
-                                Text("正在下载并应用最新版本…")
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                            HStack {
+                                Text("正在下载、校验 SHA256 并应用更新…")
                                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                                     .foregroundStyle(ArchivePalette.accentWarm)
-                                Text("正在下载更新归档并替换 /Applications/LooseLeaf.app")
-                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Spacer()
+                                Text("\(Int((min(max(checker.updateProgress, 0), 1) * 100).rounded()))%")
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .semibold))
+                                    .foregroundStyle(ArchivePalette.inkSecondary)
                             }
-                            Spacer()
+                            ProgressView(value: min(max(checker.updateProgress, 0), 1), total: 1.0)
+                                .tint(ArchivePalette.accentWarm)
+                            Text("完成后将原子替换 /Applications/LooseLeaf.app 并自动重启接管")
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .foregroundStyle(ArchivePalette.inkMuted)
                         }
                         .padding(ArchiveCardMetrics.padding)
                     } else if let update = checker.availableUpdate {
@@ -93,6 +96,13 @@ struct AboutSettingsView: View {
 
                                 Spacer()
 
+                                Button("跳过此版本") {
+                                    checker.ignoreCurrentUpdate()
+                                }
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                                .paperButtonFocusRing()
+
                                 Button("立即更新并重启") {
                                     Task { @MainActor in
                                         await checker.performInAppUpdate()
@@ -108,14 +118,34 @@ struct AboutSettingsView: View {
                                 Text("更新日志：")
                                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkSecondary)
-                                Text(update.body)
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                    .lineLimit(6)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(ArchiveSpacing.s)
-                                    .background(ArchivePalette.archivePaper)
-                                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                ScrollView {
+                                    Text(update.body)
+                                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(maxHeight: 110)
+                                .padding(ArchiveSpacing.s)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            }
+
+                            HStack(spacing: ArchiveSpacing.s) {
+                                Button("浏览器下载安装") {
+                                    checker.openDownloadInBrowser()
+                                }
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                                .paperButtonFocusRing()
+
+                                Button("复制终端一键更新") {
+                                    checker.copyInstallCommandToClipboard()
+                                }
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                                .paperButtonFocusRing()
+
+                                Spacer()
                             }
                         }
                         .padding(ArchiveCardMetrics.padding)
@@ -139,14 +169,33 @@ struct AboutSettingsView: View {
 
                     if let updateError = checker.updateError, !updateError.isEmpty {
                         Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-                        // 更新失败原因（沙箱拦截 / 无 /Applications 写权限等）必须可见
-                        settingsFeedbackBanner(feedback: nil, error: updateError)
-                            .padding(ArchiveCardMetrics.padding)
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                            settingsFeedbackBanner(feedback: nil, error: updateError)
+
+                            HStack(spacing: ArchiveSpacing.s) {
+                                Button("浏览器下载安装包") {
+                                    checker.openDownloadInBrowser()
+                                }
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                                .paperButtonFocusRing()
+
+                                Button("复制终端一键更新命令") {
+                                    checker.copyInstallCommandToClipboard()
+                                }
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                                .paperButtonFocusRing()
+
+                                Spacer()
+                            }
+                        }
+                        .padding(ArchiveCardMetrics.padding)
                     }
                 }
             }
 
-            // 2. 系统与环境诊断 (Diagnostic Information)
+            // 2. 系统与环境诊断
             settingsCardSection(title: "系统与环境") {
                 settingsCardRow(
                     icon: "apple.logo",
@@ -196,7 +245,7 @@ struct AboutSettingsView: View {
                 }
             }
 
-            // 3. 开源与链接 (Links & Community)
+            // 3. 开源与链接
             settingsCardSection(title: "社区与协议") {
                 settingsCardRow(
                     icon: "chevron.left.forwardslash.chevron.right",
@@ -247,7 +296,6 @@ struct AboutSettingsView: View {
                 }
             }
 
-            // 底部版权信息
             VStack(spacing: ArchiveSpacing.xs) {
                 Text("Local-First 本地优先 · SQLite + R2 冗余热备")
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
@@ -261,13 +309,11 @@ struct AboutSettingsView: View {
         }
     }
 
-    // MARK: - 真实 App 图标
-
-    /// 刊头主标题字号（介于 Scale.title 与 Scale.display 之间的英雄级排版）
     private static let heroTitleSize: CGFloat = 22
+    private static let appIconSize: CGFloat = 76
+    private static let bundledAppIcon: NSImage? = ArchiveResourceBundle.bundle.image(forResource: "AppIcon")
+    private static var hasBundledAppIcon: Bool { bundledAppIcon != nil }
 
-    /// 真实 App 图标：与 Dock / 访达中展示的 AppIcon 完全一致。
-    /// 优先取资产目录中的 `AppIcon`；若运行环境下不可用则回退到系统提供的应用图标。
     private var appIconView: some View {
         Group {
             if Self.hasBundledAppIcon {
@@ -279,7 +325,6 @@ struct AboutSettingsView: View {
                     .resizable()
                     .interpolation(.high)
             } else {
-                // 兜底：极简纸墨叶形，避免出现空白方块
                 ZStack {
                     ArchivePalette.accentMoss
                     Image(systemName: "leaf.fill")
@@ -299,16 +344,5 @@ struct AboutSettingsView: View {
                 .stroke(ArchivePalette.archivePaper.opacity(0.2), lineWidth: 1)
         )
         .accessibilityLabel("Loose-Leaf 应用图标")
-    }
-
-    /// App 图标边长
-    private static let appIconSize: CGFloat = 76
-
-    /// 缓存的 AppIcon 资源（避免每次布局都做一次资源查找）
-    private static let bundledAppIcon: NSImage? = ArchiveResourceBundle.bundle.image(forResource: "AppIcon")
-
-    /// 运行环境下是否存在可用的 AppIcon 资源
-    private static var hasBundledAppIcon: Bool {
-        bundledAppIcon != nil
     }
 }

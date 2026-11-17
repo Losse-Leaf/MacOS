@@ -2,28 +2,82 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// 独立观察 `AppBanners` 的顶部提示浮层：
+/// 避免弹吐司/关闭报错时触发整棵 `StreamView` 与几百张卡片的 diff 重算。
+private struct StreamBannerOverlay: View {
+    @Bindable var banners: AppBanners
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if let err = banners.error {
+                noticeStrip(text: err, isError: true) {
+                    banners.error = nil
+                }
+            }
+            if let warning = banners.localWarning {
+                noticeStrip(text: warning, isError: true) {
+                    banners.localWarning = nil
+                }
+            }
+            if let status = banners.status {
+                noticeStrip(text: status, isError: false) {
+                    banners.status = nil
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .allowsHitTesting(true)
+    }
+
+    private func noticeStrip(text: String, isError: Bool, onDismiss: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isError ? "exclamationmark.triangle" : "checkmark.circle")
+                .foregroundStyle(isError ? ArchivePalette.accentWarm : ArchivePalette.accentMoss)
+            Text(text)
+                .font(ArchiveTypography.bodySans(size: 12))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+            Spacer()
+            Button("关闭") {
+                onDismiss()
+            }
+            .font(ArchiveTypography.bodySans(size: 11))
+            .buttonStyle(.plain)
+            .paperButtonFocusRing(cornerRadius: 3)
+            .foregroundStyle(ArchivePalette.inkMuted)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+        )
+    }
+}
+
 /// 桌面主窗口工作台与时间流视图 (StreamView)
-/// 严格遵循 docs/macos.md §6 & §7 与 docs/web.md §2.5 规范：
-/// 1. 叠加纸张微噪点与系统 Vibrancy 半透明材质
-/// 2. 集成 52 周生活刻度热力图、四维分类过滤、#标签下钻与即时模糊搜索
-/// 3. 相邻记录跨度 >= 14 天自动渲染「岁月留白刻度切线」
-/// 4. 胶片相纸以 .film-frame 装裱呈现，点击进入暗房大图灯箱
+/// 严格遵循 macOS HIG 规范：
+/// 1. 升级为原生 `NavigationSplitView`（支持 `⌃⌘S` 侧栏折叠、拖拽调宽与 13"/14" 分屏自适应）
+/// 2. 主内容区采用纯纸色基底（`enableVibrancy: false`），消除 5K 大屏离屏高斯模糊过度绘制
+/// 3. 搜索输入 120ms 防抖、横幅独立订阅隔离、渐进式 150 条视口窗口化与主窗口关闭缓存回收
 @MainActor
 public struct StreamView: View {
     @Bindable var appState: AppState
-    /// 打开独立详情窗口（深链 / 「在新窗口打开」）
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    // 键盘流与检索状态
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var keyboardScrollPosition: Int?
     @State private var localSearchText: String = ""
+    @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var visibleRowLimit: Int = 150
     @FocusState private var isSearchFocused: Bool
 
-    // 管理模式：编辑与删除状态
-    // 编辑态放在 AppState（见 AppState.editingEntry 的说明）：
-    // 行为闭包只捕获 AppState 单例 → 整轮时间流共享同一份 actions 引用
-    // → SwiftUI 能跳过内容没变的卡片。
     @State private var visitedSections: Set<WorkbenchSection> = [.stream]
+    @State private var timelineActions = TimelineEntryActions()
 
     public init(appState: AppState) {
         self.appState = appState
@@ -31,22 +85,14 @@ public struct StreamView: View {
 
     public var body: some View {
         ZStack {
-            NoiseBackground(useSubtleSurface: false, enableVibrancy: true)
-
-            HStack(spacing: 0) {
-                // 左侧出版物目录侧栏
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 workbenchSidebar
-                    .frame(width: 225)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 225, max: 270)
+            } detail: {
+                ZStack {
+                    NoiseBackground(useSubtleSurface: false, enableVibrancy: false)
 
-                Rectangle()
-                    .fill(ArchivePalette.borderDivider)
-                    .frame(width: 0.5)
-
-                // 右侧主画布区
-                VStack(spacing: 0) {
                     ZStack {
-                        // 仅时间流常驻（保留滚动位置与键盘流焦点）；其余板块按需挂载，
-                        // 避免 12 个板块同时存活导致任意 AppState 变更触发全量隐藏视图重算
                         if visitedSections.contains(.stream) {
                             sectionContentView(for: .stream)
                                 .modifier(WorkbenchCanvasMaxWidth(maxWidth: 960))
@@ -63,32 +109,10 @@ public struct StreamView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .animation(.easeInOut(duration: 0.12), value: appState.activeSection)
-                    // 通知条改为浮层：不参与主画布布局，出现/消失不再导致内容跳动；
-                    // 且三类提示可叠加（原先互斥，错误会被信息条遮住）。
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: appState.activeSection)
                     .overlay(alignment: .top) {
-                        VStack(spacing: 4) {
-                            if let err = appState.errorBanner {
-                                topNoticeStrip(text: err, isError: true) {
-                                    appState.errorBanner = nil
-                                }
-                            }
-                            if let warning = appState.localDataWarning {
-                                topNoticeStrip(text: warning, isError: true) {
-                                    appState.localDataWarning = nil
-                                }
-                            }
-                            if let banner = appState.statusBanner {
-                                topNoticeStrip(text: banner, isError: false) {
-                                    appState.statusBanner = nil
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                        .allowsHitTesting(true)
+                        StreamBannerOverlay(banners: appState.banners)
                     }
-
                 }
             }
             .accessibilityHidden(appState.hasOpenOverlay)
@@ -103,13 +127,9 @@ public struct StreamView: View {
                 }
             }
 
-            // 说明：原先此处有一个右下角悬浮「+」按钮（FAB）。
-            // FAB 是移动端范式，在 macOS 上会随窗口尺寸漂移并遮挡右下角内容，
-            // 现已改为窗口右上角的原生工具栏按钮（⌘N 快捷键保持不变）。
-
             if appState.showNewEntrySheet {
                 PaperModalOverlay(onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                         appState.showNewEntrySheet = false
                     }
                 }) {
@@ -120,7 +140,7 @@ public struct StreamView: View {
                         initialCityCode: appState.newEntryInitialCityCode,
                         initialCityName: appState.newEntryInitialCityName
                     ) {
-                        withAnimation(.easeInOut(duration: 0.16)) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                             appState.showNewEntrySheet = false
                             appState.newEntryInitialKind = nil
                             appState.newEntryInitialProjectId = nil
@@ -132,35 +152,41 @@ public struct StreamView: View {
                 .zIndex(110)
             }
 
-            // 全局聚光灯档案检索 (⌘K Spotlight)
+            // 全局聚光灯档案检索 (⌘K Spotlight) —— 命中二级实体后精准跳转并高亮/开抽屉
             if appState.showSearchModal {
                 PaperModalOverlay(onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                         appState.showSearchModal = false
                     }
                 }) {
                     GlobalSearchModalView(
                         appState: appState,
                         onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.16)) {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                                 appState.showSearchModal = false
                             }
                         },
                         onSelectEntry: { entry in
                             appState.highlightedEntry = entry
                         },
-                        onSelectFootprint: { _ in
-                            withAnimation(.easeInOut(duration: 0.12)) {
+                        onSelectFootprint: { fp in
+                            appState.navigation.highlightedFootprintCity = CityJumpTarget(
+                                code: fp.cityCode,
+                                name: fp.cityName
+                            )
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
                                 appState.activeSection = .atlas
                             }
                         },
-                        onSelectWish: { _ in
-                            withAnimation(.easeInOut(duration: 0.12)) {
+                        onSelectWish: { wish in
+                            appState.navigation.highlightedWishId = wish.id
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
                                 appState.activeSection = .wishes
                             }
                         },
-                        onSelectProject: { _ in
-                            withAnimation(.easeInOut(duration: 0.12)) {
+                        onSelectProject: { proj in
+                            appState.navigation.highlightedProjectId = proj.id
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
                                 appState.activeSection = .projects
                             }
                         }
@@ -169,57 +195,79 @@ public struct StreamView: View {
                 .zIndex(120)
             }
 
-            // 全局统一纸本确认 / 警示弹窗 (对标 Web ConfirmDialog.vue)
+            // 全局统一纸本确认 / 警示弹窗
             if let req = appState.activeConfirmDialog {
                 PaperConfirmDialogView(request: req) {
-                    withAnimation(.easeInOut(duration: 0.16)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                         appState.activeConfirmDialog = nil
                     }
                 }
                 .zIndex(130)
             }
         }
-
+        .background(
+            HostingWindowCloseObserver {
+                // 主窗口关闭退驻后台/菜单栏时主动释放 ~120MB 位图解码缓存池
+                PaperImageCache.clearMemoryCache()
+            }
+        )
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
-
         .sheet(item: $appState.editingEntry) { entry in
             editEntrySheet(entry: entry)
+                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
         .sheet(item: $appState.editingTransaction) { tx in
             EditTransactionSheet(appState: appState, transaction: tx) {
                 appState.editingTransaction = nil
                 Task { @MainActor in
-                    // 同样改为增量刷新（账目在时间流里是合成条目，需一并更新）
                     await appState.loadTransactionsAndAssets(forceFull: false)
                     await appState.loadEntries(forceFull: false)
                 }
             }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
         .sheet(item: $appState.highlightedEntry) { entry in
             entryDetailSheet(entry: entry)
+                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
         .onAppear {
+            localSearchText = appState.searchQuery
             visitedSections.insert(appState.activeSection)
         }
         .onChange(of: appState.activeSection) { _, newSec in
+            // 若旧路径误把 activeSection 切到配置枚举，自动重定向打开独立 Settings 窗口并保持当前内容板块
+            if WorkbenchSection.configurationSections.contains(newSec) {
+                let tab: SettingsTab = switch newSec {
+                case .hub: .devices
+                case .about: .about
+                default: .general
+                }
+                appState.activeSection = .stream
+                appState.navigation.settingsSelectedTab = tab
+                openSettings()
+                NSApp.activate(ignoringOtherApps: true)
+                return
+            }
             visitedSections.insert(newSec)
         }
-        // ESC 统一在最外层处理：按「最上层优先」关闭自定义弹层，
-        // 避免每个弹窗各自实现一套 ESC 逻辑而产生不一致。
+        .onChange(of: appState.navigation.settingsOpenToken) { _, _ in
+            openSettings()
+            NSApp.activate(ignoringOtherApps: true)
+        }
         .onExitCommand {
             if appState.activeConfirmDialog != nil {
                 appState.dismissConfirm()
             } else if appState.showSearchModal {
-                withAnimation(.easeInOut(duration: 0.16)) { appState.showSearchModal = false }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) { appState.showSearchModal = false }
             } else if appState.showNewEntrySheet {
-                withAnimation(.easeInOut(duration: 0.16)) { appState.showNewEntrySheet = false }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) { appState.showNewEntrySheet = false }
             } else if appState.lightboxAttachment != nil {
                 appState.lightboxAttachment = nil
             }
         }
     }
 
-    // MARK: - 主画布内容分发 (保持已访问视图驻留，实现零延迟丝滑切换与滚动位置保持)
+    // MARK: - 主画布内容分发
 
     @ViewBuilder
     private func sectionContentView(for section: WorkbenchSection) -> some View {
@@ -236,16 +284,10 @@ public struct StreamView: View {
             ProjectsView(appState: appState)
         case .dossier:
             CuratorDossierView(appState: appState)
-        case .preferences:
-            SettingsView(appState: appState, pinnedTab: .general)
-        case .hub:
-            SettingsView(appState: appState, pinnedTab: .devices)
-        case .about:
-            SettingsView(appState: appState, pinnedTab: .about)
+        case .preferences, .hub, .about:
+            streamTimelineCanvas
         }
     }
-
-    // MARK: - 左侧工作台导航栏
 
     private var workbenchSidebar: some View {
         WorkbenchSidebar(
@@ -253,7 +295,7 @@ public struct StreamView: View {
             onSelect: { section in
                 guard appState.activeSection != section else { return }
                 visitedSections.insert(section)
-                withAnimation(.easeInOut(duration: 0.12)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
                     appState.activeSection = section
                 }
             }
@@ -265,7 +307,7 @@ public struct StreamView: View {
     private var streamTimelineCanvas: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // 1. 刊头诗意排版 (严格对标 Web HomeView.vue 刊头)
+                // 1. 刊头诗意排版
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -279,6 +321,7 @@ public struct StreamView: View {
                             Text(subtitle)
                                 .font(ArchiveTypography.monoScale(size: 12))
                                 .foregroundStyle(ArchivePalette.inkMuted)
+                                .lineLimit(1)
                         }
 
                         Spacer()
@@ -291,6 +334,7 @@ public struct StreamView: View {
                         }
                         .font(ArchiveTypography.monoScale(size: 11.5))
                         .foregroundStyle(ArchivePalette.inkMuted)
+                        .lineLimit(1)
                     }
 
                     if !appState.profile.motto.isEmpty {
@@ -301,9 +345,8 @@ public struct StreamView: View {
                             .padding(.top, 1)
                     }
 
-                    // 检索与操作胶囊工具条
-                    HStack(spacing: 8) {
-                        // 模糊搜索框 (⌘F)：外层胶囊锁定固定宽度 260，防止聚焦或输入时挤压右侧分类胶囊
+                    // 检索与分类胶囊工具条（窄窗/分屏下分类胶囊自动横向滚动，绝不挤压搜索框）
+                    HStack(spacing: 12) {
                         HStack(spacing: 6) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 11))
@@ -315,23 +358,40 @@ public struct StreamView: View {
                                 .focused($isSearchFocused)
                                 .frame(maxWidth: .infinity)
                                 .onChange(of: localSearchText) { _, newVal in
-                                    appState.searchQuery = newVal
+                                    searchDebounceTask?.cancel()
+                                    if newVal.isEmpty {
+                                        appState.searchQuery = ""
+                                        visibleRowLimit = 150
+                                    } else {
+                                        searchDebounceTask = Task { @MainActor in
+                                            try? await Task.sleep(nanoseconds: 120_000_000)
+                                            guard !Task.isCancelled else { return }
+                                            appState.searchQuery = newVal
+                                            visibleRowLimit = 150
+                                        }
+                                    }
                                 }
-                            Button {
-                                localSearchText = ""
-                                appState.searchQuery = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            if !localSearchText.isEmpty {
+                                Button {
+                                    searchDebounceTask?.cancel()
+                                    localSearchText = ""
+                                    appState.searchQuery = ""
+                                    visibleRowLimit = 150
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                        .frame(minWidth: 24, minHeight: 24)
+                                        .contentShape(Rectangle())
+                                }
+                                .accessibilityLabel("清空搜索关键词")
+                                .buttonStyle(.plain)
+                                .paperButtonFocusRing(cornerRadius: 4)
                             }
-                            .accessibilityLabel("清空搜索关键词")
-                            .buttonStyle(.plain)
-                            .opacity(localSearchText.isEmpty ? 0 : 1)
-                            .disabled(localSearchText.isEmpty)
                         }
                         .padding(.horizontal, 10)
-                        .frame(width: 260, height: 32)
+                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 260)
+                        .frame(height: 32)
                         .background(ArchivePalette.archivePaper)
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
                         .overlay(
@@ -340,22 +400,32 @@ public struct StreamView: View {
                         )
                         .paperElevation(1)
 
-                        // 分类筛选与检索并排：
-                        // 早先它们分占两行 —— 左上角一个窄搜索框、右上一排胶囊，
-                        // 中间大片空白，视线没有落点。合成一行后，
-                        // 左侧「找」与右侧「筛」各占一头，中间留白反而成了呼吸。
-                        Spacer(minLength: 24)
+                        Spacer(minLength: 8)
 
-                        HStack(spacing: 4) {
-                            ForEach(ArchiveCategory.allCases) { cat in
-                                if cat != .transaction || appState.isPaired {
-                                    PaperPillButton(
-                                        title: cat.label,
-                                        isSelected: appState.selectedCategory == cat
-                                    ) {
-                                        guard appState.selectedCategory != cat else { return }
-                                        appState.selectedCategory = cat
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 4) {
+                                ForEach(ArchiveCategory.allCases) { cat in
+                                    if cat != .transaction || appState.isPaired {
+                                        PaperPillButton(
+                                            title: cat.label,
+                                            isSelected: appState.selectedCategory == cat
+                                        ) {
+                                            guard appState.selectedCategory != cat else { return }
+                                            appState.selectedCategory = cat
+                                            visibleRowLimit = 150
+                                        }
                                     }
+                                }
+
+                                // 私密条目快捷筛选胶囊
+                                let privateOnly = appState.navigation.streamPrivacyFilter == .privateOnly
+                                PaperPillButton(
+                                    title: "私密",
+                                    icon: "lock.fill",
+                                    isSelected: privateOnly
+                                ) {
+                                    appState.navigation.streamPrivacyFilter = privateOnly ? .all : .privateOnly
+                                    visibleRowLimit = 150
                                 }
                             }
                         }
@@ -365,24 +435,24 @@ public struct StreamView: View {
 
                 Divider().overlay(ArchivePalette.borderSubtle)
 
-                // 2. 那年今日 · 岁月回响旧信笺 (复刻 Web 四角切线与朱砂印)
+                // 2. 那年今日 · 岁月回响旧信笺
                 if !appState.onThisDayEntries.isEmpty {
                     onThisDayBannerCard
                 }
 
-                // 3. 编年时间流
-                let rows = appState.streamRows
-                if rows.isEmpty {
-                    // 加载中显示骨架屏（而非空态），避免用户误以为数据丢失
+                // 3. 编年时间流（渐进式视口窗口化：默认挂载前 150 条，触底哨兵平滑扩容）
+                let allRows = appState.streamRows
+                if allRows.isEmpty {
                     if appState.isLoading {
                         ArchiveSkeletonView(rowCount: 4)
                     } else {
                         emptyStreamPlaceholder
                     }
                 } else {
-                    // 编年时间流 (纵向连续树干、直角树枝引线与 >= 14 天岁月年轮切线)
+                    let effectiveLimit = effectiveVisibleRowLimit(for: allRows)
+                    let displayedRows = allRows.prefix(effectiveLimit)
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(rows) { row in
+                        ForEach(displayedRows) { row in
                             let entry = row.entry
                             if row.gapDays >= 14 {
                                 TemporalGapDivider(days: row.gapDays)
@@ -396,49 +466,56 @@ public struct StreamView: View {
                             )
                             .id(entry.id)
                         }
+
+                        if allRows.count > effectiveLimit {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("正在展开更多历史印记（已载入 \(effectiveLimit) / \(allRows.count)）…")
+                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Spacer()
+                            }
+                            .padding(.vertical, 12)
+                            .onAppear {
+                                visibleRowLimit = min(allRows.count, visibleRowLimit + 150)
+                            }
+                        }
                     }
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 24)
+            .padding(.top, 20)
             .padding(.bottom, 48)
         }
         .scrollPosition(id: $keyboardScrollPosition)
         .onChange(of: appState.searchFocusRequest) { _, _ in
-            // 切回时间流后等一帧再聚焦，避免视图尚未可见时 FocusState 不生效
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 120_000_000)
                 isSearchFocused = true
             }
         }
-        // 深链 / 外部请求打开某条散页时，唤起独立详情窗口
         .onChange(of: appState.detailWindowEntry?.id) { _, newValue in
-            guard newValue != nil else { return }
-            openWindow(id: "detail")
+            guard let id = newValue else { return }
+            openWindow(id: "detail", value: id)
         }
         .onChange(of: appState.keyboardFocusedEntryId) { _, newValue in
             guard let id = newValue else { return }
-            withAnimation(.easeOut(duration: 0.2)) {
+            let allRows = appState.streamRows
+            if let idx = allRows.firstIndex(where: { $0.id == id }), idx >= visibleRowLimit {
+                visibleRowLimit = min(allRows.count, idx + 50)
+            }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                 keyboardScrollPosition = id
             }
         }
     }
 
-    /// 条目卡片的行为集合
-    ///
-    /// **整轮时间流共享同一个实例**（引用类型）。
-    /// 早先这里是 `timelineActions(for:)` 逐卡构造值类型闭包集合，
-    /// 于是每次父视图重算，每张卡拿到的都是一份全新闭包 → 视图值必变 →
-    /// SwiftUI 无法跳过任何一张卡 → 点一下与时间流无关的弹窗，
-    /// 整列 60 张卡全部重绘（实测 192ms）。
-    /// 共享引用后，只有真正变化的卡片才重绘。
-    ///
-    /// 必须用 `@State` 持有：`let` 存储属性会随 View 结构体的每次重建而
-    /// 重新初始化，引用一变，SwiftUI 依旧要重绘全部卡片。
-    /// `@State` 持有引用类型时，SwiftUI 会跨重建保留**同一个实例**。
-    @State private var timelineActions = TimelineEntryActions()
+    private func effectiveVisibleRowLimit(for rows: [AppState.StreamRow]) -> Int {
+        min(rows.count, max(150, visibleRowLimit))
+    }
 
-    /// 查出条目关联的账目（伴生条目的 id 可能是合成的负数，需归一）
     private func matchingTransaction(for entry: LifeEntry) -> Transaction? {
         if let associated = entry.associatedTransactionId {
             return appState.transactionById[Int(associated)]
@@ -449,19 +526,17 @@ public struct StreamView: View {
         return nil
     }
 
-    // MARK: - 单条散页卡片渲染组件 (TimelineEntryCardView)
-
-    // MARK: - 空态与顶部横幅
+    // MARK: - 空态与那年今日
 
     private var emptyStreamPlaceholder: some View {
         VStack(spacing: 10) {
-            Image(systemName: "book.closed")
+            Image(systemName: appState.navigation.streamPrivacyFilter == .privateOnly ? "lock.doc" : "book.closed")
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(ArchivePalette.inkMuted)
-            Text("散页手记尚待落墨")
+            Text(appState.navigation.streamPrivacyFilter == .privateOnly ? "暂无仅自己可见的私密散页" : "散页手记尚待落墨")
                 .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
-            Text("记录真实可感的当下")
+            Text(appState.navigation.streamPrivacyFilter == .privateOnly ? "在记一笔或右键卡片菜单中可将内容标记为仅自己可见" : "记录真实可感的当下")
                 .font(ArchiveTypography.bodySans(size: 12.5))
                 .foregroundStyle(ArchivePalette.inkMuted)
         }
@@ -475,33 +550,6 @@ public struct StreamView: View {
         )
     }
 
-    /// 顶部提示条
-    ///
-    /// 关键：`onDismiss` 由调用方传入，**每条只关自己那一条**。
-    /// 原先在这里一次清掉 statusBanner + errorBanner + localDataWarning 三条 ——
-    /// 而 localDataWarning 的定义是「需用户手动关闭」，
-    /// 于是点任意一条提示的「关闭」，把另两条也一并带走了。
-    private func topNoticeStrip(text: String, isError: Bool, onDismiss: @escaping () -> Void) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: isError ? "exclamationmark.triangle" : "checkmark.circle")
-                .foregroundStyle(isError ? ArchivePalette.accentWarm : ArchivePalette.accentMoss)
-            Text(text)
-                .font(ArchiveTypography.bodySans(size: 12))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-            Spacer()
-            Button("关闭") {
-                onDismiss()
-            }
-            .font(ArchiveTypography.bodySans(size: 11))
-            .buttonStyle(.plain)
-            .foregroundStyle(ArchivePalette.inkMuted)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        .background(ArchivePalette.archiveSubtle)
-    }
-
-    // MARK: - 那年今日 · 岁月回响旧信笺 (复刻 Web 四角切线与朱砂印)
     private var onThisDayBannerCard: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 10) {
@@ -537,10 +585,17 @@ public struct StreamView: View {
                         } label: {
                             HStack(alignment: .firstTextBaseline) {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(mainText)
-                                        .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
-                                        .foregroundStyle(ArchivePalette.inkPrimary)
-                                        .lineLimit(1)
+                                    HStack(spacing: 4) {
+                                        if entry.isPrivate {
+                                            Image(systemName: "lock.fill")
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(ArchivePalette.accentWarm)
+                                        }
+                                        Text(mainText)
+                                            .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                                            .foregroundStyle(ArchivePalette.inkPrimary)
+                                            .lineLimit(1)
+                                    }
 
                                     if !entry.title.isEmpty && !entry.content.isEmpty {
                                         Text(entry.content)
@@ -567,7 +622,7 @@ public struct StreamView: View {
                         .buttonStyle(.plain)
                         .paperHover()
                         .paperButtonFocusRing()
-                        .accessibilityLabel("那年今日：\(mainText)，\(entry.parsedDate.dotDate)")
+                        .accessibilityLabel("那年今日：\(entry.isPrivate ? "私密，" : "")\(mainText)，\(entry.parsedDate.dotDate)")
                     }
                 }
             }
@@ -579,7 +634,6 @@ public struct StreamView: View {
                     .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.8)
             )
 
-            // 四角复古裁切基准线 ⌜ ⌝ ⌞ ⌟
             VStack {
                 HStack {
                     Text("⌜").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
@@ -595,15 +649,13 @@ public struct StreamView: View {
             }
             .padding(4)
             .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 
     private func editEntrySheet(entry: LifeEntry) -> some View {
         EditEntrySheetView(entry: entry) { updated in
-            // 不要 try?：失败必须抛回弹窗，由弹窗就地展示并保持打开。
             _ = try await APIClient.shared.updateEntry(id: entry.id, updated)
-            // 关键：改成**增量**刷新。原先 forceFull: true 会重新拉取并排序
-            // 全部条目，档案稍多时点一次「修改」就要等好几秒。
             await appState.loadEntries(forceFull: false)
             await appState.loadConfigAndProfile()
             appState.editingEntry = nil
@@ -616,11 +668,12 @@ public struct StreamView: View {
         StreamEntryDetailView(
             entry: entry,
             appState: appState,
+            isStandaloneWindow: false,
             onEditEntry: { appState.editingEntry = $0 },
             onEditTransaction: { appState.editingTransaction = $0 },
             onDeleteTransaction: { appState.deleteTransactionAction($0) }
         )
-        .frame(width: 540)
+        .frame(width: 560)
         .background(ArchivePalette.archivePaper)
     }
 }

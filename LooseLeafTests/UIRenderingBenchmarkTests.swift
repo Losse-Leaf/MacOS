@@ -165,9 +165,9 @@ final class UIRenderingBenchmarkTests: XCTestCase {
     func test09_ComposerInternalBreakdown() {
         let draft = EntryDraft()
 
-        measure("弹窗拆解·形态切换条（5 个胶囊）") {
+        measure("弹窗拆解·形态切换条（4 个胶囊）") {
             HStack(spacing: 6) {
-                ForEach(["life", "travel", "project", "wish", "transaction"], id: \.self) { kind in
+                ForEach(EntryType.editableCases.map(\.rawValue), id: \.self) { kind in
                     PaperPillButton(title: kind, isSelected: kind == "life") {}
                 }
             }
@@ -429,8 +429,8 @@ final class UIRenderingBenchmarkTests: XCTestCase {
     }
 
     func test04_ComposerSubFormRenderingCost() {
-        // 五个形态分支各自的渲染开销
-        for kind in ["life", "travel", "project", "wish", "transaction"] {
+        // 四个可编辑散页形态分支各自的渲染开销
+        for kind in EntryType.editableCases.map(\.rawValue) {
             let appState = AppState.shared
             measure("创作弹窗形态分支 · \(kind)") {
                 NewEntryModal(

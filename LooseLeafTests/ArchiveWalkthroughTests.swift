@@ -432,7 +432,7 @@ final class ArchiveWalkthroughTests: XCTestCase {
         let fileName = uniqueMarker("走查图片") + ".png"
 
         let uploaded = try await timed("图片上传（预签名 + 直传 + 绑定）") {
-            let photo = try await ImageProcessor.processImageData(
+            let photo = try ImageProcessor.processImageData(
                 pngData,
                 originalFilename: fileName
             )
@@ -496,12 +496,15 @@ final class ArchiveWalkthroughTests: XCTestCase {
             "全局检索未召回刚创建的散页"
         )
     }
+}
 
-    // MARK: - 10. 客户端本地状态机：乐观写入 / 增量刷新 / 失败重试
+/// 纯本地离线状态机与字典走查（无需本地中枢在线，CI 与离线环境均常驻执行）
+@MainActor
+final class ArchiveLocalStateWalkthroughTests: XCTestCase {
 
-    func test10_OptimisticWriteAppearsImmediately() async throws {
+    func test10_OptimisticWriteAppearsImmediately() throws {
         let appState = AppState.shared
-        let title = uniqueMarker("乐观散页")
+        let title = "乐观散页-\(Int(Date().timeIntervalSince1970 * 1000))"
 
         let start = Date()
         let optimistic = SyncManager.shared.submitEntryOptimistically(
@@ -509,12 +512,14 @@ final class ArchiveWalkthroughTests: XCTestCase {
                 type: "life",
                 title: title,
                 content: "乐观写入走查",
-                occurredAt: FormatUtils.beijingISOString()
+                occurredAt: FormatUtils.beijingISOString(),
+                isPrivate: true
             )
         )
+        defer {
+            SyncManager.shared.removeOptimisticEntry(localTempId: optimistic.id)
+        }
         let elapsed = Date().timeIntervalSince(start)
-        timings.append(("乐观写入（本地立即可见）", elapsed))
-        print("⏱ [乐观写入（本地立即可见）] \(String(format: "%.3f", elapsed))s")
 
         XCTAssertLessThan(elapsed, 0.1, "乐观写入本应是同步且瞬时的")
         XCTAssertTrue(
@@ -522,19 +527,16 @@ final class ArchiveWalkthroughTests: XCTestCase {
             "乐观写入后条目未立即出现在本地时间流"
         )
         XCTAssertEqual(optimistic.syncStatus, "pending_create")
+        XCTAssertTrue(optimistic.isPrivate, "乐观写入必须原样保留 isPrivate 私密标记")
     }
 
-    // MARK: - 11. 城市解析：不得出现省 / 市错配
-
     func test11_CityResolutionHasNoProvinceMismatch() throws {
-        // 「宜宾市」属于四川，不能解析出浙江的代码
         let yibin = FormatUtils.resolveCityCode(from: "宜宾市")
         XCTAssertEqual(yibin, "511500", "宜宾市应解析为 511500（四川），实际 \(yibin ?? "nil")")
         if let yibin {
             let prov = CityDictionary.provincePrefixMap[String(yibin.prefix(2))] ?? ""
             XCTAssertEqual(prov, "四川", "宜宾市的省份应为四川，实际 \(prov)")
         }
-        // 杭州
         XCTAssertEqual(FormatUtils.resolveCityCode(from: "杭州"), "330100")
     }
 }

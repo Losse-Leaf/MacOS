@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 山川印谱独立主视图 (TravelAtlasView)
 /// 1. 标头：“山川印谱 · 典藏行迹票根”，动态统计点亮城市与足迹总数
-/// 2. 典藏票根架与城市回忆抽屉 (CityMemoryDrawerSheet)
+/// 2. 典藏票根架与城市回忆抽屉 (CityMemoryDrawerSheet)，支持 ⌘K 精准拉起抽屉与 ⌘Z 撤销删除
 @MainActor
 public struct TravelAtlasView: View {
     @Bindable var appState: AppState
@@ -26,7 +26,6 @@ public struct TravelAtlasView: View {
 
     public var body: some View {
         ScrollView {
-            // LazyVStack 作为 ScrollView 直接子视图，长列表才具备懒加载能力
             LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
                 headerSection
 
@@ -39,6 +38,12 @@ public struct TravelAtlasView: View {
                 ticketsSection
             }
             .padding(ArchiveSpacing.xl)
+        }
+        .onAppear {
+            consumeHighlightedCityIfNeeded()
+        }
+        .onChange(of: appState.navigation.highlightedFootprintCity) { _, _ in
+            consumeHighlightedCityIfNeeded()
         }
         .sheet(isPresented: $showNewFootprintSheet) {
             NewFootprintSheet(appState: appState) {
@@ -62,6 +67,12 @@ public struct TravelAtlasView: View {
                 selectedDrawerCity = nil
             }
         }
+    }
+
+    private func consumeHighlightedCityIfNeeded() {
+        guard let target = appState.navigation.highlightedFootprintCity else { return }
+        selectedDrawerCity = DrawerCitySelection(code: target.code, name: target.name)
+        appState.navigation.highlightedFootprintCity = nil
     }
 
     // MARK: - 1. 标头
@@ -102,8 +113,7 @@ public struct TravelAtlasView: View {
     // MARK: - 2. 典藏票根架
     private var ticketsSection: some View {
         VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
-            if appState.isLoading {
-                // 加载中：与「真的为空」区分，避免用户误以为行迹被清空
+            if appState.isLoading && appState.footprints.isEmpty {
                 ProgressView("正在打捞行迹票根…")
                     .frame(maxWidth: .infinity, minHeight: 180)
             } else if appState.footprints.isEmpty {
@@ -111,30 +121,50 @@ public struct TravelAtlasView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: ArchiveCardMetrics.padding), GridItem(.flexible(), spacing: ArchiveCardMetrics.padding)], spacing: ArchiveCardMetrics.padding) {
                     ForEach(appState.footprints) { fp in
-                        // 票根本体是按钮（键盘可达），编辑/删除按钮以浮层形式叠放其上，
-                        // 避免「按钮嵌套按钮」导致的点击歧义。
+                        let visitedDot = FormatUtils.parseOccurredDate(fp.visitedAt).dotDate
+                        let dateRangeText: String = {
+                            if let dep = fp.departedAt, !dep.isEmpty {
+                                let depDot = FormatUtils.parseOccurredDate(dep).dotDate
+                                if depDot != visitedDot {
+                                    return "\(visitedDot)\n— \(depDot)"
+                                }
+                            }
+                            return visitedDot
+                        }()
+                        let countValue = fp.entriesCount ?? 0
+
                         ZStack(alignment: .topTrailing) {
                             Button {
                                 selectedDrawerCity = DrawerCitySelection(code: fp.cityCode, name: fp.cityName)
                             } label: {
                                 HStack(spacing: 0) {
                                     // 左联：目的地存根
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(fp.cityName)
-                                            .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
-                                            .foregroundStyle(ArchivePalette.inkPrimary)
-                                        Text(FormatUtils.parseOccurredDate(fp.visitedAt).dotDate)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        HStack(spacing: 4) {
+                                            Text(fp.cityName)
+                                                .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                                .lineLimit(1)
+                                            if fp.isPrivate == true {
+                                                Image(systemName: "lock.fill")
+                                                    .font(.system(size: 9.5))
+                                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                                    .accessibilityLabel("私密行迹")
+                                            }
+                                        }
+                                        Text(dateRangeText)
                                             .font(ArchiveTypography.monoScale(size: 10.5))
                                             .foregroundStyle(ArchivePalette.inkMuted)
+                                            .lineLimit(2)
                                         Spacer(minLength: 4)
-                                        Text("散页 \(max(1, fp.entriesCount ?? 1)) 篇")
+                                        Text(countValue > 0 ? "散页 \(countValue) 篇" : "尚未关联散页")
                                             .font(ArchiveTypography.monoScale(size: 10.5))
-                                            .foregroundStyle(ArchivePalette.accentMoss)
+                                            .foregroundStyle(countValue > 0 ? ArchivePalette.accentMoss : ArchivePalette.inkMuted)
                                     }
-                                    .frame(width: 105, alignment: .leading)
+                                    .frame(width: 112, alignment: .leading)
                                     .padding(ArchiveSpacing.m)
 
-                                    // 齿孔虚线 (Perforated ticket line)
+                                    // 齿孔虚线
                                     Path { p in
                                         p.move(to: CGPoint(x: 0.5, y: 0))
                                         p.addLine(to: CGPoint(x: 0.5, y: 1000))
@@ -151,15 +181,17 @@ public struct TravelAtlasView: View {
                                                 .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
                                                 .foregroundStyle(ArchivePalette.inkPrimary)
                                                 .lineLimit(1)
-                                                // 为右上角浮层的操作按钮预留位置，避免标题被压住
                                                 .padding(.trailing, 60)
                                             Spacer()
                                         }
 
-                                        Text((fp.note?.isEmpty == false) ? fp.note! : "行至此处，留下一纸驻足印记。")
-                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                                            .foregroundStyle(ArchivePalette.inkSecondary)
-                                            .lineLimit(2)
+                                        EditorialProseTextView(
+                                            (fp.note?.isEmpty == false) ? fp.note! : "行至此处，留下一纸驻足印记。",
+                                            font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body),
+                                            color: ArchivePalette.inkSecondary,
+                                            lineSpacing: 2,
+                                            lineLimit: 2
+                                        )
 
                                         Spacer(minLength: 4)
 
@@ -188,6 +220,7 @@ public struct TravelAtlasView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .paperButtonFocusRing(cornerRadius: ArchiveRadius.sm)
                             .accessibilityLabel("\(fp.cityName) 票根，\(fp.title ?? "行旅手记")")
                             .accessibilityHint("打开该城市的回忆抽屉")
                             .paperHover()
@@ -205,7 +238,7 @@ public struct TravelAtlasView: View {
                                 Button(role: .destructive) {
                                     appState.askConfirm(
                                         title: "确认删除该座城市足迹票根？",
-                                        message: "删除后将移除该次漫游记录，关联游记散页不受影响。",
+                                        message: "删除后将移除该次漫游记录，关联游记散页不受影响，可按 ⌘Z 撤销。",
                                         confirmText: "删除足迹票根",
                                         danger: true
                                     ) {
@@ -216,7 +249,6 @@ public struct TravelAtlasView: View {
                                 }
                                 Divider()
                                 Button {
-                                    NSPasteboard.general.clearContents()
                                     SecureClipboard.copy(fp.cityName)
                                     appState.showTemporaryBanner("已拷贝城市名称至剪贴板")
                                 } label: {
@@ -224,7 +256,6 @@ public struct TravelAtlasView: View {
                                 }
                                 if let note = fp.note, !note.isEmpty {
                                     Button {
-                                        NSPasteboard.general.clearContents()
                                         SecureClipboard.copy(note)
                                         appState.showTemporaryBanner("已拷贝行旅手记至剪贴板")
                                     } label: {
@@ -253,7 +284,7 @@ public struct TravelAtlasView: View {
                                 ) {
                                     appState.askConfirm(
                                         title: "确认删除该座城市足迹票根？",
-                                        message: "删除后将移除该次漫游记录，关联游记散页不受影响。",
+                                        message: "删除后将移除该次漫游记录，关联游记散页不受影响，可按 ⌘Z 撤销。",
                                         confirmText: "删除足迹票根",
                                         danger: true
                                     ) {
@@ -282,19 +313,16 @@ public struct TravelAtlasView: View {
     }
 
     private func deleteFootprint(_ fp: Footprint) {
+        errorMessage = nil
         Task { @MainActor in
             do {
-                try await APIClient.shared.deleteFootprint(id: fp.id)
-                // 足迹的伴生散页要一并从时间流移除
-                await appState.refreshAfterSecondaryWrite()
+                try await appState.deleteFootprintAction(fp)
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
     }
 }
-
-// MARK: - 预览 (Preview)
 
 #Preview("山川印谱") {
     TravelAtlasView(appState: ArchivePreviewFixtures.makeAppState())

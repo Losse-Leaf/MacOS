@@ -137,14 +137,27 @@ public enum HubConnectionBadgeState: Sendable, Equatable {
             return ArchivePalette.inkMuted
         }
     }
+
+    /// 辅助功能「不靠颜色区分」开启时配合展示的语义图标形状
+    public var symbolName: String {
+        switch self {
+        case .online: return "checkmark.circle.fill"
+        case .syncing: return "arrow.triangle.2.circlepath.circle.fill"
+        case .pendingUpload: return "arrow.up.circle.fill"
+        case .offline: return "icloud.slash.fill"
+        case .syncFailed: return "exclamationmark.triangle.fill"
+        case .unpaired: return "link.badge.plus"
+        }
+    }
 }
 
 /// 跨窗口持久化快速捕捉草稿容器 (@Observable)
-/// 统一 MenuBar 与悬浮窗状态实例，消除草稿割裂
+/// 统一 MenuBar 与悬浮窗状态实例，消除切换 Tab 与双宿主状态割裂
 @Observable
 @MainActor
 public final class QuickCaptureDraft {
     public var activeTab: QuickCaptureTab = .thought
+    // 极速记录草稿
     public var entryType: EntryType = .life
     public var titleText: String = ""
     public var contentText: String = ""
@@ -154,16 +167,48 @@ public final class QuickCaptureDraft {
     public var extractedCameraLine: String = ""
     public var occurredAt: Date = Date()
     public var showBackdatePicker: Bool = false
+    public var isPrivate: Bool = false
+    /// 共享相纸装裱队列（MenuBar 与 ⌘⇧L 悬浮窗共用同一上传进度与单张重试状态机）
+    let media = EntryMediaState()
 
-    public func reset() {
+    // 快速记账草稿（切换 Tab 或在菜单栏/悬浮窗间切换时完整保留）
+    public var ledgerSmartInput: String = ""
+    public var ledgerAmountString: String = ""
+    public var ledgerTitleString: String = ""
+    public var ledgerSelectedType: String = "expense"
+    public var ledgerSelectedCategory: String = ""
+    public var ledgerSelectedPayment: String = ""
+    public var ledgerSelectedCityCode: String = ""
+    public var ledgerSelectedCityName: String = ""
+    public var ledgerOccurredAt: Date = Date()
+    public var ledgerShowDatePicker: Bool = false
+
+    public func resetThought() {
         titleText = ""
         contentText = ""
         selectedCityCode = ""
         selectedCityName = ""
         uploadedAttachments.removeAll()
         extractedCameraLine = ""
+        media.removeAll()
+        media.extractedCameraLine = ""
         occurredAt = Date()
         showBackdatePicker = false
+        isPrivate = false
+    }
+
+    public func resetLedger() {
+        ledgerSmartInput = ""
+        ledgerAmountString = ""
+        ledgerTitleString = ""
+        ledgerSelectedType = "expense"
+        ledgerOccurredAt = Date()
+        ledgerShowDatePicker = false
+    }
+
+    public func reset() {
+        resetThought()
+        resetLedger()
     }
 }
 
@@ -206,8 +251,19 @@ public final class AppState {
     private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "appstate")
 
     // MARK: - 核心业务数据 (100% 动态驱动，严禁假数据兜底)
-    public var entries: [LifeEntry] = []
-    public var transactions: [Transaction] = []
+    public var entries: [LifeEntry] = [] {
+        didSet {
+            entriesRevision += 1
+            onThisDayCacheDateKey = nil
+            recomputeUploadCounts()
+        }
+    }
+    public var transactions: [Transaction] = [] {
+        didSet {
+            transactionsRevision += 1
+            recomputeUploadCounts()
+        }
+    }
     public var transactionSummary: TransactionSummary = TransactionSummary()
     public var assetsOverview: AssetsOverview?
     public var profile: CuratorProfile = CuratorProfile()
@@ -306,6 +362,7 @@ public final class AppState {
             projectId: entry.projectId,
             wishId: entry.wishId,
             footprintId: entry.footprintId,
+            isPrivate: entry.isPrivate,
             attachmentIds: entry.attachments.map(\.id)
         )
         Task { @MainActor in
@@ -516,7 +573,27 @@ public final class AppState {
     public var appearanceMode: AppearanceMode {
         didSet {
             UserDefaults.standard.set(appearanceMode.rawValue, forKey: "looseleaf_appearance_mode")
+            applyAppAppearance()
         }
+    }
+
+    /// 同步 `NSApp.appearance`，防止系统 Popover 尖角、菜单与子 Sheet 外壳反色
+    public func applyAppAppearance() {
+        guard let app = NSApp else { return }
+        switch appearanceMode {
+        case .system:
+            app.appearance = nil
+        case .paper:
+            app.appearance = NSAppearance(named: .aqua)
+        case .darkroom:
+            app.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
+    /// 打开独立设置窗口并精准切至指定标签页（支持菜单栏、快捷键 ⌥⌘1–3 与更新器联动）
+    public func openSettings(tab: SettingsTab = .general) {
+        navigation.settingsSelectedTab = tab
+        navigation.settingsOpenToken &+= 1
     }
 
     /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
@@ -600,44 +677,30 @@ public final class AppState {
     /// 冷启动引导是否已执行（防止重复拉取）
     @ObservationIgnored private var hasBootstrapped: Bool = false
 
-    /// 当前是否存在需要关闭的自定义浮层（供 ⌘W 菜单项启用/禁用）
+    /// 当前是否存在需要关闭的主窗口内自定义浮层（独立详情窗口有原生 NSWindow.performClose，不阻塞主窗口工具栏）
     public var hasOpenOverlay: Bool {
         activeConfirmDialog != nil
             || showSearchModal
             || showNewEntrySheet
             || lightboxAttachment != nil
-            // 关键：详情 / 编辑两个弹层也要算进去。
-            // 原先漏了它们，于是这些弹层打开时 ⌘W 菜单项是**禁用**的 ——
-            // 用户按 ⌘W 没反应，而其它浮层都能关。
             || highlightedEntry != nil
             || editingEntry != nil
             || editingTransaction != nil
-            || detailWindowEntry != nil
     }
 
-    /// 全局中枢连接状态派生（唯一事实源，统一驱动侧栏、设置顶栏、中枢管理与关于页）
+    /// 在 `applySnapshot` 中一次性预统计的待上传/失败计数（避免侧栏每次渲染全量扫描两遍数组）
+    public private(set) var pendingUploadCount: Int = 0
+    public private(set) var failedUploadCount: Int = 0
+    public private(set) var pendingEntriesCount: Int = 0
+    public private(set) var pendingTransactionsCount: Int = 0
+
+    /// 全局中枢连接状态派生（唯一事实源，O(1) 读取）
     public var hubConnectionBadgeState: HubConnectionBadgeState {
         guard isPaired else { return .unpaired }
         guard isOnline else { return .offline }
-        var pending = 0
-        var failed = 0
-        for entry in entries {
-            switch entry.syncStatus ?? "synced" {
-            case "pending_create": pending += 1
-            case "failed": failed += 1
-            default: break
-            }
-        }
-        for tx in transactions {
-            switch tx.syncStatus ?? "synced" {
-            case "pending_create": pending += 1
-            case "failed": failed += 1
-            default: break
-            }
-        }
-        if failed > 0 { return .syncFailed(count: failed) }
+        if failedUploadCount > 0 { return .syncFailed(count: failedUploadCount) }
         if isFlushingOutbox { return .syncing }
-        if pending > 0 { return .pendingUpload(count: pending) }
+        if pendingUploadCount > 0 { return .pendingUpload(count: pendingUploadCount) }
         return .online
     }
 
@@ -697,8 +760,10 @@ public final class AppState {
         // 这正是「提交后感觉慢了一拍」的来源之一。
         SyncManager.shared.onSnapshotUpdated = { [weak self] snap in
             guard let self else { return }
-            self.isOnline = SyncManager.shared.isOnline
-            self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
+            let nextOnline = SyncManager.shared.isOnline
+            let nextFlushing = SyncManager.shared.isFlushingOutbox
+            if self.isOnline != nextOnline { self.isOnline = nextOnline }
+            if self.isFlushingOutbox != nextFlushing { self.isFlushingOutbox = nextFlushing }
             self.applySnapshot(snap)
         }
 
@@ -707,10 +772,14 @@ public final class AppState {
         }
 
         SyncManager.shared.onNetworkStatusChanged = { [weak self] online in
-            self?.isOnline = online
+            guard let self, self.isOnline != online else { return }
+            self.isOnline = online
         }
 
         applySnapshot(SyncManager.shared.currentSnapshot())
+        Task { @MainActor [weak self] in
+            self?.applyAppAppearance()
+        }
 
         // 本地快照解码失败时必须在首屏明确告警，绝不能让用户以为"数据只是变少了"
         if let failure = SyncManager.shared.lastLoadFailureMessage {
@@ -724,9 +793,10 @@ public final class AppState {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                CredentialStore.deleteToken()
+                CredentialStore.clearAllCredentials()
                 self.isPaired = false
-                self.errorBanner = "设备授权已过期或被吊销，请重新完成设备配对（在 Web 页面生成配对二维码）"
+                self.wipeAllLocalDeviceData()
+                self.errorBanner = "设备授权已过期或被吊销，本机私密快照已自动清理，请重新完成配对"
             }
         }
     }
@@ -772,17 +842,7 @@ public final class AppState {
         if self.siteConfig != snap.siteConfig { self.siteConfig = snap.siteConfig }
         if self.stats != snap.stats { self.stats = snap.stats }
         if self.outboxItems != snap.outbox { self.outboxItems = snap.outbox }
-        // MAC-8：条目与账目的版本号分开递增 ——
-        // 仅账目变化时不应让 streamRows / 热力图 / 日期索引全部重算。
-        if entriesChanged {
-            entriesRevision += 1
-            // 往年今日是条目的派生投影：任何增删改后都必须重新拉取，
-            // 否则当天会一直显示已删除的卡片，直到次日零点。
-            onThisDayCacheDateKey = nil
-        }
-        if transactionsChanged {
-            transactionsRevision += 1
-        }
+
         // 记住本次已应用的指纹；集合变小后回到深比较，下次变大时会重新建立基线。
         appliedEntriesFingerprint = entriesUseFingerprint ? snapshotFingerprint?.entries : nil
         appliedTransactionsFingerprint = transactionsUseFingerprint ? snapshotFingerprint?.transactions : nil
@@ -792,6 +852,29 @@ public final class AppState {
         if entriesChanged {
             SpotlightIndexer.reindex(entries: snap.entries)
         }
+    }
+
+    private func recomputeUploadCounts() {
+        var pending = 0
+        var failed = 0
+        var entriesUnsynced = 0
+        var txUnsynced = 0
+        for entry in entries {
+            let status = entry.syncStatus ?? "synced"
+            if status != "synced" { entriesUnsynced += 1 }
+            if status == "pending_create" { pending += 1 }
+            else if status == "failed" { failed += 1 }
+        }
+        for tx in transactions {
+            let status = tx.syncStatus ?? "synced"
+            if status != "synced" { txUnsynced += 1 }
+            if status == "pending_create" { pending += 1 }
+            else if status == "failed" { failed += 1 }
+        }
+        if self.pendingUploadCount != pending { self.pendingUploadCount = pending }
+        if self.failedUploadCount != failed { self.failedUploadCount = failed }
+        if self.pendingEntriesCount != entriesUnsynced { self.pendingEntriesCount = entriesUnsynced }
+        if self.pendingTransactionsCount != txUnsynced { self.pendingTransactionsCount = txUnsynced }
     }
 
     // MARK: - 过滤与检索计算属性
@@ -829,7 +912,8 @@ public final class AppState {
             entriesRevision: entriesRevision,
             transactionsRevision: transactionsRevision,
             category: selectedCategory,
-            searchQuery: searchQuery
+            searchQuery: searchQuery,
+            privacyFilter: navigation.streamPrivacyFilter
         )
         if let memo = filteredMemo, memo.key == key {
             return memo.value
@@ -845,30 +929,46 @@ public final class AppState {
         entriesRevision: Int,
         transactionsRevision: Int,
         category: ArchiveCategory,
-        searchQuery: String
+        searchQuery: String,
+        privacyFilter: StreamPrivacyFilter = .all
     ) -> String {
         let txPart = category == .transaction ? String(transactionsRevision) : "0"
-        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)"
+        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)|\(privacyFilter.rawValue)"
     }
 
     private func computeFilteredStreamEntries() -> [LifeEntry] {
-        var source: [LifeEntry]
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let privacy = navigation.streamPrivacyFilter
+
         if selectedCategory == .transaction {
-            source = transactions.map { $0.toLifeEntry() }
-        } else {
-            source = entries.filter { $0.matches(category: selectedCategory) }
+            if privacy == .privateOnly { return [] }
+            var source = transactions.map { $0.toLifeEntry() }
+            if !q.isEmpty {
+                source = source.filter { entry in
+                    entry.title.lowercased().contains(q)
+                    || entry.content.lowercased().contains(q)
+                    || (entry.location?.lowercased().contains(q) ?? false)
+                    || (entry.cityName?.lowercased().contains(q) ?? false)
+                }
+            }
+            return source
         }
 
-        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // 复用按 entriesRevision 预计算好的小写检索语料，避免每敲一字重做 N×4 次 lowercased()
         if !q.isEmpty {
-            source = source.filter { entry in
-                entry.title.lowercased().contains(q)
-                || entry.content.lowercased().contains(q)
-                || (entry.location?.lowercased().contains(q) ?? false)
-                || (entry.cityName?.lowercased().contains(q) ?? false)
+            return searchableEntries.compactMap { item in
+                let entry = item.entry
+                guard entry.matches(category: selectedCategory) else { return nil }
+                if privacy == .privateOnly && !entry.isPrivate { return nil }
+                return item.haystack.contains(q) ? entry : nil
             }
         }
-        return source
+
+        return entries.filter { entry in
+            guard entry.matches(category: selectedCategory) else { return false }
+            if privacy == .privateOnly && !entry.isPrivate { return false }
+            return true
+        }
     }
 
     /// 时间流行模型：条目 + 与上一条的自然日间隔（用于 14 天留白切线）
@@ -941,7 +1041,8 @@ public final class AppState {
             entriesRevision: entriesRevision,
             transactionsRevision: transactionsRevision,
             category: selectedCategory,
-            searchQuery: searchQuery
+            searchQuery: searchQuery,
+            privacyFilter: navigation.streamPrivacyFilter
         )
         if let memo = streamRowsMemo, memo.key == key {
             return memo.value
@@ -982,10 +1083,11 @@ public final class AppState {
         entriesRevision: Int,
         transactionsRevision: Int,
         category: ArchiveCategory,
-        searchQuery: String
+        searchQuery: String,
+        privacyFilter: StreamPrivacyFilter = .all
     ) -> String {
         let txPart = category == .transaction ? String(transactionsRevision) : "0"
-        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)"
+        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)|\(privacyFilter.rawValue)"
     }
 
     /// 全库跨模块网络搜索（当已配对时发起，支持足迹、心愿与造物项目联动检索）
@@ -1166,7 +1268,7 @@ public final class AppState {
         // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
         // 自动调用 normalizeCursor 修复旧快照中可能存在的空格偏移游标。
         let rawCursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
-        let cursor = SyncManager.normalizeCursor(rawCursor)
+        let cursor = SyncManager.lookbackCursor(rawCursor, seconds: 120)
         do {
             // 首屏优先：第一页一到就先把内容铺到界面上，
             // 剩余页在后台继续拉取并追加，用户无需等待全量同步完成。
@@ -1175,7 +1277,7 @@ public final class AppState {
             let firstPageGate = FirstPageGate()
             let allFetched = try await Pagination.fetchAllEntries(
                 since: cursor,
-                pageSize: 100,
+                pageSize: 50,
                 useETagOnFirstPage: !forceFull && cursor == nil
             ) { _, firstPage in
                 guard firstPageGate.claim(), !firstPage.isEmpty else { return }
@@ -1238,7 +1340,7 @@ public final class AppState {
         guard isPaired else { return }
         let snap = SyncManager.shared.currentSnapshot()
         let rawCursor = (forceFull || snap.transactions.isEmpty) ? nil : snap.lastTransactionsSyncCursor
-        let cursor = SyncManager.normalizeCursor(rawCursor)
+        let cursor = SyncManager.lookbackCursor(rawCursor, seconds: 120)
 
         do {
             let allTxs = try await Pagination.fetchAllTransactions(
@@ -1354,10 +1456,11 @@ public final class AppState {
         keyboardFocusedEntryId = list[targetIndex].id
     }
 
-    /// 打开当前键盘聚焦的散页详情
+    /// 打开当前键盘聚焦的散页详情（支持「账目」等合成条目视角）
     public func openKeyboardFocusedEntry() {
         guard let id = keyboardFocusedEntryId,
-              let entry = entries.first(where: { $0.id == id }) else { return }
+              let entry = displayedStreamEntries.first(where: { $0.id == id })
+                ?? entries.first(where: { $0.id == id }) else { return }
         highlightedEntry = entry
     }
 
@@ -1372,6 +1475,7 @@ public final class AppState {
         cityName: String? = nil,
         footprintId: Int? = nil,
         attachmentIds: [Int] = [],
+        attachments: [Attachment] = [],
         occurredAt: String? = nil,
         isPrivate: Bool = false
     ) async throws -> Bool {
@@ -1404,7 +1508,7 @@ public final class AppState {
             attachmentIds: attachmentIds
         )
 
-        let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req)
+        let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req, attachments: attachments)
         if queuedOffline {
             showTemporaryBanner("已暂存至本地发件箱，网络恢复后自动同步")
         } else {
@@ -1510,22 +1614,21 @@ public final class AppState {
         }
         CredentialStore.clearAllCredentials()
         self.isPaired = false
-        // 发件箱与 pending 条目属于刚刚吊销的中枢，必须一并丢弃：
-        // 留在快照里会在重配对后（无论新旧中枢）被 flushOutbox 投递出去。
-        SyncManager.shared.discardOutboxAndPending()
-        // 关键：解除配对时**一并清理系统 Spotlight 索引** ——
-        // 否则私人正文会继续留在系统索引里被搜索与 Siri 命中，
-        // 即便用户已经与中枢解除关系。
-        //
-        // 同时清空全部内存集合与派生缓存：只清 entries 不够 ——
-        // 账目、往年的「On This Day」、检索语料与 streamRows memo 仍会留在内存里，
-        // 重配对前搜索/时间流仍可能读到上一个中枢的数据。
-        clearPrivateArchiveState()
-        SpotlightIndexer.clearIndex()
-        showTemporaryBanner("已安全吊销并清除本机设备配对凭证")
+        wipeAllLocalDeviceData()
+        showTemporaryBanner("已安全吊销凭证并彻底清除本机私密快照与缓存")
     }
 
-    /// 解除配对 / 切换中枢时清空一切「属于旧中枢」的内存状态。
+    /// 彻底抹除本地快照、媒体缓存、HTTP 缓存、Spotlight 索引、接力活动与内存态（A3 全清策略）
+    private func wipeAllLocalDeviceData() {
+        endHandoffActivity()
+        SyncManager.shared.purgeAllLocalData()
+        PaperImageCache.clearAllCaches()
+        APIClient.removeAllCachedResponses()
+        SpotlightIndexer.clearIndex()
+        clearPrivateArchiveState()
+    }
+
+    /// 解除配对 / 401 吊销 / 切换中枢时清空一切「属于旧中枢」的内存状态。
     private func clearPrivateArchiveState() {
         entries = []
         transactions = []
@@ -1536,6 +1639,29 @@ public final class AppState {
         onThisDayCacheDateKey = nil
         clearGlobalSearchResult()
         assetsOverview = nil
+        transactionSummary = TransactionSummary()
+        profile = CuratorProfile()
+        siteConfig = SiteConfig()
+        stats = GlobalStats()
+        trustedDevices = []
+        creditChannels = []
+        outboxItems = []
+        undoStack = []
+        quickDraft.reset()
+        highlightedEntry = nil
+        detailWindowEntry = nil
+        editingEntry = nil
+        editingTransaction = nil
+        lightboxAttachment = nil
+        activeConfirmDialog = nil
+        navigation.highlightedWishId = nil
+        navigation.highlightedProjectId = nil
+        navigation.highlightedFootprintCity = nil
+        pendingUploadCount = 0
+        failedUploadCount = 0
+        pendingEntriesCount = 0
+        pendingTransactionsCount = 0
+        banners.clearAll()
         entriesRevision += 1
         transactionsRevision += 1
         filteredMemo = nil
@@ -1624,8 +1750,12 @@ public final class AppState {
 
     // MARK: - 接力 (Handoff / NSUserActivity)
 
-    /// 把某条散页发布为当前接力活动（其它 Mac / iPhone 可在同一 Apple ID 下接力继续浏览）
+    /// 把某条散页发布为当前接力活动（私密散页严禁广播至蓝牙/iCloud Handoff）
     public func publishHandoffActivity(for entry: LifeEntry) {
+        guard !entry.isPrivate else {
+            endHandoffActivity()
+            return
+        }
         let activity = NSUserActivity(activityType: Self.userActivityType)
         // NSUserActivity 没有 subtitle；地点信息并入 title 的说明文案
         let baseTitle = entry.title.isEmpty ? "散页手稿" : entry.title
@@ -1658,22 +1788,17 @@ public final class AppState {
 
     // MARK: - 同步失败重试
 
-    /// 统计「需要重新上传」的条目数（待同步 + 同步失败）
+    /// 统计「需要重新上传」的条目数（待同步 + 同步失败，O(1) 读取）
     public var entriesNeedingUpload: Int {
-        entries.filter { ($0.syncStatus ?? "synced") != "synced" }.count
+        pendingEntriesCount
     }
 
-    /// 统计「需要重新上传」的账目数
+    /// 统计「需要重新上传」的账目数（O(1) 读取）
     public var transactionsNeedingUpload: Int {
-        transactions.filter { ($0.syncStatus ?? "synced") != "synced" }.count
+        pendingTransactionsCount
     }
 
     /// **重新上传**一条散页（无论它是「待同步」还是「同步失败」）
-    ///
-    /// 关键：早先只有「同步失败」才有重试入口，
-    /// 而「待同步」的条目同样可能**卡住不动**（例如发件箱死信被丢弃、
-    /// 或进程在同步途中被杀）—— 那时用户没有任何办法让它重新上去。
-    /// 「待同步」与「同步失败」只是同一件事的两个阶段，重传入口应当一致。
     public func reuploadEntry(id: Int) {
         guard let entry = entries.first(where: { $0.id == id }) else { return }
         let req = CreateEntryRequest(
@@ -1687,11 +1812,9 @@ public final class AppState {
             projectId: entry.projectId,
             wishId: entry.wishId,
             footprintId: entry.footprintId,
+            isPrivate: entry.isPrivate,
             attachmentIds: entry.attachments.map(\.id)
         )
-        // 关键：**复用本地 id** 重传，而不是新建一条乐观条目。
-        // 新建的话旧条目会永远留在时间流里（同步成功只替换新那条），
-        // 列表里就会出现两条内容相同的记录。
         SyncManager.shared.resyncEntry(id: id, req: req, attachments: entry.attachments)
     }
 
@@ -1752,48 +1875,101 @@ public final class AppState {
         return count
     }
 
-    /// 重试一条标记为 failed 的散页
+    /// 重试一条标记为 failed 的散页（统一委托 `reuploadEntry` 保证 `isPrivate` 等字段一致透传）
     public func retryFailedEntry(id: Int) {
-        guard let entry = entries.first(where: { $0.id == id }) else { return }
-        let req = CreateEntryRequest(
-            type: entry.type,
-            title: entry.title,
-            content: entry.content,
-            occurredAt: entry.occurredAt,
-            location: entry.location,
-            cityCode: entry.cityCode,
-            cityName: entry.cityName,
-            projectId: entry.projectId,
-            wishId: entry.wishId,
-            footprintId: entry.footprintId,
-            attachmentIds: entry.attachments.map(\.id)
-        )
-        // 复用本地 id 重传（新建乐观条目会留下一条永远同步不掉的旧条目）
-        SyncManager.shared.resyncEntry(id: id, req: req, attachments: entry.attachments)
+        reuploadEntry(id: id)
     }
 
     /// 重试一条标记为 failed 的账目
     public func retryFailedTransaction(id: Int) {
-        guard let tx = transactions.first(where: { $0.id == id }) else { return }
-        let req = CreateTransactionRequest(
-            amount: tx.amount,
-            type: tx.type,
-            category: tx.category,
-            title: tx.title,
-            note: tx.note,
-            paymentMethod: tx.paymentMethod,
-            cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt,
-            // 关键：**完整透传分期字段** —— 重试同理
-            isInstallment: tx.isInstallment,
-            installmentChannelCode: tx.installmentChannelCode,
-            installmentTotalAmount: tx.installmentTotalAmount,
-            installmentMonths: tx.installmentMonths,
-            installmentMonthlyPay: tx.installmentMonthlyPay,
-            installmentRemainMonths: tx.installmentRemainMonths,
-            repaymentDay: tx.repaymentDay
-        )
-        SyncManager.shared.resyncTransaction(id: id, req: req)
+        reuploadTransaction(id: id)
+    }
+
+    // MARK: - 心愿 / 造物 / 足迹票根可撤销删除
+
+    public func deleteWishAction(_ wish: Wish) async throws {
+        try await APIClient.shared.deleteWish(id: wish.id)
+        await refreshAfterSecondaryWrite()
+        showTemporaryBanner("已移除心愿「\(wish.title)」（可按 ⌘Z 撤销）")
+        registerUndo(label: "删除心愿「\(wish.title)」") { [weak self] in
+            guard let self else { return false }
+            do {
+                let req = CreateWishRequest(
+                    title: wish.title,
+                    kind: wish.kind,
+                    note: wish.note,
+                    spec: wish.spec,
+                    cityCode: wish.cityCode,
+                    cityName: wish.cityName,
+                    budget: wish.budget,
+                    targetDate: wish.targetDate,
+                    plantedAt: wish.plantedAt,
+                    attachmentIds: wish.attachments.isEmpty ? nil : wish.attachments.map(\.id),
+                    isPrivate: wish.isPrivate
+                )
+                _ = try await APIClient.shared.createWish(req)
+                await self.refreshAfterSecondaryWrite()
+                return true
+            } catch {
+                self.errorBanner = "撤销删除心愿失败：\(error.localizedDescription)"
+                return false
+            }
+        }
+    }
+
+    public func deleteProjectAction(_ proj: Project) async throws {
+        try await APIClient.shared.deleteProject(id: proj.id)
+        await refreshAfterSecondaryWrite()
+        showTemporaryBanner("已移除造物项目「\(proj.title)」（可按 ⌘Z 撤销）")
+        registerUndo(label: "删除项目「\(proj.title)」") { [weak self] in
+            guard let self else { return false }
+            do {
+                let req = CreateProjectRequest(
+                    title: proj.title,
+                    subtitle: proj.subtitle,
+                    description: proj.description,
+                    story: proj.story,
+                    category: proj.category,
+                    status: proj.status,
+                    githubUrl: proj.githubUrl,
+                    order: proj.order,
+                    isPrivate: proj.isPrivate
+                )
+                _ = try await APIClient.shared.createProject(req)
+                await self.refreshAfterSecondaryWrite()
+                return true
+            } catch {
+                self.errorBanner = "撤销删除项目失败：\(error.localizedDescription)"
+                return false
+            }
+        }
+    }
+
+    public func deleteFootprintAction(_ fp: Footprint) async throws {
+        try await APIClient.shared.deleteFootprint(id: fp.id)
+        await refreshAfterSecondaryWrite()
+        showTemporaryBanner("已移除「\(fp.cityName)」足迹票根（可按 ⌘Z 撤销）")
+        registerUndo(label: "删除足迹「\(fp.cityName)」") { [weak self] in
+            guard let self else { return false }
+            do {
+                let req = CreateFootprintRequest(
+                    cityCode: fp.cityCode,
+                    cityName: fp.cityName,
+                    title: fp.title,
+                    visitedAt: fp.visitedAt,
+                    departedAt: fp.departedAt,
+                    note: fp.note,
+                    attachmentIds: fp.attachments.isEmpty ? nil : fp.attachments.map(\.id),
+                    isPrivate: fp.isPrivate
+                )
+                _ = try await APIClient.shared.createFootprint(req)
+                await self.refreshAfterSecondaryWrite()
+                return true
+            } catch {
+                self.errorBanner = "撤销删除足迹失败：\(error.localizedDescription)"
+                return false
+            }
+        }
     }
 
     // MARK: - 撤销栈 (Undo)
@@ -1810,8 +1986,8 @@ public final class AppState {
         }
     }
 
-    /// 最近的撤销操作（栈顶为最近一次）
-    @ObservationIgnored private var undoStack: [UndoAction] = []
+    /// 最近的撤销操作（栈顶为最近一次；启用 Observation 以实时驱动菜单栏 ⌘Z 可用态与文案）
+    private var undoStack: [UndoAction] = []
     /// 撤销动作串行执行，避免连续快捷键在 await 期间交错。
     @ObservationIgnored private var isUndoing = false
     /// 撤销栈容量上限

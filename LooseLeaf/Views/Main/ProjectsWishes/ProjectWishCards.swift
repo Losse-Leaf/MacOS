@@ -1,42 +1,28 @@
 import SwiftUI
-
-// 原「造物 / 心愿 / 行迹」聚合主视图已拆分为 WishlistView / ProjectsView / TravelAtlasView，
-// 本文件只保留多端共用的卡片、状态语义字典与抽屉载荷类型；
-// 其余编辑 Sheet 与星野画布已按职责下沉至同目录的 ProjectsWishes/ 子目录。
+import AppKit
 
 // MARK: - 造物项目状态语义 (Project Status)
 
 /// 造物项目状态语义字典（全应用唯一真源）。
-/// 新建 / 修订项目与 `ProjectsView` 的状态筛选共用同一套取值，
-/// 避免「默认写入的状态」与「筛选匹配的状态」不一致导致项目在筛选下消失。
 /// 四端统一为中文四态（与后端 validProjectStatuses 白名单一致）；
-/// 存量英文/历史表述由 normalize 兼容读取（配合后端一次性数据迁移）。
-enum ProjectStatus: String, CaseIterable, Identifiable {
-    /// 进行中
+/// 存量英文/历史表述由 normalize 兼容读取。
+public enum ProjectStatus: String, CaseIterable, Identifiable, Sendable {
     case inProgress = "进行中"
-    /// 已完成
     case completed = "已完成"
-    /// 维护中
     case maintaining = "维护中"
-    /// 已搁置
     case shelved = "已搁置"
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
+    public var displayName: String { rawValue }
 
-    /// 面向用户的中文展示名
-    var displayName: String { rawValue }
-
-    /// 是否属于「进行中」语义（维护中的项目仍在服役）
-    var isActiveLike: Bool {
+    public var isActiveLike: Bool {
         switch self {
         case .inProgress, .maintaining: return true
         case .completed, .shelved: return false
         }
     }
 
-    /// 将任意来源的状态字符串归一化为语义枚举（无法识别时按进行中处理）。
-    /// 兼容历史英文表述与「持续维护 / 已归档」等旧中文表述。
-    static func normalize(_ raw: String?) -> ProjectStatus {
+    public static func normalize(_ raw: String?) -> ProjectStatus {
         guard let raw, !raw.isEmpty else { return .inProgress }
         if let matched = ProjectStatus(rawValue: raw) {
             return matched
@@ -49,34 +35,43 @@ enum ProjectStatus: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 判断给定状态是否命中指定筛选值（`all` 表示不限）
-    static func matches(_ raw: String?, selected: String) -> Bool {
+    public static func matches(_ raw: String?, selected: String) -> Bool {
         if selected == "all" { return true }
         return normalize(raw).rawValue == selected
     }
 }
 
 /// 城市 / 省份回忆抽屉的选择载荷（TravelAtlasView 与抽屉 Sheet 共用）
-struct DrawerCitySelection: Identifiable, Equatable {
-    var id: String { code }
-    let code: String
-    let name: String
+public struct DrawerCitySelection: Identifiable, Equatable, Sendable {
+    public var id: String { code }
+    public let code: String
+    public let name: String
+
+    public init(code: String, name: String) {
+        self.code = code
+        self.name = name
+    }
 }
 
 /// 统一样式与等高对齐的心愿典藏卡片 (WishCardView)
 struct WishCardView: View {
     let wish: Wish
+    var isHighlighted: Bool = false
     let onResolve: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
-    /// 悬停态：次级动作（修订 / 删除）只在悬停时出现
+    private enum CardAction: Hashable {
+        case edit, delete
+    }
+
     @State private var isHovering: Bool = false
+    @FocusState private var focusedAction: CardAction?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 1. 顶栏：分类标签徽章 + 状态微胶囊
-            HStack(alignment: .center) {
+            // 1. 顶栏：分类标签徽章 + 私密徽标 + 状态微胶囊
+            HStack(alignment: .center, spacing: 6) {
                 HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: kindIcon)
                         .font(.system(size: 10))
@@ -88,6 +83,21 @@ struct WishCardView: View {
                 .padding(.vertical, 3)
                 .background(kindColor.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                if wish.isPrivate == true {
+                    HStack(spacing: 3) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 9))
+                        Text("私密")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                    }
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .accessibilityLabel("私密心愿")
+                }
 
                 Spacer()
 
@@ -112,7 +122,19 @@ struct WishCardView: View {
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(1)
 
-            // 3. 规格
+            // 3. 规格 / 目的地
+            if let city = wish.cityName, !city.isEmpty, wish.kind == "travel" {
+                HStack(spacing: ArchiveSpacing.xs) {
+                    Image(systemName: ArchiveIcon.location.systemName)
+                        .font(.system(size: 10))
+                    Text(city)
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .medium))
+                }
+                .foregroundStyle(ArchivePalette.inkSecondary)
+                .padding(.top, 3)
+                .lineLimit(1)
+            }
+
             if let spec = wish.spec, !spec.isEmpty {
                 HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: "slider.horizontal.2")
@@ -125,17 +147,18 @@ struct WishCardView: View {
                 .lineLimit(1)
             }
 
-            // 4. 手记备注
+            // 4. 手记备注（走安全富文本视图，杜绝 LocalizedStringKey 格式化解析隐患）
             if let note = wish.note, !note.isEmpty {
-                Text(LocalizedStringKey(note))
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.inkSecondary.opacity(0.88))
-                    .lineLimit(2)
-                    .lineSpacing(2)
-                    .padding(.top, 4)
+                EditorialProseTextView(
+                    note,
+                    font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body),
+                    color: ArchivePalette.inkSecondary.opacity(0.88),
+                    lineSpacing: 2,
+                    lineLimit: 2
+                )
+                .padding(.top, 4)
             }
 
-            // 弹性占位：将底部预算与操作栏统一牢牢推向卡片底端，确保各卡片严格等高对齐
             Spacer(minLength: 12)
 
             // 5. 分割线
@@ -168,7 +191,6 @@ struct WishCardView: View {
 
                 Spacer()
 
-                // 主理人操作区
                 HStack(spacing: 6) {
                     if wish.status != "fulfilled" {
                         Button(action: onResolve) {
@@ -189,6 +211,7 @@ struct WishCardView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                     } else {
                         HStack(spacing: 3) {
                             Image(systemName: "checkmark.seal.fill")
@@ -203,7 +226,6 @@ struct WishCardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                     }
 
-                    // 次级动作（修订 / 删除）：常驻视图树以确保无障碍与键盘 Tab 可触达，悬停时完全显现
                     HStack(spacing: 6) {
                         Button(action: onEdit) {
                             Image(systemName: "pencil")
@@ -219,6 +241,8 @@ struct WishCardView: View {
                                 .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         }
                         .buttonStyle(.plain)
+                        .focused($focusedAction, equals: .edit)
+                        .paperFocusRing(isFocused: focusedAction == .edit, cornerRadius: ArchiveRadius.xs)
                         .help("修订心愿")
                         .accessibilityLabel("修订心愿")
 
@@ -236,28 +260,27 @@ struct WishCardView: View {
                                 .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         }
                         .buttonStyle(.plain)
+                        .focused($focusedAction, equals: .delete)
+                        .paperFocusRing(isFocused: focusedAction == .delete, cornerRadius: ArchiveRadius.xs)
                         .help("删除心愿")
                         .accessibilityLabel("删除心愿")
                     }
-                    .opacity(isHovering ? 1.0 : 0.4)
+                    .opacity(isHovering || focusedAction != nil ? 1.0 : 0.4)
                     .animation(nil, value: isHovering)
                 }
             }
         }
         .padding(ArchiveCardMetrics.padding)
-        // 关键：原先是 195 —— 心愿内容通常只有「标题 + 一句手记」，
-        // 底部又被 Spacer 推到底，于是中间空出一大片，比时间流的卡片还空。
-        // 收到 168 之后，卡片紧贴内容，底部预算栏不再悬在半空。
         .frame(minHeight: 150)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.6)
+                .stroke(
+                    isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle,
+                    lineWidth: isHighlighted ? 1.5 : 0.6
+                )
         )
-        // 原先这里有一层 radius 6 的模糊阴影：SwiftUI 的 `.shadow` 会对整棵子树做离屏渲染，
-        // 实测单张心愿/造物卡 22~27ms —— 列表里放 20 张就是半秒以上的滚动卡顿。
-        // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
         .onHover { isHovering = $0 }
         .contextMenu {
@@ -274,14 +297,12 @@ struct WishCardView: View {
             }
             Divider()
             Button {
-                NSPasteboard.general.clearContents()
                 SecureClipboard.copy(wish.title)
             } label: {
                 Label("拷贝心愿名称", systemImage: "doc.on.doc")
             }
             if let note = wish.note, !note.isEmpty {
                 Button {
-                    NSPasteboard.general.clearContents()
                     SecureClipboard.copy(note)
                 } label: {
                     Label("拷贝手记备注", systemImage: "text.quote")
@@ -352,15 +373,20 @@ struct WishCardView: View {
 /// 统一样式与等高对齐的造物项目卡片 (ProjectCardView)
 struct ProjectCardView: View {
     let proj: Project
-    /// 悬停态：次级动作（修订 / 删除）只在悬停时出现
+    var isHighlighted: Bool = false
+    private enum CardAction: Hashable {
+        case edit, delete
+    }
+
     @State private var isHovering: Bool = false
+    @FocusState private var focusedAction: CardAction?
     let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 顶栏：分类标签 + 状态标签
-            HStack {
+            // 顶栏：分类标签 + 私密徽标 + 状态标签
+            HStack(spacing: 6) {
                 if let cat = proj.category, !cat.isEmpty {
                     Text(cat)
                         .font(ArchiveTypography.monoScale(size: 10.5))
@@ -370,9 +396,24 @@ struct ProjectCardView: View {
                         .background(ArchivePalette.accentWarm.opacity(0.10))
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                 }
+
+                if proj.isPrivate == true {
+                    HStack(spacing: 3) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 9))
+                        Text("私密")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                    }
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(ArchivePalette.archivePaper)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .accessibilityLabel("私密项目")
+                }
+
                 Spacer()
                 if let status = proj.status, !status.isEmpty {
-                    // 语义化展示：已知状态给出中文名，未知取值按「进行中」语义归一化
                     Text(ProjectStatus.normalize(status).displayName)
                         .font(ArchiveTypography.monoScale(size: 10.5))
                         .foregroundStyle(ArchivePalette.accentMoss)
@@ -398,24 +439,24 @@ struct ProjectCardView: View {
             }
 
             if !proj.description.isEmpty {
-                Text(LocalizedStringKey(proj.description))
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .lineLimit(3)
-                    .lineSpacing(2)
-                    .padding(.top, 4)
+                EditorialProseTextView(
+                    proj.description,
+                    font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body),
+                    color: ArchivePalette.inkSecondary,
+                    lineSpacing: 2,
+                    lineLimit: 3
+                )
+                .padding(.top, 4)
             }
 
             Spacer(minLength: 12)
 
-            // 分隔线只在「底栏有东西」时才画 ——
-            // 次级按钮改为悬停才出之后，这条线就成了一条没人陪的孤儿线。
-            if isHovering || proj.githubUrl?.isEmpty == false {
-                Rectangle()
-                    .fill(ArchivePalette.borderDivider)
-                    .frame(height: 0.5)
-                    .padding(.vertical, 9)
-            }
+            // 关键：分隔线常驻占据恒定 18.5pt 几何高度，仅用 opacity 切换显隐，彻底消除悬停卡片高度抖动
+            Rectangle()
+                .fill(ArchivePalette.borderDivider)
+                .frame(height: 0.5)
+                .padding(.vertical, 9)
+                .opacity(isHovering || focusedAction != nil || proj.githubUrl?.isEmpty == false ? 1 : 0.45)
 
             HStack {
                 if let gh = proj.githubUrl, !gh.isEmpty, let url = URL(string: gh) {
@@ -427,6 +468,7 @@ struct ProjectCardView: View {
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.accentWarm)
                     }
+                    .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                 } else {
                     Spacer(minLength: 0)
                 }
@@ -434,7 +476,6 @@ struct ProjectCardView: View {
                 Spacer()
 
                 HStack(spacing: 6) {
-                    // 次级动作（修订 / 删除）：常驻视图树以确保无障碍与键盘 Tab 可触达，悬停时完全显现
                     Button(action: onEdit) {
                         Image(systemName: "pencil")
                             .font(.system(size: 11))
@@ -449,6 +490,8 @@ struct ProjectCardView: View {
                             .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
                     .buttonStyle(.plain)
+                    .focused($focusedAction, equals: .edit)
+                    .paperFocusRing(isFocused: focusedAction == .edit, cornerRadius: ArchiveRadius.xs)
                     .help("修订项目")
                     .accessibilityLabel("修订项目")
 
@@ -466,28 +509,26 @@ struct ProjectCardView: View {
                             .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                     }
                     .buttonStyle(.plain)
+                    .focused($focusedAction, equals: .delete)
+                    .paperFocusRing(isFocused: focusedAction == .delete, cornerRadius: ArchiveRadius.xs)
                     .help("删除项目")
                     .accessibilityLabel("删除项目")
                 }
-                .opacity(isHovering ? 1.0 : 0.4)
+                .opacity(isHovering || focusedAction != nil ? 1.0 : 0.4)
                 .animation(nil, value: isHovering)
             }
         }
         .padding(ArchiveCardMetrics.padding)
-        // 与心愿卡同理：造物内容通常也只有「标题 + 一句描述」。
-        // 心愿卡底部有「预算 + 圆满心愿」撑着，150 还算匀；
-        // 造物卡没有底栏（次级按钮改为悬停才出），所以要再收一档，
-        // 否则下方空出一大片。
         .frame(minHeight: 118)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.6)
+                .stroke(
+                    isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle,
+                    lineWidth: isHighlighted ? 1.5 : 0.6
+                )
         )
-        // 原先这里有一层 radius 6 的模糊阴影：SwiftUI 的 `.shadow` 会对整棵子树做离屏渲染，
-        // 实测单张心愿/造物卡 22~27ms —— 列表里放 20 张就是半秒以上的滚动卡顿。
-        // 该卡片已有 0.6pt 描边承担层级，去掉阴影后视觉几乎无差别。
         .paperHover()
         .onHover { isHovering = $0 }
         .contextMenu {
@@ -506,14 +547,12 @@ struct ProjectCardView: View {
             }
             Divider()
             Button {
-                NSPasteboard.general.clearContents()
                 SecureClipboard.copy(proj.title)
             } label: {
                 Label("拷贝项目名称", systemImage: "doc.on.doc")
             }
             if !proj.description.isEmpty {
                 Button {
-                    NSPasteboard.general.clearContents()
                     SecureClipboard.copy(proj.description)
                 } label: {
                     Label("拷贝项目手记", systemImage: "text.quote")
@@ -521,27 +560,4 @@ struct ProjectCardView: View {
             }
         }
     }
-}
-
-// MARK: - 预览 (Preview)
-
-#Preview("心愿典藏卡片") {
-    WishCardView(
-        wish: ArchivePreviewFixtures.wishes()[0],
-        onResolve: {},
-        onEdit: {},
-        onDelete: {}
-    )
-    .frame(width: 360)
-    .padding(ArchiveSpacing.l)
-}
-
-#Preview("造物项目卡片") {
-    ProjectCardView(
-        proj: ArchivePreviewFixtures.projects()[0],
-        onEdit: {},
-        onDelete: {}
-    )
-    .frame(width: 360)
-    .padding(ArchiveSpacing.l)
 }

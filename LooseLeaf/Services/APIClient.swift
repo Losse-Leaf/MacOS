@@ -72,6 +72,29 @@ public actor APIClient {
     ///
     /// 关键：媒体请求此前走 `URLSession.shared`，与 `APIClient` 的超时、
     /// 连接数与 URLCache 策略都不同；共用配置后，图片也能吃到同一份 HTTP 缓存。
+    /// 全局共享的单一 HTTP URLCache：避免 API 会话与媒体会话各自创建 URLCache 实例并发争用同一 SQLite 目录
+    nonisolated private static let sharedURLCache: URLCache = {
+        if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let httpCacheDirectory = caches.appendingPathComponent("LooseLeaf/HTTPCache", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: httpCacheDirectory, withIntermediateDirectories: true)
+                return URLCache(
+                    memoryCapacity: 8 * 1024 * 1024,
+                    diskCapacity: 64 * 1024 * 1024,
+                    directory: httpCacheDirectory
+                )
+            } catch {
+                return URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
+            }
+        }
+        return URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
+    }()
+
+    /// 清空 HTTP 协议层磁盘与内存缓存（解除配对 / 401 吊销时调用，确保零残留）
+    nonisolated public static func removeAllCachedResponses() {
+        sharedURLCache.removeAllCachedResponses()
+    }
+
     nonisolated public static func makeDefaultSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
@@ -79,26 +102,7 @@ public actor APIClient {
         config.waitsForConnectivity = true
         config.httpMaximumConnectionsPerHost = 8
         config.requestCachePolicy = .useProtocolCachePolicy
-        // 关键：不能用相对 diskPath。相对路径会落到进程当前工作目录：
-        // 开发时污染仓库，Finder 启动时 CWD 通常是 "/"，导致缓存库无法创建，
-        // 每次请求都退化到无缓存（日志里可见 Cache.db Error=14）。
-        if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
-            let httpCacheDirectory = caches.appendingPathComponent("LooseLeaf/HTTPCache", isDirectory: true)
-            do {
-                try FileManager.default.createDirectory(at: httpCacheDirectory, withIntermediateDirectories: true)
-                config.urlCache = URLCache(
-                    memoryCapacity: 8 * 1024 * 1024,
-                    diskCapacity: 64 * 1024 * 1024,
-                    directory: httpCacheDirectory
-                )
-            } catch {
-                // 目录不可写（受限环境/只读容器）时退化为纯内存缓存，
-                // 否则 URLCache 会持续报 Cache.db Error=14，且每次请求都无缓存。
-                config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
-            }
-        } else {
-            config.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 0)
-        }
+        config.urlCache = sharedURLCache
         return config
     }
 
@@ -363,28 +367,7 @@ public actor APIClient {
         public var purged: Bool?
     }
 
-    // MARK: - 1. 系统探针与鉴权配对 (Health, System & Device Pairing)
-
-    public func checkHealth() async throws -> HealthCheckResponse {
-        let (request, _) = try buildRequest(path: "/api/health")
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await dataWithRetry(for: request, attempts: 2)
-        } catch {
-            throw APIError.networkFailure(error.localizedDescription)
-        }
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.networkFailure("健康探针响应无效")
-        }
-        // 保留真实状态码，便于排障（原先一律吞成「健康探针状态异常」）
-        guard http.statusCode == 200 else {
-            throw APIError.serverError(
-                code: http.statusCode,
-                message: "健康探针状态异常 (HTTP \(http.statusCode))"
-            )
-        }
-        return try Self.makeDecoder().decode(HealthCheckResponse.self, from: data)
-    }
+    // MARK: - 1. 系统探针与鉴权配对 (System & Device Pairing)
 
     public func fetchSystemStatus() async throws -> SystemStatus {
         try await performEnvelopeRequest(path: "/api/v1/system/status")
@@ -733,21 +716,6 @@ public actor APIClient {
 
     public func fetchCreditChannels() async throws -> [CreditChannel] {
         try await performEnvelopeRequest(path: "/api/v1/credit-channels")
-    }
-
-    public func createCreditChannel(_ req: CreateCreditChannelRequest) async throws -> CreditChannel {
-        try await performEnvelopeRequest(path: "/api/v1/credit-channels", method: "POST", body: req)
-    }
-
-    public func updateCreditChannel(id: Int, _ req: CreateCreditChannelRequest) async throws -> CreditChannel {
-        try await performEnvelopeRequest(path: "/api/v1/credit-channels/\(id)", method: "PUT", body: req)
-    }
-
-    public func deleteCreditChannel(id: Int) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/credit-channels/\(id)",
-            method: "DELETE"
-        )
     }
 
     // MARK: - 5. 造物、心愿单与旅游足迹 (Projects, Wishes & Footprints)

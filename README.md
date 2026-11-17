@@ -50,9 +50,9 @@
 2. **全局极速捕捉 (`MenuBarExtra` & 全局快捷键)**
    - **全局呼出 (`⌘⇧L`)**：任意应用内呼出菜单栏捕捉面板（自动聚焦输入框，`⌘↩` 归档，`ESC` 收起），热键可在设置中录制修改。
    - **双 Tab 捕捉**：面板内「极速记录 / 快速记账」切换；记账支持类 Spotlight 自然语言解析（如输入 `42.5 午餐手冲咖啡` 自动拆解为 `4250` 分、`餐饮` 分类与备注），记录支持 `#标签` 自动提取、多张照片拖拽、`⌘V` 截图直贴与任意历史时刻补记。
-   - **工作台快捷键**：主窗口 `⌘N` 撰写散页、`⌘R` 全量同步、`⌘K` 全局档案检索、`⌘F` 聚焦搜索、`⌘1`–`⌘6` 切换六大内容板块、`⌥⌘1`–`⌥⌘5` 切换配置板块、`⌘↑`/`⌘↓` 键盘流浏览、`⌘↩` 打开详情、`⌘W` 关闭当前弹层、`⌘Z` 撤销上一次删除。
-   - **侧栏结构**：6 大内容板块 + 5 个配置条目（偏好设置 / 中枢与设备 / 存储与备份 / 分类字典 / 关于活页）平铺；配置类原「配置中心」容器已扁平化进侧栏。
-   - **系统集成**：系统右键「服务」菜单「摘录到活页集」直送捕捉面板；散页已接入 Spotlight 系统搜索（增量重建）。Apple 快捷指令 / Siri 入口已于 1.5.x 下线，不再提供。
+   - **工作台快捷键**：主窗口 `⌘N` 撰写散页、`⌘R` 全量同步、`⌘K` 全局档案检索、`⌘F` 聚焦搜索、`⌘1`–`⌘6` 切换六大内容板块、`⌘,` 打开独立原生设置窗口（`⌥⌘1`–`⌥⌘3` 切换设置分页）、`⌘↑`/`⌘↓` 键盘流浏览、`⌘↩` 打开详情、`⌘W` 关闭当前弹层或当前窗口、`⌘Z` 撤销删除（编辑文本时自动回退为输入框原生撤销）。
+   - **原生双栏与独立设置架构**：主窗口采用原生 `NavigationSplitView` 双栏工作台，承载 6 大内容板块（时间流 / 柴米油盐 / 心愿清单 / 山川印谱 / 造物项目 / 主理人）；应用设置抽离为标准 macOS `Settings` 独立场景窗口（通用偏好 / 中枢与设备 / 关于活页）。
+   - **系统集成与隐私防线**：系统右键「服务」菜单「摘录到活页集」直送捕捉面板；公开散页支持 Spotlight 摘要索引与 Handoff 接力，**私密散页 (`is_private = true`) 严禁写入 Spotlight 索引或广播至 Handoff**；解除配对或收到 `401` 吊销时自动全清本机快照、相纸缓存、HTTP 缓存与系统索引。
 
 3. **图文一体装裱流水线 (`Media Attachments`)**
    - 新建散页与极速捕捉均支持从 Finder / 照片 App 拖拽、`⌘V` 粘贴截图、或选择文件添加照片。
@@ -79,21 +79,20 @@
 - **修复拖拽超时仍会卡死**：`DropLoader.withTimeout` 不再用 TaskGroup 等待永不回调的 `NSItemProvider`。
 - **修复全局搜索旧结果覆盖新结果**：加入请求代号，只接受最新查询结果。
 
-详细复现与审计见 [`docs/macos-logic-audit.md`](../docs/macos-logic-audit.md)。
+详细设计与工程规范见 [`docs/macos.md`](../docs/macos.md) 与总台账 [`docs/backlog.md`](../docs/backlog.md)。
 
 ---
 
 ## v1.6.0 变更摘要
 
-本次是一次覆盖**性能、数据完整性、原生化与可访问性**的深度优化批次，
-完整清单见 [`docs/macos-optimization-v2.md`](../docs/macos-optimization-v2.md)（192 项，已 100% 闭环）。
+本次是一次覆盖**性能、数据完整性、原生化与可访问性**的深度优化批次（详见 [`docs/macos.md`](../docs/macos.md)）：
 
 - **数据不再丢失**：快照引入 `schemaVersion` 与迁移链；写盘改为「版本号守卫的串行写」；关闭「系统突然终止」导致退出前未落盘的问题；Outbox 增加死信上限；凭据改为持锁读取 + 先设权限再原子替换。
 - **主线程不再被阻塞**：选图、热更新校验、剪贴板读取、拖拽落盘全部移出主线程；冷启动改为后台解码 + 注水，首屏不再白屏。
-- **Swift 6 并发合规**：`swift build -Xswiftc -strict-concurrency=complete` 零警告零错误。
-- **原生化**：引入 macOS 原生工具栏与统一模态通道；新增「散页详情」独立窗口（深链与 Spotlight 命中直达）；支持接力（Handoff）、窗口尺寸记忆、Dock 常驻、登录启动与系统通知。
-- **可访问性**：支持动态字体与「减弱动态效果」；补齐 VoiceOver 标签、键盘导航与焦点环；命中区统一不小于 28pt；全部语义色达 WCAG AA 对比度。
-- **工程质量**：四个巨型视图文件按职责拆分；单元测试 30 → 58 条；新增 XCUITest 与零依赖视觉快照测试；CI 新增六道门禁。
+- **并发与编译门禁**：`swift build -c release -Xswiftc -warnings-as-errors` 零警告零错误。
+- **原生化**：引入 macOS 原生 `NavigationSplitView` 双栏工作台、独立 `Settings` 场景（`⌘,`）与统一模态通道；新增多实例「散页详情」独立窗口（深链与 Spotlight 命中直达）；支持接力（Handoff）、窗口尺寸记忆、Dock 常驻、登录启动与系统通知。
+- **可访问性**：支持动态字体与「减弱动态效果 / 减少透明度 / 不靠颜色区分」；补齐 VoiceOver 标签、键盘导航与焦点环；命中区统一不小于 28pt；全部语义色对 `ArchivePaper` 与 `ArchiveSubtle` 均达 WCAG AA (`≥ 4.5:1`) 对比度。
+- **工程质量**：巨型视图文件按职责模块化拆分；单元测试套件全量覆盖核心契约（离线同步、分期尾差、隐私防线、位图缓存、SHA256 签名校验与 UI 性能基准）。
 
 ---
 
@@ -120,11 +119,15 @@ mac/
 │   │   ├── ImageProcessor.swift       # ImageIO EXIF 解析与 4K JPEG 压缩
 │   │   ├── R2DirectUploader.swift     # R2 预签名 PUT 直传与本地回退上传器
 │   │   └── FormatUtils.swift          # Int64 分转换、UTC+8 北京时间解析与自然语言记账解析
-│   ├── Views/
-│   │   ├── MenuBar/                   # QuickCaptureView & QuickLedgerView
-│   │   ├── Main/                      # StreamView / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / SettingsView（导航外壳）
-│   │   ├── Settings/                  # PreferencesSettingsView / HubDevicesSettingsView / StorageBackupSettingsView / CategoriesSettingsView / AboutSettingsView / SettingsCardComponents
-│   │   └── Components/                # FilmFrameView / NoiseBackground / PaperComponents
+│   └── Views/
+│       ├── MenuBar/                   # QuickCaptureView & QuickLedgerView（跨窗口共享草稿与相纸上传）
+│       ├── Main/                      # StreamView (NavigationSplitView) / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / CuratorDossierView / SettingsView
+│       │   ├── EntryModal/            # NewEntryModal /EntryMediaState / 表单子模块
+│       │   ├── LedgerSheets/          # AddGearSheet / SellGearSheet / EditTransactionSheet
+│       │   ├── ProjectsWishes/        # ProjectWishCards / WishSheets / ProjectSheets / FootprintSheets / CityMemoryDrawers
+│       │   ├── Settings/              # PreferencesSettingsView / HubDevicesSettingsView / AboutSettingsView / SettingsCardComponents
+│       │   └── Stream/                # TimelineEntryCardView / StreamEntryDetailView / EditEntrySheetView / EditorialLightboxView / WorkbenchSidebar
+│       └── Components/                # FilmFrameView / LifeCalendarChartView / PaperKit / PaperButtons / PaperCityPicker / PaperDateTimePicker / SpectrumBar
 │   └── Resources/
 │       ├── Assets.xcassets/           # 跨端统一语义色板与图标资产
 └── LooseLeafTests/                    # XCTest 单元测试套件

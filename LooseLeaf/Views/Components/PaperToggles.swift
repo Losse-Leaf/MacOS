@@ -1,20 +1,17 @@
 // PaperToggles.swift
 // 纸本复选框与滑动开关样式 (Paper Checkbox & Switch Toggle Styles)
-// 职责：以纸墨美学自绘的勾选框与拨动开关，替代系统 macOS 蓝白复选框与绿色开关，
-//       并补齐 VoiceOver 开关语义。
-// 来源：由 Views/Components/PaperComponents.swift 按职责拆分而来，代码逻辑保持原样。
 
 import SwiftUI
 
-// MARK: - 纸本复选框与滑动开关样式 (Paper Checkbox & Switch Toggle Styles)
-
 /// 纸本复选框样式 (PaperCheckboxToggleStyle)
-/// 替代系统 macOS 蓝白复选框，遵循极简纸墨美学与触感反馈
 public struct PaperCheckboxToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
         Button {
+            guard isEnabled else { return }
             configuration.isOn.toggle()
         } label: {
             HStack(spacing: ArchiveSpacing.s) {
@@ -38,11 +35,12 @@ public struct PaperCheckboxToggleStyle: ToggleStyle {
                     .font(ArchiveTypography.bodySans(size: 12.5))
                     .foregroundStyle(ArchivePalette.inkPrimary)
             }
+            .frame(minHeight: ArchiveHitTarget.minPointer)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1.0 : 0.42)
         }
         .buttonStyle(.plain)
         .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
-        // 自绘控件需显式补齐开关语义，VoiceOver 才能朗读选中状态
-        .accessibilityAddTraits(.isToggle)
         .accessibilityValue(configuration.isOn ? "已勾选" : "未勾选")
     }
 }
@@ -52,13 +50,16 @@ public extension ToggleStyle where Self == PaperCheckboxToggleStyle {
 }
 
 /// 纸本滑动开关样式 (PaperSwitchToggleStyle)
-/// 替代系统 macOS 绿色开关，支持平滑弹性过渡与纸墨底色
 public struct PaperSwitchToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
         Button {
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.75)) {
+            guard isEnabled else { return }
+            withAnimation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.75)) {
                 configuration.isOn.toggle()
             }
         } label: {
@@ -81,12 +82,13 @@ public struct PaperSwitchToggleStyle: ToggleStyle {
                         .padding(ArchiveSpacing.xxs)
                 }
             }
+            .frame(minHeight: ArchiveHitTarget.minPointer)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1.0 : 0.42)
         }
         .buttonStyle(.plain)
         .paperButtonFocusRing(cornerRadius: ArchiveRadius.md)
-        // 自绘控件需显式补齐开关语义，VoiceOver 才能朗读开合状态
-        .accessibilityAddTraits(.isToggle)
-        .accessibilityValue(configuration.isOn ? "已开启" : "已关闭")
+        .accessibilityValue(configuration.isOn ? "开启" : "关闭")
     }
 }
 

@@ -50,14 +50,18 @@ enum SecureClipboard {
         }
     }
 
-    /// 拷贝图片到通用剪贴板，并在延时后自动清除
-    static func copy(image: NSImage, clearing: Bool = true) {
+    /// 拷贝图片到通用剪贴板，并在延时后自动清除（基于 changeCount 精确守卫，绝不误删用户后续复制的内容）
+    static func copy(image: NSImage, clearing: Bool = true, after delay: TimeInterval = clearDelay) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.writeObjects([image])
         guard clearing else { return }
 
-        // 图片无法按内容比对，改为「清空前先确认仍是同一张」的近似判断：
-        // 直接清空风险较大（用户可能刚复制了别的东西），因此图片不自动清除。
+        let expectedChangeCount = pasteboard.changeCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let board = NSPasteboard.general
+            guard board.changeCount == expectedChangeCount else { return }
+            board.clearContents()
+        }
     }
 }

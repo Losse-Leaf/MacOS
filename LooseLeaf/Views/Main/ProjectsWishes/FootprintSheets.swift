@@ -1,10 +1,8 @@
 import SwiftUI
 
 /// 城市足迹票根相关弹窗集合 (NewFootprintSheet / EditFootprintSheet)
-/// 从 ProjectsWishesView 中拆出的独立 Sheet 组件：
-/// 1. NewFootprintSheet —— 点亮城市行迹票根（行政区划 / 到访时间 / 标题 / 手记）
-/// 2. EditFootprintSheet —— 修订既有行迹票根
-/// 仅做文件拆分，逻辑、数值与视觉表现与拆分前完全一致。
+/// 1. NewFootprintSheet —— 点亮城市行迹票根（行政区划 / 到访时间 / 离境日期 / 私密开关 / 标题 / 手记）
+/// 2. EditFootprintSheet —— 修订既有行迹票根（保留跨端照片绑定，连带刷新伴生散页）
 
 // MARK: - 点亮城市足迹弹窗 (NewFootprintSheet)
 
@@ -18,79 +16,98 @@ public struct NewFootprintSheet: View {
     @State private var title: String = ""
     @State private var note: String = ""
     @State private var visitedDate: Date = Date()
+    @State private var hasDepartedDate: Bool = false
+    @State private var departedDate: Date = Date()
+    @State private var isPrivate: Bool = false
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
+    @FocusState private var isTitleFocused: Bool
+
+    public init(appState: AppState, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.onDismiss = onDismiss
+    }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            Text("点亮城市行迹票根")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        PaperSheetScaffold(
+            title: "点亮城市行迹票根",
+            subtitle: "山川印谱 · 典藏特种纸票根",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isSubmitting,
+            isSubmitDisabled: cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            submitTitle: "镌刻票根并伴生入流 ⌘↩",
+            onCancel: onDismiss,
+            onSubmit: submitFootprint
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "选择行政区划城市…")
 
-            PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "选择行政区划城市…")
+                PaperDateTimePicker(selection: $visitedDate, label: "到访时间", showQuickShortcuts: true)
 
-            PaperDateTimePicker(selection: $visitedDate, label: "到访时间", showQuickShortcuts: true)
-
-            TextField("旅程标题", text: $title)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            TextField("行迹随笔手记", text: $note)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if let errorText {
-                Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { onDismiss() }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(isSubmitting ? "镌刻中…" : "镌刻票根并伴生入流 ⌘↩") {
-                    submitFootprint()
+                VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+                    Toggle("包含返程 / 离境日期（多日漫游）", isOn: $hasDepartedDate)
+                        .toggleStyle(.paperCheckbox)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    if hasDepartedDate {
+                        PaperDatePicker(selection: $departedDate, enableTime: false, label: "离境日期")
+                    }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+
+                TextField("旅程标题", text: $title)
+                    .textFieldStyle(.plain)
+                    .focused($isTitleFocused)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                TextField("行迹随笔手记…", text: $note, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(3...6)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                HStack {
+                    Label("私密行迹（仅配对主理人设备可见）", systemImage: ArchiveIcon.lock.systemName)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Spacer()
+                    Toggle("私密行迹", isOn: $isPrivate)
+                        .labelsHidden()
+                        .toggleStyle(.paperSwitch)
+                        .accessibilityLabel("设为私密行迹")
+                }
+
+                if let errorText {
+                    Text(errorText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.compact,
-            idealWidth: ArchiveSheetWidth.compact,
-            maxWidth: ArchiveSheetWidth.compact
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isTitleFocused = true
+        }
     }
 
     private func submitFootprint() {
         let cleanCity = cityName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanCity.isEmpty else { return }
+        guard !cleanCity.isEmpty, !isSubmitting else { return }
         isSubmitting = true
         errorText = nil
         Task { @MainActor in
             do {
                 let req = CreateFootprintRequest(
-                    // 城市代码必须由城市名反查得出，不能用固定值配任意城市名
                     cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? "") : cityCode,
                     cityName: cleanCity,
                     title: title.isEmpty ? nil : title,
                     visitedAt: FormatUtils.beijingISOString(from: visitedDate),
-                    note: note.isEmpty ? nil : note
+                    departedAt: hasDepartedDate ? FormatUtils.beijingDateString(from: departedDate) : nil,
+                    note: note.isEmpty ? nil : note,
+                    isPrivate: isPrivate
                 )
                 _ = try await APIClient.shared.createFootprint(req)
-                await appState.loadProjectsWishesFootprints()
-                await appState.loadEntries(forceFull: false)
+                await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription
@@ -113,8 +130,12 @@ public struct EditFootprintSheet: View {
     @State private var title: String
     @State private var note: String
     @State private var visitedDate: Date
+    @State private var hasDepartedDate: Bool
+    @State private var departedDate: Date
+    @State private var isPrivate: Bool
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
+    @FocusState private var isTitleFocused: Bool
 
     public init(appState: AppState, footprint: Footprint, onDismiss: @escaping () -> Void) {
         self.appState = appState
@@ -124,64 +145,78 @@ public struct EditFootprintSheet: View {
         _cityName = State(initialValue: footprint.cityName)
         _title = State(initialValue: footprint.title ?? "")
         _note = State(initialValue: footprint.note ?? "")
-        _visitedDate = State(initialValue: FormatUtils.parseFlexDate(footprint.visitedAt) ?? Date())
+        let parsedVisited = FormatUtils.parseFlexDate(footprint.visitedAt) ?? Date()
+        _visitedDate = State(initialValue: parsedVisited)
+        let rawDeparted = (footprint.departedAt ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        _hasDepartedDate = State(initialValue: !rawDeparted.isEmpty)
+        _departedDate = State(initialValue: FormatUtils.parseFlexDate(rawDeparted) ?? parsedVisited)
+        _isPrivate = State(initialValue: footprint.isPrivate ?? false)
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            Text("修订行迹票根")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        PaperSheetScaffold(
+            title: "修订行迹票根",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isSubmitting,
+            isSubmitDisabled: cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            submitTitle: "保存票根修改 ⌘↩",
+            onCancel: onDismiss,
+            onSubmit: updateFootprint
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
 
-            PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName)
+                PaperDateTimePicker(selection: $visitedDate, label: "到访时间", showQuickShortcuts: true)
 
-            PaperDateTimePicker(selection: $visitedDate, label: "到访时间", showQuickShortcuts: true)
-
-            TextField("旅程标题", text: $title)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            TextField("随笔手记", text: $note)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if let errorText {
-                Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { onDismiss() }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(isSubmitting ? "保存中…" : "保存票根修改 ⌘↩") {
-                    updateFootprint()
+                VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+                    Toggle("包含返程 / 离境日期（多日漫游）", isOn: $hasDepartedDate)
+                        .toggleStyle(.paperCheckbox)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    if hasDepartedDate {
+                        PaperDatePicker(selection: $departedDate, enableTime: false, label: "离境日期")
+                    }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+
+                TextField("旅程标题", text: $title)
+                    .textFieldStyle(.plain)
+                    .focused($isTitleFocused)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                TextField("随笔手记…", text: $note, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(3...6)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                HStack {
+                    Label("私密行迹（仅配对主理人设备可见）", systemImage: ArchiveIcon.lock.systemName)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Spacer()
+                    Toggle("私密行迹", isOn: $isPrivate)
+                        .labelsHidden()
+                        .toggleStyle(.paperSwitch)
+                        .accessibilityLabel("设为私密行迹")
+                }
+
+                if let errorText {
+                    Text(errorText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.compact,
-            idealWidth: ArchiveSheetWidth.compact,
-            maxWidth: ArchiveSheetWidth.compact
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isTitleFocused = true
+        }
     }
 
     private func updateFootprint() {
         let cleanCity = cityName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanCity.isEmpty else { return }
+        guard !cleanCity.isEmpty, !isSubmitting else { return }
         isSubmitting = true
         errorText = nil
         Task { @MainActor in
@@ -189,13 +224,14 @@ public struct EditFootprintSheet: View {
                 let req = CreateFootprintRequest(
                     cityCode: cityCode.isEmpty ? (FormatUtils.resolveCityCode(from: cleanCity) ?? footprint.cityCode) : cityCode,
                     cityName: cleanCity,
-                    // 空串是显式清空；nil 会被后端当作保持原值。
                     title: title,
                     visitedAt: FormatUtils.beijingISOString(from: visitedDate),
-                    note: note
+                    departedAt: hasDepartedDate ? FormatUtils.beijingDateString(from: departedDate) : "",
+                    note: note,
+                    isPrivate: isPrivate
                 )
                 _ = try await APIClient.shared.updateFootprint(id: footprint.id, req)
-                await appState.loadProjectsWishesFootprints()
+                await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
                 errorText = error.localizedDescription

@@ -3,9 +3,6 @@ import AppKit
 
 // MARK: - 统一图标按钮 (Paper Icon Button)
 
-/// 全应用统一的图标按钮：
-/// - 视觉图形保持 11~12pt，但**命中区不小于 `ArchiveHitTarget.minPointer`**
-/// - 强制要求 `label`（VoiceOver 朗读），`help` 提供 tooltip
 public struct PaperIconButton: View {
     private let systemName: String
     private let label: String
@@ -13,6 +10,8 @@ public struct PaperIconButton: View {
     private let size: CGFloat
     private let tint: Color?
     private let action: () -> Void
+
+    @Environment(\.isEnabled) private var isEnabled
 
     public init(
         systemName: String,
@@ -37,8 +36,10 @@ public struct PaperIconButton: View {
                 .foregroundStyle(tint ?? ArchivePalette.inkSecondary)
                 .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                 .contentShape(Rectangle())
+                .opacity(isEnabled ? 1.0 : 0.42)
         }
         .buttonStyle(.plain)
+        .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
         .help(help ?? label)
         .accessibilityLabel(label)
     }
@@ -46,7 +47,6 @@ public struct PaperIconButton: View {
 
 // MARK: - 统一空状态 (Empty State)
 
-/// 统一空状态容器：意象图标 + 标题 + 说明 + 行动召唤按钮
 public struct ArchiveEmptyState: View {
     private let systemName: String
     private let title: String
@@ -120,8 +120,6 @@ public struct ArchiveEmptyState: View {
 
 // MARK: - 统一骨架屏 (Skeleton)
 
-/// 首屏加载骨架：与纸本卡片同构的占位条。
-/// 关键：加载态与「真的没有记录」必须视觉可区分，否则用户会以为数据丢了。
 public struct ArchiveSkeletonView: View {
     private let rowCount: Int
     private let showsHeader: Bool
@@ -137,7 +135,7 @@ public struct ArchiveSkeletonView: View {
                 skeletonBar(width: 220, height: 22)
                 skeletonBar(width: 140, height: 12)
             }
-            ForEach(0..<max(1, rowCount), id: \.self) { index in
+            ForEach(0..<max(1, rowCount), id: \.self) { _ in
                 VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                     HStack(spacing: ArchiveSpacing.s) {
                         skeletonBar(width: 64, height: 16)
@@ -166,11 +164,11 @@ public struct ArchiveSkeletonView: View {
 
 // MARK: - 统一 Sheet 骨架 (Sheet Scaffold)
 
-/// 统一表单弹窗骨架：标题 + 内容 + 取消/提交。
-/// 消除 12 处逐行重复的 `VStack { TextField…, 取消 + 提交, .padding(20).frame(width:)` 结构。
 public struct PaperSheetScaffold<Content: View>: View {
     private let title: String
+    private let subtitle: String?
     private let width: CGFloat
+    private let maxBodyHeight: CGFloat
     private let isSubmitting: Bool
     private let isSubmitDisabled: Bool
     private let submitTitle: String
@@ -180,7 +178,9 @@ public struct PaperSheetScaffold<Content: View>: View {
 
     public init(
         title: String,
+        subtitle: String? = nil,
         width: CGFloat = ArchiveSheetWidth.standard,
+        maxBodyHeight: CGFloat = 520,
         isSubmitting: Bool = false,
         isSubmitDisabled: Bool = false,
         submitTitle: String = "保存",
@@ -189,7 +189,9 @@ public struct PaperSheetScaffold<Content: View>: View {
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
+        self.subtitle = subtitle
         self.width = width
+        self.maxBodyHeight = maxBodyHeight
         self.isSubmitting = isSubmitting
         self.isSubmitDisabled = isSubmitDisabled
         self.submitTitle = submitTitle
@@ -200,16 +202,26 @@ public struct PaperSheetScaffold<Content: View>: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            Text(title)
-                .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+            }
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
-            content()
-
-            // 矮内容时把按钮行推到卡底，高内容时 Spacer 塌缩为 0，不额外占用空间。
-            Spacer(minLength: 0)
+            ScrollView(.vertical) {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 2)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: maxBodyHeight)
 
             Divider().overlay(ArchivePalette.borderSubtle)
 
@@ -238,9 +250,6 @@ public struct PaperSheetScaffold<Content: View>: View {
         }
         .padding(ArchiveSpacing.l)
         .frame(minWidth: width * 0.86, idealWidth: width, maxWidth: width)
-        // 统一高度基线（下限而非固定高度）：调用方在 content() 内增删单行错误文案时
-        // sheet 不再重新定高居中；内容超过基线时仍可自适应增高，不遮挡内容。
-        .frame(minHeight: 300, alignment: .top)
         .background(ArchivePalette.archivePaper)
         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.lg))
         .overlay(
@@ -252,11 +261,12 @@ public struct PaperSheetScaffold<Content: View>: View {
 
 // MARK: - 统一纸墨模态通道 (Paper Modal)
 
-/// 全应用统一的居中纸墨模态层。
-/// 与系统 `.sheet` 的差异：居中卡片 + 半透明遮罩 + 点击遮罩关闭 + ESC 关闭。
 public struct PaperModalOverlay<Content: View>: View {
     private let onDismiss: () -> Void
     private let content: () -> Content
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(onDismiss: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
         self.onDismiss = onDismiss
@@ -265,13 +275,19 @@ public struct PaperModalOverlay<Content: View>: View {
 
     public var body: some View {
         ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(Color.black.opacity(0.28))
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { onDismiss() }
-                .accessibilityHidden(true)
+            Group {
+                if reduceTransparency {
+                    Color.black.opacity(0.62)
+                } else {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Color.black.opacity(0.28))
+                }
+            }
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture { onDismiss() }
+            .accessibilityHidden(true)
 
             content()
                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.lg))
@@ -280,11 +296,15 @@ public struct PaperModalOverlay<Content: View>: View {
                     RoundedRectangle(cornerRadius: ArchiveRadius.lg)
                         .stroke(ArchivePalette.borderSubtle.opacity(0.8), lineWidth: 0.8)
                 )
-                .onTapGesture { /* 吸收点击，避免冒泡关闭 */ }
+                .onTapGesture {}
         }
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.96).combined(with: .opacity),
-            removal: .scale(scale: 0.96).combined(with: .opacity)
-        ))
+        .transition(
+            reduceMotion
+                ? .opacity
+                : .asymmetric(
+                    insertion: .scale(scale: 0.96).combined(with: .opacity),
+                    removal: .scale(scale: 0.96).combined(with: .opacity)
+                )
+        )
     }
 }

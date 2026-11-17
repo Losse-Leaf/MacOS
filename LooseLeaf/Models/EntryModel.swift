@@ -19,6 +19,11 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
+    /// 允许用户在新建/编辑手稿中手动切换的四维生活形态（排除系统合成的 transaction 与 gear）
+    public static var editableCases: [EntryType] {
+        [.life, .travel, .project, .wish]
+    }
+
     public var label: String {
         switch self {
         case .life: return "日常"
@@ -454,6 +459,8 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
     public var footprintId: Int?
     public var isPrivate: Bool?
     public var attachmentIds: [Int]?
+    /// 显式清空全部已绑附件（契约三态铁律：删除最后一张照片时需传 `attachment_ids: []` + `clear_attachments: true`）
+    public var clearAttachments: Bool?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -469,6 +476,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         case footprintId = "footprint_id"
         case isPrivate = "is_private"
         case attachmentIds = "attachment_ids"
+        case clearAttachments = "clear_attachments"
     }
 
     public init(
@@ -484,7 +492,8 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         wishId: Int? = nil,
         footprintId: Int? = nil,
         isPrivate: Bool? = nil,
-        attachmentIds: [Int]? = nil
+        attachmentIds: [Int]? = nil,
+        clearAttachments: Bool? = nil
     ) {
         self.type = type
         self.title = title
@@ -499,6 +508,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         self.footprintId = footprintId
         self.isPrivate = isPrivate
         self.attachmentIds = attachmentIds
+        self.clearAttachments = clearAttachments
     }
 }
 

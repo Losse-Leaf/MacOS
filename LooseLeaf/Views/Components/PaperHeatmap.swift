@@ -1,14 +1,9 @@
 // PaperHeatmap.swift
 // 时光刻度组件 (Temporal Gap Separator)
-// 职责：归档时间轴上的「岁月留白」刻度切线，
-//       属于时间维度的可视化呈现，不涉及表单控件与通用按钮样式。
-// 来源：由 Views/Components/PaperComponents.swift 按职责拆分而来，代码逻辑保持原样。
 
 import SwiftUI
 
 /// 岁月留白刻度切线 (Temporal Gap Separator)
-/// 遵循 docs/ecosystem.md §4.1.3：当相邻记录跨度 >= 14 天时自动插入留白标注
-/// 融合树状时间轴树干母线与年轮休眠节点 (Tree Ring Dormant Node)
 public struct TemporalGapDivider: View {
     public let days: Int
 
@@ -18,7 +13,6 @@ public struct TemporalGapDivider: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            // 左侧树干贯穿与年轮留白节
             ZStack {
                 Rectangle()
                     .fill(ArchivePalette.borderSubtle.opacity(0.7))
@@ -55,5 +49,7 @@ public struct TemporalGapDivider: View {
             }
         }
         .padding(.vertical, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("间隔 \(days) 天无记录")
     }
 }

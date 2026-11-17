@@ -1,22 +1,19 @@
 import SwiftUI
+import AppKit
 
-/// 桌面端独立记账与资产管理中枢视图 (LedgerAssetsView)
-/// 严格遵循 docs/backend.md §5.3 & §5.3.1 (RC-53 隐私隔离与 Cents 整型精度)
-/// 主理人全权管理级别：支持自然语言+可视化双模记账、账目编辑/删除、固资设备增删改与转让回血
+/// 独立抽离的双模记账控制台（隔离输入态，杜绝每次敲击字符触发父级数千条账目重筛与重排）
 @MainActor
-public struct LedgerAssetsView: View {
+private struct LedgerComposerCard: View {
     @Bindable var appState: AppState
+    @Binding var showVisualForm: Bool
+    @Binding var errorNotice: String?
 
-    // 快捷自然语言记账
     @State private var quickLine: String = ""
-    @State private var showVisualForm: Bool = false
-
-    // 可视化表单状态
     @State private var formType: String = "expense"
     @State private var formAmountYuan: String = ""
     @State private var formTitle: String = ""
     @State private var formCategory: String = "餐饮"
-    @State private var formPaymentMethod: String = "微信支付"
+    @State private var formPaymentMethod: String
     @State private var formNote: String = ""
     @State private var formCityCode: String = ""
     @State private var formCityName: String = ""
@@ -25,9 +22,427 @@ public struct LedgerAssetsView: View {
     @State private var formGearCategory: String = "数码器材"
     @State private var formGearSpec: String = ""
     @State private var formIsInstallment: Bool = false
-    @State private var formInstallmentChannelCode: String = "huabei"
+    @State private var formInstallmentChannelCode: String = ""
     @State private var formInstallmentMonths: Int = 12
     @State private var formRepaymentDay: Int = 10
+    @State private var isSubmittingTx: Bool = false
+
+    init(
+        appState: AppState,
+        showVisualForm: Binding<Bool>,
+        errorNotice: Binding<String?>
+    ) {
+        self.appState = appState
+        self._showVisualForm = showVisualForm
+        self._errorNotice = errorNotice
+        self._formPaymentMethod = State(initialValue: appState.paymentMethods.first ?? "微信支付")
+        if let firstCh = appState.creditChannels.first {
+            self._formInstallmentChannelCode = State(initialValue: firstCh.code)
+            self._formRepaymentDay = State(initialValue: firstCh.repaymentDay)
+        }
+    }
+
+    private var availableCreditChannels: [CreditChannel] {
+        appState.creditChannels
+    }
+
+    private var quickParsed: FormatUtils.QuickLedgerParsed? {
+        let isIncome = quickLine.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("+")
+        return FormatUtils.parseQuickLedgerInput(
+            quickLine,
+            knownCategories: isIncome ? appState.incomeCategories : appState.expenseCategories
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.viewfinder")
+                    .font(.system(size: 14))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+
+                TextField("快速记账（如：42.5 咖啡）…", text: $quickLine)
+                    .accessibilityLabel("快速记账输入")
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .onSubmit {
+                        submitQuickLine()
+                    }
+
+                Text(quickParsed.map { "\($0.category) · \(FormatUtils.formattedYuan(cents: $0.amountCents, includeSymbol: true))" } ?? "输入金额与摘要自动识别")
+                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                    .foregroundStyle(quickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted.opacity(0.65))
+                    .lineLimit(1)
+                    .frame(width: 148, alignment: .trailing)
+
+                Button {
+                    submitQuickLine()
+                } label: {
+                    if isSubmittingTx {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("记入账本")
+                    }
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                .paperButtonFocusRing()
+                .disabled(isSubmittingTx || quickParsed == nil)
+
+                Button {
+                    withAnimation(ArchiveMotion.standard) {
+                        showVisualForm.toggle()
+                    }
+                } label: {
+                    HStack(spacing: ArchiveSpacing.xs) {
+                        Image(systemName: showVisualForm ? "chevron.up.circle.fill" : "slider.horizontal.below.rectangle")
+                        Text(showVisualForm ? "收起表单" : "可视化表单")
+                    }
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                }
+                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                .paperButtonFocusRing()
+            }
+
+            if showVisualForm {
+                Divider().overlay(ArchivePalette.borderDivider)
+
+                VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                    HStack(spacing: ArchiveSpacing.m) {
+                        HStack(spacing: ArchiveSpacing.xs) {
+                            PaperPillButton(title: "支出", isSelected: formType == "expense") {
+                                formType = "expense"
+                                if !appState.expenseCategories.contains(formCategory) {
+                                    formCategory = appState.expenseCategories.first ?? "餐饮"
+                                }
+                            }
+                            PaperPillButton(title: "收入", isSelected: formType == "income") {
+                                formType = "income"
+                                if !appState.incomeCategories.contains(formCategory) {
+                                    formCategory = appState.incomeCategories.first ?? "薪资"
+                                }
+                            }
+                        }
+
+                        HStack(spacing: ArchiveSpacing.xs) {
+                            Text("¥")
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+                            TextField("0.00", text: $formAmountYuan)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.monoScale(size: 13.5, weight: .semibold))
+                                .frame(width: 140)
+                        }
+                        .padding(.horizontal, ArchiveSpacing.s)
+                        .padding(.vertical, 5)
+                        .background(ArchivePalette.archivePaper)
+                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                        )
+
+                        TextField("账目说明", text: $formTitle)
+                            .textFieldStyle(.plain)
+                            .font(ArchiveTypography.bodySans(size: 12.5))
+                            .padding(.horizontal, ArchiveSpacing.s)
+                            .padding(.vertical, 5)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                            )
+                    }
+
+                    HStack(alignment: .top, spacing: ArchiveSpacing.s) {
+                        Text("类目：")
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .padding(.top, 4)
+
+                        let categoriesToShow = (formType == "income") ? appState.incomeCategories : appState.expenseCategories
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(categoriesToShow, id: \.self) { cat in
+                                    PaperPillButton(title: cat, isSelected: formCategory == cat) {
+                                        formCategory = cat
+                                    }
+                                }
+                            }
+                        }
+                        .horizontalFadeMask()
+                    }
+
+                    HStack(spacing: ArchiveSpacing.s) {
+                        Text("支付：")
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(appState.paymentMethods, id: \.self) { pay in
+                                    PaperPillButton(title: pay, isSelected: formPaymentMethod == pay) {
+                                        formPaymentMethod = pay
+                                    }
+                                }
+                            }
+                        }
+                        .horizontalFadeMask()
+
+                        Spacer()
+
+                        Toggle("建入固资大盘", isOn: $formLinkGear)
+                            .toggleStyle(.paperCheckbox)
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+
+                        if formType == "expense" {
+                            Toggle("分期付款", isOn: $formIsInstallment)
+                                .toggleStyle(.paperCheckbox)
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .onChange(of: formIsInstallment) { _, isOn in
+                                    if isOn, formInstallmentChannelCode.isEmpty, let first = availableCreditChannels.first {
+                                        formInstallmentChannelCode = first.code
+                                        formRepaymentDay = first.repaymentDay
+                                    }
+                                }
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        Text("时空：")
+                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+
+                        PaperDatePicker(selection: $formOccurredAt)
+                        PaperTimePicker(selection: $formOccurredAt)
+
+                        Spacer()
+
+                        HStack(spacing: ArchiveSpacing.xs) {
+                            Text("省市：")
+                                .font(ArchiveTypography.bodySans(size: 11.5))
+                                .foregroundStyle(ArchivePalette.inkMuted)
+
+                            PaperCityPicker(
+                                selectedCode: $formCityCode,
+                                selectedName: $formCityName,
+                                placeholder: appState.profile.displayCity.isEmpty ? "选择省市" : appState.profile.displayCity
+                            )
+                        }
+                    }
+
+                    if formLinkGear {
+                        HStack(spacing: ArchiveSpacing.s) {
+                            PaperSelect(
+                                selection: $formGearCategory,
+                                options: appState.gearCategories.map { PaperSelectOption(value: $0, label: $0) },
+                                label: "固资分类："
+                            )
+
+                            TextField("规格参数", text: $formGearSpec)
+                                .textFieldStyle(.plain)
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                                .padding(6)
+                                .background(ArchivePalette.archivePaper)
+                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                        }
+                    }
+
+                    if formIsInstallment && formType == "expense" {
+                        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                            if availableCreditChannels.isEmpty {
+                                Text("尚未从中枢加载到可用信贷分期渠道，请联网同步后再试。")
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                            } else {
+                                HStack(spacing: ArchiveSpacing.s) {
+                                    Text("信贷渠道：")
+                                        .font(ArchiveTypography.bodySans(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 6) {
+                                            ForEach(availableCreditChannels) { ch in
+                                                PaperPillButton(
+                                                    title: "\(ch.name) (每月\(ch.repaymentDay)日)",
+                                                    isSelected: formInstallmentChannelCode == ch.code
+                                                ) {
+                                                    formInstallmentChannelCode = ch.code
+                                                    formRepaymentDay = ch.repaymentDay
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .horizontalFadeMask()
+
+                                    Spacer()
+                                }
+                            }
+
+                            HStack(spacing: ArchiveSpacing.m) {
+                                HStack(spacing: 6) {
+                                    Text("分期期数：")
+                                        .font(ArchiveTypography.bodySans(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                                    ForEach(ArchiveInstallmentOptions.installmentOptions, id: \.self) { months in
+                                        PaperPillButton(title: "\(months) 期", isSelected: formInstallmentMonths == months) {
+                                            formInstallmentMonths = months
+                                        }
+                                    }
+                                }
+
+                                Divider()
+                                    .frame(height: 16)
+                                    .overlay(ArchivePalette.borderSubtle)
+
+                                if let ch = availableCreditChannels.first(where: { $0.code == formInstallmentChannelCode }) {
+                                    Text("还款日跟随渠道：每月 \(ch.repaymentDay) 日")
+                                        .font(ArchiveTypography.monoScale(size: 11.5))
+                                        .foregroundStyle(ArchivePalette.inkMuted)
+                                }
+
+                                Spacer()
+
+                                let totalCents = FormatUtils.parseYuanToCents(formAmountYuan) ?? 0
+                                let monthlyCents = totalCents > 0 ? totalCents / Int64(max(1, formInstallmentMonths)) : 0
+                                Text(totalCents > 0 ? "前 \(max(1, formInstallmentMonths - 1)) 期每期 \(FormatUtils.formattedYuan(cents: monthlyCents, includeSymbol: true))" : "输入金额后自动核算每期")
+                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(totalCents > 0 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(10)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                        )
+                    }
+
+                    HStack {
+                        TextField("备注", text: $formNote)
+                            .textFieldStyle(.plain)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                            .padding(6)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                        Button {
+                            submitVisualForm()
+                        } label: {
+                            if isSubmittingTx {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("完成记账并入账")
+                            }
+                        }
+                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+                        .paperButtonFocusRing()
+                        .disabled(
+                            isSubmittingTx
+                                || (FormatUtils.parseYuanToCents(formAmountYuan) ?? 0) <= 0
+                                || (formType == "expense" && formIsInstallment && availableCreditChannels.isEmpty)
+                        )
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(ArchiveCardMetrics.padding)
+        .background(ArchivePalette.archivePaper)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+        )
+    }
+
+    private func submitQuickLine() {
+        guard let parsed = quickParsed, !isSubmittingTx else { return }
+        isSubmittingTx = true
+        errorNotice = nil
+        Task { @MainActor in
+            defer { isSubmittingTx = false }
+            do {
+                _ = try await appState.submitQuickLedger(
+                    amountCents: parsed.amountCents,
+                    type: parsed.type,
+                    category: parsed.category,
+                    title: parsed.title
+                )
+                quickLine = ""
+            } catch {
+                errorNotice = error.localizedDescription
+            }
+        }
+    }
+
+    private func submitVisualForm() {
+        guard let cents = FormatUtils.parseYuanToCents(formAmountYuan), cents > 0, !isSubmittingTx else { return }
+        isSubmittingTx = true
+        errorNotice = nil
+        let cleanTitle = formTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle = cleanTitle.isEmpty ? formCategory : cleanTitle
+        let isInst = (formType == "expense" && formIsInstallment && !availableCreditChannels.isEmpty)
+        let months = max(1, formInstallmentMonths)
+        let monthlyPay = isInst ? (cents / Int64(months)) : nil
+        let resolvedChannel = isInst
+            ? (availableCreditChannels.first(where: { $0.code == formInstallmentChannelCode }) ?? availableCreditChannels.first)
+            : nil
+
+        Task { @MainActor in
+            defer { isSubmittingTx = false }
+            do {
+                let req = CreateTransactionRequest(
+                    amount: cents,
+                    type: formType,
+                    category: formCategory,
+                    title: finalTitle,
+                    note: formNote.isEmpty ? nil : formNote,
+                    paymentMethod: appState.paymentMethods.contains(formPaymentMethod)
+                        ? formPaymentMethod
+                        : (appState.paymentMethods.first ?? formPaymentMethod),
+                    cityCode: formCityCode.isEmpty ? nil : formCityCode,
+                    occurredAt: FormatUtils.beijingISOString(from: formOccurredAt),
+                    isInstallment: isInst,
+                    installmentChannelCode: resolvedChannel?.code,
+                    installmentTotalAmount: isInst ? cents : nil,
+                    installmentMonths: isInst ? months : nil,
+                    installmentMonthlyPay: monthlyPay,
+                    installmentRemainMonths: isInst ? months : nil,
+                    repaymentDay: resolvedChannel?.repaymentDay,
+                    linkGearAsset: formLinkGear,
+                    gearCategory: formLinkGear ? formGearCategory : nil,
+                    gearSpec: formLinkGear ? formGearSpec : nil
+                )
+                _ = try await SyncManager.shared.submitTransaction(req)
+                formAmountYuan = ""
+                formTitle = ""
+                formNote = ""
+                formCityCode = ""
+                formCityName = ""
+                formOccurredAt = Date()
+                formLinkGear = false
+                formIsInstallment = false
+                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadConfigAndProfile()
+            } catch {
+                errorNotice = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// 桌面端独立记账与资产管理中枢视图 (LedgerAssetsView)
+/// 严格遵循 docs/backend.md §5.3 & §5.3.1 (RC-53 隐私隔离与 Cents 整型精度)
+@MainActor
+public struct LedgerAssetsView: View {
+    @Bindable var appState: AppState
+
+    @State private var showVisualForm: Bool = false
 
     public enum LedgerSubTab: String, CaseIterable, Identifiable {
         case ledger = "收支流水"
@@ -45,36 +460,25 @@ public struct LedgerAssetsView: View {
     @State private var isLoadingSummary: Bool = false
     @State private var filterBySelectedMonth: Bool = true
     @State private var selectedCategoryFilter: String = "全部"
+    @State private var visibleTxLimit: Int = 150
     @State private var showCalibrateBalanceSheet: Bool = false
+    @State private var isCalibratingBalance: Bool = false
     @State private var showAddGearSheet: Bool = false
     @State private var editingTransaction: Transaction?
     @State private var sellingGear: GearItem?
     @State private var initialBalanceYuanInput: String = ""
     @State private var errorNotice: String?
-    /// 月份汇总加载任务句柄：切换月份时取消上一轮未完成的请求，避免响应乱序
     @State private var summaryLoadTask: Task<Void, Never>?
+    @FocusState private var isCalibrateFieldFocused: Bool
 
     public init(appState: AppState) {
         self.appState = appState
-        // 支付方式默认取用户已配置的首选项，未配置时回落微信支付（不再硬编码单一渠道）
-        _formPaymentMethod = State(initialValue: appState.paymentMethods.first ?? "微信支付")
-    }
-
-    private var availableCreditChannels: [CreditChannel] {
-        if !appState.creditChannels.isEmpty {
-            return appState.creditChannels
-        }
-        return [
-            CreditChannel(id: 1, code: "huabei", name: "花呗", repaymentDay: 10, isBuiltin: true),
-            CreditChannel(id: 2, code: "baitiao", name: "白条", repaymentDay: 15, isBuiltin: true)
-        ]
     }
 
     private var isCurrentMonthSelected: Bool {
         isCurrentMonth(year: selectedYear, month: selectedMonth)
     }
 
-    /// 判断指定年月是否为当前自然月（北京时间）
     private func isCurrentMonth(year: Int, month: Int) -> Bool {
         let now = FormatUtils.beijingCurrentYearMonth()
         return year == now.year && month == now.month
@@ -84,7 +488,14 @@ public struct LedgerAssetsView: View {
         if isCurrentMonthSelected {
             return appState.transactionSummary
         }
-        return customMonthSummary ?? TransactionSummary(year: selectedYear, month: selectedMonth, totalExpense: 0, totalIncome: 0, balance: 0, categoryBreakdown: [:])
+        return customMonthSummary ?? TransactionSummary(
+            year: selectedYear,
+            month: selectedMonth,
+            totalExpense: 0,
+            totalIncome: 0,
+            balance: 0,
+            categoryBreakdown: [:]
+        )
     }
 
     private func changeMonth(by delta: Int) {
@@ -99,11 +510,10 @@ public struct LedgerAssetsView: View {
         }
         selectedYear = y
         selectedMonth = m
+        visibleTxLimit = 150
         reloadSummary(year: y, month: m)
     }
 
-    /// 重新拉取指定月份的收支汇总。
-    /// 切换月份前先取消上一轮未完成的请求，杜绝「旧月份响应晚到」覆盖当前月份数据。
     private func reloadSummary(year: Int, month: Int) {
         summaryLoadTask?.cancel()
         summaryLoadTask = Task { @MainActor in
@@ -112,7 +522,6 @@ public struct LedgerAssetsView: View {
     }
 
     private func loadSummaryForSelectedMonth(year: Int, month: Int) async {
-        // 当前月直接使用本地实时汇总，无需请求
         if isCurrentMonth(year: year, month: month) {
             customMonthSummary = nil
             return
@@ -122,23 +531,22 @@ public struct LedgerAssetsView: View {
         do {
             let fetched = try await APIClient.shared.fetchTransactionSummary(year: year, month: month)
             try Task.checkCancellation()
-            // 一致性校验：请求返回时若用户已切换到别的月份，丢弃本次响应
             guard selectedYear == year, selectedMonth == month else { return }
             customMonthSummary = fetched
         } catch is CancellationError {
-            // 已被新的月份切换取代，静默忽略
+            // 已被新的月份切换取代
         } catch {
             guard selectedYear == year, selectedMonth == month else { return }
             errorNotice = "月度汇总加载失败：\(error.localizedDescription)"
         }
     }
 
-    /// 交易流水筛选结果（供视图一次性绑定复用，避免同一份过滤被重复计算多次）
+    /// 交易流水筛选结果（严格按北京时间 `parsedDate.dateKey` 自然月过滤，修复 UTC 跨月偏移）
     private var filteredTransactions: [Transaction] {
         var list = appState.transactions
         if filterBySelectedMonth {
             let prefix = String(format: "%04d-%02d", selectedYear, selectedMonth)
-            list = list.filter { $0.occurredAt.hasPrefix(prefix) }
+            list = list.filter { $0.parsedDate.dateKey.hasPrefix(prefix) }
         }
         if selectedCategoryFilter != "全部" {
             list = list.filter { $0.category == selectedCategoryFilter }
@@ -146,7 +554,6 @@ public struct LedgerAssetsView: View {
         return list
     }
 
-    /// 全部可选类目（支出类目在前，收入类目去重补齐）
     private var allTransactionCategories: [String] {
         var seen = Set<String>()
         var result: [String] = []
@@ -157,13 +564,11 @@ public struct LedgerAssetsView: View {
     }
 
     public var body: some View {
-        // 一次性绑定筛选结果与类目字典，避免同一份计算在 body 内被重复触发
         let transactions = filteredTransactions
         let categories = allTransactionCategories
         let gearList = appState.profile.edcGear
 
         ScrollView {
-            // LazyVStack 作为 ScrollView 的直接子视图，长列表才具备真正的懒加载能力
             LazyVStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                 headerSection
 
@@ -174,23 +579,26 @@ public struct LedgerAssetsView: View {
                 if activeSubTab == .ledger {
                     monthlySpectrumCard
 
-                    // 双模记账控制台
-                    dualModeComposerCard
+                    LedgerComposerCard(
+                        appState: appState,
+                        showVisualForm: $showVisualForm,
+                        errorNotice: $errorNotice
+                    )
 
-                    // 账目流水明细 (标题与单行筛选)
                     transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
 
-                    // 账目流水明细 (空态或流水列表)
                     if transactions.isEmpty {
                         transactionsEmptyState
                     } else {
                         transactionsList(transactions)
                     }
                 } else {
-                    // 随身器物固资货架 (标题)
+                    if let liabilities = appState.assetsOverview?.channelLiabilities, !liabilities.isEmpty {
+                        channelLiabilitiesSection(liabilities)
+                    }
+
                     gearAssetsHeaderSection(gearCount: gearList.count)
 
-                    // 随身器物固资货架 (空态或货架网格)
                     if gearList.isEmpty {
                         gearEmptyState
                     } else {
@@ -212,7 +620,6 @@ public struct LedgerAssetsView: View {
         .sheet(item: $sellingGear) { gear in
             sellGearSheetView(gear)
         }
-        // 错误提示提升为根层浮层：弹窗内触发的错误同样可见（弹窗自身亦就地渲染一份）
         .overlay(alignment: .top) {
             if let errorNotice {
                 errorBanner(text: errorNotice)
@@ -220,7 +627,6 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    /// 根层错误横幅（浮于内容区顶部，不被滚动列表遮挡）
     private func errorBanner(text: String) -> some View {
         HStack(spacing: ArchiveSpacing.s) {
             Image(systemName: "exclamationmark.triangle")
@@ -267,7 +673,6 @@ public struct LedgerAssetsView: View {
                         .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
-                    // 账本 / 固资信贷子分栏切换
                     HStack(spacing: 4) {
                         ForEach(LedgerSubTab.allCases) { tab in
                             PaperPillButton(
@@ -303,6 +708,7 @@ public struct LedgerAssetsView: View {
                     if let currentInit = appState.assetsOverview?.initialLiquidBalance {
                         initialBalanceYuanInput = FormatUtils.formattedYuan(cents: currentInit)
                     }
+                    errorNotice = nil
                     showCalibrateBalanceSheet = true
                 } label: {
                     HStack(spacing: ArchiveSpacing.xs) {
@@ -319,7 +725,6 @@ public struct LedgerAssetsView: View {
     // MARK: - 2. 资产大盘四维指标卡片
 
     private func assetsOverviewGrid(_ overview: AssetsOverview) -> some View {
-        // 响应式列数：最小窗口下自动收敛为 2~3 列，避免每列被压到 167pt 以下
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: ArchiveSpacing.m)], spacing: ArchiveSpacing.m) {
             metricCard(
                 title: "总净资产",
@@ -386,7 +791,7 @@ public struct LedgerAssetsView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
-                            .padding(5)
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archivePaper)
                             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
@@ -395,6 +800,7 @@ public struct LedgerAssetsView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                     .accessibilityLabel("上一月")
                     .help("查看上一月收支")
 
@@ -408,7 +814,7 @@ public struct LedgerAssetsView: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(isCurrentMonthSelected ? ArchivePalette.inkMuted : ArchivePalette.inkSecondary)
-                            .padding(5)
+                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archivePaper)
                             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
@@ -417,6 +823,7 @@ public struct LedgerAssetsView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                     .accessibilityLabel("下一月")
                     .help("查看下一月收支")
 
@@ -425,7 +832,7 @@ public struct LedgerAssetsView: View {
                             let now = FormatUtils.beijingCurrentYearMonth()
                             selectedYear = now.year
                             selectedMonth = now.month
-                            // 取消尚未返回的历史月份请求，避免其覆盖本月实时汇总
+                            visibleTxLimit = 150
                             summaryLoadTask?.cancel()
                             customMonthSummary = nil
                         }
@@ -440,6 +847,7 @@ public struct LedgerAssetsView: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.5)
                         )
+                        .paperButtonFocusRing(cornerRadius: 3)
                     }
 
                     if isLoadingSummary {
@@ -474,312 +882,72 @@ public struct LedgerAssetsView: View {
         )
     }
 
-    // MARK: - 4. 双模记账控制台 (自然语言 + 可视化交互表单)
+    // MARK: - 4. 信贷渠道负债明细 & 随身固资货架
 
-    private var dualModeComposerCard: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            // 自然语言快速行
-            HStack(spacing: 10) {
-                Image(systemName: "plus.viewfinder")
-                    .font(.system(size: 14))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-
-                TextField("快速记账（如：42.5 咖啡）…", text: $quickLine)
-                    .accessibilityLabel("快速记账输入")
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+    private func channelLiabilitiesSection(_ liabilities: [ChannelLiability]) -> some View {
+        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+            HStack {
+                Text("信贷与分期负债渠道 (\(liabilities.count))")
+                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
-                    .onSubmit {
-                        submitQuickLine()
-                    }
-
-                Text(quickParsed.map { "\($0.category) · \(FormatUtils.formattedYuan(cents: $0.amountCents, includeSymbol: true))" } ?? "输入金额与摘要自动识别")
-                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
-                    .foregroundStyle(quickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted.opacity(0.65))
-                    .lineLimit(1)
-                    .frame(width: 148, alignment: .trailing)
-
-                Button {
-                    submitQuickLine()
-                } label: {
-                    // 关键：提交中要有守卫。
-                    // 全应用其它提交按钮都有 `isSubmitting` 守卫 + ProgressView，
-                    // 只有账本页这两个没有 —— 网络往返期间按钮仍可点，
-                    // 于是**同一笔账会被 POST 两次**，产生重复流水。
-                    if isSubmittingTx {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("记入账本")
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .disabled(isSubmittingTx || quickParsed == nil)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showVisualForm.toggle()
-                    }
-                } label: {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: showVisualForm ? "chevron.up.circle.fill" : "slider.horizontal.below.rectangle")
-                        Text(showVisualForm ? "收起表单" : "可视化表单")
-                    }
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
+                Spacer()
+                Text("按各渠道剩余待还与当期应还汇总")
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
             }
 
-            // 可视化精细记账展开面板
-            if showVisualForm {
-                Divider().overlay(ArchivePalette.borderDivider)
-
-                VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-                    // 收支类型与金额
-                    HStack(spacing: ArchiveSpacing.m) {
-                        HStack(spacing: ArchiveSpacing.xs) {
-                            PaperPillButton(title: "支出", isSelected: formType == "expense") {
-                                formType = "expense"
-                                if !appState.expenseCategories.contains(formCategory) {
-                                    formCategory = appState.expenseCategories.first ?? "餐饮"
-                                }
-                            }
-                            PaperPillButton(title: "收入", isSelected: formType == "income") {
-                                formType = "income"
-                                if !appState.incomeCategories.contains(formCategory) {
-                                    formCategory = appState.incomeCategories.first ?? "薪资"
-                                }
-                            }
-                        }
-
-                        HStack(spacing: ArchiveSpacing.xs) {
-                            Text("¥")
-                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                            TextField("0.00", text: $formAmountYuan)
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.monoScale(size: 13.5, weight: .semibold))
-                                .frame(width: 140)
-                        }
-                        .padding(.horizontal, ArchiveSpacing.s)
-                        .padding(.vertical, 5)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                        )
-
-                        TextField("账目说明", text: $formTitle)
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.bodySans(size: 12.5))
-                            .padding(.horizontal, ArchiveSpacing.s)
-                            .padding(.vertical, 5)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                            )
-                    }
-
-                    // 类目选择胶囊
-                    HStack(alignment: .top, spacing: ArchiveSpacing.s) {
-                        Text("类目：")
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .padding(.top, 4)
-
-                        let categoriesToShow = (formType == "income") ? appState.incomeCategories : appState.expenseCategories
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(categoriesToShow, id: \.self) { cat in
-                                    PaperPillButton(title: cat, isSelected: formCategory == cat) {
-                                        formCategory = cat
-                                    }
-                                }
-                            }
-                        }
-                        .horizontalFadeMask()
-                    }
-
-                    // 支付方式与属性标记行
-                    HStack(spacing: ArchiveSpacing.s) {
-                        Text("支付：")
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-
-                        HStack(spacing: 6) {
-                            ForEach(appState.paymentMethods, id: \.self) { pay in
-                                PaperPillButton(title: pay, isSelected: formPaymentMethod == pay) {
-                                    formPaymentMethod = pay
-                                }
-                            }
-                        }
-
-                        Spacer()
-
-                        // 联动固资与分期复选
-                        Toggle("建入固资大盘", isOn: $formLinkGear)
-                            .toggleStyle(.paperCheckbox)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-
-                        if formType == "expense" {
-                            Toggle("分期付款", isOn: $formIsInstallment)
-                                .toggleStyle(.paperCheckbox)
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                        }
-                    }
-
-                    // 时空要素行 (独立日期、独立时刻与省市点选，告别挤压折行)
-                    HStack(spacing: 10) {
-                        Text("时空：")
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-
-                        PaperDatePicker(selection: $formOccurredAt)
-
-                        PaperTimePicker(selection: $formOccurredAt)
-
-                        Spacer()
-
-                        HStack(spacing: ArchiveSpacing.xs) {
-                            Text("省市：")
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-
-                            PaperCityPicker(
-                                selectedCode: $formCityCode,
-                                selectedName: $formCityName,
-                                placeholder: appState.profile.displayCity.isEmpty ? "选择省市" : appState.profile.displayCity
-                            )
-                        }
-                    }
-
-                    // 固资扩展信息
-                    if formLinkGear {
-                        HStack(spacing: ArchiveSpacing.s) {
-                            PaperSelect(
-                                selection: $formGearCategory,
-                                options: appState.gearCategories.map { PaperSelectOption(value: $0, label: $0) },
-                                label: "固资分类："
-                            )
-
-                            TextField("规格参数", text: $formGearSpec)
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                                .padding(6)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: ArchiveSpacing.m)], spacing: ArchiveSpacing.m) {
+                ForEach(liabilities) { ch in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(ch.channelName)
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                            Spacer()
+                            Text(ch.daysUntilRepayment == 0 ? "今日还款" : "\(ch.daysUntilRepayment) 天后还款")
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                                .foregroundStyle(ch.daysUntilRepayment <= 3 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
                                 .background(ArchivePalette.archivePaper)
                                 .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         }
-                    }
 
-                    // 分期渠道、期数与每月还款日配置
-                    if formIsInstallment && formType == "expense" {
-                        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                            HStack(spacing: ArchiveSpacing.s) {
-                                Text("信贷渠道：")
-                                    .font(ArchiveTypography.bodySans(size: 11.5))
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("剩余待还")
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                                     .foregroundStyle(ArchivePalette.inkMuted)
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(availableCreditChannels) { ch in
-                                            PaperPillButton(
-                                                title: "\(ch.name) (每月\(ch.repaymentDay)日)",
-                                                isSelected: formInstallmentChannelCode == ch.code
-                                            ) {
-                                                formInstallmentChannelCode = ch.code
-                                                formRepaymentDay = ch.repaymentDay
-                                            }
-                                        }
-                                    }
-                                }
-                                .horizontalFadeMask()
-
-                                Spacer()
+                                Text(FormatUtils.formattedYuan(cents: ch.totalDebt, includeSymbol: true))
+                                    .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
+                                    .foregroundStyle(ch.totalDebt > 0 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                             }
-
-                            HStack(spacing: ArchiveSpacing.m) {
-                                HStack(spacing: 6) {
-                                    Text("分期期数：")
-                                        .font(ArchiveTypography.bodySans(size: 11.5))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-
-                                    ForEach(ArchiveInstallmentOptions.installmentOptions, id: \.self) { months in
-                                        PaperPillButton(title: "\(months) 期", isSelected: formInstallmentMonths == months) {
-                                            formInstallmentMonths = months
-                                        }
-                                    }
-                                }
-
-                                Divider()
-                                    .frame(height: 16)
-                                    .overlay(ArchivePalette.borderSubtle)
-
-                                if let ch = availableCreditChannels.first(where: { $0.code == formInstallmentChannelCode }) {
-                                    Text("还款日跟随渠道：每月 \(ch.repaymentDay) 日")
-                                        .font(ArchiveTypography.monoScale(size: 11.5))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                }
-
-                                Spacer()
-
-                                let totalCents = FormatUtils.parseYuanToCents(formAmountYuan) ?? 0
-                                let monthlyCents = totalCents > 0 ? totalCents / Int64(max(1, formInstallmentMonths)) : 0
-                                Text(totalCents > 0 ? "每期约 \(FormatUtils.formattedYuan(cents: monthlyCents, includeSymbol: true))" : "输入金额后自动核算每期")
-                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(totalCents > 0 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                                    .lineLimit(1)
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text("当月应还")
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                                    .foregroundStyle(ArchivePalette.inkMuted)
+                                Text(FormatUtils.formattedYuan(cents: ch.monthlyPay, includeSymbol: true))
+                                    .font(ArchiveTypography.monoScale(size: 13.5, weight: .medium))
+                                    .foregroundStyle(ArchivePalette.inkPrimary)
                             }
                         }
-                        .padding(10)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                        )
-                    }
 
-                    // 提交表单按钮行
-                    HStack {
-                        TextField("备注", text: $formNote)
-                            .textFieldStyle(.plain)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                            .padding(6)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-                        Button {
-                            submitVisualForm()
-                        } label: {
-                            // 同上：提交中守卫，避免连点造成重复流水
-                            if isSubmittingTx {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text("完成记账并入账")
-                            }
-                        }
-                        .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                        .paperButtonFocusRing()
-                        .disabled(isSubmittingTx || (FormatUtils.parseYuanToCents(formAmountYuan) ?? 0) <= 0)
+                        Text("每月 \(ch.repaymentDay) 日出账还款 · 在供 \(ch.activeCount) 笔")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                            .foregroundStyle(ArchivePalette.inkMuted)
                     }
+                    .padding(ArchiveCardMetrics.padding)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
                 }
-                .padding(.top, 4)
             }
         }
-        .padding(ArchiveCardMetrics.padding)
-        .background(ArchivePalette.archivePaper)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-        .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-        )
     }
-
-    // MARK: - 5. 随身器物固资货架 (EDC Gear Management)
 
     private func gearAssetsHeaderSection(gearCount: Int) -> some View {
         HStack {
@@ -793,7 +961,6 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    /// 固资空态：提供明确的行动召唤（添置随身设备）
     private var gearEmptyState: some View {
         ArchiveEmptyState(
             systemName: ArchiveIcon.gear.systemName,
@@ -804,7 +971,6 @@ public struct LedgerAssetsView: View {
         )
     }
 
-    /// 固资货架网格（作为 ScrollView 子级渲染，保留懒加载能力）
     private func gearGrid(_ gearList: [GearItem]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             ForEach(gearList) { gear in
@@ -826,21 +992,10 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    // MARK: - 6. 流水列表
+    // MARK: - 5. 流水列表
 
-    /// 流水明细标题行与**单行**紧凑筛选器
-    ///
-    /// 关键（MC-01）：原先是**两行**筛选 —— 时间维度（本月流水 / 全部历史）
-    /// 贴在标题行右侧，类目维度（16 个类目）另起一行。
-    /// 两行筛选把流水区**往下推**了整整一行，而上面的资产概览、
-    /// 月度光谱、记账控制台已经占了不少纵向空间 ——
-    /// 结果「账目明细」这个最常看的东西反而要滚一屏才看得到。
-    ///
-    /// 现在两个维度合并成**一行**：时间维度在前、一条细竖线分隔、类目维度在后，
-    /// 整行可横向滚动（首尾渐隐提示可滚）。语义不变，少占一行。
     private func transactionsHeaderSection(categories: [String], transactionCount: Int) -> some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-            // 标题行
             HStack {
                 Text("流水账目明细 (\(transactionCount) 笔)")
                     .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
@@ -849,16 +1004,15 @@ public struct LedgerAssetsView: View {
                 Spacer()
             }
 
-            // 单行紧凑筛选器：时间维度 ‖ 类目维度
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
-                    // ── 时间维度 ──
                     PaperPillButton(
                         title: "\(selectedMonth)月流水",
                         isSelected: filterBySelectedMonth,
                         isCompact: true
                     ) {
                         filterBySelectedMonth = true
+                        visibleTxLimit = 150
                     }
                     PaperPillButton(
                         title: "全部历史",
@@ -866,21 +1020,22 @@ public struct LedgerAssetsView: View {
                         isCompact: true
                     ) {
                         filterBySelectedMonth = false
+                        visibleTxLimit = 150
                     }
 
-                    // 维度分隔：一条细竖线，让「时间」与「类目」不至于混成一锅
                     Rectangle()
                         .fill(ArchivePalette.borderSubtle)
                         .frame(width: 1, height: 14)
                         .padding(.horizontal, 3)
 
-                    // ── 类目维度 ──
                     PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部", isCompact: true) {
                         selectedCategoryFilter = "全部"
+                        visibleTxLimit = 150
                     }
                     ForEach(categories, id: \.self) { cat in
                         PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat, isCompact: true) {
                             selectedCategoryFilter = cat
+                            visibleTxLimit = 150
                         }
                     }
                 }
@@ -890,7 +1045,6 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    /// 流水空态：提供明确的行动召唤（记第一笔账）
     private var transactionsEmptyState: some View {
         ArchiveEmptyState(
             systemName: ArchiveIcon.ledger.systemName,
@@ -901,17 +1055,39 @@ public struct LedgerAssetsView: View {
         )
     }
 
-    /// 流水列表（作为 ScrollView 子级渲染，保留懒加载能力）
     private func transactionsList(_ transactions: [Transaction]) -> some View {
-        LazyVStack(spacing: ArchiveSpacing.s) {
-            ForEach(transactions) { tx in
+        let windowed = filterBySelectedMonth ? transactions : Array(transactions.prefix(visibleTxLimit))
+        let hasMore = !filterBySelectedMonth && transactions.count > windowed.count
+
+        return LazyVStack(spacing: ArchiveSpacing.s) {
+            ForEach(windowed) { tx in
                 transactionRow(tx)
+            }
+
+            if hasMore {
+                Button {
+                    visibleTxLimit += 150
+                } label: {
+                    Text("继续展开更多历史流水（已展示 \(windowed.count) / \(transactions.count) 笔）")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, ArchiveSpacing.s)
+                }
+                .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
+                .onAppear {
+                    if visibleTxLimit < transactions.count {
+                        visibleTxLimit += 150
+                    }
+                }
             }
         }
     }
 
     private func transactionRow(_ tx: Transaction) -> some View {
-        HStack(spacing: ArchiveSpacing.m) {
+        let syncState = tx.syncStatus ?? "synced"
+        return HStack(spacing: ArchiveSpacing.m) {
             Circle()
                 .fill(ArchivePalette.categoryColor(for: tx.category))
                 .frame(width: 8, height: 8)
@@ -930,8 +1106,8 @@ public struct LedgerAssetsView: View {
                         .background(ArchivePalette.archivePaper)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
 
-                    if tx.isInstallment == true, let months = tx.installmentMonths, months > 0 {
-                        Text("分期 \(months) 期")
+                    if let badge = tx.installmentBadgeText {
+                        Text(badge)
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .padding(.horizontal, 5)
@@ -942,7 +1118,20 @@ public struct LedgerAssetsView: View {
                             )
                     }
 
-                    if (tx.syncStatus ?? "synced") != "synced" {
+                    if syncState == "failed" {
+                        HStack(spacing: 4) {
+                            Text("同步失败")
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                            Button("重试") {
+                                appState.retryFailedTransaction(id: tx.id)
+                            }
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .semibold))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .buttonStyle(.plain)
+                            .paperButtonFocusRing(cornerRadius: 2)
+                        }
+                    } else if syncState != "synced" {
                         Text("待同步")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.accentWarm)
@@ -974,8 +1163,6 @@ public struct LedgerAssetsView: View {
                 .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
 
             HStack(spacing: ArchiveSpacing.s) {
-                // 待同步账目（负本地 id）尚无服务端实体，直发 PUT 必然 404，
-                // 远程修订入口对其隐藏；删除不受限（id<0 走本地乐观移除链路）。
                 if tx.id > 0 {
                     PaperIconButton(
                         systemName: "pencil",
@@ -1026,6 +1213,13 @@ public struct LedgerAssetsView: View {
                     Label("修订此笔账目", systemImage: "pencil")
                 }
             }
+            if syncState == "failed" {
+                Button {
+                    appState.retryFailedTransaction(id: tx.id)
+                } label: {
+                    Label("重新上传此账目", systemImage: ArchiveIcon.sync.systemName)
+                }
+            }
             Button(role: .destructive) {
                 appState.askConfirm(
                     title: ArchiveSharedCopy.transactionDeleteTitle,
@@ -1040,14 +1234,12 @@ public struct LedgerAssetsView: View {
             }
             Divider()
             Button {
-                NSPasteboard.general.clearContents()
                 SecureClipboard.copy(FormatUtils.formattedYuan(cents: tx.amount))
                 appState.showTemporaryBanner("已拷贝金额至剪贴板")
             } label: {
                 Label("拷贝金额", systemImage: "doc.on.doc")
             }
             Button {
-                NSPasteboard.general.clearContents()
                 SecureClipboard.copy(tx.title.isEmpty ? tx.category : tx.title)
                 appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
             } label: {
@@ -1059,69 +1251,62 @@ public struct LedgerAssetsView: View {
     // MARK: - 弹窗表单
 
     private var calibrateLiquidBalanceSheet: some View {
-        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
-            Text("校准初始流动资金底数")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-            Text("设定记账前的储蓄基准底数（元），系统将以此实时核算当前可用流动资金。")
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                .foregroundStyle(ArchivePalette.inkSecondary)
+        PaperSheetScaffold(
+            title: "校准初始流动资金底数",
+            subtitle: "设定记账前的储蓄基准底数（元），系统将以此实时核算当前可用流动资金。",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isCalibratingBalance,
+            submitTitle: "保存基准 ⌘↩",
+            onCancel: {
+                showCalibrateBalanceSheet = false
+            },
+            onSubmit: submitCalibrateBalance
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                TextField("0.00", text: $initialBalanceYuanInput)
+                    .textFieldStyle(.plain)
+                    .focused($isCalibrateFieldFocused)
+                    .font(ArchiveTypography.monoScale(size: 14))
+                    .padding(9)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                            .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+                    )
 
-            TextField("0.00", text: $initialBalanceYuanInput)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: 14))
-                .padding(9)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                .overlay(
-                    RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                        .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-                )
-
-            // 弹窗内就地渲染一份错误提示，避免用户只看到「没反应」
-            if let errorNotice {
-                HStack(spacing: ArchiveSpacing.xs) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                    Text(errorNotice)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
-            }
-
-            HStack {
-                Button("取消") {
-                    showCalibrateBalanceSheet = false
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-
-                Spacer()
-
-                Button("保存基准") {
-                    let cents = FormatUtils.parseYuanToCents(initialBalanceYuanInput) ?? 0
-                    Task { @MainActor in
-                        do {
-                            try await APIClient.shared.updateInitialLiquidBalance(cents: cents)
-                            await appState.loadTransactionsAndAssets(forceFull: false)
-                            showCalibrateBalanceSheet = false
-                        } catch {
-                            errorNotice = error.localizedDescription
-                        }
+                if let errorNotice {
+                    HStack(spacing: ArchiveSpacing.xs) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: ArchiveTypography.Scale.caption))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Text(errorNotice)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                            .foregroundStyle(ArchivePalette.accentWarm)
                     }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.compact,
-            idealWidth: ArchiveSheetWidth.compact,
-            maxWidth: ArchiveSheetWidth.compact
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isCalibrateFieldFocused = true
+        }
+    }
+
+    private func submitCalibrateBalance() {
+        guard !isCalibratingBalance else { return }
+        let cents = FormatUtils.parseYuanToCents(initialBalanceYuanInput) ?? 0
+        isCalibratingBalance = true
+        errorNotice = nil
+        Task { @MainActor in
+            defer { isCalibratingBalance = false }
+            do {
+                try await APIClient.shared.updateInitialLiquidBalance(cents: cents)
+                await appState.loadTransactionsAndAssets(forceFull: false)
+                showCalibrateBalanceSheet = false
+            } catch {
+                errorNotice = error.localizedDescription
+            }
+        }
     }
 
     private var addGearSheetView: some View {
@@ -1147,118 +1332,16 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    // MARK: - 数据提交处理
-
-    /// 记账提交中（防连点造成重复流水）
-    @State private var isSubmittingTx: Bool = false
-
-    /// 极速记账的解析结果（body 里算一次，供预览与按钮可用性共用）
-    ///
-    /// 关键：类目字典必须**按解析出的收支类型**对应传入（与 QuickLedgerView 同一用法）。
-    /// 收支类型由输入自身的正负号决定（「+」前缀 = 收入，其余 = 支出）；
-    /// 原先恒传支出类目，于是「+5000 工资」匹配不到收入类目，
-    /// 被兜底推断成「其他」，收入记录的分类口径从此失真。
-    private var quickParsed: FormatUtils.QuickLedgerParsed? {
-        let isIncome = quickLine.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("+")
-        return FormatUtils.parseQuickLedgerInput(
-            quickLine,
-            knownCategories: isIncome ? appState.incomeCategories : appState.expenseCategories
-        )
-    }
-
-    private func submitQuickLine() {
-        guard let parsed = quickParsed else { return }
-        // 关键：提交期间加守卫，防止连点造成**重复流水**
-        guard !isSubmittingTx else { return }
-        isSubmittingTx = true
-        errorNotice = nil
-        Task { @MainActor in
-            defer { isSubmittingTx = false }
-            do {
-                _ = try await appState.submitQuickLedger(
-                    amountCents: parsed.amountCents,
-                    type: parsed.type,
-                    category: parsed.category,
-                    title: parsed.title
-                )
-                quickLine = ""
-            } catch {
-                errorNotice = error.localizedDescription
-            }
-        }
-    }
-
-    private func submitVisualForm() {
-        guard let cents = FormatUtils.parseYuanToCents(formAmountYuan), cents > 0 else { return }
-        // 同上：提交期间加守卫
-        guard !isSubmittingTx else { return }
-        isSubmittingTx = true
-        errorNotice = nil
-        let cleanTitle = formTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalTitle = cleanTitle.isEmpty ? formCategory : cleanTitle
-        let isInst = (formType == "expense" && formIsInstallment)
-        let months = max(1, formInstallmentMonths)
-        let monthlyPay = isInst ? (cents / Int64(months)) : nil
-
-        Task { @MainActor in
-            defer { isSubmittingTx = false }
-            do {
-                let req = CreateTransactionRequest(
-                    amount: cents,
-                    type: formType,
-                    category: formCategory,
-                    title: finalTitle,
-                    note: formNote.isEmpty ? nil : formNote,
-                    paymentMethod: appState.paymentMethods.contains(formPaymentMethod)
-                        ? formPaymentMethod
-                        : (appState.paymentMethods.first ?? formPaymentMethod),
-                    cityCode: formCityCode.isEmpty ? nil : formCityCode,
-                    occurredAt: FormatUtils.beijingISOString(from: formOccurredAt),
-                    isInstallment: isInst,
-                    installmentChannelCode: isInst ? formInstallmentChannelCode : nil,
-                    installmentTotalAmount: isInst ? cents : nil,
-                    installmentMonths: isInst ? months : nil,
-                    installmentMonthlyPay: monthlyPay,
-                    installmentRemainMonths: isInst ? months : nil,
-                    repaymentDay: isInst ? (availableCreditChannels.first(where: { $0.code == formInstallmentChannelCode })?.repaymentDay ?? formRepaymentDay) : nil,
-                    linkGearAsset: formLinkGear,
-                    gearCategory: formLinkGear ? formGearCategory : nil,
-                    gearSpec: formLinkGear ? formGearSpec : nil
-                )
-                _ = try await SyncManager.shared.submitTransaction(req)
-                formAmountYuan = ""
-                formTitle = ""
-                formNote = ""
-                formCityCode = ""
-                formCityName = ""
-                formOccurredAt = Date()
-                formLinkGear = false
-                formIsInstallment = false
-                await appState.loadTransactionsAndAssets(forceFull: false)
-                await appState.loadConfigAndProfile()
-            } catch {
-                errorNotice = error.localizedDescription
-            }
-        }
-    }
-
     private func deleteTransaction(_ tx: Transaction) {
-        // 统一走 AppState 的删除入口。
-        // 关键：原先这里自己调 API ——
-        // 于是「删账目」在时间流卡片有 ⌘Z 撤销与错误横幅，在账本列表却没有。
-        // 同一个操作两套体验，用户会以为账本页的删除不能撤销。
         appState.deleteTransactionAction(tx)
     }
 
     private func deleteGear(_ gear: GearItem) {
-        // 走 AppState 的动作：删除后登记 ⌘Z 撤销（误删可以原样找回）
         Task { @MainActor in
             await appState.deleteGearAction(gear)
         }
     }
 }
-
-// MARK: - 预览 (Preview)
 
 #Preview("柴米油盐 · 账本与固资") {
     LedgerAssetsView(appState: ArchivePreviewFixtures.makeAppState())

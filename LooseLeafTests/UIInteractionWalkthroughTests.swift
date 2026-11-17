@@ -268,7 +268,7 @@ final class UIInteractionWalkthroughTests: XCTestCase {
         print(String(format: "  %-42@ %7.1f ms", "⑧ 弹窗内逐字输入（单次最差）" as NSString, worst * 1000))
     }
 
-    /// 切换创作弹窗的五种形态：每次都要换掉整棵表单子树
+    /// 切换创作弹窗的四种可编辑散页形态：每次都要换掉整棵表单子树
     func test03_ComposerKindSwitchCost() throws {
         seed()
         let appState = AppState.shared
@@ -276,7 +276,7 @@ final class UIInteractionWalkthroughTests: XCTestCase {
 
         var worst: TimeInterval = 0
         var worstKind = ""
-        for kind in ["life", "travel", "project", "wish", "transaction"] {
+        for kind in EntryType.editableCases.map(\.rawValue) {
             let modal = NewEntryModal(
                 appState: appState,
                 initialKind: kind,

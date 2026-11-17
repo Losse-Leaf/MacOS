@@ -118,7 +118,7 @@ enum SpotlightIndexer {
         performReindex(entries: AppState.shared.entries, generation: currentGeneration)
     }
 
-    private static func fingerprint(_ entry: LifeEntry) -> String {
+    static func fingerprint(_ entry: LifeEntry) -> String {
         // 只取会影响搜索结果的字段，避免为纯排序变化付出重建成本。
         //
         // 关键：摘要模式下真正进入索引的是**正文的前 N 字**。
@@ -127,7 +127,12 @@ enum SpotlightIndexer {
         let contentKey = indexesFullContent
             ? "\(entry.content.count)"
             : String(summary(of: entry.content).prefix(summaryLimit))
-        return "\(entry.updatedAt ?? "")|\(entry.title)|\(contentKey)|\(entry.cityName ?? "")|\(entry.location ?? "")"
+        return "\(entry.updatedAt ?? "")|\(entry.title)|\(contentKey)|\(entry.cityName ?? "")|\(entry.location ?? "")|\(entry.isPrivate)"
+    }
+
+    /// 过滤允许进入系统 Spotlight / Siri 索引的条目（私密散页与软删条目一律拦截）
+    static func indexableEntries(from entries: [LifeEntry]) -> [LifeEntry] {
+        entries.filter { ($0.deletedAt ?? "").isEmpty && !$0.isPrivate }
     }
 
     /// 索引正文的最大字符数（摘要模式）
@@ -190,6 +195,10 @@ enum SpotlightIndexer {
             indexedVersions.removeAll()
             hasRebuiltDomain = false
             stateLock.unlock()
+            let stateURL = persistedStateURL
+            persistQueue.async {
+                try? FileManager.default.removeItem(at: stateURL)
+            }
             box.handler?()
         }
     }
@@ -206,7 +215,9 @@ enum SpotlightIndexer {
         let needsDomainReset = !hasRebuiltDomain
         stateLock.unlock()
 
-        let visible = entries.filter { ($0.deletedAt ?? "").isEmpty }
+        // 隐私防线（DEC-06 / DEC-12）：标记为「仅自己可见（isPrivate）」的条目绝不写入系统 Spotlight / Siri 索引；
+        // 若此前作为公开条目已入索引，切换为私密后自动落入 removedIdentifiers 被系统索引擦除。
+        let visible = indexableEntries(from: entries)
 
         var versionMap: [Int: String] = [:]
         versionMap.reserveCapacity(visible.count)
@@ -268,13 +279,13 @@ enum SpotlightIndexer {
         let batches = stride(from: 0, to: entries.count, by: indexBatchSize).map {
             Array(entries[$0..<min($0 + indexBatchSize, entries.count)])
         }
-        submit(batches: batches, newVersions: newVersions, removedCount: removedIdentifiers.count)
+        submit(batches: batches, newVersions: newVersions, totalChangedCount: entries.count, removedCount: removedIdentifiers.count)
     }
 
     /// 递归提交分批条目（每批成功后再提交下一批）
-    private static func submit(batches: [[LifeEntry]], newVersions: [Int: String], removedCount: Int) {
+    private static func submit(batches: [[LifeEntry]], newVersions: [Int: String], totalChangedCount: Int, removedCount: Int) {
         guard let batch = batches.first else {
-            commitState(newVersions: newVersions, changedCount: 0, removedCount: removedCount)
+            commitState(newVersions: newVersions, changedCount: totalChangedCount, removedCount: removedCount)
             return
         }
         let items = batch.map(makeItem)
@@ -285,7 +296,7 @@ enum SpotlightIndexer {
                 logger.error("Spotlight index failed: \(error.localizedDescription)")
                 return
             }
-            submit(batches: Array(batches.dropFirst()), newVersions: newVersions, removedCount: removedCount)
+            submit(batches: Array(batches.dropFirst()), newVersions: newVersions, totalChangedCount: totalChangedCount, removedCount: removedCount)
         }
     }
 

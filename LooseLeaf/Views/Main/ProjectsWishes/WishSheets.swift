@@ -1,11 +1,9 @@
 import SwiftUI
 
 /// 心愿典藏相关弹窗集合 (NewWishSheet / EditWishSheet / ResolveWishSheet)
-/// 从 ProjectsWishesView 中拆出的独立 Sheet 组件：
-/// 1. NewWishSheet —— 许下新心愿（类型 / 预算 / 目的地城市 / 手记）
-/// 2. EditWishSheet —— 修订既有心愿
+/// 1. NewWishSheet —— 许下新心愿（类型 / 预算 / 目的地城市 / 私密开关 / 手记）
+/// 2. EditWishSheet —— 修订既有心愿（全类型保留 spec，省略 attachment_ids 杜绝清空跨端照片）
 /// 3. ResolveWishSheet —— 圆满归册心愿，并可联动生成流水 / 固资 / 足迹票根 / 时间流手稿
-/// 仅做文件拆分，逻辑、数值与视觉表现与拆分前完全一致。
 
 // MARK: - 新建心愿单弹窗 (NewWishSheet)
 
@@ -21,115 +19,119 @@ public struct NewWishSheet: View {
     @State private var note: String = ""
     @State private var cityCode: String = ""
     @State private var cityName: String = ""
+    @State private var isPrivate: Bool = false
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
     /// 补档：许下日期可选过去任意一天（默认今天）
     @State private var plantedAt: Date = Date()
+    @FocusState private var isTitleFocused: Bool
+
+    public init(appState: AppState, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.onDismiss = onDismiss
+    }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            Text("许下新心愿")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            HStack(spacing: 6) {
-                PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
-                PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
-                PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
-            }
-
-            TextField("心愿名称", text: $title)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if kind == "travel" {
-                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
-            }
-
-            TextField("规格参数或目的地补充", text: $spec)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            TextField("预期预算金额（元）", text: $budgetYuan)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            HStack(spacing: ArchiveSpacing.s) {
-                PaperDatePicker(selection: $plantedAt, enableTime: false, label: "许下日期")
-                Text("（可选择过去的日期补录旧心愿）")
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-            }
-
-            TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .lineLimit(4, reservesSpace: true)
-                .padding(10)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if let errorText {
-                Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { onDismiss() }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(isSubmitting ? "存入中…" : "存入心愿单 ⌘↩") {
-                    submitWish()
+        PaperSheetScaffold(
+            title: "许下新心愿",
+            subtitle: "好物 · 旅程 · 里程碑",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isSubmitting,
+            isSubmitDisabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            submitTitle: "存入心愿单 ⌘↩",
+            onCancel: onDismiss,
+            onSubmit: submitWish
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
+                    PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
+                    PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+
+                TextField("心愿名称", text: $title)
+                    .textFieldStyle(.plain)
+                    .focused($isTitleFocused)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                if kind == "travel" {
+                    PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
+                }
+
+                TextField("规格参数或补充说明", text: $spec)
+                    .textFieldStyle(.plain)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                TextField("预期预算金额（元）", text: $budgetYuan)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                HStack(spacing: ArchiveSpacing.s) {
+                    PaperDatePicker(selection: $plantedAt, enableTime: false, label: "许下日期")
+                    Text("（可选择过去的日期补录旧心愿）")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+
+                TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .lineLimit(3...8)
+                    .padding(10)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                HStack {
+                    Label("私密心愿（仅配对主理人设备可见）", systemImage: ArchiveIcon.lock.systemName)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Spacer()
+                    Toggle("私密心愿", isOn: $isPrivate)
+                        .labelsHidden()
+                        .toggleStyle(.paperSwitch)
+                        .accessibilityLabel("设为私密心愿")
+                }
+
+                if let errorText {
+                    Text(errorText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.compact,
-            idealWidth: ArchiveSheetWidth.compact,
-            maxWidth: ArchiveSheetWidth.compact
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isTitleFocused = true
+        }
     }
 
     private func submitWish() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty, !isSubmitting else { return }
         let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
         isSubmitting = true
         errorText = nil
         Task { @MainActor in
             do {
                 let req = CreateWishRequest(
-                    title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                    title: cleanTitle,
                     kind: kind,
                     note: note.isEmpty ? nil : note,
                     spec: spec.isEmpty ? nil : spec,
-                    // 关键（2026-10-25 修复）：城市仅旅程心愿携带 —— 原先非 travel 也照发，
-                    // 「先选目的地再切心仪好物」会让 item 心愿挂着幽灵目的地
-                    // （后端不校验 kind 与城市的组合，伴生散页 Location 也被写上）。
-                    // 与 EntryModalWishForm.submitWish / EditWishSheet 同口径。
                     cityCode: kind == "travel" ? (cityCode.isEmpty ? nil : cityCode) : nil,
                     cityName: kind == "travel" ? (cityName.isEmpty ? nil : cityName) : nil,
                     budget: cents,
-                    plantedAt: FormatUtils.beijingDateString(from: plantedAt)
+                    plantedAt: FormatUtils.beijingDateString(from: plantedAt),
+                    isPrivate: isPrivate
                 )
                 _ = try await APIClient.shared.createWish(req)
-                // 关键：心愿在服务端会落一条伴生散页（时间流的一级数据），
-                // 必须连带刷新时间流，否则「创建心愿后时间流没反应」。
                 await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
@@ -155,8 +157,10 @@ public struct EditWishSheet: View {
     @State private var note: String
     @State private var cityCode: String
     @State private var cityName: String
+    @State private var isPrivate: Bool
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
+    @FocusState private var isTitleFocused: Bool
 
     public init(appState: AppState, wish: Wish, onDismiss: @escaping () -> Void) {
         self.appState = appState
@@ -169,100 +173,104 @@ public struct EditWishSheet: View {
         _note = State(initialValue: wish.note ?? "")
         _cityCode = State(initialValue: wish.cityCode ?? "")
         _cityName = State(initialValue: wish.cityName ?? "")
+        _isPrivate = State(initialValue: wish.isPrivate ?? false)
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-            Text("修订心愿")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-
-            HStack(spacing: 6) {
-                PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
-                PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
-                PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
-            }
-
-            TextField("心愿名称", text: $title)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if kind == "travel" {
-                PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
-            }
-
-            TextField("规格参数或目的地补充", text: $spec)
-                .textFieldStyle(.plain)
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            TextField("意向预算金额（元）", text: $budgetYuan)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
-                .padding(ArchiveSpacing.s)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .lineLimit(4, reservesSpace: true)
-                .padding(10)
-                .background(ArchivePalette.archiveSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-            if let errorText {
-                Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { onDismiss() }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(isSubmitting ? "保存中…" : "保存修改 ⌘↩") {
-                    updateWish()
+        PaperSheetScaffold(
+            title: "修订心愿",
+            width: ArchiveSheetWidth.compact,
+            isSubmitting: isSubmitting,
+            isSubmitDisabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            submitTitle: "保存修改 ⌘↩",
+            onCancel: onDismiss,
+            onSubmit: updateWish
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
+                    PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
+                    PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
                 }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+
+                TextField("心愿名称", text: $title)
+                    .textFieldStyle(.plain)
+                    .focused($isTitleFocused)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                if kind == "travel" {
+                    PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
+                }
+
+                TextField("规格参数或补充说明", text: $spec)
+                    .textFieldStyle(.plain)
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                TextField("意向预算金额（元）", text: $budgetYuan)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
+                    .padding(ArchiveSpacing.s)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .lineLimit(3...8)
+                    .padding(10)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+
+                HStack {
+                    Label("私密心愿（仅配对主理人设备可见）", systemImage: ArchiveIcon.lock.systemName)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                    Spacer()
+                    Toggle("私密心愿", isOn: $isPrivate)
+                        .labelsHidden()
+                        .toggleStyle(.paperSwitch)
+                        .accessibilityLabel("设为私密心愿")
+                }
+
+                if let errorText {
+                    Text(errorText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                }
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.compact,
-            idealWidth: ArchiveSheetWidth.compact,
-            maxWidth: ArchiveSheetWidth.compact
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isTitleFocused = true
+        }
     }
 
     private func updateWish() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty, !isSubmitting else { return }
         let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
         isSubmitting = true
         errorText = nil
         Task { @MainActor in
             do {
                 let req = CreateWishRequest(
-                    title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                    title: cleanTitle,
                     kind: kind,
                     // 空串是显式清空；nil 会被后端当作保持原值。
+                    // 关键修复：全类型心愿（含 travel / milestone）统一保留 spec，不再误清空；
+                    // attachmentIds 保持默认 nil，防止覆盖跨端上传的照片。
                     note: note,
-                    spec: kind == "item" ? spec : "",
+                    spec: spec,
                     cityCode: kind == "travel" ? cityCode : "",
                     cityName: kind == "travel" ? cityName : "",
-                    budget: cents
+                    budget: cents,
+                    isPrivate: isPrivate
                 )
                 _ = try await APIClient.shared.updateWish(id: wish.id, req)
-                // 编辑心愿同样会改动伴生散页，需连带刷新时间流
                 await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
@@ -288,16 +296,10 @@ public struct ResolveWishSheet: View {
     @State private var createLifeEntry: Bool = true
     @State private var createFootprint: Bool
     @State private var entryContent: String = ""
-    /// 「替代拿下」时实际购入的物品名
-    ///
-    /// 关键：后端为 `resolution_type == "altered"` 专门留了 `actual_title`，
-    /// 并据此生成流水标题「心愿替代达成: <替代品> (原: <原心愿>)」。
-    /// 而客户端此前**恒传原心愿标题** → 选了「替代拿下」也落成
-    /// 「心愿替代达成: X (原: X)」，`actual_title` 也是废值 ——
-    /// 后端有、客户端不用，静默写错。
     @State private var alteredTitle: String = ""
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
+    @FocusState private var isCostFocused: Bool
 
     public init(appState: AppState, wish: Wish, onDismiss: @escaping () -> Void) {
         self.appState = appState
@@ -309,122 +311,95 @@ public struct ResolveWishSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
-            Text("圆满心愿 · 载入典藏")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+        PaperSheetScaffold(
+            title: "圆满心愿 · 载入典藏",
+            subtitle: "达成目标：\(wish.title)",
+            width: ArchiveSheetWidth.standard,
+            isSubmitting: isSubmitting,
+            submitTitle: "确认圆满归册 ⌘↩",
+            onCancel: onDismiss,
+            onSubmit: submitResolve
+        ) {
+            VStack(alignment: .leading, spacing: ArchiveCardMetrics.padding) {
+                HStack(spacing: 6) {
+                    PaperPillButton(title: "如愿拿下", isSelected: resolutionType == "exact") { resolutionType = "exact" }
+                    PaperPillButton(title: "替代拿下", isSelected: resolutionType == "altered") { resolutionType = "altered" }
+                    PaperPillButton(title: "理性拔草", isSelected: resolutionType == "relinquished") { resolutionType = "relinquished" }
+                }
 
-            Text("达成目标：\(wish.title)")
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
-                .foregroundStyle(ArchivePalette.inkSecondary)
+                if resolutionType == "altered" {
+                    EntryPaperField(
+                        placeholder: "实际购入的物品名（例：同价位的中性笔）",
+                        text: $alteredTitle,
+                        font: ArchiveTypography.bodySans(size: 12)
+                    )
+                }
 
-            // 达成方式单选
-            HStack(spacing: 6) {
-                PaperPillButton(title: "如愿拿下", isSelected: resolutionType == "exact") { resolutionType = "exact" }
-                PaperPillButton(title: "替代拿下", isSelected: resolutionType == "altered") { resolutionType = "altered" }
-                PaperPillButton(title: "理性拔草", isSelected: resolutionType == "relinquished") { resolutionType = "relinquished" }
-            }
+                if resolutionType != "relinquished" {
+                    HStack(spacing: ArchiveSpacing.xs) {
+                        Text("实付金额 ¥")
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        TextField("0.00", text: $actualCostYuan)
+                            .textFieldStyle(.plain)
+                            .focused($isCostFocused)
+                            .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                            .padding(6)
+                            .background(ArchivePalette.archiveSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    }
+                }
 
-            // 替代拿下：实际购入的物品名
-            if resolutionType == "altered" {
-                EntryPaperField(
-                    placeholder: "实际购入的物品名（例：同价位的中性笔）",
-                    text: $alteredTitle,
-                    font: ArchiveTypography.bodySans(size: 12)
-                )
-            }
+                Divider().overlay(ArchivePalette.borderSubtle)
 
-            // 实付金额（理性拔草时不展示实付金额）
-            if resolutionType != "relinquished" {
-                HStack(spacing: ArchiveSpacing.xs) {
-                    Text("实付金额 ¥")
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    TextField("0.00", text: $actualCostYuan)
+                if resolutionType != "relinquished" {
+                    VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
+                        Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
+                            .toggleStyle(.paperCheckbox)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+
+                        if wish.kind == "item" {
+                            Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
+                                .toggleStyle(.paperCheckbox)
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                        }
+
+                        if wish.kind == "travel" {
+                            Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
+                                .toggleStyle(.paperCheckbox)
+                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                        }
+                    }
+                }
+
+                Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
+                    .toggleStyle(.paperCheckbox)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+
+                if createLifeEntry {
+                    TextField("圆梦感言手记", text: $entryContent, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
-                        .padding(6)
+                        .lineLimit(2...6)
+                        .padding(ArchiveSpacing.s)
                         .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                 }
-            }
 
-            Divider().overlay(ArchivePalette.borderSubtle)
-
-            // 联动伴生复选
-            //
-            // 关键（2026-10-25 修复）：「理性拔草」下流水/固资/足迹三个联动开关是**死控件** ——
-            // 提交时被 `isRelinquished ? false : …` 静默覆盖，后端 relinquished 分支也本就忽略它们。
-            // 死控件必须隐藏：用户勾了也不会发生的事，不该让他能勾。
-            // （「伴生发布时间流手稿」在 relinquished 下后端仍生效，保持可见。）
-            if resolutionType != "relinquished" {
-                VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                    Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
-                        .toggleStyle(.paperCheckbox)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-
-                    if wish.kind == "item" {
-                        Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
-                            .toggleStyle(.paperCheckbox)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    }
-
-                    if wish.kind == "travel" {
-                        Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
-                            .toggleStyle(.paperCheckbox)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    }
+                if let errorText {
+                    Text(errorText)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.accentWarm)
                 }
-            }
-
-            Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
-                .toggleStyle(.paperCheckbox)
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-
-            if createLifeEntry {
-                TextField("圆梦感言手记", text: $entryContent)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-            }
-
-            if let errorText {
-                Text(errorText)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-            }
-
-            HStack {
-                Button("取消") { onDismiss() }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                    .paperButtonFocusRing()
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(isSubmitting ? "归册中…" : "确认圆满归册 ⌘↩") {
-                    submitResolve()
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-                .keyboardShortcut(.return, modifiers: [.command])
-                .disabled(isSubmitting)
             }
         }
-        .padding(20)
-        .frame(
-            minWidth: ArchiveSheetWidth.standard,
-            idealWidth: ArchiveSheetWidth.standard,
-            maxWidth: ArchiveSheetWidth.standard
-        )
-        .background(ArchivePalette.archivePaper)
+        .onAppear {
+            isCostFocused = true
+        }
     }
 
     private func submitResolve() {
+        guard !isSubmitting else { return }
         let isRelinquished = (resolutionType == "relinquished")
-        // 关键（2026-10-25 修复）：「替代拿下」必须填实际购入物品名 ——
-        // 原先留空回落 nil，后端按原心愿标题兜底，落成
-        // 「心愿替代达成: X (原: X)」且 actual_title 与 title 同文（幽灵值），
-        // 正是这个字段要修的 bug 的空值回潮。
         let cleanAlteredTitle = alteredTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if resolutionType == "altered" && cleanAlteredTitle.isEmpty {
             errorText = "「替代拿下」请填写实际购入的物品名"
@@ -439,8 +414,6 @@ public struct ResolveWishSheet: View {
                     fulfilledAt: FormatUtils.beijingISOString(),
                     actualCost: cents,
                     resolutionType: resolutionType,
-                    // 「替代拿下」传实际购入的物品名（已强制非空）；其余场景传 nil，
-                    // 由后端回落到原心愿标题。
                     actualTitle: resolutionType == "altered" ? cleanAlteredTitle : nil,
                     createTransaction: isRelinquished ? false : createTransaction,
                     createGearAsset: isRelinquished ? false : createGearAsset,
@@ -449,8 +422,6 @@ public struct ResolveWishSheet: View {
                     entryContent: entryContent.isEmpty ? nil : entryContent
                 )
                 _ = try await APIClient.shared.resolveWish(id: wish.id, req)
-                // 心愿圆满会在时间流落一条新散页：这里用增量刷新即可，
-                // 不必再全量重拉（原先 forceFull: true 是「点一下卡好几秒」的元凶之一）。
                 await appState.loadProjectsWishesFootprints()
                 await appState.loadEntries(forceFull: false)
                 await appState.loadTransactionsAndAssets(forceFull: false)

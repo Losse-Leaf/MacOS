@@ -103,6 +103,37 @@ public final class SyncManager {
         saveSnapshot(latest)
     }
 
+    /// 彻底清除本地持久化档案快照、发件箱与草稿文件（用于解除设备配对与 401 远端吊销零残留擦除）
+    public func purgeAllLocalData() {
+        pendingWrite?.cancel()
+        pendingWrite = nil
+        pendingCriticalWrite?.cancel()
+        pendingCriticalWrite = nil
+        snapshotRevision += 1
+        snapshot = LocalArchiveSnapshot()
+        hasAuthoritativeSummary = false
+        cachedFingerprint = nil
+        cachedFingerprintRevision = snapshotRevision
+        if isBatching {
+            pendingBatchSnapshot = snapshot
+        } else {
+            onSnapshotUpdated?(snapshot)
+        }
+        UserDefaults.standard.removeObject(forKey: "looseleaf_entry_draft_v1")
+        let snapURL = Self.snapshotFileURL
+        let draftURL = Self.sharedStorageDirectory.appendingPathComponent("entry_draft_v1.json")
+        let previewDir = Self.sharedStorageDirectory.appendingPathComponent("PreviewStaging", isDirectory: true)
+        let dropDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
+        try? FileManager.default.removeItem(at: snapURL)
+        try? FileManager.default.removeItem(at: draftURL)
+        diskWriteQueue.async {
+            try? FileManager.default.removeItem(at: snapURL)
+            try? FileManager.default.removeItem(at: draftURL)
+            try? FileManager.default.removeItem(at: previewDir)
+            try? FileManager.default.removeItem(at: dropDir)
+        }
+    }
+
     /// 重置增量同步游标。
     /// 当遇到游标损坏或服务端游标格式校验失败时，调用此方法清空本地快照中的游标，
     /// 触发后续请求退化为安全的全量同步自愈。
@@ -340,6 +371,13 @@ public final class SyncManager {
     ///
     /// 判定不出来时**保守视为「需要换签」** ——
     /// 多换一次只是多一个请求，漏换则相纸直接显示「载入失败」。
+    private nonisolated static let r2DateFormatterLock = NSLock()
+    nonisolated(unsafe) private static let r2DateFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     nonisolated static func isMediaURLExpired(_ urlString: String, within seconds: TimeInterval = 60) -> Bool {
         guard let components = URLComponents(string: urlString),
               let items = components.queryItems else {
@@ -354,9 +392,10 @@ public final class SyncManager {
         }
         // R2 预签名：X-Amz-Date（ISO8601）+ X-Amz-Expires（相对秒）
         if let iso = dict["x-amz-date"], let ttl = Double(dict["x-amz-expires"] ?? "") {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            if let signedAt = formatter.date(from: iso) {
+            r2DateFormatterLock.lock()
+            let signedAt = r2DateFormatter.date(from: iso)
+            r2DateFormatterLock.unlock()
+            if let signedAt {
                 return signedAt.timeIntervalSinceNow + ttl <= seconds
             }
         }
@@ -511,6 +550,7 @@ public final class SyncManager {
             mix(UInt64(entry.projectId ?? 0), into: &hash)
             mix(UInt64(entry.wishId ?? 0), into: &hash)
             mix(UInt64(bitPattern: Int64(entry.footprintId ?? 0)), into: &hash)
+            mix(entry.isPrivate ? "1" : "0", into: &hash)
             for attachment in entry.attachments {
                 mix(UInt64(attachment.id), into: &hash)
                 mix(attachment.objectKey, into: &hash)
@@ -821,6 +861,7 @@ public final class SyncManager {
             projectId: req.projectId,
             wishId: req.wishId,
             footprintId: req.footprintId,
+            isPrivate: req.isPrivate ?? false,
             attachments: attachments,
             syncStatus: "pending_create"
         )
@@ -882,19 +923,6 @@ public final class SyncManager {
             appendOutbox(.createEntry, localTempId: tempId, entryRequest: req)
             return (optimistic, true)
         }
-    }
-
-    /// **非阻塞提交**：立刻乐观写入并返回，后台在独立任务里静默同步。
-    /// 调用方（例如创作弹窗）可以马上关闭界面，用户不必等待网络往返。
-    @discardableResult
-    public func submitEntryInBackground(_ req: CreateEntryRequest, attachments: [Attachment] = []) -> LifeEntry {
-        let stableReq = stableEntryRequest(req)
-        let optimistic = submitEntryOptimistically(stableReq, attachments: attachments)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            _ = try? await self.syncPendingEntry(stableReq, tempId: optimistic.id, optimistic: optimistic)
-        }
-        return optimistic
     }
 
     /// 追加一条待同步动作到 Outbox
@@ -1194,31 +1222,6 @@ public final class SyncManager {
         }
     }
 
-    /// **非阻塞提交**账目：立刻乐观写入并返回，后台静默同步。
-    ///
-    /// 关键：必须把结果**如实回传**给调用方。
-    /// 早先这里是 `try? await` 一把梭 —— 离线暂存、永久失败全部被吞掉，
-    /// 调用方的 `queuedOffline` 恒为 false，于是「已记入账本」的提示
-    /// 在离线时也照弹，用户根本不知道这条账只是躺在发件箱里。
-    @discardableResult
-    public func submitTransactionInBackground(
-        _ req: CreateTransactionRequest,
-        completion: (@MainActor (Result<Bool, Error>) -> Void)? = nil
-    ) -> Transaction {
-        let stableReq = stableTransactionRequest(req)
-        let optimistic = submitTransactionOptimistically(stableReq)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let outcome = try await self.syncPendingTransaction(stableReq, tempId: optimistic.id, optimistic: optimistic)
-                completion?(.success(outcome.queuedOffline))
-            } catch {
-                completion?(.failure(error))
-            }
-        }
-        return optimistic
-    }
-
     /// 把一条失败的散页改回「待同步」（用户点击重试时）
     public func markEntryRetrying(id: Int) {
         var latest = snapshot
@@ -1373,6 +1376,13 @@ public final class SyncManager {
 
         let itemsToFlush = snapshot.outbox.filter { $0.retryCount < Self.maxOutboxRetryCount }
 
+        // 批量合并 UI 通知：避免连发 20 条记录时触发 20 次全列表重绘
+        let wasBatching = isBatching
+        if !wasBatching { beginBatch() }
+        defer {
+            if !wasBatching { endBatch() }
+        }
+
         for item in itemsToFlush {
             if Task.isCancelled { break }
             // 确保该项目尚未被外部清除
@@ -1525,6 +1535,15 @@ public final class SyncManager {
             }
         }
         return trimmed
+    }
+
+    /// 增量游标 120 秒安全回看窗口（对齐 `contract.json` `lookback_seconds: 120`，防止并发事务微秒级时序漏拉）
+    nonisolated static func lookbackCursor(_ raw: String?, seconds: TimeInterval = 120) -> String? {
+        guard let normalized = normalizeCursor(raw) else { return nil }
+        guard seconds > 0, let date = FormatUtils.parseFlexDate(normalized) else {
+            return normalized
+        }
+        return FormatUtils.beijingISOString(from: date.addingTimeInterval(-seconds))
     }
 
     /// 计算增量响应中的最新服务端游标 (取 `updated_at` / `deleted_at` 最大值)。

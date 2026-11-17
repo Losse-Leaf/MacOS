@@ -2,6 +2,143 @@ import SwiftUI
 import AppKit
 import CoreSpotlight
 
+/// 独立散页详情窗口宿主视图（支持 `WindowGroup(for: Int.self)` 多窗口并排对照，窗口内自持编辑、删除确认与看图灯箱）
+@MainActor
+private struct StandaloneEntryDetailWindow: View {
+    let entryId: Int?
+    @Bindable var appState: AppState
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    @State private var localEditingEntry: LifeEntry?
+    @State private var localEditingTx: Transaction?
+    @State private var localLightbox: Attachment?
+    @State private var localConfirm: ConfirmDialogRequest?
+
+    private var resolvedEntry: LifeEntry? {
+        if let id = entryId {
+            if let live = appState.entries.first(where: { $0.id == id }) {
+                return live
+            }
+            if appState.detailWindowEntry?.id == id {
+                return appState.detailWindowEntry
+            }
+        }
+        return appState.detailWindowEntry
+    }
+
+    var body: some View {
+        ZStack {
+            if let entry = resolvedEntry {
+                StreamEntryDetailView(
+                    entry: entry,
+                    appState: appState,
+                    isStandaloneWindow: true,
+                    onClose: {
+                        if appState.detailWindowEntry?.id == entry.id {
+                            appState.detailWindowEntry = nil
+                        }
+                        NSApp.keyWindow?.performClose(nil)
+                    },
+                    onEditEntry: { target in
+                        localEditingEntry = target
+                    },
+                    onEditTransaction: { tx in
+                        localEditingTx = tx
+                    },
+                    onDeleteTransaction: { tx in
+                        localConfirm = ConfirmDialogRequest(
+                            title: ArchiveSharedCopy.transactionDeleteTitle,
+                            message: ArchiveSharedCopy.transactionDeleteMessage,
+                            confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
+                            danger: true
+                        ) {
+                            appState.deleteTransactionAction(tx)
+                            NSApp.keyWindow?.performClose(nil)
+                        }
+                    },
+                    onDeleteEntryOverride: { target in
+                        localConfirm = ConfirmDialogRequest(
+                            title: ArchiveSharedCopy.entryDeleteTitle,
+                            message: ArchiveSharedCopy.entryDeleteMessage,
+                            confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
+                            danger: true
+                        ) {
+                            appState.deleteEntryAction(target)
+                            NSApp.keyWindow?.performClose(nil)
+                        }
+                    },
+                    onOpenAttachment: { att in
+                        localLightbox = att
+                    }
+                )
+                .frame(minWidth: 520, minHeight: 380)
+                .background(ArchivePalette.archivePaper)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    Text("未选定散页")
+                        .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
+                        .foregroundStyle(ArchivePalette.inkPrimary)
+                    Text("从时间流中右键选择「在新窗口打开」，或用 looseleaf://entry/<id> 深链直达")
+                        .font(ArchiveTypography.bodySans(size: 12))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 520, minHeight: 380)
+                .background(ArchivePalette.archivePaper)
+            }
+
+            if let att = localLightbox {
+                EditorialLightboxView(
+                    attachment: att,
+                    allAttachments: resolvedEntry?.attachments ?? [att]
+                ) {
+                    localLightbox = nil
+                }
+                .zIndex(100)
+            }
+
+            if let req = localConfirm {
+                PaperConfirmDialogView(request: req) {
+                    localConfirm = nil
+                }
+                .zIndex(110)
+            }
+        }
+        .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        .sheet(item: $localEditingEntry) { target in
+            EditEntrySheetView(entry: target) { updated in
+                _ = try await APIClient.shared.updateEntry(id: target.id, updated)
+                await appState.loadEntries(forceFull: false)
+                await appState.loadConfigAndProfile()
+                localEditingEntry = nil
+            } onCancel: {
+                localEditingEntry = nil
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        }
+        .sheet(item: $localEditingTx) { tx in
+            EditTransactionSheet(appState: appState, transaction: tx) {
+                localEditingTx = nil
+                Task { @MainActor in
+                    await appState.loadTransactionsAndAssets(forceFull: false)
+                    await appState.loadEntries(forceFull: false)
+                }
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        }
+        .onDisappear {
+            if let id = entryId, appState.detailWindowEntry?.id == id {
+                appState.detailWindowEntry = nil
+            } else if entryId == nil {
+                appState.detailWindowEntry = nil
+            }
+        }
+    }
+}
+
 /// Loose-Leaf (活页集 · 散页) macOS 原生客户端入口 (`SwiftUI + AppKit`).
 @main
 public struct LooseLeafApp: App {
@@ -10,64 +147,59 @@ public struct LooseLeafApp: App {
 
     public init() {}
 
-    /// 板块快捷键：显式数组，禁止再用 `Character("\(index + 7)")`。
     private static let contentShortcuts: [KeyEquivalent] = ["1", "2", "3", "4", "5", "6"]
     private static let configurationShortcuts: [KeyEquivalent] = ["1", "2", "3"]
 
-    /// 关闭最上层的自定义弹层（⌘W）。
-    /// 自绘 ZStack 弹层不是系统 sheet，拿不到系统级的 ⌘W 行为，必须自行实现。
-    private func closeTopmostOverlay() {
-        if appState.activeConfirmDialog != nil {
-            appState.dismissConfirm()
-        } else if appState.showSearchModal {
-            appState.showSearchModal = false
-        } else if appState.showNewEntrySheet {
-            appState.showNewEntrySheet = false
-        } else if appState.lightboxAttachment != nil {
-            appState.lightboxAttachment = nil
-        } else if appState.editingEntry != nil {
-            // 关键：详情 / 编辑这三个 sheet 也要能被 ⌘W 关掉。
-            // 上一轮把它们加进了 `hasOpenOverlay`（⌘W 菜单项变成可用了），
-            // 却没有在这里加对应处理 —— 于是菜单项可点却**毫无反应**。
-            // 这是我自己引入的回归。
-            appState.editingEntry = nil
-        } else if appState.editingTransaction != nil {
-            appState.editingTransaction = nil
-        } else if appState.highlightedEntry != nil {
-            appState.highlightedEntry = nil
-        } else if appState.detailWindowEntry != nil {
-            appState.detailWindowEntry = nil
+    /// 关闭主窗口最上层的自定义弹层（无弹层时走原生 `NSWindow.performClose`）
+    private func closeTopmostOverlayOrWindow() {
+        let isMainWindowKey = NSApp.keyWindow?.identifier?.rawValue == "main"
+            || (NSApp.keyWindow != nil && NSApp.keyWindow === NSApp.mainWindow && appState.hasOpenOverlay)
+        if isMainWindowKey && appState.hasOpenOverlay {
+            if appState.activeConfirmDialog != nil {
+                appState.dismissConfirm()
+            } else if appState.showSearchModal {
+                appState.showSearchModal = false
+            } else if appState.showNewEntrySheet {
+                appState.showNewEntrySheet = false
+            } else if appState.lightboxAttachment != nil {
+                appState.lightboxAttachment = nil
+            } else if appState.editingEntry != nil {
+                appState.editingEntry = nil
+            } else if appState.editingTransaction != nil {
+                appState.editingTransaction = nil
+            } else if appState.highlightedEntry != nil {
+                appState.highlightedEntry = nil
+            }
+        } else {
+            NSApp.keyWindow?.performClose(nil)
         }
     }
 
     public var body: some Scene {
-        // 1. 桌面主工作台窗口 (单例窗口；未配对展示主理人门禁，配对后直接进入全权管理工作台)
+        // 1. 桌面主工作台窗口（最小尺寸适配 13"/14" MacBook Split View 分屏）
         Window("Loose-Leaf · 活页集", id: "main") {
             Group {
                 if !appState.isPaired {
                     PairingGateView(appState: appState)
-                        .frame(minWidth: 720, minHeight: 560)
+                        .frame(minWidth: 680, minHeight: 500)
                 } else {
                     StreamView(appState: appState)
-                        .frame(minWidth: 980, minHeight: 640)
-                        .onOpenURL { url in
-                            appState.handleIncomingURL(url)
-                        }
-                        .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
-                            if let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
-                                if uniqueId.hasPrefix("looseleaf-entry-"),
-                                   let idStr = uniqueId.split(separator: "-").last,
-                                   let entryId = Int(idStr) {
-                                    appState.navigateToEntry(id: entryId)
-                                }
-                            }
-                        }
+                        .frame(minWidth: 800, minHeight: 520)
+                }
+            }
+            .onOpenURL { url in
+                appState.handleIncomingURL(url)
+            }
+            .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
+                if let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
+                    if uniqueId.hasPrefix("looseleaf-entry-"),
+                       let idStr = uniqueId.split(separator: "-").last,
+                       let entryId = Int(idStr) {
+                        appState.navigateToEntry(id: entryId)
+                    }
                 }
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
-            // 原生窗口工具栏：把「记一笔 / 同步 / 全局检索」提升到 macOS 标准位置。
-            // 此前这些操作散落在侧栏、画布内工具条与右下角悬浮按钮三处，
-            // 既不符合 HIG，也会随窗口尺寸漂移并遮挡内容。
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
@@ -76,7 +208,7 @@ public struct LooseLeafApp: App {
                         Label("全局档案检索", systemImage: ArchiveIcon.search.systemName)
                     }
                     .help("全局档案检索 (⌘K)")
-                    .disabled(appState.hasOpenOverlay)
+                    .disabled(!appState.isPaired || appState.hasOpenOverlay)
 
                     Button {
                         Task { @MainActor in
@@ -94,7 +226,7 @@ public struct LooseLeafApp: App {
                         Label("记一笔", systemImage: ArchiveIcon.add.systemName)
                     }
                     .help("记一笔 (⌘N)")
-                    .disabled(appState.hasOpenOverlay)
+                    .disabled(!appState.isPaired || appState.hasOpenOverlay)
                 }
             }
         }
@@ -102,15 +234,6 @@ public struct LooseLeafApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1180, height: 780)
         .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("偏好设置…") {
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        appState.activeSection = .preferences
-                    }
-                }
-                .keyboardShortcut(",", modifiers: [.command])
-            }
-
             CommandGroup(after: .appInfo) {
                 Button("检查新版本…") {
                     Task { @MainActor in
@@ -121,46 +244,55 @@ public struct LooseLeafApp: App {
 
             CommandGroup(replacing: .undoRedo) {
                 Button(appState.undoActionLabel.map { "撤销 \($0)" } ?? "撤销") {
-                    Task { @MainActor in
-                        await appState.performUndo()
+                    // 关键护栏：若当前焦点位于文本输入框（AppKit NSTextView），优先转发原生文本撤销，
+                    // 绝不能抢走用户的打字撤销甚至误恢复后台刚删除的手稿！
+                    if NSApp.keyWindow?.firstResponder is NSTextView {
+                        NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
+                    } else {
+                        Task { @MainActor in
+                            await appState.performUndo()
+                        }
                     }
                 }
                 .keyboardShortcut("z", modifiers: [.command])
-                .disabled(!appState.canUndo)
+
+                Button("重做") {
+                    NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
             }
 
             CommandGroup(replacing: .newItem) {
-                Button("关闭当前弹层") {
-                    closeTopmostOverlay()
+                Button(appState.hasOpenOverlay ? "关闭当前弹层" : "关闭窗口") {
+                    closeTopmostOverlayOrWindow()
                 }
                 .keyboardShortcut("w", modifiers: [.command])
-                .disabled(!appState.hasOpenOverlay)
 
                 Button("搜索散页…") {
                     appState.requestStreamSearchFocus()
                 }
                 .keyboardShortcut("f", modifiers: [.command])
-
+                .disabled(!appState.isPaired)
 
                 Button("记一笔…") {
                     appState.showNewEntrySheet = true
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+                .disabled(!appState.isPaired)
 
                 Button("全局搜索档案…") {
                     appState.showSearchModal = true
                 }
                 .keyboardShortcut("k", modifiers: [.command])
+                .disabled(!appState.isPaired)
 
-                Button("呼出极速闪念与记账悬浮窗") {
+                Button("呼出极速闪念与记账悬浮窗 (\(AppDelegate.hotKeyDisplayName))") {
                     appDelegate.toggleQuickCapturePanel()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
 
             CommandMenu("活页工作台") {
-                // ⌘1–⌘6 绑定六大内容板块；⌥⌘1–⌥⌘3 绑定配置板块。
-                // prefix 防御：将来新增板块但忘记补快捷键时，只是没有快捷键，不会数组越界。
                 let contentSections = Array(WorkbenchSection.contentSections.prefix(Self.contentShortcuts.count))
                 ForEach(Array(contentSections.enumerated()), id: \.element.id) { index, section in
                     Button(section.title) {
@@ -170,17 +302,14 @@ public struct LooseLeafApp: App {
                         }
                     }
                     .keyboardShortcut(Self.contentShortcuts[index], modifiers: [.command])
+                    .disabled(!appState.isPaired)
                 }
 
                 Divider()
 
-                let configurationSections = Array(WorkbenchSection.configurationSections.prefix(Self.configurationShortcuts.count))
-                ForEach(Array(configurationSections.enumerated()), id: \.element.id) { index, section in
-                    Button(section.title) {
-                        guard appState.activeSection != section else { return }
-                        withAnimation(.easeInOut(duration: 0.12)) {
-                            appState.activeSection = section
-                        }
+                ForEach(Array(SettingsTab.allCases.enumerated()), id: \.element.id) { index, tab in
+                    Button("\(tab.rawValue)…") {
+                        appState.openSettings(tab: tab)
                     }
                     .keyboardShortcut(Self.configurationShortcuts[index], modifiers: [.command, .option])
                 }
@@ -188,7 +317,7 @@ public struct LooseLeafApp: App {
                 Divider()
 
                 Button("键盘快捷键速查…") {
-                    appState.activeSection = .preferences
+                    appState.openSettings(tab: .general)
                 }
                 .keyboardShortcut(KeyEquivalent(Character("/")), modifiers: [.command])
 
@@ -198,6 +327,7 @@ public struct LooseLeafApp: App {
                     appState.activeSection = .dossier
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
+                .disabled(!appState.isPaired)
 
                 Divider()
 
@@ -207,6 +337,7 @@ public struct LooseLeafApp: App {
                     }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+                .disabled(!appState.isPaired || appState.isLoading)
 
                 Divider()
 
@@ -214,57 +345,37 @@ public struct LooseLeafApp: App {
                     appState.moveSelection(by: -1)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.command])
+                .disabled(!appState.isPaired)
 
                 Button("下一条散页") {
                     appState.moveSelection(by: 1)
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.command])
+                .disabled(!appState.isPaired)
 
                 Button("打开选中的散页") {
                     appState.openKeyboardFocusedEntry()
                 }
                 .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(!appState.isPaired)
             }
         }
 
-        // 2. 独立散页详情窗口（深链 looseleaf://entry/<id> 与「在新窗口打开」使用）
-        Window("散页详情", id: "detail") {
-            Group {
-                if let entry = appState.detailWindowEntry {
-                    StreamEntryDetailView(
-                        entry: entry,
-                        appState: appState,
-                        onClose: {
-                            appState.detailWindowEntry = nil
-                        },
-                        onDeleteTransaction: { tx in
-                            appState.deleteTransactionAction(tx)
-                        }
-                    )
-                        .frame(minWidth: 520, minHeight: 380)
-                        .background(ArchivePalette.archivePaper)
-                } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 28, weight: .light))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                        Text("未选定散页")
-                            .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("从时间流中打开一条手稿，或用 looseleaf://entry/<id> 深链直达")
-                            .font(ArchiveTypography.bodySans(size: 12))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .frame(minWidth: 520, minHeight: 380)
-                    .background(ArchivePalette.archivePaper)
-                }
-            }
-            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        // 2. 原生 macOS 独立设置窗口 (⌘,)
+        Settings {
+            SettingsView(appState: appState)
+                .frame(minWidth: 680, idealWidth: 760, minHeight: 520, idealHeight: 640)
+                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
-        .defaultSize(width: 620, height: 560)
+
+        // 3. 独立散页详情窗口组（支持多篇并排对照阅读及深链直达）
+        WindowGroup("散页详情", id: "detail", for: Int.self) { $entryId in
+            StandaloneEntryDetailWindow(entryId: entryId, appState: appState)
+        }
+        .defaultSize(width: 640, height: 580)
         .windowResizability(.contentMinSize)
 
-        // 3. 常驻菜单栏动态活页夹 (MenuBarExtra)
+        // 4. 常驻菜单栏动态活页夹 (MenuBarExtra)
         MenuBarExtra {
             Group {
                 if !appState.isPaired {
@@ -277,7 +388,6 @@ public struct LooseLeafApp: App {
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         } label: {
             HStack(spacing: 4) {
-                // 菜单栏模板图标：SF Symbol 随系统深浅色自适应；加载时呈现动态效果 (macOS 14+ pulse / macOS 15+ rotate)
                 if #available(macOS 15.0, *) {
                     Image(systemName: appState.isLoading ? "arrow.triangle.2.circlepath" : "leaf.fill")
                         .symbolEffect(.rotate, isActive: appState.isLoading)

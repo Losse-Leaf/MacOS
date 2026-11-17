@@ -1,7 +1,8 @@
 import SwiftUI
+import AppKit
 import Carbon
 
-/// 偏好设置（左侧菜单「偏好设置」入口）：纸本外观主题与全局快捷键录制
+/// 偏好设置（独立 Settings 窗口「通用偏好」分页）：纸本外观主题、全局快捷键录制与系统集成
 @MainActor
 struct PreferencesSettingsView: View {
     @Bindable var appState: AppState
@@ -9,6 +10,8 @@ struct PreferencesSettingsView: View {
     // 全局热键录制状态
     @State private var hotKeyLabel: String = AppDelegate.hotKeyDisplayName
     @State private var isRecordingHotKey: Bool = false
+    @State private var hotKeyError: String?
+    @State private var hotKeyFeedback: String?
 
     /// 默认全局快捷键：⌘ + ⇧ + L（与 AppDelegate 的默认值严格一致）
     private static let defaultHotKeyCode: Int = Int(kVK_ANSI_L)
@@ -20,6 +23,8 @@ struct PreferencesSettingsView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
+            settingsFeedbackBanner(feedback: hotKeyFeedback, error: hotKeyError)
+
             // 纸本外观主题
             settingsCardSection(title: "纸本外观主题", caption: "自适应色彩与排版") {
                 HStack(spacing: ArchiveSpacing.m) {
@@ -46,7 +51,7 @@ struct PreferencesSettingsView: View {
             }
 
             // 全局快捷键
-            settingsCardSection(title: "全局快捷键", footer: "默认 ⌘ + ⇧ + L，在任意窗口下唤起极速录入手账；点击「修改按键」后按下新组合键即可全局更换。") {
+            settingsCardSection(title: "全局快捷键", footer: "默认 ⌘ + ⇧ + L，在任意窗口下唤起极速录入手账；点击「修改按键」后按下新组合键即可全局更换（按 ESC 取消）。") {
                 settingsCardRow(
                     icon: "command",
                     iconColor: ArchivePalette.inkSecondary,
@@ -69,15 +74,22 @@ struct PreferencesSettingsView: View {
                                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.accentWarm)
 
-                            HotKeyRecorderView(isRecording: $isRecordingHotKey) { keyCode, modifiers in
-                                (NSApp.delegate as? AppDelegate)?.applyHotKey(keyCode: keyCode, carbonModifiers: modifiers)
-                                hotKeyLabel = AppDelegate.hotKeyDisplayName
+                            Button("取消") {
                                 isRecordingHotKey = false
+                            }
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+                            .paperButtonFocusRing()
+
+                            HotKeyRecorderView(isRecording: $isRecordingHotKey) { keyCode, modifiers in
+                                applyNewHotKey(keyCode: keyCode, modifiers: modifiers)
                             }
                             .frame(width: 1, height: 1)
                             .opacity(0.01)
                         } else {
                             Button("修改按键") {
+                                hotKeyError = nil
+                                hotKeyFeedback = nil
                                 isRecordingHotKey = true
                             }
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
@@ -85,7 +97,6 @@ struct PreferencesSettingsView: View {
                             .paperButtonFocusRing()
                             .help("按下新的组合键以替换全局唤出快捷键")
 
-                            // 恢复默认：仅当当前快捷键已被改动时可用
                             Button("恢复默认") {
                                 restoreDefaultHotKey()
                             }
@@ -138,12 +149,11 @@ struct PreferencesSettingsView: View {
                             .accessibilityLabel("触感反馈")
                     }
 
-                    // Spotlight 索引范围（DEC-03 口径 C）
                     settingsCardRow(
                         icon: "magnifyingglass.circle",
                         iconColor: ArchivePalette.inkSecondary,
                         title: "系统搜索索引全文",
-                        subtitle: "关闭时只索引标题与前 60 字摘要；开启后正文全文会进入 macOS 系统搜索与 Siri"
+                        subtitle: "关闭时只索引公开条目的标题与前 60 字摘要（私密散页永不写入系统索引）"
                     ) {
                         Toggle("", isOn: $appState.indexesFullContentInSpotlight)
                             .toggleStyle(PaperSwitchToggleStyle())
@@ -174,7 +184,7 @@ struct PreferencesSettingsView: View {
             // 键盘快捷键速查
             settingsCardSection(title: "键盘快捷键", caption: "全部常用操作的键位一览") {
                 VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                    ForEach(ArchiveShortcutReference.all, id: \.combination) { item in
+                    ForEach(ArchiveShortcutReference.all) { item in
                         HStack(spacing: ArchiveSpacing.m) {
                             Text(item.title)
                                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
@@ -200,20 +210,39 @@ struct PreferencesSettingsView: View {
 
     // MARK: - 全局快捷键
 
-    /// 当前快捷键是否仍为默认值（⌘ + ⇧ + L）
     private var isHotKeyAtDefault: Bool {
         let code = UserDefaults.standard.object(forKey: AppDelegate.hotKeyCodeKey) as? Int ?? Self.defaultHotKeyCode
         let mods = UserDefaults.standard.object(forKey: AppDelegate.hotKeyModifiersKey) as? Int ?? Self.defaultHotKeyModifiers
         return code == Self.defaultHotKeyCode && mods == Self.defaultHotKeyModifiers
     }
 
-    /// 将全局快捷键恢复为出厂默认（⌘ + ⇧ + L）并立即生效
+    private func applyNewHotKey(keyCode: Int, modifiers: Int) {
+        isRecordingHotKey = false
+        guard let delegate = NSApp.delegate as? AppDelegate else { return }
+        let succeeded = delegate.applyHotKey(keyCode: keyCode, carbonModifiers: modifiers)
+        hotKeyLabel = AppDelegate.hotKeyDisplayName
+        if succeeded {
+            hotKeyError = nil
+            hotKeyFeedback = "全局快捷键已更新为 \(hotKeyLabel)"
+        } else {
+            hotKeyFeedback = nil
+            hotKeyError = "该组合键已被系统或其他应用占用，已自动保留原快捷键 \(hotKeyLabel)"
+        }
+    }
+
     private func restoreDefaultHotKey() {
-        (NSApp.delegate as? AppDelegate)?.applyHotKey(
+        let succeeded = (NSApp.delegate as? AppDelegate)?.applyHotKey(
             keyCode: Self.defaultHotKeyCode,
             carbonModifiers: Self.defaultHotKeyModifiers
-        )
+        ) ?? false
         hotKeyLabel = AppDelegate.hotKeyDisplayName
+        if succeeded {
+            hotKeyError = nil
+            hotKeyFeedback = "已恢复默认全局快捷键 \(hotKeyLabel)"
+        } else {
+            hotKeyFeedback = nil
+            hotKeyError = "默认快捷键被其他应用占用，请手动指定其他组合键"
+        }
     }
 
     // MARK: - 外观主题卡片
@@ -267,8 +296,10 @@ struct PreferencesSettingsView: View {
             .shadow(color: isSelected ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
         }
         .buttonStyle(.plain)
+        .paperButtonFocusRing(cornerRadius: ArchiveCardMetrics.radius)
         .accessibilityLabel("\(title)外观主题")
         .accessibilityValue(isSelected ? "已选中" : "未选中")
+        .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
     }
 }
 
@@ -282,7 +313,9 @@ struct HotKeyRecorderView: NSViewRepresentable {
         let view = RecorderNSView()
         view.onCaptured = onCaptured
         view.onCancelled = {
-            isRecording = false
+            if isRecording {
+                isRecording = false
+            }
         }
         return view
     }
@@ -290,9 +323,11 @@ struct HotKeyRecorderView: NSViewRepresentable {
     func updateNSView(_ nsView: RecorderNSView, context: Context) {
         nsView.onCaptured = onCaptured
         nsView.onCancelled = {
-            isRecording = false
+            if isRecording {
+                isRecording = false
+            }
         }
-        if isRecording {
+        if isRecording, nsView.window?.firstResponder !== nsView {
             DispatchQueue.main.async {
                 nsView.window?.makeFirstResponder(nsView)
             }
@@ -306,18 +341,51 @@ final class RecorderNSView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok {
+            onCancelled?()
+        }
+        return ok
+    }
+
+    /// 录制期间优先拦截带修饰键的组合键（防止按 ⌘N / ⌘K / ⌘W 误触应用菜单项）
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if event.keyCode == UInt16(kVK_Escape) {
+            onCancelled?()
+            return true
+        }
+        if handleCapturedEvent(event) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == UInt16(kVK_Escape) {
             onCancelled?()
             return
         }
+        _ = handleCapturedEvent(event)
+    }
+
+    private func handleCapturedEvent(_ event: NSEvent) -> Bool {
+        // 忽略纯修饰键按下事件
+        let modifierOnlyKeyCodes: Set<UInt16> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+        if modifierOnlyKeyCodes.contains(event.keyCode) {
+            return false
+        }
         var carbonModifiers: Int = 0
-        let flags = event.modifierFlags
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags.contains(.command) { carbonModifiers |= Int(cmdKey) }
         if flags.contains(.option) { carbonModifiers |= Int(optionKey) }
         if flags.contains(.shift) { carbonModifiers |= Int(shiftKey) }
         if flags.contains(.control) { carbonModifiers |= Int(controlKey) }
-        guard carbonModifiers != 0 else { return }
+        guard carbonModifiers != 0 else { return false }
         onCaptured?(Int(event.keyCode), carbonModifiers)
+        return true
     }
 }

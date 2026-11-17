@@ -33,6 +33,30 @@ public final class UpdateChecker {
         public let publishedAt: String
         /// GitHub Release 提供的 "sha256:..." 资产摘要；缺失时为 nil
         public let expectedDigest: String?
+        /// 下载资产原始文件名（用于回退查 checksums.txt）
+        public let assetName: String
+        /// Release 附带的 checksums.txt / SHA256SUMS 下载地址
+        public let checksumURL: URL?
+
+        public init(
+            tagName: String,
+            versionName: String,
+            body: String,
+            downloadURL: URL,
+            publishedAt: String,
+            expectedDigest: String?,
+            assetName: String = "",
+            checksumURL: URL? = nil
+        ) {
+            self.tagName = tagName
+            self.versionName = versionName
+            self.body = body
+            self.downloadURL = downloadURL
+            self.publishedAt = publishedAt
+            self.expectedDigest = expectedDigest
+            self.assetName = assetName
+            self.checksumURL = checksumURL
+        }
     }
 
     nonisolated private static let ignoredVersionKey = "ignoredUpdateVersion"
@@ -72,6 +96,15 @@ public final class UpdateChecker {
         defer {
             isChecking = false
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckAtKey)
+            if isUserInitiated {
+                if let update = self.availableUpdate {
+                    AppState.shared.showTemporaryBanner("发现新版本 v\(update.versionName) · 已为您打开更新面板")
+                    AppState.shared.openSettings(tab: .about)
+                } else if let err = self.updateError {
+                    AppState.shared.errorBanner = err
+                    AppState.shared.openSettings(tab: .about)
+                }
+            }
         }
 
         if isUserInitiated {
@@ -138,13 +171,23 @@ public final class UpdateChecker {
                     let name = $0.name.lowercased()
                     return name.hasSuffix(".zip") && (name.contains("arm64") || name.contains("looseleaf"))
                 }), let downloadURL = URL(string: asset.browserDownloadURL) {
+                    let checksumAsset = release.assets.first {
+                        let lower = $0.name.lowercased()
+                        return lower == "checksums.txt"
+                            || lower == "sha256sums.txt"
+                            || lower == "sha256sums"
+                            || lower == "\(asset.name.lowercased()).sha256"
+                    }
+                    let checksumURL = checksumAsset.flatMap { URL(string: $0.browserDownloadURL) }
                     self.availableUpdate = ReleaseInfo(
                         tagName: release.tagName,
                         versionName: cleanRemoteTag,
                         body: release.body ?? "",
                         downloadURL: downloadURL,
                         publishedAt: release.publishedAt ?? "",
-                        expectedDigest: asset.digest
+                        expectedDigest: asset.digest,
+                        assetName: asset.name,
+                        checksumURL: checksumURL
                     )
                 } else if isUserInitiated {
                     updateError = "已发现新版本 v\(cleanRemoteTag)，但未找到可下载的 macOS 安装包"
@@ -228,13 +271,17 @@ public final class UpdateChecker {
     /// 关键设计：**绝不**先 `rm -rf` 目标再拷贝。流程是
     /// 「拷到同卷暂存 → 旧版移作备份 → 原子 rename → 失败回滚」，
     /// 因此拷贝失败时用户的旧 App 毫发无损。
+    private nonisolated static func shellSingleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     static func swapScript(target: String, source: String, oldPID: Int32, workDir: String) -> String {
         """
         #!/bin/bash
-        TARGET="{{TARGET}}"
-        SOURCE="{{SOURCE}}"
-        OLD_PID="{{OLD_PID}}"
-        WORK_DIR="{{WORK_DIR}}"
+        TARGET={{TARGET}}
+        SOURCE={{SOURCE}}
+        OLD_PID={{OLD_PID}}
+        WORK_DIR={{WORK_DIR}}
 
         # 1. 严格轮询等待旧进程彻底安全退出（至多轮询 15 秒）
         #    只接受合法的正数 PID：kill 把 0 当作当前进程组、-1 当作所有进程，
@@ -301,10 +348,10 @@ public final class UpdateChecker {
         rm -rf "$WORK_DIR"
         exit 1
         """
-            .replacingOccurrences(of: "{{TARGET}}", with: target)
-            .replacingOccurrences(of: "{{SOURCE}}", with: source)
-            .replacingOccurrences(of: "{{OLD_PID}}", with: String(oldPID))
-            .replacingOccurrences(of: "{{WORK_DIR}}", with: workDir)
+            .replacingOccurrences(of: "{{TARGET}}", with: shellSingleQuoted(target))
+            .replacingOccurrences(of: "{{SOURCE}}", with: shellSingleQuoted(source))
+            .replacingOccurrences(of: "{{OLD_PID}}", with: shellSingleQuoted(String(oldPID)))
+            .replacingOccurrences(of: "{{WORK_DIR}}", with: shellSingleQuoted(workDir))
     }
 
 
@@ -331,8 +378,8 @@ public final class UpdateChecker {
                 }
             }
             let session = URLSession(configuration: .default, delegate: progressDelegate, delegateQueue: nil)
+            defer { session.finishTasksAndInvalidate() }
             let (tempDownloadedURL, _) = try await session.download(from: update.downloadURL)
-            progressDelegate.invalidate()
             updateProgress = 0.50
 
             // 2. 立即将下载的产物转移至独立临时目录，防止被系统或 URLSession 句柄早退清理
@@ -344,10 +391,15 @@ public final class UpdateChecker {
                 try FileManager.default.moveItem(at: tempDownloadedURL, to: zipPath)
             }.value
 
-            // 2.1 校验下载包完整性（GitHub Release 资产自带 sha256 digest）
+            // 2.1 强制校验下载包完整性（优先使用 GitHub 资产 sha256 digest，缺失时回退拉取 checksums.txt）
+            var resolvedDigest = update.expectedDigest
+            if (resolvedDigest ?? "").isEmpty, let checksumURL = update.checksumURL {
+                resolvedDigest = try? await Self.fetchChecksumDigest(from: checksumURL, assetName: update.assetName)
+            }
+            let finalDigest = resolvedDigest
             // 关键：SHA256 对 100MB 包需 0.3~1 秒，必须离开主线程，否则窗口全程无响应
             try await Task.detached(priority: .userInitiated) {
-                try Self.verifyDigest(of: zipPath, expected: update.expectedDigest)
+                try Self.verifyDigest(of: zipPath, expected: finalDigest)
             }.value
 
             // 3. 解压产物（unzip 需数秒，同样不能在主线程 waitUntilExit）
@@ -479,15 +531,57 @@ public final class UpdateChecker {
         return SemVer(core: parts, isPrerelease: isPrerelease)
     }
 
-    /// 用 GitHub Release 提供的 sha256 摘要校验下载包；未提供摘要时只记录日志（兼容旧发布）。
+    /// 从 Release 同目录 checksums.txt 解析对应资产的 SHA256 摘要
+    nonisolated static func fetchChecksumDigest(from url: URL, assetName: String) async throws -> String? {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let content = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return parseChecksumDigest(from: content, assetName: assetName)
+    }
+
+    nonisolated static func parseChecksumDigest(from content: String, assetName: String) -> String? {
+        let lines = content.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }
+        for line in lines where !line.isEmpty && !line.hasPrefix("#") {
+            let parts = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            if parts.count == 1, parts[0].count == 64, parts[0].allSatisfy(\.isHexDigit) {
+                return "sha256:\(parts[0].lowercased())"
+            }
+            if parts.count >= 2 {
+                let hashCandidate = parts[0]
+                let fileCandidate = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "*./"))
+                if hashCandidate.count == 64,
+                   hashCandidate.allSatisfy(\.isHexDigit),
+                   (assetName.isEmpty || fileCandidate == assetName || fileCandidate.hasSuffix("/\(assetName)")) {
+                    return "sha256:\(hashCandidate.lowercased())"
+                }
+            }
+        }
+        return nil
+    }
+
+    /// 强制校验下载包 SHA256 摘要（BE-44 供应链安全准则：缺失摘要或不匹配一律中止更新）
     nonisolated static func verifyDigest(of fileURL: URL, expected: String?) throws {
-        guard let expected, expected.lowercased().hasPrefix("sha256:") else {
-            logger.notice("Release asset has no sha256 digest; skipping integrity check")
-            return
+        guard let expected = expected?.trimmingCharacters(in: .whitespacesAndNewlines),
+              expected.lowercased().hasPrefix("sha256:") else {
+            logger.error("Release asset missing sha256 digest; refusing unverified update")
+            throw NSError(
+                domain: "UpdateError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "更新包缺少 SHA256 完整性摘要，已中止自动安装；请使用浏览器下载或终端脚本升级"]
+            )
+        }
+        let wanted = String(expected.dropFirst("sha256:".count)).lowercased()
+        guard wanted.count == 64, wanted.allSatisfy(\.isHexDigit) else {
+            throw NSError(
+                domain: "UpdateError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "更新包 SHA256 摘要格式无效，已中止安装"]
+            )
         }
         let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
         let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        let wanted = String(expected.dropFirst("sha256:".count)).lowercased()
         guard actual == wanted else {
             throw NSError(
                 domain: "UpdateError",

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// 资源 Bundle 定位器（兼容 Xcode App Target、Widget Extension 与 SwiftPM 构建）
+/// 资源 Bundle 定位器（兼容 Xcode App Target 与 SwiftPM 构建）
 public enum ArchiveResourceBundle {
     public static let bundle: Bundle = {
         #if SWIFT_PACKAGE
@@ -15,10 +15,7 @@ public enum ArchiveResourceBundle {
 /// 自然大地色盘语义令牌绑定 (Earthy Palette Semantic Tokens)
 /// 严格遵循 docs/ecosystem.md §4.2 强制约定：
 /// 原生端不得在代码中直接书写十六进制色值，统一通过语义名引用 Assets.xcassets
-/// 注：本文件位于 Models 层（供 Widget 扩展共享编译），只允许 SwiftUI 色彩/字体令牌与
-/// AppKit 的 NSFont 探测，不要放任何 View / ViewModifier。
 public enum ArchivePalette {
-    // 命名资源色（Color(named:)）本身即动态色，缓存为 static let 后仍会随系统外观变化正确刷新。
     public static let archivePaper = Color("ArchivePaper", bundle: ArchiveResourceBundle.bundle)
     public static let archiveSubtle = Color("ArchiveSubtle", bundle: ArchiveResourceBundle.bundle)
     public static let inkPrimary = Color("InkPrimary", bundle: ArchiveResourceBundle.bundle)
@@ -29,80 +26,102 @@ public enum ArchivePalette {
     public static let accentWarm = Color("AccentWarm", bundle: ArchiveResourceBundle.bundle)
     public static let accentMoss = Color("AccentMoss", bundle: ArchiveResourceBundle.bundle)
 
+    // 光谱语义色静态缓存（避免视图每次渲染构造 Color(name:bundle:)）
+    public static let spectrumDining = Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumTransit = Color("SpectrumTransit", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumShopping = Color("SpectrumShopping", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumLeisure = Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumHousing = Color("SpectrumHousing", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumStudy = Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumMedical = Color("SpectrumMedical", bundle: ArchiveResourceBundle.bundle)
+    public static let spectrumOther = Color("SpectrumOther", bundle: ArchiveResourceBundle.bundle)
+
+    private static let spectrumRing: [Color] = [
+        spectrumOther, spectrumDining, spectrumTransit, spectrumShopping,
+        spectrumLeisure, spectrumHousing, spectrumStudy, spectrumMedical
+    ]
+
     /// 支出类目光谱专用大地色 (docs/web.md §2.3)
-    /// 未在语义表中命中的动态分类按序号取色，避免全部落到对比度最低的 SpectrumOther。
     public static func categoryColor(for category: String) -> Color {
         switch category {
         case "餐饮":
-            return Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle)
+            return spectrumDining
         case "交通":
-            return Color("SpectrumTransit", bundle: ArchiveResourceBundle.bundle)
+            return spectrumTransit
         case "购物", "数码器材":
-            return Color("SpectrumShopping", bundle: ArchiveResourceBundle.bundle)
+            return spectrumShopping
         case "娱乐":
-            return Color("SpectrumLeisure", bundle: ArchiveResourceBundle.bundle)
+            return spectrumLeisure
         case "住房":
-            return Color("SpectrumHousing", bundle: ArchiveResourceBundle.bundle)
+            return spectrumHousing
         case "学习":
-            return Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
+            return spectrumStudy
         case "医疗":
-            return Color("SpectrumMedical", bundle: ArchiveResourceBundle.bundle)
+            return spectrumMedical
         default:
-            return spectrumFallbackColor(for: category)
+            let hash = category.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
+            return spectrumRing[abs(hash) % spectrumRing.count]
         }
-    }
-
-    /// 动态分类的兜底配色：按名称稳定散列到光谱色盘（保证同一分类每次颜色一致）
-    private static func spectrumFallbackColor(for category: String) -> Color {
-        let palette = [
-            "SpectrumOther", "SpectrumDining", "SpectrumTransit", "SpectrumShopping",
-            "SpectrumLeisure", "SpectrumHousing", "SpectrumStudy", "SpectrumMedical"
-        ]
-        let hash = category.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
-        let name = palette[abs(hash) % palette.count]
-        return Color(name, bundle: ArchiveResourceBundle.bundle)
     }
 }
 
-/// 跨平台排版字体栈映射 (Typography Mapping, docs/ecosystem.md §4.3 & docs/macos.md §6.3)
+/// 跨平台排版字体栈映射 (Typography Mapping · A4 原生字体策略)
+/// 统一采用 macOS 系统原生光学字族：
+/// - 刊头与标题：`New York` (`.serif`) + 系统级联宋体/苹方，零内嵌字体包体积负担，消除 `Songti SC` 劫持西文字符的弊病；
+/// - 正文与交互：`SF Pro` (`.default`) + `PingFang SC`；
+/// - 刻度与金额：`SF Mono` (`.monospaced`)，强制等宽数字对齐如机械刻度。
 public enum ArchiveTypography {
-    private static let hasNewsreader: Bool = NSFont(name: "Newsreader", size: 12) != nil
-    private static let hasSongti: Bool = NSFont(name: "Songti SC", size: 12) != nil
-    private static let hasJetBrainsMono: Bool = NSFont(name: "JetBrains Mono", size: 12) != nil
-
-    /// 古典衬线体 (Newsreader -> Songti SC -> Baskerville -> System Serif)
-    /// 使用 `relativeTo: .body` 以支持系统「文本大小」动态缩放（无障碍要求）。
-    public static func editorialSerif(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        if hasNewsreader {
-            return .custom("Newsreader", size: size, relativeTo: .body).weight(weight)
+    /// 根据字号推断匹配的动态字阶参考锚点 (`Font.TextStyle`)
+    public static func relativeStyle(for size: CGFloat) -> Font.TextStyle {
+        switch size {
+        case ..<11: return .caption2
+        case ..<12: return .caption
+        case ..<14: return .body
+        case ..<16.5: return .headline
+        case ..<21: return .title3
+        case ..<25: return .title2
+        default: return .title
         }
-        if hasSongti {
-            return .custom("Songti SC", size: size, relativeTo: .body).weight(weight)
-        }
-        return .system(size: size, weight: weight, design: .serif)
     }
 
-    /// 现代无衬线正文 (SF Pro Text -> PingFang SC)
+    /// 古典衬线体（Apple 原生 `New York` 光学衬线 + 中文级联，支持系统动态字号缩放）
+    public static func editorialSerif(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .serif)
+    }
+
+    public static func editorialSerif(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
+        .system(style, design: .serif, weight: weight)
+    }
+
+    /// 现代无衬线正文 (`SF Pro` + `PingFang SC`)
     public static func bodySans(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .default)
     }
 
-    /// 等宽数字刻度 (JetBrains Mono -> SF Mono, 强制等宽数字对齐如机械刻度)
-    public static func monoScale(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        if hasJetBrainsMono {
-            return .custom("JetBrains Mono", size: size, relativeTo: .body).weight(weight).monospacedDigit()
-        }
-        return .system(size: size, weight: weight, design: .monospaced).monospacedDigit()
+    public static func bodySans(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
+        .system(style, design: .default, weight: weight)
     }
 
-    /// 字号阶梯（统一语义，避免散落魔法数字）
+    /// 等宽数字刻度（Apple 原生 `SF Mono`，强制等宽数字对齐）
+    public static func monoScale(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .monospaced).monospacedDigit()
+    }
+
+    public static func monoScale(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
+        .system(style, design: .monospaced, weight: weight).monospacedDigit()
+    }
+
+    /// 字号阶梯（统一语义，消除魔法字号）
     public enum Scale {
-        public static let display: CGFloat = 26      // 刊头主标题
-        public static let title: CGFloat = 16        // 空态标题
-        public static let heading: CGFloat = 13      // 小节标题
-        public static let body: CGFloat = 12         // 正文
-        public static let caption: CGFloat = 11      // 辅助说明
-        public static let micro: CGFloat = 10        // 元信息（macOS 最小可读字号）
+        public static let display: CGFloat = 26       // 刊头主标题
+        public static let sectionTitle: CGFloat = 20  // 板块大标题
+        public static let title: CGFloat = 16         // 弹窗与空态标题
+        public static let cardTitle: CGFloat = 15     // 卡片主标题
+        public static let bodyLarge: CGFloat = 13.5   // 长文沉浸阅读字号
+        public static let heading: CGFloat = 13       // 小节标题
+        public static let body: CGFloat = 12          // 标准界面正文
+        public static let caption: CGFloat = 11       // 辅助说明
+        public static let micro: CGFloat = 10         // 元信息（macOS 最小可读字号下限）
     }
 }
 
@@ -125,8 +144,6 @@ public enum ArchiveSpacing {
 }
 
 /// 命中区域下限 (Hit Target)
-/// - `minPointer`: macOS 指针设备的最小舒适点击区
-/// - `minTouch`: 触控板 / 辅助功能 / 触屏场景的最小命中区
 public enum ArchiveHitTarget {
     public static let minPointer: CGFloat = 28
     public static let minTouch: CGFloat = 44
@@ -167,7 +184,6 @@ public enum ArchiveElevation {
 }
 
 /// 图标语义字典 (Iconography)
-/// 全应用只引用本枚举，避免同一语义在不同模块使用不同 SF Symbol。
 public enum ArchiveIcon {
     case stream, ledger, wishes, atlas, projects, dossier
     case preferences, hub, about

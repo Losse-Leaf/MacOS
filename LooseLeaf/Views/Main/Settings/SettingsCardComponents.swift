@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 配置类视图共用的 Grouped 卡片容器（供 Settings/ 下五个 tab 复用）
+/// 配置类视图共用的 Grouped 卡片容器（供 Settings/ 下三个分页复用）
 extension View {
     /// 拟物 macOS 风格分组卡片：标题 + 说明 + 内容 + 脚注
     func settingsCardSection<Content: View>(
@@ -95,35 +95,18 @@ extension View {
 
 // MARK: - 设置页统一操作反馈条
 
-/// 设置页统一操作反馈条：错误（朱砂）优先、成功（苔绿）其次，同位互斥展示。
-/// 全局函数（非 View 扩展方法），便于在任意 `body` 内作为独立节点插入。
+/// 设置页统一操作反馈条：错误（朱砂）优先、成功（苔绿）其次；无消息时不占用纵向空白。
+@ViewBuilder
 public func settingsFeedbackBanner(feedback: String?, error: String?) -> some View {
-    // 错误（朱砂）优先、成功（苔绿）其次，同位互斥；两者皆无时反馈槽仍常驻，
-    // 仅隐藏内容，避免测试/保存配置后插入一行把下方 Divider 与操作按钮栏整体下推。
-    let feedbackText: String?
-    let tint: Color
-    let icon: String
     if let error, !error.isEmpty {
-        feedbackText = error
-        tint = ArchivePalette.accentWarm
-        icon = "exclamationmark.octagon.fill"
+        feedbackRow(text: error, icon: "exclamationmark.octagon.fill", tint: ArchivePalette.accentWarm)
+            .accessibilityElement(children: .combine)
     } else if let feedback, !feedback.isEmpty {
-        feedbackText = feedback
-        tint = ArchivePalette.accentMoss
-        icon = "checkmark.seal.fill"
-    } else {
-        feedbackText = nil
-        tint = ArchivePalette.inkMuted
-        icon = "checkmark.seal.fill"
+        feedbackRow(text: feedback, icon: "checkmark.seal.fill", tint: ArchivePalette.accentMoss)
+            .accessibilityElement(children: .combine)
     }
-
-    return feedbackRow(text: feedbackText ?? "", icon: icon, tint: tint)
-        .frame(minHeight: ArchiveSpacing.l * 2, alignment: .topLeading)
-        .opacity(feedbackText == nil ? 0 : 1)
-        .accessibilityElement(children: .combine)
 }
 
-/// 反馈条内部单行：图标 + 文案
 private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
     HStack(spacing: ArchiveSpacing.s) {
         Image(systemName: icon)
@@ -131,7 +114,7 @@ private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
             .accessibilityHidden(true)
         Text(text)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-            .lineLimit(2)
+            .lineLimit(3)
             .truncationMode(.tail)
         Spacer(minLength: 0)
     }

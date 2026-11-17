@@ -141,6 +141,36 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         FormatUtils.parseOccurredDate(occurredAt)
     }
 
+    /// 当期应还金额（分），严格遵循 DEC-02 / FE-24「前 N-1 期整除、最后一期吃尾差」口径
+    public var installmentCurrentPeriodCents: Int64? {
+        guard isInstallment == true,
+              let months = installmentMonths, months > 0 else { return nil }
+        let total = installmentTotalAmount ?? amount
+        let monthly = installmentMonthlyPay ?? (total / Int64(months))
+        let remain = installmentRemainMonths ?? months
+        if remain <= 0 { return 0 }
+        if remain == 1 {
+            return max(0, total - Int64(months - 1) * monthly)
+        }
+        return monthly
+    }
+
+    /// 分期徽标文案（含剩余期数与当期实际应还金额）
+    public var installmentBadgeText: String? {
+        guard isInstallment == true,
+              let months = installmentMonths, months > 0 else { return nil }
+        if let remain = installmentRemainMonths {
+            if remain <= 0 {
+                return "分期 \(months) 期 · 已结清"
+            }
+            if let periodCents = installmentCurrentPeriodCents, periodCents > 0 {
+                return "剩 \(remain)/\(months) 期 · 本期 \(FormatUtils.formattedYuan(cents: periodCents, includeSymbol: true))"
+            }
+            return "剩 \(remain)/\(months) 期"
+        }
+        return "分期 \(months) 期"
+    }
+
     /// 转换为时间流伴生视图条目 (与 Web 端 txToEntry 逻辑一致)
     public func toLifeEntry() -> LifeEntry {
         let sign = type == "income" ? "+" : "-"
@@ -793,33 +823,6 @@ public struct CreditChannel: Codable, Identifiable, Equatable, Sendable {
         self.name = name
         self.repaymentDay = repaymentDay
         self.isBuiltin = isBuiltin
-        self.color = color
-    }
-}
-
-/// 新建或修改信贷分期渠道请求载荷 (POST / PUT /api/v1/credit-channels)
-public struct CreateCreditChannelRequest: Codable, Equatable, Sendable {
-    public var code: String?
-    public var name: String
-    public var repaymentDay: Int
-    public var color: String?
-
-    enum CodingKeys: String, CodingKey {
-        case code
-        case name
-        case repaymentDay = "repayment_day"
-        case color
-    }
-
-    public init(
-        code: String? = nil,
-        name: String,
-        repaymentDay: Int = 10,
-        color: String? = nil
-    ) {
-        self.code = code
-        self.name = name
-        self.repaymentDay = repaymentDay
         self.color = color
     }
 }

@@ -25,35 +25,30 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 活页集配置类导航外壳 (SettingsView)
-/// 扁平化后 3 个配置条目已直接进入左侧菜单栏；本文件只负责页眉与 tab 分发，
-/// 各 tab 的完整实现拆分在 `Views/Main/Settings/` 下：
-/// PreferencesSettingsView / HubDevicesSettingsView / AboutSettingsView
-///
-/// 结构约定（避免多层嵌套滚动）：
-/// 本文件是**唯一**持有 `ScrollView` 与外层留白的一层；
-/// 各子视图只输出纯粹的 `VStack(alignment:.leading, spacing: ArchiveSpacing.l)`。
+/// 活页集原生设置窗口外壳 (SettingsView · `⌘,`)
+/// 遵循 macOS HIG 标准独立 `Settings` Scene 规范：
+/// 1. 双向绑定 `appState.navigation.settingsSelectedTab`，支持 `⌥⌘1–3` 与更新提示跨窗口精准切页
+/// 2. 本文件是唯一持有 `ScrollView` 与外层留白的容器，各子面板输出纯粹的 `VStack`
 @MainActor
 public struct SettingsView: View {
     @Bindable var appState: AppState
-
-    /// 扁平化后由侧栏直接进入时锁定的 tab；nil 时退化为「偏好设置」
-    /// 启动时钉住的标签页（仅用于初始化选中项，存下来后不再读取）
-
-    @State private var selectedTab: SettingsTab = .general
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    private let initialPinnedTab: SettingsTab?
 
     public init(appState: AppState, pinnedTab: SettingsTab? = nil) {
         self.appState = appState
-        _selectedTab = State(initialValue: pinnedTab ?? .general)
+        self.initialPinnedTab = pinnedTab
+    }
+
+    private var selectedTab: SettingsTab {
+        appState.navigation.settingsSelectedTab
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            // 扁平化后：每个 tab 都是独立的侧栏目的地，只保留精简页眉
             pinnedSectionHeader
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
 
-            // 居中黄金比例设置面板 (maxWidth 720pt centered, standard macOS HIG)
             ScrollView {
                 VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                     Group {
@@ -69,7 +64,6 @@ public struct SettingsView: View {
                     .id(selectedTab)
                     .transition(.opacity)
                 }
-                // 外层留白统一在此处施加，子视图不再重复内边距
                 .padding(.horizontal, SettingsLayout.horizontalGutter)
                 .padding(.vertical, ArchiveSpacing.xl)
                 .frame(maxWidth: ArchiveSheetWidth.form)
@@ -79,20 +73,28 @@ public struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ArchivePalette.archivePaper)
+        .onAppear {
+            if let initialPinnedTab {
+                appState.navigation.settingsSelectedTab = initialPinnedTab
+            }
+        }
     }
 
     // MARK: - 统一设置中心顶栏与分段切换器
     private var pinnedSectionHeader: some View {
         HStack(spacing: ArchiveSpacing.m) {
-            // macOS 风格分段标签栏
             HStack(spacing: 4) {
-                ForEach(SettingsTab.allCases) { tab in
+                ForEach(Array(SettingsTab.allCases.enumerated()), id: \.element.id) { index, tab in
                     PaperPillButton(
                         title: tab.rawValue,
+                        icon: tab.iconName,
                         isSelected: selectedTab == tab
                     ) {
-                        selectedTab = tab
+                        withAnimation(.easeInOut(duration: 0.12)) {
+                            appState.navigation.settingsSelectedTab = tab
+                        }
                     }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command, .option])
                 }
             }
 
@@ -100,23 +102,32 @@ public struct SettingsView: View {
 
             let badge = appState.hubConnectionBadgeState
             HStack(spacing: ArchiveSpacing.s) {
-                Circle()
-                    .fill(badge.dotColor)
-                    .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
+                if differentiateWithoutColor {
+                    Image(systemName: badge.symbolName)
+                        .font(.system(size: 10))
+                        .foregroundStyle(badge.dotColor)
+                        .accessibilityHidden(true)
+                } else {
+                    Circle()
+                        .fill(badge.dotColor)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
                 Text(badge.label)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkSecondary)
+                    .lineLimit(1)
                 Text("v\(UpdateChecker.shared.currentVersion)")
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                     .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(badge.label)
+            .accessibilityLabel("\(badge.label)，版本 v\(UpdateChecker.shared.currentVersion)")
             .help(appState.isPaired ? "数据中枢节点: \(appState.hubURLString) (\(badge.label))" : "尚未配对生活数据中枢")
         }
         .padding(.horizontal, ArchiveSpacing.l)
-        .frame(height: 48)
+        .frame(height: 52)
         .background(ArchivePalette.archivePaper)
     }
 }

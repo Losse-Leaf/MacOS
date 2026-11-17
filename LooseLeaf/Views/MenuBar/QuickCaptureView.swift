@@ -4,48 +4,54 @@ import AppKit
 
 /// 菜单栏极速闪念与记账悬浮窗 (QuickCaptureView)
 /// 严格遵循 docs/macos.md §3.1 规范：
-/// 1. 宽 380px，高自适应（上限 460px；窄高度下内部滚动 + 固定操作条，绝不溢出）
-/// 2. 顶部切换「极速记录」与「快速记账」
-/// 3. 自动识别 #标签、支持拖拽相片自动提取 EXIF 直传 R2
-/// 4. Cmd + Enter 即刻落库，提交结果在面板内就地反馈（菜单栏窗口看不到全局横幅）
-/// 5. ESC 收起统一由视图层处理，避免与 AppKit `cancelOperation` 双重触发
-/// 跨并发边界共享的进度计数器（避免可变局部变量被捕获进 @Sendable 闭包）
-final class ProgressCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: Double = 0
-    var value: Double {
-        get { lock.lock(); defer { lock.unlock() }; return storage }
-        set { lock.lock(); storage = newValue; lock.unlock() }
-    }
-}
-
+/// 1. 宽 380px，高自适应（440~580pt；窄高度下内部滚动 + 固定操作条，展开日历不裁切）
+/// 2. 顶部切换「极速记录」与「快速记账」，草稿状态统一由 `QuickCaptureDraft` 跨宿主托管
+/// 3. 复用 `EntryMediaState` 作为唯一相纸装裱管线，支持单张进度、失败重试与聚焦文本框内 `⌘V` 直贴截图
+/// 4. `ESC`、提交回执与展开主工作台同时兼容悬浮 `NSPanel` 与系统 `MenuBarExtra` 自动收起
 @MainActor
 public struct QuickCaptureView: View {
     @Bindable var appState: AppState
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     var onClosePopover: (() -> Void)?
 
     public typealias CaptureTab = QuickCaptureTab
 
-    // 暗房相片拖拽与上传状态（临时会话态）
     @State private var isDragTargeted: Bool = false
-    @State private var isUploadingPhoto: Bool = false
-    @State private var uploadProgress: Double = 0.0
     @State private var isSubmitting: Bool = false
-    @State private var isPrivate: Bool = false
     @State private var errorText: String?
-    /// 提交成功后的面板内确认文案（就地反馈，不依赖全局横幅）
     @State private var successText: String?
-    /// ESC 去重标记：一次按键只允许触发一次收起
     @State private var isExitRequested: Bool = false
 
     @FocusState private var isContentFocused: Bool
-    /// 标题输入框焦点（粘贴图片成功后自动聚焦）
     @FocusState private var isTitleFocused: Bool
 
     public init(appState: AppState, onClosePopover: (() -> Void)? = nil) {
         self.appState = appState
         self.onClosePopover = onClosePopover
+    }
+
+    private func closePanel() {
+        if let onClosePopover {
+            onClosePopover()
+        } else {
+            dismiss()
+        }
+    }
+
+    private var allUploadedAttachments: [Attachment] {
+        let fromMedia = appState.quickDraft.media.uploadedAttachments
+        let extra = appState.quickDraft.uploadedAttachments.filter { item in
+            !fromMedia.contains(where: { $0.id == item.id })
+        }
+        return fromMedia + extra
+    }
+
+    private var effectiveCameraLine: String {
+        let fromMedia = appState.quickDraft.media.extractedCameraLine
+        return fromMedia.isEmpty ? appState.quickDraft.extractedCameraLine : fromMedia
     }
 
     public var body: some View {
@@ -54,21 +60,21 @@ public struct QuickCaptureView: View {
             NoiseBackground(useSubtleSurface: false, enableVibrancy: true)
 
             VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                // 1. 顶部栏：品牌印记 + 模式切换 + 离线队列指示
+                // 1. 顶部栏（铺设专属拖拽热区，防止误拖下方表单胶囊）
                 headerBar
+                    .background(WindowDragHandleView())
 
-                // 2. 全局提示（同步 / 配对等跨模块动作的即时回执）
-                // 本面板已有就地成功回执时不再重复展示全局横幅，避免同一句话出现两次
+                // 2. 全局提示（本面板已有就地回执时不再重复展示）
                 if let banner = appState.statusBanner, successText == nil {
                     feedbackStrip(icon: "checkmark.circle.fill", text: banner, tint: ArchivePalette.accentMoss)
                 }
 
-                // 3. 主体内容区（各 Tab 自行管理「可滚动区 + 固定操作条」）
+                // 3. 主体内容区（切换 Tab 不丢失任何输入，均由 QuickCaptureDraft 托管）
                 if draft.activeTab == .thought {
                     thoughtCaptureSection
                 } else {
                     QuickLedgerView(appState: appState) {
-                        onClosePopover?()
+                        closePanel()
                     }
                 }
 
@@ -80,10 +86,22 @@ public struct QuickCaptureView: View {
             }
             .padding(ArchiveSpacing.m)
         }
-        .frame(width: 380, height: 440)
+        .frame(width: 380)
+        .frame(minHeight: 440, maxHeight: 580)
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
+            guard appState.quickDraft.activeTab == .thought else { return false }
+            return appState.quickDraft.media.handleDrop(providers: providers)
+        }
+        .onPasteImageShortcut {
+            guard appState.quickDraft.activeTab == .thought else { return }
+            appState.quickDraft.media.paste(providers: [])
+            isTitleFocused = true
+        }
         .onAppear {
-            isContentFocused = true
+            if appState.quickDraft.activeTab == .thought {
+                isContentFocused = true
+            }
             consumePendingCaptureText()
         }
         .onChange(of: appState.pendingCaptureText) { _, _ in
@@ -141,7 +159,6 @@ public struct QuickCaptureView: View {
     private var thoughtCaptureSection: some View {
         @Bindable var draft = appState.quickDraft
         return VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-            // 1. 可滚动输入区（窄高度下由滚动承载，不撑破面板）
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
                     entryTypeCapsules
@@ -154,10 +171,8 @@ public struct QuickCaptureView: View {
             }
             .frame(minHeight: 190)
 
-            // 2. 固定操作条：地点 / 补记 / 精选 / 归档（始终可见，不随滚动移出视野）
             thoughtActionBar
 
-            // 3. 补记时刻弹层
             if draft.showBackdatePicker {
                 HStack(spacing: ArchiveSpacing.s) {
                     PaperDateTimePicker(selection: $draft.occurredAt, showQuickShortcuts: true)
@@ -165,20 +180,11 @@ public struct QuickCaptureView: View {
                 }
             }
 
-            // 4. 就地反馈（错误 / 成功确认，紧贴提交按钮）
             feedbackBar
         }
         .frame(maxHeight: .infinity)
     }
 
-    /// 形态选择胶囊
-    ///
-    /// 关键（2026-10-25 修复）：速记面板只保留「日常 / 游历」两种形态。
-    /// 原先遍历 EntryType.allCases 五胶囊，但这里**没有**心愿/造物/账目的
-    /// 专属采集字段 —— 裸 type 直发后：
-    /// · type="transaction" 被后端散页类型白名单 400（离线时毒化发件箱，重试永远失败）；
-    /// · type="wish" / "project" 落成**无 wish_id / project_id 的孤儿伪条目**。
-    /// 心愿/造物/账目请走主工作台「记一笔」或对应的专用入口。
     private var entryTypeCapsules: some View {
         @Bindable var draft = appState.quickDraft
         let quickTypes: [EntryType] = [.life, .travel]
@@ -195,7 +201,6 @@ public struct QuickCaptureView: View {
         }
     }
 
-    /// 可选标题行（粘贴图片后自动聚焦此处）
     private var titleField: some View {
         @Bindable var draft = appState.quickDraft
         return TextField("标题", text: $draft.titleText)
@@ -214,8 +219,6 @@ public struct QuickCaptureView: View {
             .accessibilityLabel("标题")
     }
 
-    /// 正文 Markdown 输入框
-    /// 采用垂直 TextField 彻底根治中文拼音预输入与占位文字重叠 BUG
     private var contentEditor: some View {
         @Bindable var draft = appState.quickDraft
         return TextField("写下此刻闪念，按 ⌘ + Return 即刻归档…", text: $draft.contentText, axis: .vertical)
@@ -223,7 +226,8 @@ public struct QuickCaptureView: View {
             .textFieldStyle(.plain)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
             .foregroundStyle(ArchivePalette.inkPrimary)
-            .lineLimit(5, reservesSpace: true)
+            .lineLimit(5...12)
+            .frame(minHeight: 84, alignment: .topLeading)
             .focused($isContentFocused)
             .padding(ArchiveSpacing.s)
             .background(ArchivePalette.archivePaper)
@@ -233,17 +237,18 @@ public struct QuickCaptureView: View {
                     .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
             )
             .onPasteCommand(of: [.png, .tiff, .jpeg, .fileURL, .image]) { providers in
-                handlePasteCommand(providers)
+                appState.quickDraft.media.paste(providers: providers)
+                isTitleFocused = true
             }
     }
 
-    /// EXIF 相机印记展示
     private var exifStrip: some View {
-        Group {
-            if !appState.quickDraft.extractedCameraLine.isEmpty {
+        let cameraLine = effectiveCameraLine
+        return Group {
+            if !cameraLine.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: ArchiveSpacing.xs) {
-                        Text(appState.quickDraft.extractedCameraLine)
+                        Text(cameraLine)
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .padding(.horizontal, ArchiveSpacing.xs)
@@ -256,9 +261,9 @@ public struct QuickCaptureView: View {
         }
     }
 
-    /// 固定操作条（地点 / 补记 / 精选 / 归档）
     private var thoughtActionBar: some View {
         @Bindable var draft = appState.quickDraft
+        let media = draft.media
         return HStack(spacing: ArchiveSpacing.s) {
             PaperCityPicker(
                 selectedCode: $draft.selectedCityCode,
@@ -266,7 +271,6 @@ public struct QuickCaptureView: View {
                 placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
             )
 
-            // 补记历史时刻（命中区不小于 28pt）
             Button {
                 draft.showBackdatePicker.toggle()
             } label: {
@@ -280,15 +284,16 @@ public struct QuickCaptureView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
             .accessibilityLabel("补记历史时刻")
             .help("补记过去的时刻")
 
             Button {
-                isPrivate.toggle()
+                draft.isPrivate.toggle()
             } label: {
-                Image(systemName: isPrivate ? "lock.fill" : "lock.open")
+                Image(systemName: draft.isPrivate ? "lock.fill" : "lock.open")
                     .font(.system(size: ArchiveTypography.Scale.caption))
-                    .foregroundStyle(isPrivate ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                    .foregroundStyle(draft.isPrivate ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                     .padding(ArchiveSpacing.xs)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
@@ -296,8 +301,10 @@ public struct QuickCaptureView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isPrivate ? "仅自己可见（私密）" : "公开可见（随展厅设置）")
-            .help(isPrivate ? "已设为仅自己可见（私密）" : "设为仅自己可见（私密）")
+            .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
+            .accessibilityLabel(draft.isPrivate ? "仅自己可见（私密）" : "公开可见（随展厅设置）")
+            .accessibilityAddTraits(draft.isPrivate ? .isSelected : AccessibilityTraits())
+            .help(draft.isPrivate ? "已设为仅自己可见（私密）" : "设为仅自己可见（私密）")
 
             Spacer(minLength: 0)
 
@@ -313,42 +320,64 @@ public struct QuickCaptureView: View {
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             .paperButtonFocusRing()
             .keyboardShortcut(.return, modifiers: [.command])
-            .disabled(draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.uploadedAttachments.isEmpty || isSubmitting || isUploadingPhoto)
+            .disabled(draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && allUploadedAttachments.isEmpty || isSubmitting || media.isUploading)
             .accessibilityLabel("归档本条闪念")
         }
     }
 
-    // MARK: - 迷你拖拽暗房槽位
+    // MARK: - 迷你拖拽暗房槽位（统一委托 EntryMediaState）
 
     private var miniDarkroomDropSlot: some View {
-        HStack(spacing: ArchiveSpacing.s) {
-            Image(systemName: isUploadingPhoto ? "arrow.triangle.2.circlepath.camera" : "photo.badge.plus")
+        let media = appState.quickDraft.media
+        return HStack(spacing: ArchiveSpacing.s) {
+            Image(systemName: media.isUploading ? "arrow.triangle.2.circlepath.camera" : "photo.badge.plus")
                 .font(.system(size: ArchiveTypography.Scale.heading))
                 .foregroundStyle(isDragTargeted ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                 .accessibilityHidden(true)
 
-            if isUploadingPhoto {
-                Text("正在上传相片 (\(Int(uploadProgress * 100))%)…")
+            if media.isUploading {
+                Text("正在冲印上传 (\(Int(media.overallProgress * 100))%)…")
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                 Spacer(minLength: 0)
-            } else if !appState.quickDraft.uploadedAttachments.isEmpty {
+            } else if !media.items.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: ArchiveSpacing.xs) {
-                        ForEach(appState.quickDraft.uploadedAttachments) { att in
+                        ForEach(media.items) { item in
                             HStack(spacing: ArchiveSpacing.xs) {
-                                if let url = APIClient.shared.resolveMediaURL(att.url) {
+                                if let thumb = item.localThumbnail {
+                                    Image(nsImage: thumb)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 18, height: 18)
+                                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                                } else if let att = item.attachment, let url = APIClient.shared.resolveMediaURL(att.thumbnailUrl ?? att.url) {
                                     CachedFilmImageView(url: url, maxHeight: 18)
                                         .frame(width: 18, height: 18)
                                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                                 }
-                                Text(att.originalFilename)
+                                Text(item.displayName)
                                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
+                                    .foregroundStyle(item.status == .failed ? ArchivePalette.accentWarm : ArchivePalette.inkPrimary)
                                     .lineLimit(1)
                                     .frame(maxWidth: 80)
+
+                                if item.status == .failed {
+                                    Button {
+                                        media.retry(item)
+                                    } label: {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.system(size: ArchiveTypography.Scale.micro, weight: .semibold))
+                                            .foregroundStyle(ArchivePalette.accentWarm)
+                                            .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("重试上传 \(item.displayName)")
+                                }
+
                                 Button {
-                                    appState.quickDraft.uploadedAttachments.removeAll { $0.id == att.id }
+                                    media.remove(item)
                                 } label: {
                                     Image(systemName: "xmark")
                                         .font(.system(size: ArchiveTypography.Scale.micro, weight: .bold))
@@ -357,7 +386,7 @@ public struct QuickCaptureView: View {
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("移除附件 \(att.originalFilename)")
+                                .accessibilityLabel("移除附件 \(item.displayName)")
                                 .help("移除该附件")
                             }
                             .padding(.horizontal, ArchiveSpacing.xs)
@@ -366,31 +395,36 @@ public struct QuickCaptureView: View {
                             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                             .overlay(
                                 RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                                    .stroke(item.status == .failed ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: 0.5)
                             )
                         }
                     }
                 }
                 Spacer(minLength: ArchiveSpacing.xs)
                 Button("清空") {
+                    media.removeAll()
+                    media.extractedCameraLine = ""
                     appState.quickDraft.uploadedAttachments.removeAll()
                     appState.quickDraft.extractedCameraLine = ""
                 }
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 3)
                 .foregroundStyle(ArchivePalette.inkMuted)
                 .accessibilityLabel("清空全部附件")
             } else {
-                Text("拖拽照片至此，自动装裱保存")
+                Text("拖拽或 ⌘V 粘贴照片自动装裱")
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
                 Spacer(minLength: ArchiveSpacing.xs)
-                Button("粘贴剪贴板图片") {
-                    pasteImageFromPasteboard()
+                Button("粘贴图片") {
+                    media.paste(providers: [])
+                    isTitleFocused = true
                 }
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .medium))
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 3)
                 .foregroundStyle(ArchivePalette.accentWarm)
                 .accessibilityLabel("粘贴剪贴板图片")
             }
@@ -406,21 +440,26 @@ public struct QuickCaptureView: View {
                     style: StrokeStyle(lineWidth: isDragTargeted ? 1.0 : 0.5, dash: [4, 3])
                 )
         )
-        .onDrop(of: [.fileURL, .image], isTargeted: $isDragTargeted) { providers in
-            handlePhotoDrop(providers: providers)
-            return true
-        }
     }
 
     // MARK: - 底部工具栏
 
     private var footerBar: some View {
-        HStack(spacing: ArchiveSpacing.s) {
+        let badge = appState.hubConnectionBadgeState
+        return HStack(spacing: ArchiveSpacing.s) {
             HStack(spacing: ArchiveSpacing.xs) {
-                Circle()
-                    .fill(!appState.isOnline ? ArchivePalette.accentWarm : (appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.accentWarm))
-                    .frame(width: 6, height: 6)
-                Text(!appState.isOnline ? "离线暂存 (待同步 \(appState.outboxItems.count))" : (appState.isPaired ? "已接入数据中枢" : "待绑定中枢"))
+                if differentiateWithoutColor {
+                    Image(systemName: badge.symbolName)
+                        .font(.system(size: 10))
+                        .foregroundStyle(badge.dotColor)
+                        .accessibilityHidden(true)
+                } else {
+                    Circle()
+                        .fill(badge.dotColor)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+                Text(badge.label)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
@@ -432,7 +471,7 @@ public struct QuickCaptureView: View {
                 appState.activeSection = .stream
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
-                onClosePopover?()
+                closePanel()
             } label: {
                 HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: "macwindow")
@@ -441,38 +480,39 @@ public struct QuickCaptureView: View {
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                 }
                 .foregroundStyle(ArchivePalette.inkSecondary)
+                .frame(minHeight: ArchiveHitTarget.minPointer)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
             .accessibilityLabel("展开主工作台")
 
             PaperIconButton(
                 systemName: "gearshape",
                 label: "偏好设置",
-                help: "偏好设置",
+                help: "打开偏好设置 (⌘,)",
                 size: ArchiveTypography.Scale.body,
                 tint: ArchivePalette.inkMuted
             ) {
-                appState.activeSection = .preferences
-                openWindow(id: "main")
+                appState.navigation.settingsSelectedTab = .general
+                openSettings()
                 NSApp.activate(ignoringOtherApps: true)
-                onClosePopover?()
+                closePanel()
             }
         }
     }
 
-    // MARK: - 反馈条（错误与成功确认）
+    // MARK: - 反馈条
 
-    /// 提交或上传的失败原因 / 成功回执，始终贴在操作条下方，用户无需滚动即可看到
     @ViewBuilder
     private var feedbackBar: some View {
-        if let errorText {
-            feedbackStrip(icon: "exclamationmark.triangle.fill", text: errorText, tint: ArchivePalette.accentWarm)
+        if let err = errorText ?? appState.quickDraft.media.errorMessage {
+            feedbackStrip(icon: "exclamationmark.triangle.fill", text: err, tint: ArchivePalette.accentWarm)
         } else if let successText {
             feedbackStrip(icon: "checkmark.circle.fill", text: successText, tint: ArchivePalette.accentMoss)
         }
     }
 
-    /// 统一反馈条样式（错误暖色 / 成功苔绿）
     private func feedbackStrip(icon: String, text: String, tint: Color) -> some View {
         HStack(spacing: ArchiveSpacing.xs) {
             Image(systemName: icon)
@@ -491,9 +531,8 @@ public struct QuickCaptureView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // MARK: - 提交与照片拖拽处理
+    // MARK: - 提交与收起
 
-    /// 消费系统「服务」菜单摘录的待归档文本（预填正文并聚焦）
     private func consumePendingCaptureText() {
         guard let pending = appState.pendingCaptureText, !pending.isEmpty else { return }
         if appState.quickDraft.contentText.isEmpty {
@@ -506,29 +545,28 @@ public struct QuickCaptureView: View {
         isContentFocused = true
     }
 
-    /// ESC 收起：视图层唯一处理入口
-    /// 去重标记吸收 AppKit `cancelOperation` 可能带来的二次触发，保证一次按键只收起一次
     private func handleExitCommand() {
         guard !isExitRequested else { return }
         isExitRequested = true
-        onClosePopover?()
+        closePanel()
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000)
             isExitRequested = false
         }
     }
 
-    /// 提交闪念：落库成功后在面板内给出确认回执（菜单栏窗口看不到全局横幅）
     private func submitThought() {
         let draft = appState.quickDraft
+        let attachments = allUploadedAttachments
+        let cameraLine = effectiveCameraLine
         var finalContent = draft.contentText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if finalContent.isEmpty && !draft.uploadedAttachments.isEmpty {
-            finalContent = draft.extractedCameraLine.isEmpty ? "相纸影像归档" : draft.extractedCameraLine
+        if finalContent.isEmpty && !attachments.isEmpty {
+            finalContent = cameraLine.isEmpty ? "相纸影像归档" : cameraLine
         }
         guard !finalContent.isEmpty, !isSubmitting else { return }
 
-        if !draft.extractedCameraLine.isEmpty && !finalContent.contains(draft.extractedCameraLine) {
-            finalContent += "\n\n> \(draft.extractedCameraLine)"
+        if !cameraLine.isEmpty && !finalContent.contains(cameraLine) {
+            finalContent += "\n\n> \(cameraLine)"
         }
 
         let contentToSubmit = finalContent
@@ -538,8 +576,6 @@ public struct QuickCaptureView: View {
 
         Task { @MainActor in
             do {
-                // 类型钳制（防御）：速记面板只支持 life / travel（见 entryTypeCapsules），
-                // 其它类型在这里没有专属采集字段，裸发必 400 或落孤儿条目。
                 let safeType: EntryType = (draft.entryType == .life || draft.entryType == .travel) ? draft.entryType : .life
                 let queuedOffline = try await appState.submitQuickCapture(
                     title: draft.titleText,
@@ -547,12 +583,12 @@ public struct QuickCaptureView: View {
                     type: safeType,
                     cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
                     cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
-                    attachmentIds: draft.uploadedAttachments.map(\.id),
+                    attachmentIds: attachments.map(\.id),
+                    attachments: attachments,
                     occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
-                    isPrivate: isPrivate
+                    isPrivate: draft.isPrivate
                 )
-                draft.reset()
-                isPrivate = false
+                draft.resetThought()
                 isSubmitting = false
                 presentSuccess(
                     queuedOffline
@@ -566,161 +602,20 @@ public struct QuickCaptureView: View {
         }
     }
 
-    /// 提交成功回执：面板内停留片刻展示确认，随后自动收起
     private func presentSuccess(_ message: String) {
         successText = message
         errorText = nil
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard successText == message else { return }
             successText = nil
-            onClosePopover?()
+            closePanel()
         }
-    }
-
-    private func handlePhotoDrop(providers: [NSItemProvider]) {
-        guard !providers.isEmpty else { return }
-        // NSItemProvider 不是 Sendable：交由 DropLoader 内部的 @unchecked Sendable 盒子跨隔离域传递
-        let box = DropLoader.makeProviderBox(providers)
-        Task { @MainActor in
-            let urls = await DropLoader.loadDroppablePhotoURLs(from: box)
-            await processAndUploadFiles(urls)
-        }
-    }
-
-    /// 串行压制并上传多张底片（批量拖拽），全部归入附件列表
-    private func processAndUploadFiles(_ urls: [URL]) async {
-        guard !urls.isEmpty else { return }
-        isUploadingPhoto = true
-        uploadProgress = 0.05
-        errorText = nil
-        successText = nil
-        let total = Double(urls.count)
-        // 进度计数器放在引用盒中，避免可变局部变量被捕获进 @Sendable 闭包
-        let counter = ProgressCounter()
-        for url in urls {
-            do {
-                // 关键：拖拽 / 访达来源的文件位于沙盒容器之外，必须取得安全作用域
-                // 授权才能读取，否则 CGImageSourceCreateWithURL 直接返回 nil，
-                // 表现为「拖进来就报『无法读取图像数据源』」。与 EntryMediaState.process
-                // 对齐：授权只包住压制（读取）阶段，上传用内存字节，无需持续持有作用域。
-                let processed = try await SandboxFileAccess.withAccess(to: url) { scopedURL in
-                    try await ImageProcessor.processImageFileInBackground(at: scopedURL)
-                }
-                if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
-                    appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
-                }
-                let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
-                    Task { @MainActor in
-                        self.uploadProgress = (counter.value + prog) / total
-                    }
-                }
-                appState.quickDraft.uploadedAttachments.append(attachment)
-            } catch {
-                errorText = "「\(url.lastPathComponent)」上传失败：\(error.localizedDescription)"
-            }
-            counter.value += 1
-            uploadProgress = max(uploadProgress, counter.value / total)
-        }
-        isUploadingPhoto = false
-    }
-
-    /// 粘贴命令（⌘V）：优先读取系统剪贴板图像，其次回退到粘贴提供者
-    private func handlePasteCommand(_ providers: [NSItemProvider]) {
-        Task { @MainActor in
-            errorText = nil
-            successText = nil
-            // 剪贴板读取（文件 IO + PNG 重编码）全部在后台线程执行，不阻塞主线程
-            let boardData = await DropLoader.readImageFromPasteboardAsync()
-            if let boardData {
-                isUploadingPhoto = true
-                uploadProgress = 0.08
-                await uploadPasteboardImage(boardData)
-            } else {
-                await handlePastedImages(providers)
-            }
-        }
-    }
-
-    /// 从 NSPasteboard.general 读取剪贴板图像，经 ImageProcessor 压制后上传入列
-    private func pasteImageFromPasteboard() {
-        errorText = nil
-        successText = nil
-        Task { @MainActor in
-            isUploadingPhoto = true
-            uploadProgress = 0.08
-            let rawData = await DropLoader.readImageFromPasteboardAsync()
-            guard let rawData else {
-                errorText = "剪贴板中未检测到可用的图片或截图"
-                isUploadingPhoto = false
-                return
-            }
-            await uploadPasteboardImage(rawData)
-        }
-    }
-
-    /// 压制并上传剪贴板图像，成功后自动聚焦标题输入框
-    private func uploadPasteboardImage(_ rawData: Data) async {
-        do {
-            let processed = try await ImageProcessor.processImageDataInBackground(
-                rawData,
-                originalFilename: "pasteboard-\(Int(Date().timeIntervalSince1970)).jpg"
-            )
-            if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
-                appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
-            }
-            let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
-                Task { @MainActor in
-                    self.uploadProgress = prog
-                }
-            }
-            appState.quickDraft.uploadedAttachments.append(attachment)
-            isUploadingPhoto = false
-            // 粘贴成功后自动聚焦标题输入框，便于立即补写标题
-            isTitleFocused = true
-        } catch {
-            errorText = "剪贴板图片处理失败：\(error.localizedDescription)"
-            isUploadingPhoto = false
-        }
-    }
-
-    /// 处理剪贴板粘贴的图像（⌘V 截图直贴管线）
-    private func handlePastedImages(_ providers: [NSItemProvider]) async {
-        guard !providers.isEmpty else { return }
-        isUploadingPhoto = true
-        uploadProgress = 0.05
-        errorText = nil
-        // NSItemProvider 不是 Sendable：用 @unchecked Sendable 盒子安全跨隔离域传递
-        let box = DropLoader.makeProviderBox(providers)
-        for (index, provider) in box.providers.enumerated() {
-            guard let data = await DropLoader.loadImageData(from: provider) else { continue }
-            do {
-                let processed = try await ImageProcessor.processImageDataInBackground(
-                    data,
-                    originalFilename: "clipboard-\(Int(Date().timeIntervalSince1970))-\(index)"
-                )
-                if appState.quickDraft.extractedCameraLine.isEmpty && !processed.exifMetadata.formattedCameraLine.isEmpty {
-                    appState.quickDraft.extractedCameraLine = processed.exifMetadata.formattedCameraLine
-                }
-                let attachment = try await R2DirectUploader.shared.uploadProcessedPhoto(processed) { prog in
-                    Task { @MainActor in
-                        self.uploadProgress = prog
-                    }
-                }
-                appState.quickDraft.uploadedAttachments.append(attachment)
-                // 粘贴成功后自动聚焦标题输入框
-                isTitleFocused = true
-            } catch {
-                errorText = error.localizedDescription
-            }
-        }
-        isUploadingPhoto = false
     }
 }
 
 // MARK: - 预览 (Preview)
 
-/// 预览用 mock 数据（复用 AppState 单例，仅注入面板所需的展示数据）
 @MainActor
 private enum QuickCapturePreviewData {
     static func makeSample(tab: QuickCaptureTab) -> AppState {

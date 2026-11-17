@@ -1,18 +1,13 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// 全局统一三合一创作模态窗口 (NewEntryModal)
-/// 1. 支持三大形态切换：日常 (life)、游历 (travel)、造物 (project)
-/// 2. 具备自动草稿持久化能力 (looseleaf_entry_draft_v1)，意外关闭不丢稿
-/// 3. 日期绑定 PaperDatePicker，城市绑定 PaperCityPicker，支持图片附件装裱与相机 EXIF
-/// 4. 完美支持 ESC 键与右上角 X 快速退出，零硬编码颜色
-///
-/// **架构说明（性能重构）**：
-/// 本 View 只负责「形态选择 + 附件区 + 底部操作栏 + 错误条 + 提交逻辑」；
-/// 各形态的表单各自是独立子 View（`EntryModalLifeForm` 等），只挂载当前选中的那一个。
-/// 表单字段统一放在 `EntryDraft` (@Observable) 里由父子共享对象引用，
-/// 因此在任意输入框里敲一个字，都只会重绘**读取了该字段的那个子 View**，
-/// 父 body 与其它分支完全不再参与求值 —— 这正是「点击修改卡片或者创建内容很卡」的根治点。
+/// 优化：
+/// 1. 响应式窗口高度（`minHeight: 460, idealHeight: 600, maxHeight: 680`），小屏不裁切
+/// 2. 整窗支持拖放照片与聚焦输入框内 `⌘V` 直贴截图
+/// 3. 造物手记改走 `SyncManager.shared.submitEntry` 离线发件箱闭环；乐观上屏完整透传 `attachments`
+/// 4. 创作草稿持久化至 `0700` 受保护档案目录（`0600` 权限）并完整保存/恢复/重置 `isPrivate`
 @MainActor
 public struct NewEntryModal: View {
     @Bindable var appState: AppState
@@ -21,6 +16,8 @@ public struct NewEntryModal: View {
     var initialCityCode: String?
     var initialCityName: String?
     var onDismiss: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public enum Kind: String, CaseIterable, Identifiable {
         case life = "life"
@@ -57,14 +54,16 @@ public struct NewEntryModal: View {
     @State private var selectedKind: Kind = .life
     @State private var isSubmitting: Bool = false
     @State private var didSubmitSuccessfully: Bool = false
+    @State private var isModalDropTargeted: Bool = false
     @State private var errorMessage: String?
 
-    /// 表单草稿容器：五个形态子 View 与父 View 共享同一份数据源（对象引用，非回调）
     @State private var draft = EntryDraft()
-    /// 相纸装裱容器：逐张进度、失败重试与附件汇总都在这里收敛
     @State private var media = EntryMediaState()
 
-    private let draftStorageKey = "looseleaf_entry_draft_v1"
+    private let legacyDraftDefaultsKey = "looseleaf_entry_draft_v1"
+    private var draftFileURL: URL {
+        SyncManager.sharedStorageDirectory.appendingPathComponent("entry_draft_v1.json")
+    }
 
     public init(
         appState: AppState,
@@ -90,13 +89,11 @@ public struct NewEntryModal: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    // 形态引导副标题
                     Text(selectedKind.subtitle)
                         .font(ArchiveTypography.editorialSerif(size: 12))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(.horizontal, 4)
 
-                    // 表单主体切换：五个分支各自是独立子 View，只有选中的那一个会被挂载
                     Group {
                         switch selectedKind {
                         case .life:
@@ -117,32 +114,41 @@ public struct NewEntryModal: View {
 
             footerActionBar
         }
-        .frame(width: 720, height: 600)
+        .frame(minWidth: 580, idealWidth: 720, maxWidth: 720)
+        .frame(minHeight: 460, idealHeight: 600, maxHeight: 680)
         .background(ArchivePalette.archivePaper)
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.lg)
+                .strokeBorder(
+                    isModalDropTargeted ? ArchivePalette.accentWarm : Color.clear,
+                    style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+                )
+                .allowsHitTesting(false)
+        )
+        .onDrop(of: [.image, .fileURL, .rawImage], isTargeted: $isModalDropTargeted) { providers in
+            media.handleDrop(providers: providers)
+        }
+        .onPasteImageShortcut {
+            media.paste(providers: [])
+        }
         .onAppear {
             setupInitialState()
         }
-        // 关键（2026-10-25 修复）：草稿容器五形态共享，切走形态时必须清掉
-        // 不归属新形态的关联 id —— 原先游历选的「关联足迹」会静默跟随日常提交，
-        // 账目选的「圆满心愿」也常驻草稿（开关联动泄漏）。
         .onChange(of: selectedKind) { _, newKind in
             switch newKind {
             case .travel:
-                // 游历表单有足迹选择器，保留用户选择
                 break
             case .life, .project:
                 draft.selectedFootprintId = nil
             }
         }
         .onDisappear {
-            // 点击遮罩 / ESC / 切窗关闭都要保住草稿；成功提交后由 clearDraft 收尾
             if !didSubmitSuccessfully {
                 saveDraft()
             }
         }
-        // ⌘V 粘贴相纸：截图或访达拷贝的图片文件都能直接装裱
         .onPasteCommand(of: [.image, .fileURL]) { providers in
-            handlePasteCommand(providers)
+            media.paste(providers: providers)
         }
     }
 
@@ -156,32 +162,35 @@ public struct NewEntryModal: View {
 
             Spacer()
 
-            // 居中五形态胶囊
             HStack(spacing: 3) {
                 ForEach(Kind.allCases) { kind in
+                    let isSelected = (selectedKind == kind)
                     Button {
-                        guard selectedKind != kind else { return }
+                        guard !isSelected else { return }
                         selectedKind = kind
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: kind.icon)
                                 .font(.system(size: 10.5))
                             Text(kind.label)
-                                .font(ArchiveTypography.bodySans(size: 12, weight: selectedKind == kind ? .semibold : .regular))
+                                .font(ArchiveTypography.bodySans(size: 12, weight: isSelected ? .semibold : .regular))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(selectedKind == kind ? ArchivePalette.archivePaper : Color.clear)
-                        .foregroundStyle(selectedKind == kind ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
+                        .frame(minHeight: ArchiveHitTarget.minPointer)
+                        .background(isSelected ? ArchivePalette.archivePaper : Color.clear)
+                        .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(selectedKind == kind ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
+                                .stroke(isSelected ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
                         )
-                        .shadow(color: selectedKind == kind ? Color.black.opacity(0.04) : Color.clear, radius: 2, y: 1)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.12), value: selectedKind)
+                    .paperButtonFocusRing(cornerRadius: 6)
+                    .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: selectedKind)
                 }
             }
             .padding(3)
@@ -190,22 +199,17 @@ public struct NewEntryModal: View {
 
             Spacer()
 
-            // 右上角退出按钮
-            Button {
+            PaperIconButton(
+                systemName: ArchiveIcon.close.systemName,
+                label: "关闭创作弹窗",
+                help: "关闭 (Esc)",
+                size: 11,
+                tint: ArchivePalette.inkSecondary
+            ) {
                 saveDraft()
                 onDismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .frame(width: 26, height: 26)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(Circle())
             }
-            .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
-            .accessibilityLabel("关闭创作弹窗")
-            .help("关闭 (Esc)")
             .frame(width: 90, alignment: .trailing)
         }
         .padding(.horizontal, 20)
@@ -215,7 +219,6 @@ public struct NewEntryModal: View {
     // MARK: - 底栏动作按钮
     private var footerActionBar: some View {
         VStack(spacing: 8) {
-            // 错误提示固定在操作栏正上方：原先放在表单顶部，长表单提交失败时错误在屏幕外
             if let err = displayErrorMessage {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
@@ -232,7 +235,6 @@ public struct NewEntryModal: View {
                 .accessibilityLabel("错误：\(err)")
             }
 
-            // 上传中提示：附件没传完就不许提交，必须让用户看得见
             if media.isUploading {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -252,24 +254,28 @@ public struct NewEntryModal: View {
     }
 
     private var footerButtons: some View {
-        HStack {
+        HStack(spacing: 12) {
             if hasSavedDraft() {
                 Button("清空草稿") {
                     clearDraft()
                 }
                 .font(ArchiveTypography.bodySans(size: 11))
                 .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: 3)
                 .foregroundStyle(ArchivePalette.inkMuted)
             }
 
             Toggle(isOn: $draft.isPrivate) {
-                Text("仅自己可见（私密）")
-                    .font(ArchiveTypography.bodySans(size: 11.5))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
+                HStack(spacing: 4) {
+                    Image(systemName: draft.isPrivate ? "lock.fill" : "lock.open")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(draft.isPrivate ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                    Text("仅自己可见")
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                }
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .tint(ArchivePalette.inkPrimary)
+            .toggleStyle(.paperSwitch)
 
             Spacer()
 
@@ -295,13 +301,11 @@ public struct NewEntryModal: View {
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
             .paperButtonFocusRing()
-            // 上传中禁止提交：否则 attachments 还没 append 完就提交，图片成为孤儿。
             .disabled(isSubmitting || media.isUploading)
             .keyboardShortcut(.return, modifiers: [.command])
         }
     }
 
-    /// 提交按钮文案
     private var submitButtonTitle: String {
         switch selectedKind {
         case .life: return "定格散页 (⌘↵)"
@@ -310,13 +314,15 @@ public struct NewEntryModal: View {
         }
     }
 
-    /// 错误提示来源：提交错误优先，其次是相纸装裱失败汇总
     private var displayErrorMessage: String? {
         errorMessage ?? media.errorMessage
     }
 
     // MARK: - 逻辑与提交
     private func setupInitialState() {
+        if draft.newProjectCategory.isEmpty || draft.newProjectCategory == "开源造物" {
+            draft.newProjectCategory = appState.projectCategories.first ?? "开源项目"
+        }
         if let initK = initialKind, let k = Kind(rawValue: initK) {
             selectedKind = k
         }
@@ -330,9 +336,6 @@ public struct NewEntryModal: View {
             draft.cityCode = cCode
             draft.cityName = initialCityName ?? ""
         } else if draft.cityCode.isEmpty {
-            // 关键：城市代码与名称必须来自**同一个**来源。
-            // 原先这里硬编码 cityCode = "330100"（浙江杭州），却把名称设成用户的所在城市，
-            // 于是选择器显示成「浙江 · 宜宾市」这种 province 与 city 错配的组合。
             let profileCity = appState.profile.currentCity.trimmingCharacters(in: .whitespacesAndNewlines)
             if profileCity.isEmpty {
                 draft.cityCode = ""
@@ -367,9 +370,7 @@ public struct NewEntryModal: View {
                 }
                 if selectedKind == .project {
                     await appState.loadProjectsWishesFootprints()
-                    if draft.projectMode == "entry" {
-                        await appState.loadEntries(forceFull: false)
-                    }
+                    await appState.loadEntries(forceFull: false)
                 }
                 await appState.loadConfigAndProfile()
                 onDismiss()
@@ -380,31 +381,30 @@ public struct NewEntryModal: View {
     }
 
     private func submitLife() async throws {
-        guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "正文内容不能为空"])
+        guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.uploadedAttachments.isEmpty else {
+            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "正文内容与相纸不能同时为空"])
         }
         _ = try await appState.submitQuickCapture(
-            // 朋友圈式：日常不单列标题，标题由正文第一行派生
             title: draft.effectiveTitle,
             content: draft.content,
             type: .life,
             location: nil,
             cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
-            // 日常表单没有足迹选择器：不读草稿里的关联 id（防跨形态泄漏）
             footprintId: nil,
             attachmentIds: media.uploadedAttachments.map(\.id),
+            attachments: media.uploadedAttachments,
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
             isPrivate: draft.isPrivate
         )
     }
 
     private func submitTravel() async throws {
-        guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draft.title.isEmpty else {
+        guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draft.title.isEmpty || !media.uploadedAttachments.isEmpty else {
             throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "游历标题或内容不能为空"])
         }
         _ = try await appState.submitQuickCapture(
-            title: draft.title.isEmpty ? "\(draft.cityName) · 游记" : draft.title,
+            title: draft.title.isEmpty ? (draft.cityName.isEmpty ? "游历手记" : "\(draft.cityName) · 游记") : draft.title,
             content: draft.content,
             type: .travel,
             location: nil,
@@ -412,6 +412,7 @@ public struct NewEntryModal: View {
             cityName: draft.cityName.isEmpty ? nil : draft.cityName,
             footprintId: draft.selectedFootprintId,
             attachmentIds: media.uploadedAttachments.map(\.id),
+            attachments: media.uploadedAttachments,
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
             isPrivate: draft.isPrivate
         )
@@ -450,19 +451,16 @@ public struct NewEntryModal: View {
                 isPrivate: draft.isPrivate,
                 attachmentIds: media.uploadedAttachments.map(\.id)
             )
-            _ = try await APIClient.shared.createEntry(req)
+            let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req, attachments: media.uploadedAttachments)
+            if queuedOffline {
+                appState.showTemporaryBanner("造物手记已暂存至本地发件箱，网络恢复后自动同步")
+            } else {
+                appState.showTemporaryBanner("已追加造物进展手记")
+            }
         }
     }
 
-    // MARK: - 粘贴装裱
-
-    /// ⌘V 粘贴装裱：读取系统剪贴板中的图片文件 URL 或图片二进制数据，
-    /// 剪贴板里没有可用图片时回退到 SwiftUI 提供的 provider 管线。
-    private func handlePasteCommand(_ providers: [NSItemProvider]) {
-        media.paste(providers: providers)
-    }
-
-    // MARK: - 草稿持久化
+    // MARK: - 受保护草稿持久化 (`0600` 文件权限 + `isPrivate` 闭环)
     private func saveDraft() {
         guard !draft.title.isEmpty || !draft.content.isEmpty else { return }
         var dict: [String: Any] = [
@@ -471,24 +469,31 @@ public struct NewEntryModal: View {
             "content": draft.content,
             "cityCode": draft.cityCode,
             "cityName": draft.cityName,
+            "isPrivate": draft.isPrivate
         ]
-        // 关键：补写 projectId。
-        // `restoreDraft()` 一直在读 `dict["projectId"]`，而保存时从不写它 ——
-        // 于是「恢复到某个造物」的草稿永远拿不回项目。
-        // （JSONSerialization 不接受 nil，所以只在有值时写入。）
         if let projectId = draft.selectedProjectId {
             dict["projectId"] = projectId
         }
         if let data = try? JSONSerialization.data(withJSONObject: dict) {
-            UserDefaults.standard.set(data, forKey: draftStorageKey)
+            try? data.write(to: draftFileURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: draftFileURL.path)
+            UserDefaults.standard.removeObject(forKey: legacyDraftDefaultsKey)
         }
     }
 
     private func restoreDraft() {
-        guard let data = UserDefaults.standard.data(forKey: draftStorageKey),
+        let data: Data?
+        if let fileData = try? Data(contentsOf: draftFileURL) {
+            data = fileData
+        } else if let legacyData = UserDefaults.standard.data(forKey: legacyDraftDefaultsKey) {
+            data = legacyData
+            UserDefaults.standard.removeObject(forKey: legacyDraftDefaultsKey)
+        } else {
+            data = nil
+        }
+        guard let data,
               let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        // 关键：调用方显式指定的形态 / 项目 / 城市优先于草稿。
-        // 原先草稿无条件覆盖 selectedKind，导致用户从「造物」入口打开却落到「日常」。
+
         if initialKind == nil,
            let k = dict["kind"] as? String,
            let kind = Kind(rawValue: k) {
@@ -499,6 +504,7 @@ public struct NewEntryModal: View {
         }
         if let t = dict["title"] as? String { draft.title = t }
         if let c = dict["content"] as? String { draft.content = c }
+        if let priv = dict["isPrivate"] as? Bool { draft.isPrivate = priv }
         if initialCityCode == nil || initialCityCode?.isEmpty == true {
             if let code = dict["cityCode"] as? String { draft.cityCode = code }
             if let name = dict["cityName"] as? String { draft.cityName = name }
@@ -506,13 +512,16 @@ public struct NewEntryModal: View {
     }
 
     private func clearDraft() {
-        UserDefaults.standard.removeObject(forKey: draftStorageKey)
+        try? FileManager.default.removeItem(at: draftFileURL)
+        UserDefaults.standard.removeObject(forKey: legacyDraftDefaultsKey)
         draft.title = ""
         draft.content = ""
+        draft.isPrivate = false
         media.removeAll()
     }
 
     private func hasSavedDraft() -> Bool {
-        UserDefaults.standard.data(forKey: draftStorageKey) != nil
+        FileManager.default.fileExists(atPath: draftFileURL.path)
+            || UserDefaults.standard.data(forKey: legacyDraftDefaultsKey) != nil
     }
 }

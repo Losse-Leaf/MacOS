@@ -52,7 +52,7 @@ final class EntryDraft {
     var newProjectTitle: String = ""
     var newProjectSubtitle: String = ""
     var newProjectCategory: String = "开源项目"
-    var newProjectStatus: String = "进行中"
+    var newProjectStatus: String = ProjectStatus.inProgress.rawValue
     var newProjectGithub: String = ""
     var newProjectDesc: String = ""
 }

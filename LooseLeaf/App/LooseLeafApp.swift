@@ -122,10 +122,6 @@ private struct StandaloneEntryDetailWindow: View {
         .sheet(item: $localEditingTx) { tx in
             EditTransactionSheet(appState: appState, transaction: tx) {
                 localEditingTx = nil
-                Task { @MainActor in
-                    await appState.loadTransactionsAndAssets(forceFull: false)
-                    await appState.loadEntries(forceFull: false)
-                }
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
@@ -191,13 +187,7 @@ public struct LooseLeafApp: App {
                 appState.handleIncomingURL(url)
             }
             .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
-                if let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
-                    if uniqueId.hasPrefix("looseleaf-entry-"),
-                       let idStr = uniqueId.split(separator: "-").last,
-                       let entryId = Int(idStr) {
-                        appState.navigateToEntry(id: entryId)
-                    }
-                }
+                SpotlightIndexer.handleContinuationActivity(userActivity, appState: appState)
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
             .toolbar {

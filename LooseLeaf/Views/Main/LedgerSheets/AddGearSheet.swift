@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 添置随身设备弹窗 (AddGearSheet)
-/// 统一收口至 `PaperSheetScaffold` 自适应滚动容器，更新空分期渠道引导文案并支持首框自动聚焦。
+/// 统一收口至 `PaperSheetScaffold` 与共享 `CreditChannelInstallmentSection` 分期配置区。
 @MainActor
 public struct AddGearSheet: View {
     @Bindable var appState: AppState
@@ -34,13 +34,6 @@ public struct AddGearSheet: View {
 
     private var selectedCreditChannel: CreditChannel? {
         appState.creditChannels.first { $0.code == installmentChannelCode }
-    }
-
-    private func normalizeInstallmentChannel() {
-        guard let first = appState.creditChannels.first else { return }
-        if !appState.creditChannels.contains(where: { $0.code == installmentChannelCode }) {
-            installmentChannelCode = first.code
-        }
     }
 
     public var body: some View {
@@ -105,35 +98,17 @@ public struct AddGearSheet: View {
                         if !isOn { isInstallment = false }
                     }
 
-                Toggle("按分期购入（生成分期账单）", isOn: $isInstallment)
-                    .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    .disabled(!createTransaction || appState.creditChannels.isEmpty)
-                    .help(appState.creditChannels.isEmpty ? "请前往 Web 展厅后台「资产 → 渠道管理」配置分期渠道" : "")
-                    .onChange(of: isInstallment) { _, isOn in
-                        if isOn { normalizeInstallmentChannel() }
-                    }
-                    .onChange(of: appState.creditChannels) { _, channels in
-                        if isInstallment {
-                            guard let first = channels.first else { return }
-                            if !channels.contains(where: { $0.code == installmentChannelCode }) {
-                                installmentChannelCode = first.code
-                            }
-                        }
-                    }
-
-                if createTransaction && appState.creditChannels.isEmpty {
-                    HStack(spacing: 6) {
-                        Text("分期需先前往 Web 展厅后台「资产 → 渠道管理」配置渠道。")
-                            .font(ArchiveTypography.bodySans(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                        if let hubURL = URL(string: appState.hubURLString) {
-                            Link("打开 Web 后台 ↗", destination: hubURL)
-                                .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                        }
-                    }
-                }
+                CreditChannelInstallmentSection(
+                    channels: appState.creditChannels,
+                    hubURLString: appState.hubURLString,
+                    isInstallment: $isInstallment,
+                    channelCode: $installmentChannelCode,
+                    months: $installmentMonths,
+                    amountCents: FormatUtils.parseYuanToCents(priceYuan) ?? 0,
+                    toggleTitle: "按分期购入（生成分期账单）",
+                    isToggleDisabled: !createTransaction,
+                    showEmptyHint: createTransaction
+                )
 
                 if createTransaction && !isInstallment {
                     let options = appState.paymentMethods.isEmpty
@@ -144,32 +119,6 @@ public struct AddGearSheet: View {
                         options: options.map { PaperSelectOption(value: $0, label: $0) },
                         label: "扣款账户："
                     )
-                }
-
-                if isInstallment && createTransaction {
-                    HStack(spacing: ArchiveSpacing.s) {
-                        PaperSelect(
-                            selection: $installmentChannelCode,
-                            options: appState.creditChannels.map {
-                                PaperSelectOption(value: $0.code, label: "\($0.name) (每月\($0.repaymentDay)日)")
-                            },
-                            label: "分期渠道："
-                        )
-
-                        PaperSelect(
-                            selection: $installmentMonths,
-                            options: ArchiveInstallmentOptions.installmentOptions.map {
-                                PaperSelectOption(value: $0, label: "\($0) 期")
-                            },
-                            label: "期数："
-                        )
-                    }
-
-                    if let channel = selectedCreditChannel {
-                        Text("还款日跟随渠道：每月 \(channel.repaymentDay) 日")
-                            .font(ArchiveTypography.monoScale(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
                 }
 
                 TextField("手记", text: $note)

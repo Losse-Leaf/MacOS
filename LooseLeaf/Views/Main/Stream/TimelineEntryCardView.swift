@@ -37,7 +37,7 @@ final class TimelineEntryActions {
         }
         onOpenLightbox = { attachment in state.lightboxAttachment = attachment }
         onToast = { message in state.showTemporaryBanner(message) }
-        onRetrySync = { id in state.retryFailedEntry(id: id) }
+        onRetrySync = { id in state.reuploadEntry(id: id) }
         onReuploadEntry = { entry in state.reuploadEntry(id: entry.id) }
         onTogglePrivacy = { entry in
             guard entry.id > 0 else { return }
@@ -332,20 +332,12 @@ struct TimelineEntryCardView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(entry.attachments) { att in
-                                let displayURL = att.thumbnailUrl ?? att.url
-                                let origURL = APIClient.shared.resolveMediaURL(att.url)
-                                let intrinsic: CGSize? = {
-                                    if let w = att.width, let h = att.height, w > 0, h > 0 {
-                                        return CGSize(width: w, height: h)
-                                    }
-                                    return nil
-                                }()
-                                if let url = APIClient.shared.resolveMediaURL(displayURL) {
+                                if let url = att.resolvedDisplayURL(preferThumbnail: true) {
                                     FilmFrameView(
                                         imageURL: url,
-                                        originalURL: origURL,
+                                        originalURL: att.resolvedDisplayURL(preferThumbnail: false),
                                         preferredFilename: att.originalFilename,
-                                        intrinsicSize: intrinsic,
+                                        intrinsicSize: att.intrinsicSize,
                                         caption: entry.title.isEmpty ? att.originalFilename : entry.title,
                                         metaText: parsed.dotDate,
                                         maxHeight: 220
@@ -397,14 +389,12 @@ struct TimelineEntryCardView: View {
                     }
                     Divider()
                     Button {
-                        NSPasteboard.general.clearContents()
                         SecureClipboard.copy(FormatUtils.formattedYuan(cents: tx.amount))
                         actions.onToast("已拷贝金额至剪贴板")
                     } label: {
                         Label("拷贝金额", systemImage: "doc.on.doc")
                     }
                     Button {
-                        NSPasteboard.general.clearContents()
                         SecureClipboard.copy(tx.title.isEmpty ? tx.category : tx.title)
                         actions.onToast("已拷贝账目摘要至剪贴板")
                     } label: {
@@ -444,14 +434,12 @@ struct TimelineEntryCardView: View {
                 }
                 Divider()
                 Button {
-                    NSPasteboard.general.clearContents()
                     SecureClipboard.copy(entry.content)
                     actions.onToast("已拷贝手稿正文至剪贴板")
                 } label: {
                     Label("拷贝手稿正文", systemImage: "doc.on.doc")
                 }
                 Button {
-                    NSPasteboard.general.clearContents()
                     let md = ArchiveExporter.makeMarkdown(entries: [entry])
                     SecureClipboard.copy(md)
                     actions.onToast("已拷贝 Markdown 格式至剪贴板")
@@ -459,7 +447,6 @@ struct TimelineEntryCardView: View {
                     Label("拷贝 Markdown 格式", systemImage: "text.alignleft")
                 }
                 Button {
-                    NSPasteboard.general.clearContents()
                     SecureClipboard.copy(parsed.dotDateTime)
                     actions.onToast("已拷贝时间戳至剪贴板")
                 } label: {

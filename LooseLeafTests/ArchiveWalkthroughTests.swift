@@ -256,7 +256,7 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     title: title,
                     description: "走查描述",
                     category: "开源项目",
-                    status: "Active"
+                    status: ProjectStatus.inProgress.rawValue
                 )
             )
         }
@@ -274,7 +274,7 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     title: title + "-改",
                     description: "走查描述（已改）",
                     category: "开源项目",
-                    status: "Active"
+                    status: ProjectStatus.inProgress.rawValue
                 )
             )
         }

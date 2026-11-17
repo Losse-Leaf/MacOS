@@ -117,16 +117,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         continue userActivity: NSUserActivity,
         restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
     ) -> Bool {
-        if userActivity.activityType == CSSearchableItemActionType,
-           let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
-            if uniqueId.hasPrefix("looseleaf-entry-"),
-               let idStr = uniqueId.split(separator: "-").last,
-               let entryId = Int(idStr) {
-                AppState.shared.navigateToEntry(id: entryId)
-                return true
-            }
-        }
-        return false
+        SpotlightIndexer.handleContinuationActivity(userActivity)
     }
 
     /// 恢复主窗口尺寸与位置（macOS 的 frame autosave）

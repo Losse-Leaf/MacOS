@@ -131,14 +131,32 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         syncStatus = (try? c.decodeIfPresent(String.self, forKey: .syncStatus)) ?? "synced"
     }
 
-    /// 格式化展示金额 (元)
-    public var formattedAmount: String {
-        FormatUtils.formattedYuan(cents: amount, includeSymbol: true)
-    }
-
     /// 北京时间派生日期结构
     public var parsedDate: FormatUtils.ParsedBeijingDate {
         FormatUtils.parseOccurredDate(occurredAt)
+    }
+
+    /// 构造用于撤销恢复或失败重传的完整创建请求载荷（保留完整分期账期信息）
+    public func toCreateRequest() -> CreateTransactionRequest {
+        CreateTransactionRequest(
+            amount: amount,
+            type: type,
+            category: category,
+            title: title,
+            note: note,
+            paymentMethod: paymentMethod,
+            wishId: wishId,
+            footprintId: footprintId,
+            cityCode: cityCode,
+            occurredAt: occurredAt,
+            isInstallment: isInstallment,
+            installmentChannelCode: installmentChannelCode,
+            installmentTotalAmount: installmentTotalAmount,
+            installmentMonths: installmentMonths,
+            installmentMonthlyPay: installmentMonthlyPay,
+            installmentRemainMonths: installmentRemainMonths,
+            repaymentDay: repaymentDay
+        )
     }
 
     /// 当期应还金额（分），严格遵循 DEC-02 / FE-24「前 N-1 期整除、最后一期吃尾差」口径

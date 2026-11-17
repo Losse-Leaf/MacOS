@@ -150,20 +150,16 @@ public struct CityMemoryDrawerSheet: View {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: ArchiveSpacing.s) {
                                         ForEach(photos) { att in
-                                            let intrinsic: CGSize? = {
-                                                if let w = att.width, let h = att.height, w > 0, h > 0 {
-                                                    return CGSize(width: w, height: h)
-                                                }
-                                                return nil
-                                            }()
-                                            FilmFrameView(
-                                                imageURL: URL(string: att.thumbnailUrl ?? att.url),
-                                                originalURL: URL(string: att.url),
-                                                preferredFilename: att.originalFilename,
-                                                intrinsicSize: intrinsic,
-                                                maxHeight: 110
-                                            )
-                                            .frame(maxWidth: 180)
+                                            if let displayURL = att.resolvedDisplayURL(preferThumbnail: true) {
+                                                FilmFrameView(
+                                                    imageURL: displayURL,
+                                                    originalURL: att.resolvedDisplayURL(preferThumbnail: false),
+                                                    preferredFilename: att.originalFilename,
+                                                    intrinsicSize: att.intrinsicSize,
+                                                    maxHeight: 110
+                                                )
+                                                .frame(maxWidth: 180)
+                                            }
                                         }
                                     }
                                     .padding(.vertical, 2)

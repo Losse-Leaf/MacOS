@@ -7,248 +7,18 @@ import os
 import ServiceManagement
 #endif
 
-/// 桌面端主题外观模式 (支持跟随系统、暖色棉纸、胶片暗房)
-public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
-    case system = "system"
-    case paper = "paper"
-    case darkroom = "darkroom"
-
-    public var id: String { rawValue }
-
-    public var label: String {
-        switch self {
-        case .system: return "跟随系统"
-        case .paper: return "暖色棉纸"
-        case .darkroom: return "暗房安全灯"
-        }
-    }
-
-    public var preferredColorScheme: ColorScheme? {
-        switch self {
-        case .system: return nil
-        case .paper: return .light
-        case .darkroom: return .dark
-        }
-    }
-}
-
-/// 桌面端主窗口侧栏导航模块 (对标 Web HeaderNav 6 大平级主视图)
-/// 侧栏平铺「6 大内容板块 + 5 个配置中心 tab」，不再有二级容器页
-public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
-    case stream = "stream"       // 时间流 (home)
-    case ledger = "ledger"       // 资产 (transactions)
-    case wishes = "wishes"       // 心愿 (wishes)
-    case atlas = "atlas"         // 足迹 (atlas)
-    case projects = "projects"   // 项目 (projects)
-    case dossier = "dossier"     // 主理人 (about)
-    case preferences = "preferences" // 偏好设置
-    case hub = "hub"             // 中枢与设备
-    case about = "about"         // 关于活页
-
-    public var id: String { rawValue }
-
-    /// 六大核心生活内容板块（与 Web HeaderNav 对齐，⌘1–⌘6 绑定到这些）
-    public static var contentSections: [WorkbenchSection] {
-        [.stream, .ledger, .wishes, .atlas, .projects, .dossier]
-    }
-
-    /// 配置类条目：扁平后直接进侧栏
-    public static var configurationSections: [WorkbenchSection] {
-        [.preferences, .hub, .about]
-    }
-
-    /// 侧栏平铺的全部条目（内容 + 配置）
-    public static var sidebarSections: [WorkbenchSection] {
-        contentSections + configurationSections
-    }
-
-    public var title: String {
-        switch self {
-        case .stream: return "时间流"
-        case .ledger: return "资产"
-        case .wishes: return "心愿"
-        case .atlas: return "足迹"
-        case .projects: return "项目"
-        case .dossier: return "主理人"
-        case .preferences: return "偏好设置"
-        case .hub: return "中枢与设备"
-        case .about: return "关于活页"
-        }
-    }
-
-    public var icon: String {
-        switch self {
-        case .stream: return "book.pages"
-        case .ledger: return "chart.bar.doc.horizontal"
-        case .wishes: return "sparkles"
-        case .atlas: return "map"
-        case .projects: return "hammer"
-        case .dossier: return "person.text.rectangle"
-        case .preferences: return "slider.horizontal.3"
-        case .hub: return "laptopcomputer.and.iphone"
-        case .about: return "info.circle"
-        }
-    }
-}
-
-/// 极速捕捉模式选项 (极速记录 / 快速记账)
-public enum QuickCaptureTab: String, CaseIterable, Sendable {
-    case thought = "极速记录"
-    case ledger = "快速记账"
-}
-
-/// 全仓统一中枢连接徽标状态 (唯一事实源：驱动侧栏、设置顶栏、中枢管理与关于页)
-public enum HubConnectionBadgeState: Sendable, Equatable {
-    case unpaired
-    case offline
-    case syncFailed(count: Int)
-    case syncing
-    case pendingUpload(count: Int)
-    case online
-
-    public var label: String {
-        switch self {
-        case .unpaired:
-            return "未配对中枢"
-        case .offline:
-            return "离线发件箱守护"
-        case .syncFailed(let count):
-            return "同步失败 \(count) 条"
-        case .syncing:
-            return "同步中…"
-        case .pendingUpload(let count):
-            return "待同步 \(count) 条"
-        case .online:
-            return "中枢就绪"
-        }
-    }
-
-    public var dotColor: Color {
-        switch self {
-        case .online:
-            return ArchivePalette.accentMoss
-        case .syncing:
-            return Color("SpectrumStudy", bundle: ArchiveResourceBundle.bundle)
-        case .pendingUpload, .offline:
-            return ArchivePalette.accentWarm
-        case .syncFailed:
-            return ArchivePalette.accentWarm
-        case .unpaired:
-            return ArchivePalette.inkMuted
-        }
-    }
-
-    /// 辅助功能「不靠颜色区分」开启时配合展示的语义图标形状
-    public var symbolName: String {
-        switch self {
-        case .online: return "checkmark.circle.fill"
-        case .syncing: return "arrow.triangle.2.circlepath.circle.fill"
-        case .pendingUpload: return "arrow.up.circle.fill"
-        case .offline: return "icloud.slash.fill"
-        case .syncFailed: return "exclamationmark.triangle.fill"
-        case .unpaired: return "link.badge.plus"
-        }
-    }
-}
-
-/// 跨窗口持久化快速捕捉草稿容器 (@Observable)
-/// 统一 MenuBar 与悬浮窗状态实例，消除切换 Tab 与双宿主状态割裂
-@Observable
-@MainActor
-public final class QuickCaptureDraft {
-    public var activeTab: QuickCaptureTab = .thought
-    // 极速记录草稿
-    public var entryType: EntryType = .life
-    public var titleText: String = ""
-    public var contentText: String = ""
-    public var selectedCityCode: String = ""
-    public var selectedCityName: String = ""
-    public var uploadedAttachments: [Attachment] = []
-    public var extractedCameraLine: String = ""
-    public var occurredAt: Date = Date()
-    public var showBackdatePicker: Bool = false
-    public var isPrivate: Bool = false
-    /// 共享相纸装裱队列（MenuBar 与 ⌘⇧L 悬浮窗共用同一上传进度与单张重试状态机）
-    let media = EntryMediaState()
-
-    // 快速记账草稿（切换 Tab 或在菜单栏/悬浮窗间切换时完整保留）
-    public var ledgerSmartInput: String = ""
-    public var ledgerAmountString: String = ""
-    public var ledgerTitleString: String = ""
-    public var ledgerSelectedType: String = "expense"
-    public var ledgerSelectedCategory: String = ""
-    public var ledgerSelectedPayment: String = ""
-    public var ledgerSelectedCityCode: String = ""
-    public var ledgerSelectedCityName: String = ""
-    public var ledgerOccurredAt: Date = Date()
-    public var ledgerShowDatePicker: Bool = false
-
-    public func resetThought() {
-        titleText = ""
-        contentText = ""
-        selectedCityCode = ""
-        selectedCityName = ""
-        uploadedAttachments.removeAll()
-        extractedCameraLine = ""
-        media.removeAll()
-        media.extractedCameraLine = ""
-        occurredAt = Date()
-        showBackdatePicker = false
-        isPrivate = false
-    }
-
-    public func resetLedger() {
-        ledgerSmartInput = ""
-        ledgerAmountString = ""
-        ledgerTitleString = ""
-        ledgerSelectedType = "expense"
-        ledgerOccurredAt = Date()
-        ledgerShowDatePicker = false
-    }
-
-    public func reset() {
-        resetThought()
-        resetLedger()
-    }
-}
-
-/// 全局纸本确认与警示对话框请求 (对标 Web useConfirm.ts / ConfirmDialog.vue)
-public struct ConfirmDialogRequest: Identifiable {
-    public let id = UUID()
-    public var title: String
-    public var message: String
-    public var confirmText: String
-    public var cancelText: String
-    public var danger: Bool
-    public var onConfirm: () -> Void
-    public var onCancel: (() -> Void)?
-
-    public init(
-        title: String = "请确认",
-        message: String,
-        confirmText: String = "确认",
-        cancelText: String = "取消",
-        danger: Bool = true,
-        onConfirm: @escaping () -> Void,
-        onCancel: (() -> Void)? = nil
-    ) {
-        self.title = title
-        self.message = message
-        self.confirmText = confirmText
-        self.cancelText = cancelText
-        self.danger = danger
-        self.onConfirm = onConfirm
-        self.onCancel = onCancel
-    }
-}
-
 /// 全局响应式状态中心 (@Observable)
 /// 遵循本地优先 (Local-First) 毫秒级上屏 + 后台异步增量同步架构
+/// 子职责按扩展拆分为：
+/// - `AppStateTypes.swift`：导航板块、外观、连接徽标、极速草稿与弹窗请求类型
+/// - `AppState+StreamProjection.swift`：时间流筛选、分组间隔、检索语料与键盘聚焦
+/// - `AppState+Pairing.swift`：配对握手、解绑全清、深链与 Handoff 接力
+/// - `AppState+UndoAndActions.swift`：⌘Z 撤销栈、增删动作、快速捕捉提交与待发重传
 @Observable
 @MainActor
 public final class AppState {
     public static let shared = AppState()
-    private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "appstate")
+    static let logger = Logger(subsystem: "com.looseleaf.mac", category: "appstate")
 
     // MARK: - 核心业务数据 (100% 动态驱动，严禁假数据兜底)
     public var entries: [LifeEntry] = [] {
@@ -285,9 +55,7 @@ public final class AppState {
     public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金", "其他"]
 
     // MARK: - 导航与交互状态（拆分到独立可观察对象）
-    /// 导航与检索状态（独立对象，避免高频交互写入唤醒数据视图）
     public let navigation = AppNavigation()
-    /// 瞬时提示状态（独立对象，避免提示条写入唤醒数据视图）
     public let banners = AppBanners()
 
     public var activeSection: WorkbenchSection {
@@ -321,233 +89,21 @@ public final class AppState {
         set { navigation.searchQuery = newValue }
     }
     public var globalSearchResult: GlobalSearchResponse?
-    /// 检索结果版本号（每次结果写入自增）：供 `.task(id:)` 感知远端结果到达
-    public private(set) var globalSearchResultVersion: Int = 0
-    /// 全局检索的加载指示防抖（避免 spinner 闪烁）
+    public internal(set) var globalSearchResultVersion: Int = 0
     public let globalSearchLoading = LoadingDebouncer()
     public var isGlobalSearching: Bool = false
     public var highlightedEntry: LifeEntry?
-
-    /// 正在编辑的散页（由时间流卡片的「编辑」动作置位）
-    ///
-    /// 关键：这两个编辑态**必须放在 AppState**（而不是 StreamView 的本地 @State）——
-    /// 时间流的行为闭包要能跨视图存续并只捕获 AppState 单例，
-    /// 这样闭包集合才能在整轮时间流里保持**同一个引用**，
-    /// SwiftUI 才能跳过内容没变的卡片（否则点一下弹窗就要重绘整列 60 张卡）。
     public var editingEntry: LifeEntry?
-    /// 正在编辑的账目
     public var editingTransaction: Transaction?
-    // MARK: - 时间流卡片行为（放在 AppState 是为了让行为闭包只捕获单例）
-
-
-    public func deleteEntryAction(_ entry: LifeEntry) {
-        // 关键：**尚未同步的乐观条目**（本地 id 是负数）要能删。
-        // 原先 `guard entry.id > 0` 直接 return —— 用户无法删除一条
-        // 还没同步上去的记录，只能等它同步成功或永远留着。
-        if entry.id < 0 {
-            SyncManager.shared.removeOptimisticEntry(localTempId: entry.id)
-            showTemporaryBanner("已删除该条待同步记录")
-            return
-        }
-        guard entry.id > 0 else { return }
-        // 登记撤销：删除后可在 5 秒内（或随时按 ⌘Z）恢复该条手稿
-        let restoreRequest = CreateEntryRequest(
-            type: entry.type,
-            title: entry.title,
-            content: entry.content,
-            occurredAt: entry.occurredAt,
-            location: entry.location,
-            cityCode: entry.cityCode,
-            cityName: entry.cityName,
-            projectId: entry.projectId,
-            wishId: entry.wishId,
-            footprintId: entry.footprintId,
-            isPrivate: entry.isPrivate,
-            attachmentIds: entry.attachments.map(\.id)
-        )
-        Task { @MainActor in
-            do {
-                _ = try await APIClient.shared.deleteEntry(id: entry.id)
-            } catch {
-                // 关键：**离线删除也要排队**，网络恢复后自动补删。
-                // 原先删除请求被直接丢掉 —— 界面上只剩一句「删除失败」，
-                // 而 `OutboxActionKind.deleteEntry` 这条链路形同虚设。
-                let offline = !SyncManager.shared.isOnline
-                if offline {
-                    SyncManager.shared.enqueueDelete(
-                        kind: .deleteEntry,
-                        localTempId: entry.id,
-                        targetServerId: entry.id
-                    )
-                    self.showTemporaryBanner("当前离线，删除请求已排入发件箱，网络恢复后自动执行")
-                } else {
-                    self.showTemporaryBanner("删除失败：\(error.localizedDescription)")
-                }
-                return
-            }
-            await self.loadEntries(forceFull: false)
-            await self.loadConfigAndProfile()
-            if self.highlightedEntry?.id == entry.id {
-                self.highlightedEntry = nil
-            }
-            self.registerUndo(label: "删除手稿「\(entry.title.isEmpty ? "未命名" : entry.title)」") {
-                do {
-                    _ = try await APIClient.shared.createEntry(restoreRequest)
-                    await self.loadEntries(forceFull: false)
-                    return true
-                } catch {
-                    self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
-                    return false
-                }
-            }
-            self.showTemporaryBanner("已删除手稿 · 可按 ⌘Z 撤销")
-        }
-    }
-
-    /// 删除一件随身设备（⌘Z 可撤销）
-    ///
-    /// 关键：原先的器物删除是**硬删** —— 设备本体从主理人档案的 JSON 数组里被移除，
-    /// 伴生散页也一并软删，而软删的散页**没有恢复端点**。
-    /// 于是误删一件设备，它的照片与手记就**永久回不来**。
-    ///
-    /// 现在删除后登记一次撤销：撤销时把**原始设备数据**带回服务端，
-    /// 由服务端按原 id 插回档案数组，并连带恢复伴生散页。
-    public func deleteGearAction(_ gear: GearItem) async {
-        // 先记下它原先在档案数组中的位置，撤销时原位放回
-        let originalIndex = profile.edcGear.firstIndex { $0.id == gear.id } ?? -1
-        do {
-            try await APIClient.shared.deleteGearAsset(id: gear.id)
-            // 器物的伴生散页要一并从时间流移除
-            await loadConfigAndProfile()
-            await loadTransactionsAndAssets(forceFull: false)
-            await loadEntries(forceFull: false)
-        } catch {
-            errorBanner = error.localizedDescription
-            return
-        }
-        registerUndo(label: "删除器物「\(gear.name)」") {
-            do {
-                try await APIClient.shared.restoreGearAsset(gear, index: originalIndex)
-                await self.loadConfigAndProfile()
-                await self.loadTransactionsAndAssets(forceFull: false)
-                await self.loadEntries(forceFull: false)
-                return true
-            } catch {
-                self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
-                return false
-            }
-        }
-        showTemporaryBanner("已删除器物 · 可按 ⌘Z 撤销")
-    }
-
-    public func deleteTransactionAction(_ tx: Transaction) {
-        // 同上：尚未同步的乐观账目要能删
-        if tx.id < 0 {
-            SyncManager.shared.removeOptimisticTransaction(localTempId: tx.id)
-            showTemporaryBanner("已删除该条待同步账目")
-            return
-        }
-        guard tx.id > 0 else { return }
-        let restoreRequest = CreateTransactionRequest(
-            amount: tx.amount,
-            type: tx.type,
-            category: tx.category,
-            title: tx.title,
-            note: tx.note,
-            paymentMethod: tx.paymentMethod,
-            cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt,
-            // 关键：**完整透传分期字段**。
-            // 撤销 / 重传 / 重试都是「用原始参数重建这笔账」，
-            // 漏掉分期信息等于把分期负债悄悄抹掉。
-            isInstallment: tx.isInstallment,
-            installmentChannelCode: tx.installmentChannelCode,
-            installmentTotalAmount: tx.installmentTotalAmount,
-            installmentMonths: tx.installmentMonths,
-            installmentMonthlyPay: tx.installmentMonthlyPay,
-            installmentRemainMonths: tx.installmentRemainMonths,
-            repaymentDay: tx.repaymentDay
-        )
-        Task { @MainActor in
-            do {
-                _ = try await APIClient.shared.deleteTransaction(id: tx.id)
-            } catch {
-                // 同上：离线时把删除请求排入发件箱，网络恢复后自动补删
-                if !SyncManager.shared.isOnline {
-                    SyncManager.shared.enqueueDelete(
-                        kind: .deleteTransaction,
-                        localTempId: tx.id,
-                        targetServerId: tx.id
-                    )
-                    self.showTemporaryBanner("当前离线，删除请求已排入发件箱，网络恢复后自动执行")
-                } else {
-                    self.showTemporaryBanner("删除账目失败：\(error.localizedDescription)")
-                }
-                return
-            }
-            await self.loadTransactionsAndAssets(forceFull: false)
-            await self.loadEntries(forceFull: false)
-            await self.loadConfigAndProfile()
-            if self.highlightedEntry?.id == tx.id {
-                self.highlightedEntry = nil
-            }
-            self.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
-                do {
-                    _ = try await APIClient.shared.createTransaction(restoreRequest)
-                    await self.loadTransactionsAndAssets(forceFull: false)
-                    return true
-                } catch {
-                    self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
-                    return false
-                }
-            }
-            self.showTemporaryBanner("已删除账目 · 可按 ⌘Z 撤销")
-        }
-    }
-
-    /// 在**独立窗口**中打开的条目（深链 / 「在新窗口打开」使用，与主窗口的弹层互不影响）
     public var detailWindowEntry: LifeEntry?
 
     /// 接力活动类型（与 Info.plist 的 NSUserActivityTypes 对应）
     public static let userActivityType = "com.looseleaf.entry"
-    /// 当前接力活动（把最近浏览的散页暴露给其它设备接力）
-    private var currentUserActivity: NSUserActivity?
+    var currentUserActivity: NSUserActivity?
     public var lightboxAttachment: Attachment?
     public var activeConfirmDialog: ConfirmDialogRequest? = nil
-
-    /// 统一纸墨风格确认弹窗交互 (替代系统原生 confirmationDialog / alert)
-    public func askConfirm(
-        title: String = "请确认",
-        message: String,
-        confirmText: String = "确认",
-        cancelText: String = "取消",
-        danger: Bool = true,
-        onConfirm: @escaping () -> Void,
-        onCancel: (() -> Void)? = nil
-    ) {
-        activeConfirmDialog = ConfirmDialogRequest(
-            title: title,
-            message: message,
-            confirmText: confirmText,
-            cancelText: cancelText,
-            danger: danger,
-            onConfirm: onConfirm,
-            onCancel: onCancel
-        )
-    }
-
-    public func dismissConfirm() {
-        activeConfirmDialog?.onCancel?()
-        activeConfirmDialog = nil
-    }
-
-    /// 键盘流（⌘↑ / ⌘↓）当前聚焦的时间流条目 ID
     public var keyboardFocusedEntryId: Int?
-
-    /// 系统「服务」菜单摘录的待归档文本（QuickCaptureView 消费后清空）
     public var pendingCaptureText: String?
-
-    /// 跨窗口持久化快速捕捉草稿中心（MenuBar 与 ⌘⇧L 悬浮窗实时共享）
     public var quickDraft: QuickCaptureDraft = QuickCaptureDraft()
 
     // MARK: - 鉴权、网络与偏好设置状态
@@ -564,7 +120,6 @@ public final class AppState {
         get { banners.error }
         set { banners.error = newValue }
     }
-    /// 本地档案完整性问题（快照解码失败等），优先级高于普通网络错误，需用户手动关闭
     public var localDataWarning: String? {
         get { banners.localWarning }
         set { banners.localWarning = newValue }
@@ -577,7 +132,6 @@ public final class AppState {
         }
     }
 
-    /// 同步 `NSApp.appearance`，防止系统 Popover 尖角、菜单与子 Sheet 外壳反色
     public func applyAppAppearance() {
         guard let app = NSApp else { return }
         switch appearanceMode {
@@ -590,21 +144,18 @@ public final class AppState {
         }
     }
 
-    /// 打开独立设置窗口并精准切至指定标签页（支持菜单栏、快捷键 ⌥⌘1–3 与更新器联动）
     public func openSettings(tab: SettingsTab = .general) {
         navigation.settingsSelectedTab = tab
         navigation.settingsOpenToken &+= 1
     }
 
-    /// ⌘F 请求时间流搜索框聚焦（自增 token 驱动 onChange）
     public var searchFocusRequest: Int {
         get { navigation.searchFocusRequest }
         set { navigation.searchFocusRequest = newValue }
     }
 
-    // MARK: - 偏好：Dock 图标与登录启动
+    // MARK: - 偏好：Dock 图标、登录启动与 Spotlight 隐私
 
-    /// 是否在 Dock 中显示应用图标（常驻菜单栏型应用可关闭以释放 Dock 位置）
     public var showsDockIcon: Bool {
         didSet {
             UserDefaults.standard.set(showsDockIcon, forKey: "looseleaf_shows_dock_icon")
@@ -612,7 +163,6 @@ public final class AppState {
         }
     }
 
-    /// 是否在登录时自动启动
     public var launchesAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(launchesAtLogin, forKey: "looseleaf_launches_at_login")
@@ -620,29 +170,17 @@ public final class AppState {
         }
     }
 
-    /// 是否启用触感反馈
     public var enablesHapticFeedback: Bool {
         didSet {
             UserDefaults.standard.set(enablesHapticFeedback, forKey: "looseleaf_enables_haptic_feedback")
         }
     }
 
-    /// 是否在同步完成 / 失败时发送系统通知
-    /// 是否把正文**全文**写进系统 Spotlight 索引
-    ///
-    /// 关键（DEC-03 口径 C）：默认**关闭** ——
-    /// 私人正文全文进系统索引意味着它会被系统搜索与 Siri 命中，
-    /// 开启「与 Siri 共享」或 iCloud 同步 Spotlight 时还会**外流到云端**。
-    /// 默认只索引「标题 + 前 60 字摘要」，想要全文搜索的用户自己开。
     public var indexesFullContentInSpotlight: Bool {
         didSet {
             UserDefaults.standard.set(indexesFullContentInSpotlight, forKey: Self.spotlightFullContentKey)
             SpotlightIndexer.indexesFullContent = indexesFullContentInSpotlight
             if !indexesFullContentInSpotlight {
-                // 关闭时清掉已写入的全文。
-                // 关键：CoreSpotlight 的删除是异步的，必须等删除真正落地再重建 ——
-                // 否则重建可能先于删除完成，刚写进去的条目又被系统索引删掉
-                // （表现为「开关切了，搜索里什么都没有」）。
                 SpotlightIndexer.clearIndex { [weak self] in
                     Task { @MainActor in
                         SpotlightIndexer.reindex(entries: self?.entries ?? [])
@@ -654,7 +192,7 @@ public final class AppState {
         }
     }
 
-    private static let spotlightFullContentKey = "looseleaf_spotlight_full_content"
+    static let spotlightFullContentKey = "looseleaf_spotlight_full_content"
 
     public var notifiesOnSync: Bool {
         didSet {
@@ -662,27 +200,11 @@ public final class AppState {
         }
     }
 
-    /// UI 测试用中枢地址（启动参数 `-UITestHubURL <url>` 或环境变量 `LOOSELEAF_HUB_URL`）
-    nonisolated static var uiTestHubURL: String? {
-        if let idx = CommandLine.arguments.firstIndex(of: "-UITestHubURL"),
-           idx + 1 < CommandLine.arguments.count {
-            return CommandLine.arguments[idx + 1]
-        }
-        if let env = ProcessInfo.processInfo.environment["LOOSELEAF_HUB_URL"], !env.isEmpty {
-            return env
-        }
-        return nil
-    }
+    @ObservationIgnored var hasBootstrapped: Bool = false
+    @ObservationIgnored var inFlightPairTickets: Set<String> = []
+    @ObservationIgnored var redeemedPairTickets: Set<String> = []
+    public internal(set) var isConfirmingIncomingPairTicket: Bool = false
 
-    /// 冷启动引导是否已执行（防止重复拉取）
-    @ObservationIgnored private var hasBootstrapped: Bool = false
-    /// 正在握手或已核销的一次性配对工单集合（防止 .onOpenURL 与 AppDelegate 双通道重复核销同一 ticket）
-    @ObservationIgnored private var inFlightPairTickets: Set<String> = []
-    @ObservationIgnored private var redeemedPairTickets: Set<String> = []
-    /// 浏览器深链回调正在自动握手时的状态指示
-    public private(set) var isConfirmingIncomingPairTicket: Bool = false
-
-    /// 当前是否存在需要关闭的主窗口内自定义浮层（独立详情窗口有原生 NSWindow.performClose，不阻塞主窗口工具栏）
     public var hasOpenOverlay: Bool {
         activeConfirmDialog != nil
             || showSearchModal
@@ -693,13 +215,11 @@ public final class AppState {
             || editingTransaction != nil
     }
 
-    /// 在 `applySnapshot` 中一次性预统计的待上传/失败计数（避免侧栏每次渲染全量扫描两遍数组）
-    public private(set) var pendingUploadCount: Int = 0
-    public private(set) var failedUploadCount: Int = 0
-    public private(set) var pendingEntriesCount: Int = 0
-    public private(set) var pendingTransactionsCount: Int = 0
+    public internal(set) var pendingUploadCount: Int = 0
+    public internal(set) var failedUploadCount: Int = 0
+    public internal(set) var pendingEntriesCount: Int = 0
+    public internal(set) var pendingTransactionsCount: Int = 0
 
-    /// 全局中枢连接状态派生（唯一事实源，O(1) 读取）
     public var hubConnectionBadgeState: HubConnectionBadgeState {
         guard isPaired else { return .unpaired }
         guard isOnline else { return .offline }
@@ -709,36 +229,28 @@ public final class AppState {
         return .online
     }
 
-    public func requestStreamSearchFocus() {
-        navigation.requestStreamSearchFocus()
-    }
+    // MARK: - 派生数据记忆缓存与撤销栈存储（@ObservationIgnored 隔离非 UI 字段）
+    @ObservationIgnored var entriesRevision: Int = 0
+    @ObservationIgnored var transactionsRevision: Int = 0
+    @ObservationIgnored var filteredMemo: (key: String, value: [LifeEntry])?
+    @ObservationIgnored var streamRowsMemo: (key: String, value: [StreamRow])?
+    @ObservationIgnored var entryCountsMemo: (key: String, value: [String: Int])?
+    @ObservationIgnored var entriesByDateMemo: (key: String, value: [String: [LifeEntry]])?
+    @ObservationIgnored var transactionIndexMemo: (Int, [Int: Transaction])?
+    @ObservationIgnored var searchCorpusMemo: (Int, [SearchableLifeEntry])?
+    @ObservationIgnored var onThisDayCacheDateKey: String?
+    @ObservationIgnored var globalSearchGeneration: UInt64 = 0
+    @ObservationIgnored var secondaryLoadGeneration: UInt64 = 0
+    @ObservationIgnored var appliedEntriesFingerprint: SyncManager.CollectionFingerprint?
+    @ObservationIgnored var appliedTransactionsFingerprint: SyncManager.CollectionFingerprint?
 
-    // MARK: - 派生数据记忆缓存（@ObservationIgnored：写入不触发视图更新）
-    /// 仅在「条目」集合变化时自增；配置类变更/账目变更不应让列表 memo 全部失效
-    @ObservationIgnored private var entriesRevision: Int = 0
-    /// 仅在「账目」集合变化时自增（MAC-8：与 entriesRevision 解耦）
-    @ObservationIgnored private var transactionsRevision: Int = 0
-    @ObservationIgnored private var filteredMemo: (key: String, value: [LifeEntry])?
-    @ObservationIgnored private var streamRowsMemo: (key: String, value: [StreamRow])?
-    @ObservationIgnored private var entryCountsMemo: (key: String, value: [String: Int])?
-    @ObservationIgnored private var entriesByDateMemo: (key: String, value: [String: [LifeEntry]])?
-    /// 账目索引（id -> 账目）：时间流卡片按 id 查账目时避免全量遍历
-    @ObservationIgnored private var transactionIndexMemo: (Int, [Int: Transaction])?
-    /// 全局检索语料（预计算可搜索串）：按 entriesRevision 记忆化
-    @ObservationIgnored private var searchCorpusMemo: (Int, [SearchableLifeEntry])?
-    /// On This Day 按北京时间自然日缓存：同一天重复刷新不再发请求
-    @ObservationIgnored private var onThisDayCacheDateKey: String?
-    /// 全局检索代号：防止先发出的慢请求覆盖后发出的快请求结果
-    @ObservationIgnored private var globalSearchGeneration: UInt64 = 0
-    /// 二级内容（造物 / 心愿 / 足迹）加载代号：同上
-    @ObservationIgnored private var secondaryLoadGeneration: UInt64 = 0
+    var undoStack: [UndoAction] = []
+    @ObservationIgnored var isUndoing = false
 
     private init() {
         let savedAppearance = UserDefaults.standard.string(forKey: "looseleaf_appearance_mode") ?? AppearanceMode.system.rawValue
         self.appearanceMode = AppearanceMode(rawValue: savedAppearance) ?? .system
 
-        // UI 自动化测试钩子：允许用启动参数把中枢指向本地实例，
-        // 使测试可以自由造数据而不污染真实中枢。
         if let hubURL = Self.uiTestHubURL {
             APIClient.shared.setBaseURL(hubURL)
         }
@@ -747,22 +259,14 @@ public final class AppState {
         self.showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
         self.launchesAtLogin = UserDefaults.standard.object(forKey: "looseleaf_launches_at_login") as? Bool ?? false
         self.notifiesOnSync = UserDefaults.standard.object(forKey: "looseleaf_notifies_on_sync") as? Bool ?? true
-        // Spotlight 全文索引开关（默认关闭：只索引标题 + 摘要）
         let spotlightFull = UserDefaults.standard.object(forKey: Self.spotlightFullContentKey) as? Bool ?? false
         self.indexesFullContentInSpotlight = spotlightFull
         SpotlightIndexer.indexesFullContent = spotlightFull
         self.enablesHapticFeedback = UserDefaults.standard.object(forKey: "looseleaf_enables_haptic_feedback") as? Bool ?? true
 
-        // 1. 毫秒级载入本地持久化快照 (Local-First 0ms 白屏)
         self.isOnline = SyncManager.shared.isOnline
         self.isFlushingOutbox = SyncManager.shared.isFlushingOutbox
 
-        // 2. 先注册回调，再读取快照：若后台解码已完成则直接拿到完整快照，
-        //    否则后续 onSnapshotUpdated 回调会把注水后的快照推给 UI（两条路径都覆盖）。
-        // 关键：这三个回调**同步**应用，不要包一层 Task。
-        // SyncManager 与 AppState 同在 MainActor，直接调用即可；
-        // 若经 Task 派发，乐观写入的条目要等到下一个 runloop 才出现在时间流里 ——
-        // 这正是「提交后感觉慢了一拍」的来源之一。
         SyncManager.shared.onSnapshotUpdated = { [weak self] snap in
             guard let self else { return }
             let nextOnline = SyncManager.shared.isOnline
@@ -781,12 +285,27 @@ public final class AppState {
             self.isOnline = online
         }
 
+        SyncManager.shared.onOutboxFlushCompleted = { [weak self] attemptedCount in
+            guard let self, self.notifiesOnSync else { return }
+            let remaining = SyncManager.shared.currentSnapshot().outbox.count
+            if remaining == 0, attemptedCount > 0 {
+                AppDelegate.postNotification(
+                    title: "活页集 · 同步完成",
+                    body: "本地发件箱的 \(attemptedCount) 条记录已同步至中枢。"
+                )
+            } else if remaining > 0 {
+                AppDelegate.postNotification(
+                    title: "活页集 · 仍有待同步记录",
+                    body: "有 \(remaining) 条本地记录暂未同步成功，将自动重试。"
+                )
+            }
+        }
+
         applySnapshot(SyncManager.shared.currentSnapshot())
         Task { @MainActor [weak self] in
             self?.applyAppAppearance()
         }
 
-        // 本地快照解码失败时必须在首屏明确告警，绝不能让用户以为"数据只是变少了"
         if let failure = SyncManager.shared.lastLoadFailureMessage {
             self.localDataWarning = failure
         }
@@ -806,16 +325,7 @@ public final class AppState {
         }
     }
 
-    @ObservationIgnored private var appliedEntriesFingerprint: SyncManager.CollectionFingerprint?
-    @ObservationIgnored private var appliedTransactionsFingerprint: SyncManager.CollectionFingerprint?
-
     private func applySnapshot(_ snap: LocalArchiveSnapshot) {
-        // 相等性判断：@Observable 的 setter 无论值是否相等都会触发全树重渲染，
-        // 因此必须先比较再赋值，把「每次同步全量重绘」降级为「仅真正变化时重绘」。
-        //
-        // MAC-5：大数据量时不再逐个字段深比较整份数组（每条含长正文），
-        // 改比 SyncManager 维护的轻量指纹（数量 + 最大 updatedAt + id/状态哈希）。
-        // 指纹命中后仍保持原语义：**只有真正变化才赋值**。
         let entriesUseFingerprint = snap.entries.count >= SyncManager.fingerprintThreshold
         let transactionsUseFingerprint = snap.transactions.count >= SyncManager.fingerprintThreshold
         let snapshotFingerprint = (entriesUseFingerprint || transactionsUseFingerprint)
@@ -848,12 +358,8 @@ public final class AppState {
         if self.stats != snap.stats { self.stats = snap.stats }
         if self.outboxItems != snap.outbox { self.outboxItems = snap.outbox }
 
-        // 记住本次已应用的指纹；集合变小后回到深比较，下次变大时会重新建立基线。
         appliedEntriesFingerprint = entriesUseFingerprint ? snapshotFingerprint?.entries : nil
         appliedTransactionsFingerprint = transactionsUseFingerprint ? snapshotFingerprint?.transactions : nil
-        // 系统搜索索引（Spotlight，异步派发不阻塞渲染）
-        // 关键：仅在条目**真正变化**时才重建索引 ——
-        // 只改了配置/统计时也全量 diff 会白做一次 O(N) 遍历与指纹计算。
         if entriesChanged {
             SpotlightIndexer.reindex(entries: snap.entries)
         }
@@ -882,302 +388,8 @@ public final class AppState {
         if self.pendingTransactionsCount != txUnsynced { self.pendingTransactionsCount = txUnsynced }
     }
 
-    // MARK: - 过滤与检索计算属性
-
-    /// 仅供检索/测试：条目集合版本号
-    public var contentRevision: Int { entriesRevision }
-
-    /// 全局检索语料：每个条目预先拼好「标题 + 正文 + 地点 + 城市」的小写串。
-    ///
-    /// 关键：原实现每次查询都对全部条目重复 `lowercased()`（4 个字段 × N 条），
-    /// 输入每变一次就做一遍；这里按 entriesRevision 记忆化，查询时只做 `contains`。
-    var searchableEntries: [SearchableLifeEntry] {
-        if let memo = searchCorpusMemo, memo.0 == entriesRevision {
-            return memo.1
-        }
-        let corpus = entries.map { entry in
-            SearchableLifeEntry(
-                entry: entry,
-                haystack: [
-                    entry.title,
-                    entry.content,
-                    entry.location ?? "",
-                    entry.cityName ?? ""
-                ].joined(separator: "\n").lowercased()
-            )
-        }
-        searchCorpusMemo = (entriesRevision, corpus)
-        return corpus
-    }
-
-    /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤、#标签下钻与模糊搜索）
-    /// 带记忆缓存：仅在数据版本或筛选条件变化时重算，渲染路径零重复过滤
-    public var filteredStreamEntries: [LifeEntry] {
-        let key = Self.filteredEntriesCacheKey(
-            entriesRevision: entriesRevision,
-            transactionsRevision: transactionsRevision,
-            category: selectedCategory,
-            searchQuery: searchQuery,
-            privacyFilter: navigation.streamPrivacyFilter
-        )
-        if let memo = filteredMemo, memo.key == key {
-            return memo.value
-        }
-        let computed = computeFilteredStreamEntries()
-        filteredMemo = (key, computed)
-        return computed
-    }
-
-    /// 过滤缓存键（纯函数，便于单测）：
-    /// 只有「账目视角」才依赖 transactionsRevision，生活/其它视角不受账目变化影响。
-    nonisolated static func filteredEntriesCacheKey(
-        entriesRevision: Int,
-        transactionsRevision: Int,
-        category: ArchiveCategory,
-        searchQuery: String,
-        privacyFilter: StreamPrivacyFilter = .all
-    ) -> String {
-        let txPart = category == .transaction ? String(transactionsRevision) : "0"
-        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)|\(privacyFilter.rawValue)"
-    }
-
-    private func computeFilteredStreamEntries() -> [LifeEntry] {
-        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let privacy = navigation.streamPrivacyFilter
-
-        if selectedCategory == .transaction {
-            if privacy == .privateOnly { return [] }
-            var source = transactions.map { $0.toLifeEntry() }
-            if !q.isEmpty {
-                source = source.filter { entry in
-                    entry.title.lowercased().contains(q)
-                    || entry.content.lowercased().contains(q)
-                    || (entry.location?.lowercased().contains(q) ?? false)
-                    || (entry.cityName?.lowercased().contains(q) ?? false)
-                }
-            }
-            return source
-        }
-
-        // 复用按 entriesRevision 预计算好的小写检索语料，避免每敲一字重做 N×4 次 lowercased()
-        if !q.isEmpty {
-            return searchableEntries.compactMap { item in
-                let entry = item.entry
-                guard entry.matches(category: selectedCategory) else { return nil }
-                if privacy == .privateOnly && !entry.isPrivate { return nil }
-                return item.haystack.contains(q) ? entry : nil
-            }
-        }
-
-        return entries.filter { entry in
-            guard entry.matches(category: selectedCategory) else { return false }
-            if privacy == .privateOnly && !entry.isPrivate { return false }
-            return true
-        }
-    }
-
-    /// 时间流行模型：条目 + 与上一条的自然日间隔（用于 14 天留白切线）
-    public struct StreamRow: Identifiable, Sendable {
-        public let entry: LifeEntry
-        public let gapDays: Int
-        /// 分组键（YYYY-MM-DD）：同一天的记录归到同一个分组标题下
-        public let dayKey: String
-        /// 紧凑时间戳（朋友圈式）
-        ///
-        /// 规则（参照朋友圈）：
-        ///   - 与上一条**同一分钟** → 空串（折叠，不重复显示）
-        ///   - 与上一条**同一天** → "HH:mm"
-        ///   - 跨天、同一年     → "9月1日"
-        ///   - 跨年             → "2025年9月1日"
-        ///
-        /// 关键：早先每张卡都印着完整的 "YYYY.MM.DD HH:mm"，一行就占掉半行宽度；
-        /// 改成随跨度变化的短标签后，一屏能多看一倍的内容。
-        public let timeLabel: String
-        public var id: Int { entry.id }
-    }
-
-
-    /// 紧凑时间戳文案（朋友圈式）
-    ///
-    /// - 与上一条同一分钟 → 空串（折叠）
-    /// - 同一天 → "HH:mm"
-    /// - 跨天同年 → "9月1日"
-    /// - 跨年     → "2025年9月1日"
-    nonisolated static func compactTimeLabel(
-        _ current: FormatUtils.ParsedBeijingDate,
-        previous: FormatUtils.ParsedBeijingDate?
-    ) -> String {
-        guard current.isValid else { return "" }
-        guard let previous, previous.isValid else {
-            // 第一条：给完整日期，让人知道这是什么时候的记录
-            if current.year.count >= 4 {
-                return "\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
-            }
-            return current.time
-        }
-        if current.dateKey == previous.dateKey {
-            // 同一分钟内的连续记录：折叠，不重复显示时间
-            if current.time == previous.time { return "" }
-            return current.time
-        }
-        if current.year == previous.year {
-            return "\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
-        }
-        return "\(current.year)年\(Int(current.month) ?? 0)月\(Int(current.day) ?? 0)日"
-    }
-
-    // 账目 id → 账目 的索引（按 transactionsRevision 记忆化）
-    /// 关键：时间流卡片原先在 body 里对每个条目做 `transactions.first(where:)`，
-    /// N 行 × M 条账目 = O(N×M)；现在一次建表，查询 O(1)。
-    public var transactionById: [Int: Transaction] {
-        if let memo = transactionIndexMemo, memo.0 == transactionsRevision {
-            return memo.1
-        }
-        var map: [Int: Transaction] = [:]
-        map.reserveCapacity(transactions.count)
-        for tx in transactions { map[tx.id] = tx }
-        transactionIndexMemo = (transactionsRevision, map)
-        return map
-    }
-
-    /// 已算好间隔的时间流（带记忆缓存）：避免渲染时每行重复解析两次时间戳
-    public var streamRows: [StreamRow] {
-        let key = Self.streamRowsCacheKey(
-            entriesRevision: entriesRevision,
-            transactionsRevision: transactionsRevision,
-            category: selectedCategory,
-            searchQuery: searchQuery,
-            privacyFilter: navigation.streamPrivacyFilter
-        )
-        if let memo = streamRowsMemo, memo.key == key {
-            return memo.value
-        }
-        ArchivePerformance.mark(.render, "streamRows.recompute")
-        let list = filteredStreamEntries
-        let rows = Self.buildStreamRows(for: list)
-        streamRowsMemo = (key, rows)
-        return rows
-    }
-
-    /// 为指定条目列表构建时间流显示行（计算紧凑时间标签与 >= 14 天年轮留白）
-    public static func buildStreamRows(for list: [LifeEntry]) -> [StreamRow] {
-        var rows: [StreamRow] = []
-        rows.reserveCapacity(list.count)
-        var previousParsed: FormatUtils.ParsedBeijingDate?
-        var previousValidDate: Date?
-        for entry in list {
-            let parsed = entry.parsedDate
-            let gap: Int
-            if parsed.isValid, let previousValidDate {
-                gap = FormatUtils.daysBetween(previousValidDate, parsed.date)
-            } else {
-                gap = 0
-            }
-            let label = Self.compactTimeLabel(parsed, previous: previousParsed)
-            rows.append(StreamRow(entry: entry, gapDays: gap, dayKey: parsed.dateKey, timeLabel: label))
-            previousParsed = parsed
-            previousValidDate = parsed.isValid ? parsed.date : nil
-        }
-        return rows
-    }
-
-    /// 时间流缓存键（纯函数，便于单测）：
-    /// 仅当处于「账目视角」时才包含 transactionsRevision；
-    /// 其它视角下账目变化不应让时间流整列失效。
-    nonisolated static func streamRowsCacheKey(
-        entriesRevision: Int,
-        transactionsRevision: Int,
-        category: ArchiveCategory,
-        searchQuery: String,
-        privacyFilter: StreamPrivacyFilter = .all
-    ) -> String {
-        let txPart = category == .transaction ? String(transactionsRevision) : "0"
-        return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)|\(privacyFilter.rawValue)"
-    }
-
-    /// 全库跨模块网络搜索（当已配对时发起，支持足迹、心愿与造物项目联动检索）
-    public func performGlobalSearch(query: String) async {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, isPaired else {
-            // 清空查询时让所有在途请求失效，避免旧结果稍后回填
-            clearGlobalSearchResult()
-            return
-        }
-        // 代号机制：快速输入「咖 → 咖啡」时，先发出的「咖」请求可能后返回；
-        // 只允许最新代号的结果写入 UI，旧结果直接丢弃。
-        globalSearchGeneration &+= 1
-        let generation = globalSearchGeneration
-        self.isGlobalSearching = true
-        globalSearchLoading.begin()
-        defer {
-            if generation == globalSearchGeneration {
-                self.isGlobalSearching = false
-            }
-            globalSearchLoading.end()
-        }
-        do {
-            let res = try await APIClient.shared.searchGlobalArchive(query: q, limit: 30)
-            guard generation == globalSearchGeneration, !Task.isCancelled else { return }
-            self.globalSearchResult = res
-            self.globalSearchResultVersion &+= 1
-        } catch {
-            // 网络受阻或离线时保持本地纯粹搜索
-        }
-    }
-
-    /// 清空全局检索结果（同时作废在途请求），供弹窗「清空」按钮复用
-    public func clearGlobalSearchResult() {
-        globalSearchGeneration &+= 1
-        if globalSearchResult != nil {
-            globalSearchResult = nil
-        }
-        globalSearchResultVersion &+= 1
-        isGlobalSearching = false
-    }
-
-    /// 按北京时间自然日聚合的记录密度（52 周热力图数据源，带记忆缓存）
-    public var entryCountsByDate: [String: Int] {
-        let key = "\(entriesRevision)"
-        if let memo = entryCountsMemo, memo.key == key {
-            return memo.value
-        }
-        var counts: [String: Int] = [:]
-        for entry in entries {
-            let parsed = entry.parsedDate
-            guard parsed.isValid else { continue }
-            counts[parsed.dateKey, default: 0] += 1
-        }
-        entryCountsMemo = (key, counts)
-        return counts
-    }
-
-    /// 按日期分组的散页索引（记忆化）
-    ///
-    /// 关键：主理人页面的「当日手记速览」原先在 body 里对**全部** entries
-    /// 做一次 `filter { parseOccurredDate(...).dateKey == dateKey }` ——
-    /// 每�� body 求值都要重跑一遍（5000 条 ≈ 5000 次日期解析），
-    /// 点选热力图日期、任意状态变更都会触发。
-    /// 改为复用这份记忆化索引。
-    public var entriesByDateKey: [String: [LifeEntry]] {
-        let key = "\(entriesRevision)"
-        if let memo = entriesByDateMemo, memo.key == key {
-            return memo.value
-        }
-        var grouped: [String: [LifeEntry]] = [:]
-        for entry in entries {
-            let parsed = entry.parsedDate
-            guard parsed.isValid else { continue }
-            grouped[parsed.dateKey, default: []].append(entry)
-        }
-        entriesByDateMemo = (key, grouped)
-        return grouped
-    }
-
     // MARK: - 远端全量与增量拉取
 
-    /// 应用冷启动引导：全量刷新 + 检查更新。
-    /// 关键：触发点从「视图 .task」迁移到 App 生命周期，
-    /// 否则主窗口与子视图各挂一次 `.task` 会重复发起整套拉取。
     public func bootstrap() async {
         guard !hasBootstrapped else { return }
         hasBootstrapped = true
@@ -1186,8 +398,6 @@ public final class AppState {
     }
 
     public func refreshAll(forceFull: Bool = false) async {
-        // 启动期主窗口与子视图可能各触发一次；并发执行只会重复请求并互相冲刷快照。
-        // 但直接 return 会让用户按 ⌘R 时毫无反馈，误以为快捷键失效。
         guard !isLoading else {
             showTemporaryBanner("正在同步档案，请稍候…")
             return
@@ -1196,28 +406,16 @@ public final class AppState {
         errorBanner = nil
         defer { isLoading = false }
 
-        // 先尝试排空离线发件箱；用户主动「全量同步」时把暂停的死信重新入队。
         if forceFull {
             SyncManager.shared.resetPausedOutboxItems()
         }
-        // 关键：必须先排空发件箱、再拉全量。
-        // 若两者并发，离线新建的记录可能在上传成功（转 synced）之后，
-        // 被一份「上传前发出、上传后返回」的全量列表当成服务端已删除而丢掉；
-        // 离线删除也可能被旧列表复活。flushOutbox 在队列为空时立即返回，
-        // 有积压时多等一次网络往返，远好过静默丢数据。
         await SyncManager.shared.flushOutbox()
 
-        // 批量模式：5 个并发任务各自会写快照，若每次都立即回调 UI，
-        // 会造成 5 次整页重绘；批次结束后统一回调一次。
         SyncManager.shared.beginBatch()
         defer { SyncManager.shared.endBatch() }
 
-        // 并发拉取公开基础配置与档案
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.loadConfigAndProfile() }
-            // 未配对（配对门禁阶段）不发其余档案请求：冷启动的一批 401 会把
-            // 「仅广播一次」的未授权标志消耗掉，之后真正的吊销反而回不到门禁。
-            // 站点配置/档案是公开接口，供门禁页展示，保持无条件拉取。
             if self.isPaired {
                 group.addTask { await self.loadEntries(forceFull: forceFull) }
                 group.addTask { await self.loadCategories() }
@@ -1228,7 +426,6 @@ public final class AppState {
     }
 
     public func loadConfigAndProfile() async {
-        // 三个端点彼此独立：并行拉取，最慢的那个决定总耗时。
         async let cfg = try? APIClient.shared.fetchSiteConfig()
         async let prof = try? APIClient.shared.fetchCuratorProfile()
         async let st = try? APIClient.shared.fetchGlobalStats()
@@ -1238,27 +435,16 @@ public final class AppState {
 
     public func loadCategories() async {
         guard let list = try? await APIClient.shared.fetchCategories() else { return }
-        // 关键：**无条件覆盖**。
-        // 原先是 `if !exp.isEmpty { ... }` —— 于是把某一类**全部删光**时，
-        // 旧列表会被保留下来，用户明明在字典里删干净了，表单里还照旧显示。
-        // 请求失败已经由上面的 guard 兜住了，这里拿到的是服务端的权威列表。
-        let exp = list.filter { $0.scope == "expense" }.map(\.name)
-        self.expenseCategories = exp
-        let inc = list.filter { $0.scope == "income" }.map(\.name)
-        self.incomeCategories = inc
-        let gear = list.filter { $0.scope == "gear" }.map(\.name)
-        self.gearCategories = gear
-        let proj = list.filter { $0.scope == "project" }.map(\.name)
-        self.projectCategories = proj
-        let pay = list.filter { $0.scope == "payment" }.map(\.name)
-        self.paymentMethods = pay
+        self.expenseCategories = list.filter { $0.scope == "expense" }.map(\.name)
+        self.incomeCategories = list.filter { $0.scope == "income" }.map(\.name)
+        self.gearCategories = list.filter { $0.scope == "gear" }.map(\.name)
+        self.projectCategories = list.filter { $0.scope == "project" }.map(\.name)
+        self.paymentMethods = list.filter { $0.scope == "payment" }.map(\.name)
     }
 
-    /// 「首屏只投递一次」的一次性闸门（跨隔离域安全）
     private final class FirstPageGate: @unchecked Sendable {
         private let lock = NSLock()
         private var claimed = false
-        /// 尝试抢占；只有第一个调用者返回 true
         func claim() -> Bool {
             lock.lock()
             defer { lock.unlock() }
@@ -1270,15 +456,9 @@ public final class AppState {
 
     public func loadEntries(forceFull: Bool = false) async {
         let snap = SyncManager.shared.currentSnapshot()
-        // 关键保障：若本地 entries 尚为空，必须强制全量拉取，杜绝因残留 cursor 导致拉取空增量！
-        // 自动调用 normalizeCursor 修复旧快照中可能存在的空格偏移游标。
         let rawCursor = (forceFull || snap.entries.isEmpty) ? nil : snap.lastEntriesSyncCursor
         let cursor = SyncManager.lookbackCursor(rawCursor, seconds: 120)
         do {
-            // 首屏优先：第一页一到就先把内容铺到界面上，
-            // 剩余页在后台继续拉取并追加，用户无需等待全量同步完成。
-            // 用一次性原子盒记录「是否已投递首屏」——闭包会跨隔离域执行，
-            // 直接捕获可变局部变量在 Swift 6 下不安全。
             let firstPageGate = FirstPageGate()
             let allFetched = try await Pagination.fetchAllEntries(
                 since: cursor,
@@ -1287,29 +467,16 @@ public final class AppState {
             ) { _, firstPage in
                 guard firstPageGate.claim(), !firstPage.isEmpty else { return }
                 await MainActor.run {
-                    // 关键：首屏只做「只增不删」的合并。
-                    // 用全量语义（isDelta: false）会把本地档案整体替换成
-                    // 这一页的 100 条 —— 本地几千条瞬间没了，
-                    // 而且游标被推进后旧条目永远拉不回来。
                     SyncManager.shared.mergeEntriesIncremental(firstPage)
-                    // refreshAll 的批量模式会把这次合并吞进 pendingBatchSnapshot，
-                    // 首屏要等最慢的 loader 才上屏 —— 这里立即投递一次，
-                    // 让「第一页一到就铺界面」在主刷新路径上同样生效。
                     SyncManager.shared.flushBatchSnapshotNow()
                 }
             }
             await SyncManager.shared.mergeEntries(allFetched, isDelta: cursor != nil)
         } catch APIError.notModified {
-            // 304 Not Modified: 本地缓存已是最新
+            // 304 Not Modified
         } catch is CancellationError {
-            // 关键：取消**不是**网络错误。
-            // `APIClient` 在任务被取消时会抛 CancellationError，
-            // 而原先它落进下面的通用 catch —— 于是用户看到的是
-            // 「The operation couldn't be completed. (Swift.CancellationError error 1.)」
-            // 这种天书般的红色横幅。
+            // Cancelled
         } catch let APIError.serverError(_, message) where message.localizedCaseInsensitiveContains("since") || message.localizedCaseInsensitiveContains("时间格式") {
-            // 自愈机制：若服务端返回 since 时间格式错误，说明本地持久化的游标损坏或与服务端不兼容，
-            // 自动重置本地游标并静默回退到全量同步，不再弹红框打扰用户。
             Self.logger.warning("Invalid sync cursor detected: \(message, privacy: .public). Resetting cursors and falling back to full sync.")
             SyncManager.shared.resetSyncCursors()
             if !forceFull {
@@ -1324,14 +491,9 @@ public final class AppState {
                 return
             }
         } catch {
-            // 关键：**总是**提示。
-            // 原先只在「本地一条都没有」时才提示 ——
-            // 而分页中途失败恰恰发生在本地有内容的时候，
-            // 于是用户看到的是「数据少了一半」却**没有任何报错**。
             self.errorBanner = error.localizedDescription
         }
 
-        // On This Day 只需每天取一次：按北京日期缓存，普通刷新不重复请求。
         let todayKey = FormatUtils.beijingDateString()
         if onThisDayCacheDateKey != todayKey {
             if let otd = try? await APIClient.shared.fetchOnThisDayEntries() {
@@ -1373,8 +535,6 @@ public final class AppState {
         }
 
         let ym = FormatUtils.beijingCurrentYearMonth()
-        // 资产总览 / 信用渠道与月度概览并行；概览响应必须绑定本地账目快照：
-        // 请求期间若发生乐观增删或同步完成，旧响应可能漏算/重复计入。
         async let overviewTask = try? APIClient.shared.fetchAssetsOverview()
         async let channelsTask = try? APIClient.shared.fetchCreditChannels()
         for _ in 0..<2 {
@@ -1387,7 +547,6 @@ public final class AppState {
                 SyncManager.shared.updateTransactionSummary(summary)
                 break
             }
-            // 账目在请求期间变化：丢弃这份响应，再取一次稳定的快照。
         }
         let (overview, channels) = await (overviewTask, channelsTask)
         if let overview {
@@ -1398,29 +557,15 @@ public final class AppState {
         }
     }
 
-    /// 二级对象（心愿 / 器物 / 账目 / 足迹 / 造物）写操作后的**统一刷新**。
-    ///
-    /// 关键：这些对象在服务端都会落一条**伴生 LifeEntry**（时间流的一级数据），
-    /// 若只刷新二级集合，时间流就看不到变化 —— 这正是「创建心愿后时间流没反应」的原因。
-    /// 这里同时做一次**增量**拉取（带 cursor），把伴生散页并进时间流。
     public func refreshAfterSecondaryWrite() async {
         await loadProjectsWishesFootprints()
         await loadEntries(forceFull: false)
     }
 
     public func loadProjectsWishesFootprints() async {
-        // 关键：**代号保护**。
-        // 这些 loader 会被多处并发触发（refreshAll 的 task group、
-        // refreshAfterSecondaryWrite、新建后的收尾、删除后的刷新）。
-        // 原先是「请求发出 → 直接赋值」，于是启动时的旧响应可能**晚于**
-        // 用户新建后的新响应落地 → 刚创建的心愿从界面上消失
-        // （服务端有、本地 UI 没有），直到下一次同步。
-        // 复用全局检索已有的 `globalSearchGeneration` 同款代号机制。
         secondaryLoadGeneration &+= 1
         let gen = secondaryLoadGeneration
 
-        // 三个端点独立，并行请求；全部返回后统一做一次代号校验，
-        // 避免旧响应把新建的对象覆盖掉。
         async let projectsTask = try? APIClient.shared.fetchProjects()
         async let wishesTask = try? Pagination.fetchAllWishes()
         async let footprintsTask = try? APIClient.shared.fetchFootprints()
@@ -1431,7 +576,6 @@ public final class AppState {
         if let projs {
             self.projects = projs
         }
-        // 只有"确实成功拉到数据"才覆盖；空数组是合法结果（删掉最后一枚心愿也必须生效）
         if let allWishes {
             self.wishes = allWishes
         }
@@ -1440,346 +584,14 @@ public final class AppState {
         }
     }
 
-    // MARK: - 键盘流导航（⌘↑ / ⌘↓ / ⌘↩）
+    // MARK: - Dock 图标策略、登录启动与瞬时横幅
 
-    /// 当前视口实际展现次序的手稿列表（编年倒序）
-    public var displayedStreamEntries: [LifeEntry] {
-        filteredStreamEntries
-    }
-
-    /// 在筛选后的时间流中上下移动键盘焦点（首次按下正向选首条，反向选末条）
-    public func moveSelection(by delta: Int) {
-        let list = displayedStreamEntries
-        guard !list.isEmpty else { return }
-        let targetIndex: Int
-        if let currentId = keyboardFocusedEntryId,
-           let currentIndex = list.firstIndex(where: { $0.id == currentId }) {
-            targetIndex = min(max(currentIndex + delta, 0), list.count - 1)
-        } else {
-            targetIndex = delta >= 0 ? 0 : list.count - 1
-        }
-        keyboardFocusedEntryId = list[targetIndex].id
-    }
-
-    /// 打开当前键盘聚焦的散页详情（支持「账目」等合成条目视角）
-    public func openKeyboardFocusedEntry() {
-        guard let id = keyboardFocusedEntryId,
-              let entry = displayedStreamEntries.first(where: { $0.id == id })
-                ?? entries.first(where: { $0.id == id }) else { return }
-        highlightedEntry = entry
-    }
-
-    // MARK: - 极速闪念与快速记账提交 (Quick Capture & Quick Ledger)
-
-    public func submitQuickCapture(
-        title: String,
-        content: String,
-        type: EntryType = .life,
-        location: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
-        footprintId: Int? = nil,
-        attachmentIds: [Int] = [],
-        attachments: [Attachment] = [],
-        occurredAt: String? = nil,
-        isPrivate: Bool = false
-    ) async throws -> Bool {
-        let finalLocation = (location?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-            ? location!.trimmingCharacters(in: .whitespacesAndNewlines)
-            : (profile.displayCity.isEmpty ? nil : profile.displayCity)
-
-        var resolvedCode = cityCode?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if resolvedCode?.isEmpty == true { resolvedCode = nil }
-        var resolvedCityName = cityName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if resolvedCityName?.isEmpty == true { resolvedCityName = nil }
-
-        // 城市只认显式 city_code，不做自由文本反查：
-        // 与 QuickLedgerView 同一 rationale——「重庆小面」这类文本会静默误挂城市，
-        // 且客户端反查后以显式码发送恰好绕过后端「仅认显式 city_code」的收紧。
-        if resolvedCode != nil && resolvedCityName == nil {
-            resolvedCityName = CityDictionary.standardCities.first(where: { $0.code == resolvedCode })?.name
-        }
-
-        let req = CreateEntryRequest(
-            type: type.rawValue,
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            content: content.trimmingCharacters(in: .whitespacesAndNewlines),
-            occurredAt: occurredAt ?? FormatUtils.beijingISOString(),
-            location: finalLocation,
-            cityCode: resolvedCode,
-            cityName: resolvedCityName,
-            footprintId: footprintId,
-            isPrivate: isPrivate,
-            attachmentIds: attachmentIds
-        )
-
-        let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req, attachments: attachments)
-        if queuedOffline {
-            showTemporaryBanner("已暂存至本地发件箱，网络恢复后自动同步")
-        } else {
-            showTemporaryBanner("已归入散页时间流")
-            await loadConfigAndProfile()
-        }
-        return queuedOffline
-    }
-
-    public func submitQuickLedger(
-        amountCents: Int64,
-        type: String = "expense",
-        category: String,
-        title: String,
-        note: String? = nil,
-        paymentMethod: String? = nil,
-        cityCode: String? = nil,
-        occurredAt: String? = nil
-    ) async throws -> Bool {
-        let req = CreateTransactionRequest(
-            amount: amountCents,
-            type: type,
-            category: category,
-            title: title,
-            note: note,
-            paymentMethod: paymentMethod ?? paymentMethods.first ?? "微信支付",
-            cityCode: cityCode,
-            occurredAt: occurredAt ?? FormatUtils.beijingISOString()
-        )
-
-        // 乐观写入 + **等待同步结果**：
-        // 调用方需要真实的 queuedOffline 才能决定提示「已记入账本」还是「已暂存发件箱」。
-        // 原先走 fire-and-forget 的后台提交、返回值恒为 false ——
-        // 菜单栏面板看不到全局横幅，离线时也照弹「已记入账本」。
-        // 现改走可等待的 submitTransaction（乐观写入仍在任何 await 之前完成，上屏不变慢）。
-        let (_, queuedOffline) = try await SyncManager.shared.submitTransaction(req)
-        // 成功回执（失败由调用方就地呈现）：账本页极速行原先依赖这里的横幅做唯一反馈
-        let amountText = FormatUtils.formattedYuan(cents: amountCents, includeSymbol: true)
-        if queuedOffline {
-            showTemporaryBanner("已暂存至本地发件箱：\(amountText)（网络恢复后自动上传）")
-            // 离线时不做网络刷新：那只会让提交按钮继续等一轮注定失败/超时的请求。
-            // 恢复联网后会由同步与刷新链路补拉汇总。
-            return true
-        }
-        showTemporaryBanner("已记入账本：\(amountText)")
-        // 关键：**同步完成之后**再拉月度汇总 —— 先拉会把服务端尚未收到的那笔账
-        // 覆盖掉（配合 SyncManager.updateTransactionSummary 的 pending 重叠兜底双保险）。
-        await loadTransactionsAndAssets(forceFull: false)
-        await loadConfigAndProfile()
-        return false
-    }
-
-    // MARK: - 设备配对与密钥授权 (Device Pairing & Credential Vault)
-
-    /// 组装 Vesper Auth OIDC 跨端授权入口地址：`{hubURL}/api/v1/auth/oidc/login?platform=...&device_name=...`
-    public nonisolated static func buildOIDCLoginURL(
-        hubURL: String,
-        platform: String = "macos",
-        deviceName: String
-    ) -> URL? {
-        var base = hubURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while base.hasSuffix("/") {
-            base.removeLast()
-        }
-        guard !base.isEmpty,
-              let parsedBase = URL(string: base),
-              let scheme = parsedBase.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              parsedBase.host?.isEmpty == false,
-              var comps = URLComponents(string: "\(base)/api/v1/auth/oidc/login") else {
-            return nil
-        }
-        var items: [URLQueryItem] = [
-            URLQueryItem(name: "platform", value: platform)
-        ]
-        let cleanName = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cleanName.isEmpty {
-            items.append(URLQueryItem(name: "device_name", value: cleanName))
-        }
-        comps.queryItems = items
-        return comps.url
-    }
-
-    /// 解析配对深链文本：`looseleaf://pair?hub=<中枢地址>&ticket=<配对工单>`
-    /// hub 缺失时返回空串（调用方回退到当前 `hubURLString`）；ticket 缺失或非配对链接返回 nil。
-    public nonisolated static func parsePairLink(_ raw: String) -> (hub: String, ticket: String)? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let comps = URLComponents(string: trimmed),
-              comps.scheme == "looseleaf",
-              comps.host == "pair" else { return nil }
-        let items = comps.queryItems ?? []
-        let ticket = items.first(where: { $0.name == "ticket" })?.value ?? ""
-        guard !ticket.isEmpty else { return nil }
-        let hub = items.first(where: { $0.name == "hub" })?.value ?? ""
-        return (hub, ticket)
-    }
-
-    public func pairWithTicket(_ ticket: String, hubURL: String) async throws {
-        let cleanTicket = ticket.trimmingCharacters(in: .whitespacesAndNewlines)
-        APIClient.shared.setBaseURL(hubURL)
-        self.hubURLString = APIClient.shared.baseURLString
-        let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-        let _ = try await APIClient.shared.confirmPairing(
-            ticket: cleanTicket,
-            deviceName: "\(hostName) · macOS",
-            deviceModel: "Mac"
-        )
-        if redeemedPairTickets.count >= 64 {
-            redeemedPairTickets.removeAll()
-        }
-        redeemedPairTickets.insert(cleanTicket)
-        self.isPaired = true
-        self.errorBanner = nil
-        // 换了一个中枢：往年今日的当日缓存必须失效。
-        onThisDayCacheDateKey = nil
-        showTemporaryBanner("配对工单握手成功，凭证已写入本机受保护档案")
-        await refreshAll(forceFull: true)
-    }
-
-    public func disconnectDevice() async {
-        // 网络失败时中止解绑：服务端没吊销成而本机清了凭据/发件箱，
-        // 离线记录会被永久丢弃，且该设备在服务端仍是受信状态——与 Android
-        // 端的解绑中止语义对齐；4xx（服务端明确说不认识/已吊销）才继续强制清除。
-        if let devId = CredentialStore.getDeviceId() {
-            do {
-                try await APIClient.shared.revokeDevice(id: devId)
-            } catch let apiErr as APIError {
-                if case .serverError = apiErr {
-                    // 4xx：服务端已不认识这台设备，等价于已吊销，继续本地清除
-                } else {
-                    showTemporaryBanner("解除失败：无法联系中枢，本机数据与待同步记录均未清除，请联网后重试")
-                    return
-                }
-            } catch {
-                showTemporaryBanner("解除失败：无法联系中枢，本机数据与待同步记录均未清除，请联网后重试")
-                return
-            }
-        }
-        CredentialStore.clearAllCredentials()
-        self.isPaired = false
-        wipeAllLocalDeviceData()
-        showTemporaryBanner("已安全吊销凭证并彻底清除本机私密快照与缓存")
-    }
-
-    /// 彻底抹除本地快照、媒体缓存、HTTP 缓存、Spotlight 索引、接力活动与内存态（A3 全清策略）
-    private func wipeAllLocalDeviceData() {
-        endHandoffActivity()
-        SyncManager.shared.purgeAllLocalData()
-        PaperImageCache.clearAllCaches()
-        APIClient.removeAllCachedResponses()
-        SpotlightIndexer.clearIndex()
-        clearPrivateArchiveState()
-    }
-
-    /// 解除配对 / 401 吊销 / 切换中枢时清空一切「属于旧中枢」的内存状态。
-    private func clearPrivateArchiveState() {
-        entries = []
-        transactions = []
-        projects = []
-        wishes = []
-        footprints = []
-        onThisDayEntries = []
-        onThisDayCacheDateKey = nil
-        clearGlobalSearchResult()
-        assetsOverview = nil
-        transactionSummary = TransactionSummary()
-        profile = CuratorProfile()
-        siteConfig = SiteConfig()
-        stats = GlobalStats()
-        trustedDevices = []
-        creditChannels = []
-        outboxItems = []
-        undoStack = []
-        quickDraft.reset()
-        highlightedEntry = nil
-        detailWindowEntry = nil
-        editingEntry = nil
-        editingTransaction = nil
-        lightboxAttachment = nil
-        activeConfirmDialog = nil
-        navigation.highlightedWishId = nil
-        navigation.highlightedProjectId = nil
-        navigation.highlightedFootprintCity = nil
-        pendingUploadCount = 0
-        failedUploadCount = 0
-        pendingEntriesCount = 0
-        pendingTransactionsCount = 0
-        banners.clearAll()
-        entriesRevision += 1
-        transactionsRevision += 1
-        filteredMemo = nil
-        streamRowsMemo = nil
-        entryCountsMemo = nil
-        entriesByDateMemo = nil
-        transactionIndexMemo = nil
-        searchCorpusMemo = nil
-        appliedEntriesFingerprint = nil
-        appliedTransactionsFingerprint = nil
-    }
-
-    /// 导航定位并打开指定散页（Spotlight 系统搜索 / 深链直达）
-    public func navigateToEntry(id entryId: Int) {
-        self.activeSection = .stream
-        self.selectedCategory = .all
-        self.searchQuery = ""
-        self.keyboardFocusedEntryId = entryId
-
-        if let found = entries.first(where: { $0.id == entryId }) {
-            self.detailWindowEntry = found
-            publishHandoffActivity(for: found)
-        } else {
-            // 若当前本地快照中尚未载入该条目，异步刷新后再次尝试查找
-            Task { @MainActor in
-                await self.loadEntries(forceFull: true)
-                if let found = self.entries.first(where: { $0.id == entryId }) {
-                    self.detailWindowEntry = found
-                }
-            }
-        }
-    }
-
-    /// 处理自定义 URL Scheme:
-    /// - looseleaf://pair?hub=https://...&ticket=pair_tk_...
-    /// - looseleaf://entry/123
-    public func handleIncomingURL(_ url: URL) {
-        guard url.scheme == "looseleaf" else { return }
-        if url.host == "pair" {
-            guard let parsed = Self.parsePairLink(url.absoluteString) else { return }
-            let cleanTicket = parsed.ticket.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleanTicket.isEmpty,
-                  !inFlightPairTickets.contains(cleanTicket),
-                  !redeemedPairTickets.contains(cleanTicket) else {
-                return
-            }
-            inFlightPairTickets.insert(cleanTicket)
-            isConfirmingIncomingPairTicket = true
-            let hub = parsed.hub.isEmpty ? hubURLString : parsed.hub
-            Task { @MainActor in
-                defer {
-                    self.inFlightPairTickets.remove(cleanTicket)
-                    self.isConfirmingIncomingPairTicket = !self.inFlightPairTickets.isEmpty
-                }
-                do {
-                    try await pairWithTicket(cleanTicket, hubURL: hub)
-                    NSApp?.activate(ignoringOtherApps: true)
-                } catch {
-                    self.errorBanner = error.localizedDescription
-                }
-            }
-        } else if url.host == "entry" {
-            if let idStr = url.pathComponents.last, let entryId = Int(idStr) {
-                navigateToEntry(id: entryId)
-            }
-        }
-    }
-
-    // MARK: - Dock 图标策略与登录启动
-
-    /// 应用激活策略：.regular 显示在 Dock 与 ⌘Tab；.accessory 只驻留菜单栏
     private func applyActivationPolicy() {
         let policy: NSApplication.ActivationPolicy = showsDockIcon ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
     }
 
-    /// 登录时启动（macOS 13+ 使用 SMAppService 主应用注册）
     private func applyLaunchAtLogin() {
         #if canImport(ServiceManagement)
         if #available(macOS 13.0, *) {
@@ -1799,282 +611,6 @@ public final class AppState {
             }
         }
         #endif
-    }
-
-    // MARK: - 接力 (Handoff / NSUserActivity)
-
-    /// 把某条散页发布为当前接力活动（私密散页严禁广播至蓝牙/iCloud Handoff）
-    public func publishHandoffActivity(for entry: LifeEntry) {
-        guard !entry.isPrivate else {
-            endHandoffActivity()
-            return
-        }
-        let activity = NSUserActivity(activityType: Self.userActivityType)
-        // NSUserActivity 没有 subtitle；地点信息并入 title 的说明文案
-        let baseTitle = entry.title.isEmpty ? "散页手稿" : entry.title
-        if let place = entry.cityName ?? entry.location, !place.isEmpty {
-            activity.title = "\(baseTitle) · \(place)"
-        } else {
-            activity.title = baseTitle
-        }
-        activity.userInfo = ["entryId": entry.id]
-        activity.isEligibleForHandoff = true
-        activity.isEligibleForSearch = false
-        activity.becomeCurrent()
-        currentUserActivity = activity
-    }
-
-    /// 结束接力活动
-    public func endHandoffActivity() {
-        currentUserActivity?.resignCurrent()
-        currentUserActivity = nil
-    }
-
-    /// 处理接力过来的活动（来自其它设备的「继续浏览」）
-    public func handleHandoffActivity(_ activity: NSUserActivity) {
-        guard activity.activityType == Self.userActivityType else { return }
-        let raw = activity.userInfo?["entryId"] as? NSNumber
-        let id = raw?.intValue ?? activity.userInfo?["entryId"] as? Int ?? -1
-        guard id >= 0 else { return }
-        navigateToEntry(id: id)
-    }
-
-    // MARK: - 同步失败重试
-
-    /// 统计「需要重新上传」的条目数（待同步 + 同步失败，O(1) 读取）
-    public var entriesNeedingUpload: Int {
-        pendingEntriesCount
-    }
-
-    /// 统计「需要重新上传」的账目数（O(1) 读取）
-    public var transactionsNeedingUpload: Int {
-        pendingTransactionsCount
-    }
-
-    /// **重新上传**一条散页（无论它是「待同步」还是「同步失败」）
-    public func reuploadEntry(id: Int) {
-        guard let entry = entries.first(where: { $0.id == id }) else { return }
-        let req = CreateEntryRequest(
-            type: entry.type,
-            title: entry.title,
-            content: entry.content,
-            occurredAt: entry.occurredAt,
-            location: entry.location,
-            cityCode: entry.cityCode,
-            cityName: entry.cityName,
-            projectId: entry.projectId,
-            wishId: entry.wishId,
-            footprintId: entry.footprintId,
-            isPrivate: entry.isPrivate,
-            attachmentIds: entry.attachments.map(\.id)
-        )
-        SyncManager.shared.resyncEntry(id: id, req: req, attachments: entry.attachments)
-    }
-
-    /// **重新上传**一条账目
-    public func reuploadTransaction(id: Int) {
-        guard let tx = transactions.first(where: { $0.id == id }) else { return }
-        let req = CreateTransactionRequest(
-            amount: tx.amount,
-            type: tx.type,
-            category: tx.category,
-            title: tx.title,
-            note: tx.note,
-            paymentMethod: tx.paymentMethod,
-            cityCode: tx.cityCode,
-            occurredAt: tx.occurredAt,
-            // 关键：**完整透传分期字段** —— 重传若丢掉分期信息，
-            // 等于把一笔分期账目悄悄改成一次性支出。
-            isInstallment: tx.isInstallment,
-            installmentChannelCode: tx.installmentChannelCode,
-            installmentTotalAmount: tx.installmentTotalAmount,
-            installmentMonths: tx.installmentMonths,
-            installmentMonthlyPay: tx.installmentMonthlyPay,
-            installmentRemainMonths: tx.installmentRemainMonths,
-            repaymentDay: tx.repaymentDay
-        )
-        // 同上：复用本地 id，避免留下一条永远同步不掉的旧账目
-        SyncManager.shared.resyncTransaction(id: id, req: req)
-    }
-
-    /// **批量重新上传**：把所有待同步 / 同步失败的内容重新推一遍
-    ///
-    /// 关键：断一次网就会积压几十条，靠逐条点「重试」不现实。
-    /// 同时把发件箱里已到重试上限的**死信**重新放回队列
-    /// （`resetPausedOutboxItems`），否则它们永远不会被尝试。
-    @discardableResult
-    public func reuploadAllPending() -> Int {
-        let pendingEntries = entries.filter { ($0.syncStatus ?? "synced") != "synced" }
-        let pendingTransactions = transactions.filter { ($0.syncStatus ?? "synced") != "synced" }
-        let count = pendingEntries.count + pendingTransactions.count
-        guard count > 0 else { return 0 }
-
-        // 死信重新排队（否则自动同步永远跳过它们）
-        SyncManager.shared.resetPausedOutboxItems()
-
-        // 若后台正在 flushOutbox，避免并发触发第二套重传请求导致竞态
-        guard !SyncManager.shared.isFlushingOutbox else {
-            showTemporaryBanner("同步队列正在上传中（共 \(count) 条待同步内容）")
-            return count
-        }
-
-        // 关键：先取**快照**再逐条重传。
-        // 边遍历边重传会边改集合（重传会把状态改回「待同步」），
-        // 遍历行为不可预期。
-        for entry in pendingEntries { reuploadEntry(id: entry.id) }
-        for tx in pendingTransactions { reuploadTransaction(id: tx.id) }
-
-        showTemporaryBanner("已重新上传 \(count) 条待同步内容")
-        return count
-    }
-
-    /// 重试一条标记为 failed 的散页（统一委托 `reuploadEntry` 保证 `isPrivate` 等字段一致透传）
-    public func retryFailedEntry(id: Int) {
-        reuploadEntry(id: id)
-    }
-
-    /// 重试一条标记为 failed 的账目
-    public func retryFailedTransaction(id: Int) {
-        reuploadTransaction(id: id)
-    }
-
-    // MARK: - 心愿 / 造物 / 足迹票根可撤销删除
-
-    public func deleteWishAction(_ wish: Wish) async throws {
-        try await APIClient.shared.deleteWish(id: wish.id)
-        await refreshAfterSecondaryWrite()
-        showTemporaryBanner("已移除心愿「\(wish.title)」（可按 ⌘Z 撤销）")
-        registerUndo(label: "删除心愿「\(wish.title)」") { [weak self] in
-            guard let self else { return false }
-            do {
-                let req = CreateWishRequest(
-                    title: wish.title,
-                    kind: wish.kind,
-                    note: wish.note,
-                    spec: wish.spec,
-                    cityCode: wish.cityCode,
-                    cityName: wish.cityName,
-                    budget: wish.budget,
-                    targetDate: wish.targetDate,
-                    plantedAt: wish.plantedAt,
-                    attachmentIds: wish.attachments.isEmpty ? nil : wish.attachments.map(\.id),
-                    isPrivate: wish.isPrivate
-                )
-                _ = try await APIClient.shared.createWish(req)
-                await self.refreshAfterSecondaryWrite()
-                return true
-            } catch {
-                self.errorBanner = "撤销删除心愿失败：\(error.localizedDescription)"
-                return false
-            }
-        }
-    }
-
-    public func deleteProjectAction(_ proj: Project) async throws {
-        try await APIClient.shared.deleteProject(id: proj.id)
-        await refreshAfterSecondaryWrite()
-        showTemporaryBanner("已移除造物项目「\(proj.title)」（可按 ⌘Z 撤销）")
-        registerUndo(label: "删除项目「\(proj.title)」") { [weak self] in
-            guard let self else { return false }
-            do {
-                let req = CreateProjectRequest(
-                    title: proj.title,
-                    subtitle: proj.subtitle,
-                    description: proj.description,
-                    story: proj.story,
-                    category: proj.category,
-                    status: proj.status,
-                    githubUrl: proj.githubUrl,
-                    order: proj.order,
-                    isPrivate: proj.isPrivate
-                )
-                _ = try await APIClient.shared.createProject(req)
-                await self.refreshAfterSecondaryWrite()
-                return true
-            } catch {
-                self.errorBanner = "撤销删除项目失败：\(error.localizedDescription)"
-                return false
-            }
-        }
-    }
-
-    public func deleteFootprintAction(_ fp: Footprint) async throws {
-        try await APIClient.shared.deleteFootprint(id: fp.id)
-        await refreshAfterSecondaryWrite()
-        showTemporaryBanner("已移除「\(fp.cityName)」足迹票根（可按 ⌘Z 撤销）")
-        registerUndo(label: "删除足迹「\(fp.cityName)」") { [weak self] in
-            guard let self else { return false }
-            do {
-                let req = CreateFootprintRequest(
-                    cityCode: fp.cityCode,
-                    cityName: fp.cityName,
-                    title: fp.title,
-                    visitedAt: fp.visitedAt,
-                    departedAt: fp.departedAt,
-                    note: fp.note,
-                    attachmentIds: fp.attachments.isEmpty ? nil : fp.attachments.map(\.id),
-                    isPrivate: fp.isPrivate
-                )
-                _ = try await APIClient.shared.createFootprint(req)
-                await self.refreshAfterSecondaryWrite()
-                return true
-            } catch {
-                self.errorBanner = "撤销删除足迹失败：\(error.localizedDescription)"
-                return false
-            }
-        }
-    }
-
-    // MARK: - 撤销栈 (Undo)
-
-    /// 一次可撤销的操作
-    public struct UndoAction: Identifiable {
-        public let id = UUID()
-        public let label: String
-        let perform: () async -> Bool
-
-        public init(label: String, perform: @escaping () async -> Bool) {
-            self.label = label
-            self.perform = perform
-        }
-    }
-
-    /// 最近的撤销操作（栈顶为最近一次；启用 Observation 以实时驱动菜单栏 ⌘Z 可用态与文案）
-    private var undoStack: [UndoAction] = []
-    /// 撤销动作串行执行，避免连续快捷键在 await 期间交错。
-    @ObservationIgnored private var isUndoing = false
-    /// 撤销栈容量上限
-    public static let maxUndoStackSize = 20
-
-    /// 是否存在可撤销的操作（供菜单项启用/禁用）
-    public var canUndo: Bool { !undoStack.isEmpty }
-
-    /// 最近一次可撤销操作的名称（供界面展示）
-    public var undoActionLabel: String? { undoStack.last?.label }
-
-    /// 登记一次可撤销操作
-    public func registerUndo(label: String, perform: @escaping () async -> Bool) {
-        undoStack.append(UndoAction(label: label, perform: perform))
-        if undoStack.count > Self.maxUndoStackSize {
-            undoStack.removeFirst(undoStack.count - Self.maxUndoStackSize)
-        }
-    }
-
-    /// 执行并弹出最近一次撤销操作
-    public func performUndo() async {
-        guard !isUndoing, let action = undoStack.popLast() else { return }
-        isUndoing = true
-        defer { isUndoing = false }
-        if await action.perform() {
-            showTemporaryBanner("已撤销「\(action.label)」")
-        } else {
-            // 失败路径由动作自身给出提示；动作必须放回栈顶，
-            // 否则一次网络故障就会让这次撤销永久失去重试入口。
-            undoStack.append(action)
-            if undoStack.count > Self.maxUndoStackSize {
-                undoStack.removeFirst(undoStack.count - Self.maxUndoStackSize)
-            }
-        }
     }
 
     public func showTemporaryBanner(_ text: String) {

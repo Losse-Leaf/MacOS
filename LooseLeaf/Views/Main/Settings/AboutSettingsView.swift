@@ -11,8 +11,6 @@ struct AboutSettingsView: View {
     }
 
     public var body: some View {
-        let currentVersion = UpdateChecker.shared.currentVersion
-        let currentBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         let checker = UpdateChecker.shared
 
         return VStack(spacing: ArchiveSpacing.l) {
@@ -22,15 +20,15 @@ struct AboutSettingsView: View {
                     .padding(.top, ArchiveSpacing.s)
 
                 VStack(spacing: ArchiveSpacing.xs) {
-                    Text("Loose-Leaf · 活页集")
+                    Text(ArchiveAppInfo.displayName)
                         .font(ArchiveTypography.editorialSerif(size: Self.heroTitleSize, weight: .bold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
-                    Text("以纸为介，散页成卷 · 生活原色，自当留存")
+                    Text("\(ArchiveAppInfo.subtitle) · 以纸为介，散页成卷")
                         .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkSecondary)
 
-                    Text("版本 \(currentVersion) (Build \(currentBuild)) · 原生 Apple Silicon")
+                    Text("\(ArchiveAppInfo.fullVersion) · 原生 Apple Silicon")
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
                         .padding(.top, ArchiveSpacing.xxs)
@@ -153,7 +151,7 @@ struct AboutSettingsView: View {
                         settingsCardRow(
                             icon: "checkmark.seal.fill",
                             iconColor: ArchivePalette.accentMoss,
-                            title: "当前已是最新版本 (v\(currentVersion))",
+                            title: "当前已是最新版本 (v\(ArchiveAppInfo.version))",
                             subtitle: "Loose-Leaf 已同步至官方最新稳定发行版"
                         ) {
                             Button("重新检查更新") {
@@ -251,10 +249,10 @@ struct AboutSettingsView: View {
                     icon: "chevron.left.forwardslash.chevron.right",
                     iconColor: ArchivePalette.inkSecondary,
                     title: "GitHub 开源仓库",
-                    subtitle: "github.com/\(UpdateChecker.repo)"
+                    subtitle: "github.com/\(ArchiveAppInfo.repository)"
                 ) {
                     Button {
-                        if let url = URL(string: "https://github.com/\(UpdateChecker.repo)") {
+                        if let url = ArchiveAppInfo.repositoryURL {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
@@ -279,7 +277,7 @@ struct AboutSettingsView: View {
                     subtitle: "报告 Bug、提出改进建议或参与功能讨论"
                 ) {
                     Button {
-                        if let url = URL(string: "https://github.com/\(UpdateChecker.repo)/issues") {
+                        if let url = ArchiveAppInfo.repositoryURL?.appendingPathComponent("issues") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {

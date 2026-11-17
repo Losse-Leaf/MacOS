@@ -9,20 +9,7 @@ public struct CuratorDossierView: View {
     @Bindable var appState: AppState
 
     @State private var showEditProfileSheet: Bool = false
-    @State private var dossierError: String?
-    @State private var editName: String = ""
-    @State private var editTitle: String = ""
-    @State private var editCity: String = ""
-    @State private var editLocation: String = ""
-    @State private var editMotto: String = ""
-    @State private var editBio: String = ""
-    @State private var editManifesto: String = ""
-    @State private var newAvatarKey: String?
-    @State private var isUploadingAvatar: Bool = false
-    @State private var isSavingProfile: Bool = false
-    @State private var avatarPreviewImage: NSImage?
     @State private var selectedHeatmapDate: String? = nil
-    @FocusState private var isNameFocused: Bool
 
     public init(appState: AppState) {
         self.appState = appState
@@ -33,18 +20,6 @@ public struct CuratorDossierView: View {
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
-                if let dossierError {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 12))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Text(dossierError)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                        Spacer()
-                    }
-                }
-
                 // 1. 主理人名片与暗房肖像
                 profileCard(prof)
 
@@ -74,7 +49,9 @@ public struct CuratorDossierView: View {
             .padding(ArchiveSpacing.xl)
         }
         .sheet(isPresented: $showEditProfileSheet) {
-            editProfileSheetView
+            EditCuratorProfileSheet(appState: appState) {
+                showEditProfileSheet = false
+            }
         }
     }
 
@@ -112,16 +89,6 @@ public struct CuratorDossierView: View {
                     Spacer()
 
                     Button("修订档案") {
-                        editName = prof.name
-                        editTitle = prof.title
-                        editCity = prof.currentCity
-                        editLocation = prof.location
-                        editMotto = prof.motto
-                        editBio = prof.bio
-                        editManifesto = prof.manifesto
-                        newAvatarKey = nil
-                        avatarPreviewImage = nil
-                        dossierError = nil
                         showEditProfileSheet = true
                     }
                     .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
@@ -335,19 +302,50 @@ public struct CuratorDossierView: View {
         }
         .padding(.top, 4)
     }
+}
 
-    private var editProfileSheetView: some View {
+// MARK: - 独立隔离的主理人档案修订弹窗 (EditCuratorProfileSheet)
+/// 隔离编辑输入状态，避免在弹窗内每次敲击字符导致父级 `CuratorDossierView` 与 365 格编年热力图整树重求值。
+@MainActor
+struct EditCuratorProfileSheet: View {
+    @Bindable var appState: AppState
+    var onDismiss: () -> Void
+
+    @State private var editName: String
+    @State private var editTitle: String
+    @State private var editCity: String
+    @State private var editLocation: String
+    @State private var editMotto: String
+    @State private var editBio: String
+    @State private var editManifesto: String
+    @State private var newAvatarKey: String?
+    @State private var isUploadingAvatar: Bool = false
+    @State private var isSavingProfile: Bool = false
+    @State private var avatarPreviewImage: NSImage?
+    @State private var dossierError: String?
+    @FocusState private var isNameFocused: Bool
+
+    init(appState: AppState, onDismiss: @escaping () -> Void) {
+        self.appState = appState
+        self.onDismiss = onDismiss
+        let prof = appState.profile
+        _editName = State(initialValue: prof.name)
+        _editTitle = State(initialValue: prof.title)
+        _editCity = State(initialValue: prof.currentCity)
+        _editLocation = State(initialValue: prof.location)
+        _editMotto = State(initialValue: prof.motto)
+        _editBio = State(initialValue: prof.bio)
+        _editManifesto = State(initialValue: prof.manifesto)
+    }
+
+    var body: some View {
         PaperSheetScaffold(
             title: "修订主理人档案",
             width: ArchiveSheetWidth.standard,
             isSubmitting: isSavingProfile,
             isSubmitDisabled: isUploadingAvatar,
             submitTitle: "保存档案 ⌘↩",
-            onCancel: {
-                newAvatarKey = nil
-                avatarPreviewImage = nil
-                showEditProfileSheet = false
-            },
+            onCancel: onDismiss,
             onSubmit: saveProfile
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -385,6 +383,7 @@ public struct CuratorDossierView: View {
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     TextField("主理人称谓", text: $editName)
+                        .accessibilityLabel("主理人称谓")
                         .textFieldStyle(.plain)
                         .focused($isNameFocused)
                         .padding(ArchiveSpacing.s)
@@ -397,6 +396,7 @@ public struct CuratorDossierView: View {
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     TextField("主理人身份", text: $editTitle)
+                        .accessibilityLabel("主理人身份")
                         .textFieldStyle(.plain)
                         .padding(ArchiveSpacing.s)
                         .background(ArchivePalette.archiveSubtle)
@@ -426,6 +426,7 @@ public struct CuratorDossierView: View {
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     TextField("近况题记", text: $editMotto)
+                        .accessibilityLabel("近况题记")
                         .textFieldStyle(.plain)
                         .padding(ArchiveSpacing.s)
                         .background(ArchivePalette.archiveSubtle)
@@ -437,6 +438,7 @@ public struct CuratorDossierView: View {
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     TextField("副标题", text: $editBio, axis: .vertical)
+                        .accessibilityLabel("副标题")
                         .textFieldStyle(.plain)
                         .lineLimit(3...6)
                         .padding(ArchiveSpacing.s)
@@ -449,6 +451,7 @@ public struct CuratorDossierView: View {
                         .font(ArchiveTypography.monoScale(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     TextField("主理人宣言", text: $editManifesto, axis: .vertical)
+                        .accessibilityLabel("主理人宣言")
                         .textFieldStyle(.plain)
                         .lineLimit(3...6)
                         .padding(ArchiveSpacing.s)
@@ -488,10 +491,7 @@ public struct CuratorDossierView: View {
             do {
                 _ = try await APIClient.shared.updateCuratorProfile(req)
                 await appState.loadConfigAndProfile()
-                dossierError = nil
-                newAvatarKey = nil
-                avatarPreviewImage = nil
-                showEditProfileSheet = false
+                onDismiss()
             } catch {
                 dossierError = "档案保存失败：\(error.localizedDescription)"
             }
@@ -539,7 +539,9 @@ public struct CuratorDossierView: View {
     }
 }
 
+#if DEBUG
 #Preview("主理人档案") {
     CuratorDossierView(appState: ArchivePreviewFixtures.makeAppState())
         .frame(width: 1100, height: 760)
 }
+#endif

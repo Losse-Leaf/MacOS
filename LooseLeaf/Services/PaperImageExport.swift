@@ -12,6 +12,27 @@
 import AppKit
 import Foundation
 
+/// 图像字节魔数嗅探器（供拖拽暂存与相纸导出共用）
+public enum ImageFormatSniffer {
+    /// 根据文件字节头魔数推断真实图片扩展名（解决缩略图接口 `/files/thumbnail` 无后缀与剪贴板/拖拽无扩展名问题）
+    public static func fileExtension(for data: Data, fallbackURL: URL? = nil) -> String {
+        if data.count >= 12 {
+            let bytes = [UInt8](data.prefix(12))
+            if bytes[0] == 0xFF, bytes[1] == 0xD8 { return "jpg" }
+            if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 { return "png" }
+            if bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46 { return "gif" }
+            if bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
+               bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50 { return "webp" }
+            if bytes[0] == 0x42, bytes[1] == 0x4D { return "tif" }
+            if bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 { return "heic" }
+        }
+        if let ext = fallbackURL?.pathExtension, !ext.isEmpty {
+            return ext.lowercased()
+        }
+        return "jpg"
+    }
+}
+
 /// 相纸导出结果
 public enum PaperImageExportResult: Equatable, Sendable {
     /// 成功（附一句给用户看的提示）
@@ -47,22 +68,9 @@ public enum PaperImageExport {
         }
     }
 
-    /// 根据文件字节头魔数推断真实图片扩展名（解决缩略图接口 `/files/thumbnail` 无后缀问题）
+    /// 根据文件字节头魔数推断真实图片扩展名（委托至 `ImageFormatSniffer`）
     public nonisolated static func inferredExtension(for data: Data, fallbackURL: URL? = nil) -> String {
-        if data.count >= 12 {
-            let bytes = [UInt8](data.prefix(12))
-            if bytes[0] == 0xFF, bytes[1] == 0xD8 { return "jpg" }
-            if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 { return "png" }
-            if bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46 { return "gif" }
-            if bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
-               bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50 { return "webp" }
-            if bytes[0] == 0x42, bytes[1] == 0x4D { return "tif" }
-            if bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 { return "heic" }
-        }
-        if let ext = fallbackURL?.pathExtension, !ext.isEmpty {
-            return ext.lowercased()
-        }
-        return "jpg"
+        ImageFormatSniffer.fileExtension(for: data, fallbackURL: fallbackURL)
     }
 
     /// 规范化导出默认文件名（确保携带有效图片扩展名）
@@ -130,5 +138,20 @@ public enum PaperImageExport {
         } catch {
             return .failure(message: error.localizedDescription)
         }
+    }
+
+    /// 弹出系统保存面板并导出相纸（用户取消返回 `nil`）
+    public static func presentSavePanel(url: URL, preferredFilename: String? = nil) async -> PaperImageExportResult? {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = normalizedFilename(preferredFilename, fallbackURL: url)
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            response = await panel.beginSheetModal(for: window)
+        } else {
+            response = await panel.begin()
+        }
+        guard response == .OK, let targetURL = panel.url else { return nil }
+        return await exportToDisk(url: url, to: targetURL)
     }
 }

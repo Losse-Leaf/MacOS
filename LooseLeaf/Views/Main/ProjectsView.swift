@@ -112,12 +112,12 @@ public struct ProjectsView: View {
             }
         }
         .sheet(isPresented: $showNewProjectSheet) {
-            NewProjectSheet(appState: appState) {
+            ProjectEditorSheet(appState: appState) {
                 showNewProjectSheet = false
             }
         }
         .sheet(item: $editingProject) { proj in
-            EditProjectSheet(appState: appState, project: proj) {
+            ProjectEditorSheet(appState: appState, project: proj) {
                 editingProject = nil
             }
         }
@@ -324,7 +324,9 @@ public struct ProjectsView: View {
     }
 }
 
+#if DEBUG
 #Preview("造物项目") {
     ProjectsView(appState: ArchivePreviewFixtures.makeAppState())
         .frame(width: 1100, height: 760)
 }
+#endif

@@ -272,6 +272,66 @@ public actor APIClient {
         throw APIError.networkFailure(lastError?.localizedDescription ?? "网络请求失败")
     }
 
+    private func decodeEnvelopeResponse<T: Decodable & Sendable>(
+        data: Data,
+        response: URLResponse,
+        request: URLRequest? = nil,
+        cacheKey: String? = nil
+    ) async throws -> T {
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.networkFailure("无效的 HTTP 响应")
+        }
+
+        if http.statusCode == 304 {
+            throw APIError.notModified
+        }
+
+        if http.statusCode == 401 {
+            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
+            let pathHint = request?.url?.path ?? "unknown"
+            Self.logger.warning("Received 401 unauthorized from \(pathHint, privacy: .public)")
+            let requestToken = request?.value(forHTTPHeaderField: "X-Device-Token") ?? ""
+            let currentToken = CredentialStore.getToken() ?? ""
+            let isCurrentToken = requestToken.isEmpty || requestToken == currentToken
+            if isCurrentToken {
+                notifyUnauthorizedThrottled()
+            }
+            throw APIError.unauthorized(errEnvelope?.message ?? "")
+        }
+
+        if let cacheKey,
+           (200..<300).contains(http.statusCode),
+           let newETag = http.value(forHTTPHeaderField: "ETag"),
+           !newETag.isEmpty {
+            etagCache[cacheKey] = (token: CredentialStore.getToken() ?? "", etag: newETag)
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
+            throw APIError.serverError(
+                code: errEnvelope?.code ?? http.statusCode,
+                message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+            )
+        }
+
+        do {
+            let envelope: APIEnvelope<T> = try await Task.detached(priority: .userInitiated) {
+                try Self.makeDecoder().decode(APIEnvelope<T>.self, from: data)
+            }.value
+            if envelope.code >= 400 {
+                throw APIError.serverError(code: envelope.code, message: envelope.message)
+            }
+            guard let payload = envelope.data else {
+                throw APIError.serverError(code: envelope.code, message: envelope.message)
+            }
+            return payload
+        } catch let apiErr as APIError {
+            throw apiErr
+        } catch {
+            throw APIError.decodingFailure(error.localizedDescription)
+        }
+    }
+
     private func performEnvelopeRequest<T: Decodable & Sendable>(
         path: String,
         method: String = "GET",
@@ -302,64 +362,21 @@ public actor APIClient {
             throw APIError.networkFailure(error.localizedDescription)
         }
 
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.networkFailure("无效的 HTTP 响应")
-        }
+        return try await decodeEnvelopeResponse(
+            data: data,
+            response: response,
+            request: request,
+            cacheKey: cacheKey
+        )
+    }
 
-        if http.statusCode == 304 {
-            throw APIError.notModified
-        }
-
-        if http.statusCode == 401 {
-            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
-            Self.logger.warning("Received 401 unauthorized from \(path, privacy: .public)")
-            // 只对「当前令牌」的 401 触发吊销广播：配对前发出的旧令牌请求
-            // 若在重新配对后返回 401（confirmPairing 末尾已复位一次性标志），
-            // 不加比对会把刚保存的新令牌误删、把用户踢回配对门禁。
-            let requestToken = request.value(forHTTPHeaderField: "X-Device-Token") ?? ""
-            let currentToken = CredentialStore.getToken() ?? ""
-            let isCurrentToken = requestToken.isEmpty || requestToken == currentToken
-            if isCurrentToken, !hasNotifiedUnauthorized {
-                hasNotifiedUnauthorized = true
-                NotificationCenter.default.post(name: .looseLeafUnauthorized, object: nil)
-            }
-            throw APIError.unauthorized(errEnvelope?.message ?? "")
-        }
-
-        // 关键：ETag 只在确认 2xx 之后写入。
-        // 若在状态码校验之前写入，服务端 5xx 附带的错误 ETag 会覆盖正确值，
-        // 下次请求带上错误 If-None-Match 可能换来 304 —— 客户端会认为「数据未变更」，造成静默数据丢失。
-        if (200..<300).contains(http.statusCode),
-           let newETag = http.value(forHTTPHeaderField: "ETag"),
-           !newETag.isEmpty {
-            etagCache[cacheKey] = (token: CredentialStore.getToken() ?? "", etag: newETag)
-        }
-
-        if http.statusCode >= 400 {
-            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
-            throw APIError.serverError(
-                code: errEnvelope?.code ?? http.statusCode,
-                message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            )
-        }
-
-        // 解码是同步的，放到独立任务中执行，避免阻塞 actor 串行化其他请求
-        do {
-            let envelope: APIEnvelope<T> = try await Task.detached(priority: .userInitiated) {
-                try Self.makeDecoder().decode(APIEnvelope<T>.self, from: data)
-            }.value
-            if envelope.code >= 400 {
-                throw APIError.serverError(code: envelope.code, message: envelope.message)
-            }
-            guard let payload = envelope.data else {
-                throw APIError.serverError(code: envelope.code, message: envelope.message)
-            }
-            return payload
-        } catch let apiErr as APIError {
-            throw apiErr
-        } catch {
-            throw APIError.decodingFailure(error.localizedDescription)
-        }
+    private func performDelete(path: String, purge: Bool = false) async throws {
+        let query: [URLQueryItem] = purge ? [URLQueryItem(name: "purge", value: "true")] : []
+        let _: DeleteResponse = try await performEnvelopeRequest(
+            path: path,
+            method: "DELETE",
+            queryItems: query
+        )
     }
 
     private struct EmptyPayload: Codable, Sendable {}
@@ -417,10 +434,7 @@ public actor APIClient {
 
     /// 吊销受信任设备 (DELETE /api/v1/auth/devices/:id)
     public func revokeDevice(id: String) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/auth/devices/\(escapePathComponent(id))",
-            method: "DELETE"
-        )
+        try await performDelete(path: "/api/v1/auth/devices/\(escapePathComponent(id))")
     }
 
     /// 修改已授信设备的备注名称及平台属性 (PUT /api/v1/auth/devices/:id)
@@ -486,7 +500,7 @@ public actor APIClient {
             switch shape {
             case .wrapped:
                 do {
-                    let response: CategoryResetResponse = try await performEnvelopeRequest(
+                    let response: CategoriesListEnvelope = try await performEnvelopeRequest(
                         path: "/api/v1/categories",
                         queryItems: items
                     )
@@ -507,7 +521,7 @@ public actor APIClient {
         }
 
         do {
-            let response: CategoryResetResponse = try await performEnvelopeRequest(
+            let response: CategoriesListEnvelope = try await performEnvelopeRequest(
                 path: "/api/v1/categories",
                 queryItems: items
             )
@@ -582,15 +596,7 @@ public actor APIClient {
     }
 
     public func deleteEntry(id: Int, purge: Bool = false) async throws {
-        var query: [URLQueryItem] = []
-        if purge {
-            query.append(URLQueryItem(name: "purge", value: "true"))
-        }
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/entries/\(id)",
-            method: "DELETE",
-            queryItems: query
-        )
+        try await performDelete(path: "/api/v1/entries/\(id)", purge: purge)
     }
 
     // MARK: - 4. 独立记账与资产管理中枢 (Transactions & Assets Hub)
@@ -648,15 +654,7 @@ public actor APIClient {
     }
 
     public func deleteTransaction(id: Int, purge: Bool = false) async throws {
-        var query: [URLQueryItem] = []
-        if purge {
-            query.append(URLQueryItem(name: "purge", value: "true"))
-        }
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/transactions/\(id)",
-            method: "DELETE",
-            queryItems: query
-        )
+        try await performDelete(path: "/api/v1/transactions/\(id)", purge: purge)
     }
 
     public func fetchAssetsOverview() async throws -> AssetsOverview {
@@ -709,10 +707,7 @@ public actor APIClient {
     }
 
     public func deleteGearAsset(id: String) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/assets/gear/\(escapePathComponent(id))",
-            method: "DELETE"
-        )
+        try await performDelete(path: "/api/v1/assets/gear/\(escapePathComponent(id))")
     }
 
     public func fetchCreditChannels() async throws -> [CreditChannel] {
@@ -734,10 +729,7 @@ public actor APIClient {
     }
 
     public func deleteProject(id: Int) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/projects/\(id)",
-            method: "DELETE"
-        )
+        try await performDelete(path: "/api/v1/projects/\(id)")
     }
 
     public func fetchWishes(
@@ -772,10 +764,7 @@ public actor APIClient {
     }
 
     public func deleteWish(id: Int) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/wishes/\(id)",
-            method: "DELETE"
-        )
+        try await performDelete(path: "/api/v1/wishes/\(id)")
     }
 
     public func fetchFootprints(year: Int? = nil) async throws -> [Footprint] {
@@ -795,10 +784,7 @@ public actor APIClient {
     }
 
     public func deleteFootprint(id: Int) async throws {
-        let _: DeleteResponse = try await performEnvelopeRequest(
-            path: "/api/v1/footprints/\(id)",
-            method: "DELETE"
-        )
+        try await performDelete(path: "/api/v1/footprints/\(id)")
     }
 
     /// 获取单座城市回忆抽屉四重聚合数据 (GET /api/v1/footprints/cities/:city_code/drawer)
@@ -909,38 +895,11 @@ public actor APIClient {
         } catch {
             throw APIError.networkFailure(error.localizedDescription)
         }
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.networkFailure("上传响应无效")
-        }
-        if http.statusCode == 401 {
-            // 与 performEnvelopeRequest 同款「仅广播一次」节流：
-            // 多张相纸并发上传同时 401 时，逐条广播会重复删令牌/重复横幅
-            notifyUnauthorizedThrottled()
-            throw APIError.unauthorized("上传需要设备授权凭据")
-        }
-        // 关键：先判状态码再解码。否则服务端返回 502 HTML 错误页会抛裸 DecodingError，
-        // 上层无法识别为 APIError，会误判为「应回退到本地存储」并把整张图重传一次。
-        guard http.statusCode == 200 else {
-            let errEnvelope = try? Self.makeDecoder().decode(APIEnvelope<EmptyPayload>.self, from: data)
-            throw APIError.serverError(
-                code: errEnvelope?.code ?? http.statusCode,
-                message: errEnvelope?.message ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            )
-        }
-        let envelope: APIEnvelope<UnifiedUploadResponse>
-        do {
-            envelope = try await Task.detached(priority: .userInitiated) {
-                // JSONDecoder 不是线程安全的：不能复用 static decoder 跨任务并发解码。
-                // 这里每次上传完成都是独立任务，创建局部 decoder 的成本远低于竞态风险。
-                let decoder = JSONDecoder()
-                return try decoder.decode(APIEnvelope<UnifiedUploadResponse>.self, from: data)
-            }.value
-        } catch {
-            throw APIError.decodingFailure(error.localizedDescription)
-        }
-        guard let res = envelope.data else {
-            throw APIError.serverError(code: envelope.code, message: envelope.message)
-        }
+        let res: UnifiedUploadResponse = try await decodeEnvelopeResponse(
+            data: data,
+            response: response,
+            request: request
+        )
         return Attachment(
             id: res.attachmentId,
             objectKey: res.objectKey,

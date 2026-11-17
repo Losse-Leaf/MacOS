@@ -57,6 +57,7 @@ public extension View {
 
 // MARK: - 预览假数据 (Preview Fixtures)
 
+#if DEBUG
 /// SwiftUI 预览用的假数据装配器。
 /// 仅在 `#Preview` 中调用：为 AppState 注入结构完整的示例数据，
 /// 便于离线检视各主视图的排版、空态与加载态。
@@ -423,3 +424,4 @@ enum ArchivePreviewFixtures {
         return state
     }
 }
+#endif

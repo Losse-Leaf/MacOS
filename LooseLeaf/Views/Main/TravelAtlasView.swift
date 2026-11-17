@@ -46,12 +46,12 @@ public struct TravelAtlasView: View {
             consumeHighlightedCityIfNeeded()
         }
         .sheet(isPresented: $showNewFootprintSheet) {
-            NewFootprintSheet(appState: appState) {
+            FootprintEditorSheet(appState: appState) {
                 showNewFootprintSheet = false
             }
         }
         .sheet(item: $editingFootprint) { fp in
-            EditFootprintSheet(appState: appState, footprint: fp) {
+            FootprintEditorSheet(appState: appState, footprint: fp) {
                 editingFootprint = nil
             }
         }
@@ -324,7 +324,9 @@ public struct TravelAtlasView: View {
     }
 }
 
+#if DEBUG
 #Preview("山川印谱") {
     TravelAtlasView(appState: ArchivePreviewFixtures.makeAppState())
         .frame(width: 1100, height: 760)
 }
+#endif

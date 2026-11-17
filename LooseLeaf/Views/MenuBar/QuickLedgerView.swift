@@ -327,28 +327,10 @@ public struct QuickLedgerView: View {
     @ViewBuilder
     private var feedbackBar: some View {
         if let localError {
-            feedbackStrip(icon: "exclamationmark.triangle.fill", text: localError, tint: ArchivePalette.accentWarm)
+            QuickFeedbackStrip(icon: "exclamationmark.triangle.fill", text: localError, tint: ArchivePalette.accentWarm)
         } else if let localSuccess {
-            feedbackStrip(icon: "checkmark.circle.fill", text: localSuccess, tint: ArchivePalette.accentMoss)
+            QuickFeedbackStrip(icon: "checkmark.circle.fill", text: localSuccess, tint: ArchivePalette.accentMoss)
         }
-    }
-
-    private func feedbackStrip(icon: String, text: String, tint: Color) -> some View {
-        HStack(spacing: ArchiveSpacing.xs) {
-            Image(systemName: icon)
-                .font(.system(size: ArchiveTypography.Scale.caption))
-                .foregroundStyle(tint)
-            Text(text)
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, ArchiveSpacing.s)
-        .padding(.vertical, ArchiveSpacing.xs)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - 收支形态与类目联动
@@ -427,6 +409,7 @@ public struct QuickLedgerView: View {
 
 // MARK: - 预览 (Preview)
 
+#if DEBUG
 @MainActor
 private enum QuickLedgerPreviewData {
     static var sample: AppState {
@@ -442,3 +425,4 @@ private enum QuickLedgerPreviewData {
     QuickLedgerView(appState: QuickLedgerPreviewData.sample)
         .frame(width: 380, height: 460)
 }
+#endif

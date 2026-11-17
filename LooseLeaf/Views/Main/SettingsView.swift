@@ -15,14 +15,6 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         case .about: return ArchiveIcon.about.systemName
         }
     }
-
-    public var subtitle: String {
-        switch self {
-        case .general: return "纸墨外观与全局热键"
-        case .devices: return "节点地址、受信任设备"
-        case .about: return "版本状态与更新日志"
-        }
-    }
 }
 
 /// 活页集原生设置窗口外壳 (SettingsView · `⌘,`)
@@ -33,11 +25,9 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
 public struct SettingsView: View {
     @Bindable var appState: AppState
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
-    private let initialPinnedTab: SettingsTab?
 
-    public init(appState: AppState, pinnedTab: SettingsTab? = nil) {
+    public init(appState: AppState) {
         self.appState = appState
-        self.initialPinnedTab = pinnedTab
     }
 
     private var selectedTab: SettingsTab {
@@ -73,11 +63,6 @@ public struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ArchivePalette.archivePaper)
-        .onAppear {
-            if let initialPinnedTab {
-                appState.navigation.settingsSelectedTab = initialPinnedTab
-            }
-        }
     }
 
     // MARK: - 统一设置中心顶栏与分段切换器

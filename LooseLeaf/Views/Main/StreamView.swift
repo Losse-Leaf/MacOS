@@ -219,10 +219,6 @@ public struct StreamView: View {
         .sheet(item: $appState.editingTransaction) { tx in
             EditTransactionSheet(appState: appState, transaction: tx) {
                 appState.editingTransaction = nil
-                Task { @MainActor in
-                    await appState.loadTransactionsAndAssets(forceFull: false)
-                    await appState.loadEntries(forceFull: false)
-                }
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }

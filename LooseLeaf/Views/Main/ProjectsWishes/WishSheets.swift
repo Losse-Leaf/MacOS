@@ -1,153 +1,15 @@
 import SwiftUI
 
-/// 心愿典藏相关弹窗集合 (NewWishSheet / EditWishSheet / ResolveWishSheet)
-/// 1. NewWishSheet —— 许下新心愿（类型 / 预算 / 目的地城市 / 私密开关 / 手记）
-/// 2. EditWishSheet —— 修订既有心愿（全类型保留 spec，省略 attachment_ids 杜绝清空跨端照片）
-/// 3. ResolveWishSheet —— 圆满归册心愿，并可联动生成流水 / 固资 / 足迹票根 / 时间流手稿
+/// 心愿典藏相关弹窗集合 (WishEditorSheet / ResolveWishSheet)
+/// 1. WishEditorSheet —— 统一新建与修订心愿（修订时全类型保留 spec，省略 attachment_ids 杜绝清空跨端照片）
+/// 2. ResolveWishSheet —— 圆满归册心愿，并可联动生成流水 / 固资 / 足迹票根 / 时间流手稿
 
-// MARK: - 新建心愿单弹窗 (NewWishSheet)
-
-@MainActor
-public struct NewWishSheet: View {
-    @Bindable var appState: AppState
-    var onDismiss: () -> Void
-
-    @State private var title: String = ""
-    @State private var kind: String = "item"
-    @State private var budgetYuan: String = ""
-    @State private var spec: String = ""
-    @State private var note: String = ""
-    @State private var cityCode: String = ""
-    @State private var cityName: String = ""
-    @State private var isPrivate: Bool = false
-    @State private var isSubmitting: Bool = false
-    @State private var errorText: String?
-    /// 补档：许下日期可选过去任意一天（默认今天）
-    @State private var plantedAt: Date = Date()
-    @FocusState private var isTitleFocused: Bool
-
-    public init(appState: AppState, onDismiss: @escaping () -> Void) {
-        self.appState = appState
-        self.onDismiss = onDismiss
-    }
-
-    public var body: some View {
-        PaperSheetScaffold(
-            title: "许下新心愿",
-            subtitle: "好物 · 旅程 · 里程碑",
-            width: ArchiveSheetWidth.compact,
-            isSubmitting: isSubmitting,
-            isSubmitDisabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            submitTitle: "存入心愿单 ⌘↩",
-            onCancel: onDismiss,
-            onSubmit: submitWish
-        ) {
-            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
-                HStack(spacing: 6) {
-                    PaperPillButton(title: "心仪好物", isSelected: kind == "item") { kind = "item" }
-                    PaperPillButton(title: "远方旅程", isSelected: kind == "travel") { kind = "travel" }
-                    PaperPillButton(title: "阶段里程碑", isSelected: kind == "milestone") { kind = "milestone" }
-                }
-
-                TextField("心愿名称", text: $title)
-                    .textFieldStyle(.plain)
-                    .focused($isTitleFocused)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-                if kind == "travel" {
-                    PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
-                }
-
-                TextField("规格参数或补充说明", text: $spec)
-                    .textFieldStyle(.plain)
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-                TextField("预期预算金额（元）", text: $budgetYuan)
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
-                    .padding(ArchiveSpacing.s)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-                HStack(spacing: ArchiveSpacing.s) {
-                    PaperDatePicker(selection: $plantedAt, enableTime: false, label: "许下日期")
-                    Text("（可选择过去的日期补录旧心愿）")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-
-                TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                    .lineLimit(3...8)
-                    .padding(10)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-                HStack {
-                    Label("私密心愿（仅配对主理人设备可见）", systemImage: ArchiveIcon.lock.systemName)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                    Spacer()
-                    Toggle("私密心愿", isOn: $isPrivate)
-                        .labelsHidden()
-                        .toggleStyle(.paperSwitch)
-                        .accessibilityLabel("设为私密心愿")
-                }
-
-                if let errorText {
-                    Text(errorText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .foregroundStyle(ArchivePalette.accentWarm)
-                }
-            }
-        }
-        .onAppear {
-            isTitleFocused = true
-        }
-    }
-
-    private func submitWish() {
-        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanTitle.isEmpty, !isSubmitting else { return }
-        let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
-        isSubmitting = true
-        errorText = nil
-        Task { @MainActor in
-            do {
-                let req = CreateWishRequest(
-                    title: cleanTitle,
-                    kind: kind,
-                    note: note.isEmpty ? nil : note,
-                    spec: spec.isEmpty ? nil : spec,
-                    cityCode: kind == "travel" ? (cityCode.isEmpty ? nil : cityCode) : nil,
-                    cityName: kind == "travel" ? (cityName.isEmpty ? nil : cityName) : nil,
-                    budget: cents,
-                    plantedAt: FormatUtils.beijingDateString(from: plantedAt),
-                    isPrivate: isPrivate
-                )
-                _ = try await APIClient.shared.createWish(req)
-                await appState.refreshAfterSecondaryWrite()
-                onDismiss()
-            } catch {
-                errorText = error.localizedDescription
-                isSubmitting = false
-            }
-        }
-    }
-}
-
-// MARK: - 修订心愿弹窗 (EditWishSheet)
+// MARK: - 统一心愿新建与修订弹窗 (WishEditorSheet)
 
 @MainActor
-public struct EditWishSheet: View {
+public struct WishEditorSheet: View {
     @Bindable var appState: AppState
-    let wish: Wish
+    let wish: Wish?
     var onDismiss: () -> Void
 
     @State private var title: String
@@ -158,33 +20,50 @@ public struct EditWishSheet: View {
     @State private var cityCode: String
     @State private var cityName: String
     @State private var isPrivate: Bool
+    @State private var plantedAt: Date
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
     @FocusState private var isTitleFocused: Bool
 
-    public init(appState: AppState, wish: Wish, onDismiss: @escaping () -> Void) {
+    public init(appState: AppState, wish: Wish? = nil, onDismiss: @escaping () -> Void) {
         self.appState = appState
         self.wish = wish
         self.onDismiss = onDismiss
-        _title = State(initialValue: wish.title)
-        _kind = State(initialValue: wish.kind)
-        _budgetYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
-        _spec = State(initialValue: wish.spec ?? "")
-        _note = State(initialValue: wish.note ?? "")
-        _cityCode = State(initialValue: wish.cityCode ?? "")
-        _cityName = State(initialValue: wish.cityName ?? "")
-        _isPrivate = State(initialValue: wish.isPrivate ?? false)
+        if let wish {
+            _title = State(initialValue: wish.title)
+            _kind = State(initialValue: wish.kind)
+            _budgetYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
+            _spec = State(initialValue: wish.spec ?? "")
+            _note = State(initialValue: wish.note ?? "")
+            _cityCode = State(initialValue: wish.cityCode ?? "")
+            _cityName = State(initialValue: wish.cityName ?? "")
+            _isPrivate = State(initialValue: wish.isPrivate ?? false)
+            _plantedAt = State(initialValue: FormatUtils.parseFlexDate(wish.plantedAt) ?? Date())
+        } else {
+            _title = State(initialValue: "")
+            _kind = State(initialValue: "item")
+            _budgetYuan = State(initialValue: "")
+            _spec = State(initialValue: "")
+            _note = State(initialValue: "")
+            _cityCode = State(initialValue: "")
+            _cityName = State(initialValue: "")
+            _isPrivate = State(initialValue: false)
+            _plantedAt = State(initialValue: Date())
+        }
     }
+
+    private var isEditing: Bool { wish != nil }
 
     public var body: some View {
         PaperSheetScaffold(
-            title: "修订心愿",
+            title: isEditing ? "修订心愿" : "许下新心愿",
+            subtitle: isEditing ? nil : "好物 · 旅程 · 里程碑",
             width: ArchiveSheetWidth.compact,
             isSubmitting: isSubmitting,
             isSubmitDisabled: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            submitTitle: "保存修改 ⌘↩",
+            submitTitle: isEditing ? "保存修改 ⌘↩" : "存入心愿单 ⌘↩",
             onCancel: onDismiss,
-            onSubmit: updateWish
+            onSubmit: submit
         ) {
             VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
                 HStack(spacing: 6) {
@@ -194,6 +73,7 @@ public struct EditWishSheet: View {
                 }
 
                 TextField("心愿名称", text: $title)
+                    .accessibilityLabel("心愿名称")
                     .textFieldStyle(.plain)
                     .focused($isTitleFocused)
                     .padding(ArchiveSpacing.s)
@@ -205,19 +85,31 @@ public struct EditWishSheet: View {
                 }
 
                 TextField("规格参数或补充说明", text: $spec)
+                    .accessibilityLabel("规格参数或补充说明")
                     .textFieldStyle(.plain)
                     .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
-                TextField("意向预算金额（元）", text: $budgetYuan)
+                TextField("预期预算金额（元）", text: $budgetYuan)
+                    .accessibilityLabel("预期预算金额")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading))
                     .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
+                if !isEditing {
+                    HStack(spacing: ArchiveSpacing.s) {
+                        PaperDatePicker(selection: $plantedAt, enableTime: false, label: "许下日期")
+                        Text("（可选择过去的日期补录旧心愿）")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                }
+
                 TextField("写下心愿初衷与手记…", text: $note, axis: .vertical)
+                    .accessibilityLabel("心愿初衷与手记")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -249,7 +141,7 @@ public struct EditWishSheet: View {
         }
     }
 
-    private func updateWish() {
+    private func submit() {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty, !isSubmitting else { return }
         let cents = FormatUtils.parseYuanToCents(budgetYuan) ?? 0
@@ -257,20 +149,33 @@ public struct EditWishSheet: View {
         errorText = nil
         Task { @MainActor in
             do {
-                let req = CreateWishRequest(
-                    title: cleanTitle,
-                    kind: kind,
-                    // 空串是显式清空；nil 会被后端当作保持原值。
-                    // 关键修复：全类型心愿（含 travel / milestone）统一保留 spec，不再误清空；
-                    // attachmentIds 保持默认 nil，防止覆盖跨端上传的照片。
-                    note: note,
-                    spec: spec,
-                    cityCode: kind == "travel" ? cityCode : "",
-                    cityName: kind == "travel" ? cityName : "",
-                    budget: cents,
-                    isPrivate: isPrivate
-                )
-                _ = try await APIClient.shared.updateWish(id: wish.id, req)
+                if let wish {
+                    let req = CreateWishRequest(
+                        title: cleanTitle,
+                        kind: kind,
+                        // 空串是显式清空；nil 会被后端当作保持原值；attachmentIds 默认 nil 不覆盖跨端附件。
+                        note: note,
+                        spec: spec,
+                        cityCode: kind == "travel" ? cityCode : "",
+                        cityName: kind == "travel" ? cityName : "",
+                        budget: cents,
+                        isPrivate: isPrivate
+                    )
+                    _ = try await APIClient.shared.updateWish(id: wish.id, req)
+                } else {
+                    let req = CreateWishRequest(
+                        title: cleanTitle,
+                        kind: kind,
+                        note: note.isEmpty ? nil : note,
+                        spec: spec.isEmpty ? nil : spec,
+                        cityCode: kind == "travel" ? (cityCode.isEmpty ? nil : cityCode) : nil,
+                        cityName: kind == "travel" ? (cityName.isEmpty ? nil : cityName) : nil,
+                        budget: cents,
+                        plantedAt: FormatUtils.beijingDateString(from: plantedAt),
+                        isPrivate: isPrivate
+                    )
+                    _ = try await APIClient.shared.createWish(req)
+                }
                 await appState.refreshAfterSecondaryWrite()
                 onDismiss()
             } catch {
@@ -341,6 +246,7 @@ public struct ResolveWishSheet: View {
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                             .foregroundStyle(ArchivePalette.inkMuted)
                         TextField("0.00", text: $actualCostYuan)
+                            .accessibilityLabel("实付金额")
                             .textFieldStyle(.plain)
                             .focused($isCostFocused)
                             .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
@@ -378,6 +284,7 @@ public struct ResolveWishSheet: View {
 
                 if createLifeEntry {
                     TextField("圆梦感言手记", text: $entryContent, axis: .vertical)
+                        .accessibilityLabel("圆梦感言手记")
                         .textFieldStyle(.plain)
                         .lineLimit(2...6)
                         .padding(ArchiveSpacing.s)

@@ -118,6 +118,21 @@ enum SpotlightIndexer {
         performReindex(entries: AppState.shared.entries, generation: currentGeneration)
     }
 
+    /// 统一解析 Spotlight 搜索结果点击回调并跳转目标散页（供 `LooseLeafApp` 与 `AppDelegate` 共用）
+    @MainActor
+    @discardableResult
+    static func handleContinuationActivity(_ userActivity: NSUserActivity, appState: AppState? = nil) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let uniqueId = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+              uniqueId.hasPrefix("looseleaf-entry-"),
+              let idStr = uniqueId.split(separator: "-").last,
+              let entryId = Int(idStr) else {
+            return false
+        }
+        (appState ?? AppState.shared).navigateToEntry(id: entryId)
+        return true
+    }
+
     static func fingerprint(_ entry: LifeEntry) -> String {
         // 只取会影响搜索结果的字段，避免为纯排序变化付出重建成本。
         //

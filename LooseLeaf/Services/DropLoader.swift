@@ -6,49 +6,6 @@ import UniformTypeIdentifiers
 /// 将 NSItemProvider 的异步回调与 NSPasteboard 剪贴板读取封装供捕捉面板与暗房共用（拒绝重复实现）。
 public enum DropLoader {
 
-    /// 从系统通用剪贴板 (NSPasteboard.general) 读取图像二进制数据
-    /// 依次尝试：PNG、JPEG、TIFF、本地图片文件 URL (.fileURL)、NSImage 实例转换
-    public static func readImageFromPasteboard() -> Data? {
-        let pb = NSPasteboard.general
-
-        // 1. 直接读取 PNG / JPEG / TIFF 原始图像字节流
-        let jpegType = NSPasteboard.PasteboardType(UTType.jpeg.identifier)
-        for pasteType in [NSPasteboard.PasteboardType.png, jpegType, NSPasteboard.PasteboardType.tiff] {
-            if let data = pb.data(forType: pasteType), !data.isEmpty {
-                return data
-            }
-        }
-
-        // 2. Finder 复制的图片文件 URL (.fileURL)
-        if let urlData = pb.data(forType: .fileURL),
-           let fileURL = URL(dataRepresentation: urlData, relativeTo: nil),
-           let fileData = try? Data(contentsOf: fileURL),
-           !fileData.isEmpty {
-            return fileData
-        }
-        if let urls = pb.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
-            for url in urls where url.isFileURL {
-                if let fileData = try? Data(contentsOf: url), !fileData.isEmpty {
-                    return fileData
-                }
-            }
-        }
-
-        // 3. 兜底通过 NSImage 读取并序列化为 PNG / TIFF
-        if let image = NSImage(pasteboard: pb),
-           let tiffData = image.tiffRepresentation,
-           !tiffData.isEmpty {
-            if let bitmap = NSBitmapImageRep(data: tiffData),
-               let pngData = bitmap.representation(using: .png, properties: [:]),
-               !pngData.isEmpty {
-                return pngData
-            }
-            return tiffData
-        }
-
-        return nil
-    }
-
     /// 主线程安全提取剪贴板原始载荷（避免在后台线程直接读写非线程安全的 NSPasteboard.general）
     private enum RawPasteboardSnapshot: Sendable {
         case directData(Data)
@@ -216,7 +173,7 @@ public enum DropLoader {
         if let data = await loadImageData(from: provider) {
             let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("LooseLeafDarkroomDrop", isDirectory: true)
             // 扩展名按实际数据类型推断（硬编码 .jpg 会让 PNG/HEIC/TIFF 文件名误导）
-            let ext = Self.preferredExtension(for: data)
+            let ext = ImageFormatSniffer.fileExtension(for: data)
             let tempFile = tempDir.appendingPathComponent("drop-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).\(ext)")
             // 写盘必须离开主线程（continuation 恢复到调用方的 @MainActor 上下文）
             return await Task.detached(priority: .userInitiated) { () -> URL? in
@@ -230,18 +187,6 @@ public enum DropLoader {
             }.value
         }
         return nil
-    }
-
-    /// 依据文件头魔数推断图片扩展名
-    private static func preferredExtension(for data: Data) -> String {
-        guard data.count >= 12 else { return "jpg" }
-        let bytes = [UInt8](data.prefix(12))
-        if bytes[0] == 0xFF, bytes[1] == 0xD8 { return "jpg" }
-        if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 { return "png" }
-        if bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46 { return "gif" }
-        if bytes[0] == 0x42, bytes[1] == 0x4D { return "tif" }
-        if bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 { return "heic" }
-        return "jpg"
     }
 
     /// 批量提取可处理的图片 URL（支持 Finder、系统照片.app 与浏览器混合多选拖拽）

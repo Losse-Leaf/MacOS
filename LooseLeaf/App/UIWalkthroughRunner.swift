@@ -102,7 +102,7 @@ enum UIWalkthroughRunner {
             }
         ]
 
-        log("⟦WALK⟧ ===== 开始脚本化走查（\\(steps.count) 步）=====")
+        log("⟦WALK⟧ ===== 开始脚本化走查（\(steps.count) 步）=====")
         for (index, step) in steps.enumerated() {
             log("⟦WALK⟧ [\(index + 1)/\(steps.count)] \(step.name) — 开始")
             let start = Date()

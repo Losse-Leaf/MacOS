@@ -49,15 +49,13 @@ public struct EditorialLightboxView: View {
                 }
 
             VStack(spacing: 16) {
-                if let url = APIClient.shared.resolveMediaURL(currentAttachment.url) {
+                if let url = currentAttachment.resolvedDisplayURL(preferThumbnail: false) {
                     ZStack {
                         FilmFrameView(
                             imageURL: url,
                             originalURL: url,
                             preferredFilename: currentAttachment.originalFilename,
-                            intrinsicSize: (currentAttachment.width != nil && currentAttachment.height != nil)
-                                ? CGSize(width: currentAttachment.width!, height: currentAttachment.height!)
-                                : nil,
+                            intrinsicSize: currentAttachment.intrinsicSize,
                             caption: currentAttachment.originalFilename,
                             metaText: (currentAttachment.width != nil && currentAttachment.height != nil)
                                 ? "\(currentAttachment.width!) × \(currentAttachment.height!) px"
@@ -158,7 +156,7 @@ public struct EditorialLightboxView: View {
                 }
 
                 HStack(spacing: 10) {
-                    if let url = APIClient.shared.resolveMediaURL(currentAttachment.url) {
+                    if let url = currentAttachment.resolvedDisplayURL(preferThumbnail: false) {
                         Button {
                             openInSystemPreview(url: url, filename: currentAttachment.originalFilename)
                         } label: {
@@ -227,8 +225,8 @@ public struct EditorialLightboxView: View {
         Task { @MainActor in
             noticeText = nil
             switch await PaperImageExport.openInSystemPreview(url: url, preferredFilename: filename) {
-            case .success(let message): noticeText = message
-            case .failure(let message): noticeText = "⚠️ \(message)"
+            case .success(let message), .failure(let message):
+                noticeText = message
             }
         }
     }
@@ -237,28 +235,20 @@ public struct EditorialLightboxView: View {
         Task { @MainActor in
             noticeText = nil
             switch await PaperImageExport.copyToClipboard(url: url) {
-            case .success(let message): noticeText = message
-            case .failure(let message): noticeText = "⚠️ \(message)"
+            case .success(let message), .failure(let message):
+                noticeText = message
             }
         }
     }
 
     private func saveImageToDisk(url: URL, filename: String) {
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = PaperImageExport.normalizedFilename(filename, fallbackURL: url)
         Task { @MainActor in
-            let response: NSApplication.ModalResponse
-            if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-                response = await panel.beginSheetModal(for: window)
-            } else {
-                response = await panel.begin()
+            guard let result = await PaperImageExport.presentSavePanel(url: url, preferredFilename: filename) else {
+                return
             }
-            guard response == .OK, let targetURL = panel.url else { return }
-            noticeText = nil
-            switch await PaperImageExport.exportToDisk(url: url, to: targetURL) {
-            case .success(let message): noticeText = message
-            case .failure(let message): noticeText = "⚠️ \(message)"
+            switch result {
+            case .success(let message), .failure(let message):
+                noticeText = message
             }
         }
     }

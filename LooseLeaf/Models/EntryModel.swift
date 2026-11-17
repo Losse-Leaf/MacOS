@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// 标准 RESTful API v1 统一响应信封
@@ -53,12 +54,12 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
 
     public var symbolName: String {
         switch self {
-        case .life: return "leaf"
-        case .travel: return "safari"
-        case .project: return "hammer"
-        case .wish: return "sparkles"
-        case .transaction: return "creditcard"
-        case .gear: return "shippingbox"
+        case .life: return ArchiveIcon.entryLife.systemName
+        case .travel: return ArchiveIcon.entryTravel.systemName
+        case .project: return ArchiveIcon.entryProject.systemName
+        case .wish: return ArchiveIcon.entryWish.systemName
+        case .transaction: return ArchiveIcon.entryTransaction.systemName
+        case .gear: return ArchiveIcon.gear.systemName
         }
     }
 }
@@ -204,6 +205,23 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         self.url = url
         self.thumbnailUrl = thumbnailUrl
         self.createdAt = createdAt
+    }
+
+    /// 解析可直接展示或导出的完整媒体 URL（列表/详情优先走缩略图，灯箱/导出传 `preferThumbnail: false` 走原图）
+    public func resolvedDisplayURL(preferThumbnail: Bool = true) -> URL? {
+        let raw: String
+        if preferThumbnail, let thumb = thumbnailUrl, !thumb.isEmpty {
+            raw = thumb
+        } else {
+            raw = url
+        }
+        return APIClient.shared.resolveMediaURL(raw)
+    }
+
+    /// 附件原始像素尺寸（用于异步显影前锁定占位框宽高比）
+    public var intrinsicSize: CGSize? {
+        guard let w = width, let h = height, w > 0, h > 0 else { return nil }
+        return CGSize(width: w, height: h)
     }
 }
 
@@ -356,7 +374,26 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         // 与 TransactionModel.toLifeEntry 的可逆编码互逆：txId - 1_000_000 ⇄ +1_000_000。
         // 合成条目 id 恒为负（正负账目 id 都会减 1_000_000），待同步账目原样还原为负 id。
         guard id <= -1 else { return nil }
-        return Int64(id + 1_000_000)}
+        return Int64(id + 1_000_000)
+    }
+
+    /// 构造用于撤销恢复或失败重传的完整创建请求载荷
+    public func toCreateRequest() -> CreateEntryRequest {
+        CreateEntryRequest(
+            type: type,
+            title: title,
+            content: content,
+            occurredAt: occurredAt,
+            location: location,
+            cityCode: cityCode,
+            cityName: cityName,
+            projectId: projectId,
+            wishId: wishId,
+            footprintId: footprintId,
+            isPrivate: isPrivate,
+            attachmentIds: attachments.map(\.id)
+        )
+    }
 }
 
 /// 分页查询生活档案列表响应结构

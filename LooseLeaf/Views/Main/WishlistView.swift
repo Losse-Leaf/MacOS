@@ -113,12 +113,12 @@ public struct WishlistView: View {
             }
         }
         .sheet(isPresented: $showNewWishSheet) {
-            NewWishSheet(appState: appState) {
+            WishEditorSheet(appState: appState) {
                 showNewWishSheet = false
             }
         }
         .sheet(item: $editingWish) { wish in
-            EditWishSheet(appState: appState, wish: wish) {
+            WishEditorSheet(appState: appState, wish: wish) {
                 editingWish = nil
             }
         }
@@ -336,7 +336,9 @@ public struct WishlistView: View {
     }
 }
 
+#if DEBUG
 #Preview("心愿清单") {
     WishlistView(appState: ArchivePreviewFixtures.makeAppState())
         .frame(width: 1100, height: 760)
 }
+#endif

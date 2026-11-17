@@ -640,8 +640,4 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
         lock.unlock()
         if fraction < 1.0 { onProgress(1.0) }
     }
-
-    func invalidate() {
-        // 让 session 释放 delegate 引用
-    }
 }

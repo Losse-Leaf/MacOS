@@ -14,21 +14,8 @@ public enum ArchiveFeedback {
     }
 
     /// 成功 / 提交确认
-    /// 注：macOS 的 `NSHapticFeedbackManager.FeedbackPattern` 只提供
-    /// generic / alignment / levelChange 三种模式（没有 iOS 的 notificationSuccess），
-    /// 因此「成功」使用 generic，「警告」使用 levelChange（力度更强、更有辨识度）。
     public static func success() {
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
-    }
-
-    /// 警告 / 失败
-    public static func warning() {
-        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
-    }
-
-    /// 轻量选择（切换胶囊 / 分类）
-    public static func selection() {
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
     }
 }
 
@@ -78,14 +65,5 @@ public final class LoadingDebouncer {
             guard !Task.isCancelled else { return }
             self?.isVisible = false
         }
-    }
-
-    /// 取消所有等待
-    public func cancel() {
-        showTask?.cancel()
-        hideTask?.cancel()
-        showTask = nil
-        hideTask = nil
-        isVisible = false
     }
 }

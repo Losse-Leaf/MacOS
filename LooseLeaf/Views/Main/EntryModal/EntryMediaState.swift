@@ -63,6 +63,13 @@ final class EntryUploadItem: Identifiable {
         self.sourceURL = sourceURL
         self.sourceData = sourceData
     }
+
+    init(existingAttachment: Attachment) {
+        self.displayName = existingAttachment.originalFilename
+        self.status = .succeeded
+        self.progress = 1
+        self.attachment = existingAttachment
+    }
 }
 
 // MARK: - 相纸装裱状态容器
@@ -82,6 +89,10 @@ final class EntryMediaState {
     var extractedCameraLine: String = ""
     /// 失败汇总提示（与原「相纸上传失败：xxx」文案保持一致）
     var errorMessage: String?
+
+    init(initialAttachments: [Attachment] = []) {
+        self.items = initialAttachments.map { EntryUploadItem(existingAttachment: $0) }
+    }
 
     /// 是否仍有相纸排队或上传中（上传期间禁止提交）
     var isUploading: Bool {
@@ -141,6 +152,7 @@ final class EntryMediaState {
     /// 清空全部相纸（提交成功后的收尾）
     func removeAll() {
         items.removeAll()
+        extractedCameraLine = ""
         errorMessage = nil
     }
 
@@ -394,10 +406,6 @@ struct EntryPasteboardPayload: Sendable {
     var imageData: Data?
     /// 剪贴板中的图片文件 URL（访达拷贝的文件，保留文件名与 EXIF）
     var fileURLs: [URL]
-
-    var isEmpty: Bool {
-        (imageData == nil) && fileURLs.isEmpty
-    }
 }
 
 /// 剪贴板相纸读取器

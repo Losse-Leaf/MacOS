@@ -325,20 +325,12 @@ struct StreamEntryDetailView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
                                     ForEach(entry.attachments) { att in
-                                        let displayURL = att.thumbnailUrl ?? att.url
-                                        let origURL = APIClient.shared.resolveMediaURL(att.url)
-                                        let intrinsic: CGSize? = {
-                                            if let w = att.width, let h = att.height, w > 0, h > 0 {
-                                                return CGSize(width: w, height: h)
-                                            }
-                                            return nil
-                                        }()
-                                        if let url = APIClient.shared.resolveMediaURL(displayURL) {
+                                        if let url = att.resolvedDisplayURL(preferThumbnail: true) {
                                             FilmFrameView(
                                                 imageURL: url,
-                                                originalURL: origURL,
+                                                originalURL: att.resolvedDisplayURL(preferThumbnail: false),
                                                 preferredFilename: att.originalFilename,
-                                                intrinsicSize: intrinsic,
+                                                intrinsicSize: att.intrinsicSize,
                                                 caption: entry.title.isEmpty ? att.originalFilename : entry.title,
                                                 metaText: entry.parsedDate.dotDate,
                                                 maxHeight: 220

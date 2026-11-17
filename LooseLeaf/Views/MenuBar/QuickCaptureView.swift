@@ -42,16 +42,11 @@ public struct QuickCaptureView: View {
     }
 
     private var allUploadedAttachments: [Attachment] {
-        let fromMedia = appState.quickDraft.media.uploadedAttachments
-        let extra = appState.quickDraft.uploadedAttachments.filter { item in
-            !fromMedia.contains(where: { $0.id == item.id })
-        }
-        return fromMedia + extra
+        appState.quickDraft.media.uploadedAttachments
     }
 
     private var effectiveCameraLine: String {
-        let fromMedia = appState.quickDraft.media.extractedCameraLine
-        return fromMedia.isEmpty ? appState.quickDraft.extractedCameraLine : fromMedia
+        appState.quickDraft.media.extractedCameraLine
     }
 
     public var body: some View {
@@ -66,7 +61,7 @@ public struct QuickCaptureView: View {
 
                 // 2. 全局提示（本面板已有就地回执时不再重复展示）
                 if let banner = appState.statusBanner, successText == nil {
-                    feedbackStrip(icon: "checkmark.circle.fill", text: banner, tint: ArchivePalette.accentMoss)
+                    QuickFeedbackStrip(icon: "checkmark.circle.fill", text: banner, tint: ArchivePalette.accentMoss)
                 }
 
                 // 3. 主体内容区（切换 Tab 不丢失任何输入，均由 QuickCaptureDraft 托管）
@@ -351,8 +346,8 @@ public struct QuickCaptureView: View {
                                         .scaledToFill()
                                         .frame(width: 18, height: 18)
                                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                                } else if let att = item.attachment, let url = APIClient.shared.resolveMediaURL(att.thumbnailUrl ?? att.url) {
-                                    CachedFilmImageView(url: url, maxHeight: 18)
+                                } else if let att = item.attachment, let url = att.resolvedDisplayURL(preferThumbnail: true) {
+                                    CachedFilmImageView(url: url, maxHeight: 18, intrinsicSize: att.intrinsicSize)
                                         .frame(width: 18, height: 18)
                                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                                 }
@@ -403,9 +398,6 @@ public struct QuickCaptureView: View {
                 Spacer(minLength: ArchiveSpacing.xs)
                 Button("清空") {
                     media.removeAll()
-                    media.extractedCameraLine = ""
-                    appState.quickDraft.uploadedAttachments.removeAll()
-                    appState.quickDraft.extractedCameraLine = ""
                 }
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                 .buttonStyle(.plain)
@@ -507,28 +499,10 @@ public struct QuickCaptureView: View {
     @ViewBuilder
     private var feedbackBar: some View {
         if let err = errorText ?? appState.quickDraft.media.errorMessage {
-            feedbackStrip(icon: "exclamationmark.triangle.fill", text: err, tint: ArchivePalette.accentWarm)
+            QuickFeedbackStrip(icon: "exclamationmark.triangle.fill", text: err, tint: ArchivePalette.accentWarm)
         } else if let successText {
-            feedbackStrip(icon: "checkmark.circle.fill", text: successText, tint: ArchivePalette.accentMoss)
+            QuickFeedbackStrip(icon: "checkmark.circle.fill", text: successText, tint: ArchivePalette.accentMoss)
         }
-    }
-
-    private func feedbackStrip(icon: String, text: String, tint: Color) -> some View {
-        HStack(spacing: ArchiveSpacing.xs) {
-            Image(systemName: icon)
-                .font(.system(size: ArchiveTypography.Scale.caption))
-                .foregroundStyle(tint)
-            Text(text)
-                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, ArchiveSpacing.s)
-        .padding(.vertical, ArchiveSpacing.xs)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - 提交与收起
@@ -614,8 +588,35 @@ public struct QuickCaptureView: View {
     }
 }
 
+// MARK: - 共享就地反馈条 (QuickFeedbackStrip)
+
+struct QuickFeedbackStrip: View {
+    let icon: String
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: ArchiveSpacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: ArchiveTypography.Scale.caption))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, ArchiveSpacing.s)
+        .padding(.vertical, ArchiveSpacing.xs)
+        .background(ArchivePalette.archiveSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - 预览 (Preview)
 
+#if DEBUG
 @MainActor
 private enum QuickCapturePreviewData {
     static func makeSample(tab: QuickCaptureTab) -> AppState {
@@ -639,3 +640,4 @@ private enum QuickCapturePreviewData {
     QuickCaptureView(appState: QuickCapturePreviewData.makeSample(tab: .ledger))
         .frame(width: 380, height: 460)
 }
+#endif

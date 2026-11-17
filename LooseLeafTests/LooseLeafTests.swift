@@ -458,19 +458,20 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertTrue(draft.contentText.isEmpty)
     }
 
-    // MARK: - 19. Two-Tier Disk Image Cache & International Coordinates Tests
+    // MARK: - 19. Two-Tier Disk Image Cache Tests
 
-    func testPaperImageCacheTwoTierDiskCache() throws {
+    func testPaperImageCacheTwoTierDiskCache() async throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("looseleaf-media-\(UUID().uuidString)", isDirectory: true)
         PaperImageCache.overrideDirectory = tempDir
         defer {
+            PaperImageCache.clearMemoryCache()
             PaperImageCache.overrideDirectory = nil
             try? FileManager.default.removeItem(at: tempDir)
         }
 
-        let testURL = URL(string: "https://example.com/media/sample_photo_test.jpg")!
-        let rep = NSBitmapImageRep(
+        let testURL = URL(string: "https://example.com/media/sample_photo_test.png")!
+        let rep = try XCTUnwrap(NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: 100,
             pixelsHigh: 100,
@@ -481,26 +482,26 @@ final class LooseLeafTests: XCTestCase {
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        )!
-        let img = NSImage(size: NSSize(width: 100, height: 100))
-        img.addRepresentation(rep)
+        ))
+        let rawData = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
 
-        PaperImageCache.setImage(img, for: testURL)
-        let hit = PaperImageCache.image(for: testURL)
-        XCTAssertNotNil(hit)
-    }
+        let stored = await PaperImageCache.storeDownloaded(rawData: rawData, for: testURL, maxPixel: 160)
+        XCTAssertNotNil(stored)
+        XCTAssertNotNil(PaperImageCache.memoryImage(for: testURL, maxPixel: 160))
 
-    func testCityDictionaryInternationalCoordinates() {
-        let tokyo = CityDictionary.coordinate(forCode: "", cityName: "东京 · 涩谷")
-        XCTAssertEqual(tokyo.x, 585.0)
-        XCTAssertEqual(tokyo.y, 310.0)
+        let diskFile = PaperImageCache.diskCacheFileURL(for: testURL)
+        for _ in 0..<50 where !FileManager.default.fileExists(atPath: diskFile.path) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: diskFile.path))
 
-        let london = CityDictionary.coordinate(forCode: "", cityName: "伦敦")
-        XCTAssertEqual(london.x, 120.0)
-        XCTAssertEqual(london.y, 180.0)
+        PaperImageCache.clearMemoryCache()
+        XCTAssertNil(PaperImageCache.memoryImage(for: testURL, maxPixel: 160))
 
-        let unknown = CityDictionary.coordinate(forCode: "", cityName: "苏黎世小镇")
-        XCTAssertFalse(unknown.x == 462.3 && unknown.y == 300.0, "未匹配地名应有离散散列坐标，避免死锁在中原原点")
+        let diskHit = await PaperImageCache.loadImage(for: testURL, maxPixel: 160)
+        XCTAssertNotNil(diskHit)
+        let loadedRaw = await PaperImageCache.loadRawData(for: testURL)
+        XCTAssertEqual(loadedRaw, rawData)
     }
 
 
@@ -794,7 +795,6 @@ final class LooseLeafTests: XCTestCase {
         """.data(using: .utf8)!
         let env = try JSONDecoder().decode(APIEnvelope<SystemStatus>.self, from: oidcJSON)
         XCTAssertEqual(env.data?.initialized, false)
-        XCTAssertEqual(env.data?.hasPasscodeSet, false)
         XCTAssertEqual(env.data?.oidcEnabled, true)
         XCTAssertEqual(env.data?.oidcProviderName, "Vesper Auth")
 

@@ -71,26 +71,9 @@ public enum ArchivePalette {
 /// - 正文与交互：`SF Pro` (`.default`) + `PingFang SC`；
 /// - 刻度与金额：`SF Mono` (`.monospaced`)，强制等宽数字对齐如机械刻度。
 public enum ArchiveTypography {
-    /// 根据字号推断匹配的动态字阶参考锚点 (`Font.TextStyle`)
-    public static func relativeStyle(for size: CGFloat) -> Font.TextStyle {
-        switch size {
-        case ..<11: return .caption2
-        case ..<12: return .caption
-        case ..<14: return .body
-        case ..<16.5: return .headline
-        case ..<21: return .title3
-        case ..<25: return .title2
-        default: return .title
-        }
-    }
-
     /// 古典衬线体（Apple 原生 `New York` 光学衬线 + 中文级联，支持系统动态字号缩放）
     public static func editorialSerif(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .serif)
-    }
-
-    public static func editorialSerif(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
-        .system(style, design: .serif, weight: weight)
     }
 
     /// 现代无衬线正文 (`SF Pro` + `PingFang SC`)
@@ -98,26 +81,15 @@ public enum ArchiveTypography {
         .system(size: size, weight: weight, design: .default)
     }
 
-    public static func bodySans(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
-        .system(style, design: .default, weight: weight)
-    }
-
     /// 等宽数字刻度（Apple 原生 `SF Mono`，强制等宽数字对齐）
     public static func monoScale(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced).monospacedDigit()
     }
 
-    public static func monoScale(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
-        .system(style, design: .monospaced, weight: weight).monospacedDigit()
-    }
-
     /// 字号阶梯（统一语义，消除魔法字号）
     public enum Scale {
         public static let display: CGFloat = 26       // 刊头主标题
-        public static let sectionTitle: CGFloat = 20  // 板块大标题
         public static let title: CGFloat = 16         // 弹窗与空态标题
-        public static let cardTitle: CGFloat = 15     // 卡片主标题
-        public static let bodyLarge: CGFloat = 13.5   // 长文沉浸阅读字号
         public static let heading: CGFloat = 13       // 小节标题
         public static let body: CGFloat = 12          // 标准界面正文
         public static let caption: CGFloat = 11       // 辅助说明
@@ -165,10 +137,8 @@ public enum ArchiveCardMetrics {
 
 /// 动效节奏表 (Motion Tokens)
 public enum ArchiveMotion {
-    public static let instant: Animation = .easeOut(duration: 0.08)
     public static let quick: Animation = .easeOut(duration: 0.15)
     public static let standard: Animation = .easeInOut(duration: 0.22)
-    public static let gentle: Animation = .easeInOut(duration: 0.32)
 }
 
 /// 层级与投影规范 (Elevation)
@@ -203,7 +173,7 @@ public enum ArchiveIcon {
         case .hub: return "laptopcomputer.and.iphone"
         case .about: return "info.circle"
         case .entryLife: return "leaf"
-        case .entryTravel: return "map"
+        case .entryTravel: return "safari"
         case .entryProject: return "hammer"
         case .entryWish: return "sparkles"
         case .entryTransaction: return "creditcard"

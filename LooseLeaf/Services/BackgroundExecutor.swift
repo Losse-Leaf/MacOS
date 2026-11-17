@@ -24,37 +24,4 @@ public enum BackgroundExecutor {
             return try operation()
         }.value
     }
-
-    /// 在后台线程执行一段异步操作（内部含多次挂起，例如逐张上传）
-    @discardableResult
-    public static func run<T: Sendable>(
-        priority: TaskPriority = .userInitiated,
-        _ operation: @escaping @Sendable () async throws -> T
-    ) async throws -> T {
-        try await Task.detached(priority: priority) {
-            try Task.checkCancellation()
-            return try await operation()
-        }.value
-    }
-
-    /// 在后台线程执行一段带取消检查的重循环。
-    /// `body` 返回 `nil` 表示被取消或提前结束。
-    @discardableResult
-    public static func map<T: Sendable>(
-        priority: TaskPriority = .userInitiated,
-        _ items: [T],
-        _ body: @escaping @Sendable (T) throws -> T?
-    ) async throws -> [T] {
-        try await Task.detached(priority: priority) {
-            var results: [T] = []
-            results.reserveCapacity(items.count)
-            for item in items {
-                try Task.checkCancellation()
-                if let value = try body(item) {
-                    results.append(value)
-                }
-            }
-            return results
-        }.value
-    }
 }

@@ -73,18 +73,6 @@ public enum FormatUtils {
         return bag
     }
 
-    private static let flexLayouts = [
-        "yyyy-MM-dd'T'HH:mm:ss",
-        "yyyy-MM-dd'T'HH:mm",
-        "yyyy-MM-dd HH:mm:ss",
-        "yyyy-MM-dd HH:mm",
-        "yyyy-MM-dd",
-        "yyyy.MM.dd HH:mm:ss",
-        "yyyy.MM.dd HH:mm",
-        "yyyy.MM.dd",
-        "yyyy:MM:dd HH:mm:ss" // EXIF DateTimeOriginal
-    ]
-
     // MARK: - 货币分币转换与格式化 (Cents Standard)
 
     /// 将以“分”为单位的 Int64 金额格式化为标准元字符串 (如 4250 -> "42.50" 或 "¥ 42.50")
@@ -118,8 +106,9 @@ public enum FormatUtils {
         return "\(sign)\(formatted)"
     }
 
-    /// 将用户输入的元字符串转换为精确的 Int64 分值 (如 "42.5" -> 4250)
-    public static func parseYuanToCents(_ rawInput: String) -> Int64? {
+    /// 将用户输入的元字符串转换为精确的 Int64 分值 (如 "42.5" -> 4250)。
+    /// `allowZero` 为 true 时允许 0 元或负数底数返回对应分值，非法输入返回 nil。
+    public static func parseYuanToCents(_ rawInput: String, allowZero: Bool = false) -> Int64? {
         let cleaned = rawInput
             .replacingOccurrences(of: "¥", with: "")
             .replacingOccurrences(of: "￥", with: "")
@@ -134,29 +123,18 @@ public enum FormatUtils {
 
         var multiplied = decimalVal * Decimal(100)
         var rounded = Decimal()
-        // 四舍五入（原先用 .plain 截断，"0.999" 会变成 99 分而非 100 分）
+        // 四舍五入（"0.999" 进位为 100 分而非截断为 99 分）
         NSDecimalRound(&rounded, &multiplied, 0, .plain)
-        let number = NSDecimalNumber(decimal: rounded)
-        let cents = number.int64Value
+        let cents = NSDecimalNumber(decimal: rounded).int64Value
+        if allowZero {
+            return cents
+        }
         return cents > 0 ? cents : nil
     }
 
     /// 金额解析的「可区分失败」版本：0 元返回 0，非法输入返回 nil
     public static func parseYuanToCentsAllowZero(_ rawInput: String) -> Int64? {
-        let cleaned = rawInput
-            .replacingOccurrences(of: "¥", with: "")
-            .replacingOccurrences(of: "￥", with: "")
-            .replacingOccurrences(of: ",", with: "")
-            .replacingOccurrences(of: "元", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty,
-              let decimalVal = Decimal(string: cleaned, locale: Locale(identifier: "en_US_POSIX")) else {
-            return nil
-        }
-        var multiplied = decimalVal * Decimal(100)
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &multiplied, 0, .plain)
-        return NSDecimalNumber(decimal: rounded).int64Value
+        parseYuanToCents(rawInput, allowZero: true)
     }
 
     // MARK: - 快捷记账自然语义解析 (Quick Ledger Parser)
@@ -333,7 +311,7 @@ public enum FormatUtils {
         return nil
     }
 
-    /// 依据字符串形状筛出可能命中的时间格式（顺序与 `flexLayouts` 保持一致，语义不变）
+    /// 依据字符串形状筛出可能命中的时间格式
     private static func candidateLayouts(for raw: String) -> [String] {
         let hasColon = raw.contains(":")
         let hasDot = raw.contains(".")
@@ -421,12 +399,6 @@ public enum FormatUtils {
     public static func formatDate(_ raw: String?) -> String {
         guard let raw = raw, !raw.isEmpty else { return "" }
         return parseOccurredDate(raw).dotDate
-    }
-
-    /// 将日期字符串格式化为北京时间点状时间 (如 "2026.10.17 14:30")
-    public static func formatDateTime(_ raw: String?) -> String {
-        guard let raw = raw, !raw.isEmpty else { return "" }
-        return parseOccurredDate(raw).dotDateTime
     }
 
     /// 计算两条记录在自然日维度上的间隔天数（用于 >= 14 天岁月留白刻度线）

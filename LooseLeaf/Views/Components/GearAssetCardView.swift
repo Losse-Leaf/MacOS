@@ -118,14 +118,12 @@ public struct GearAssetCardView: View {
             }
             Divider()
             Button {
-                NSPasteboard.general.clearContents()
                 SecureClipboard.copy(gear.name)
             } label: {
                 Label("拷贝设备名称", systemImage: "doc.on.doc")
             }
             if let spec = gear.spec, !spec.isEmpty {
                 Button {
-                    NSPasteboard.general.clearContents()
                     SecureClipboard.copy(spec)
                 } label: {
                     Label("拷贝规格参数", systemImage: "doc.on.clipboard")

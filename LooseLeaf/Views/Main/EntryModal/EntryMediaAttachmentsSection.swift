@@ -186,8 +186,8 @@ struct EntryMediaAttachmentsSection: View {
                             .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
                     )
             } else if let attachment = item.attachment,
-                      let url = APIClient.shared.resolveMediaURL(attachment.url) {
-                CachedFilmImageView(url: url, maxHeight: 72)
+                      let url = attachment.resolvedDisplayURL(preferThumbnail: true) {
+                CachedFilmImageView(url: url, maxHeight: 72, intrinsicSize: attachment.intrinsicSize)
                     .frame(width: 72, height: 72)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(

@@ -15,7 +15,7 @@ public enum ArchiveExporter {
         for entry in entries {
             lines.append("---")
             lines.append("")
-            let title = entry.title.isEmpty ? entryTypeName(entry.type) : entry.title
+            let title = entry.title.isEmpty ? (EntryType(rawValue: entry.type)?.badgeLabel ?? entry.type) : entry.title
             lines.append("## \(title)")
             lines.append("")
 
@@ -44,15 +44,5 @@ public enum ArchiveExporter {
             }
         }
         return lines.joined(separator: "\n")
-    }
-
-    private static func entryTypeName(_ raw: String) -> String {
-        switch raw {
-        case "travel": return "山川游历"
-        case "project": return "造物演进"
-        case "wish": return "心愿印记"
-        case "transaction": return "柴米油盐"
-        default: return "日常随笔"
-        }
     }
 }

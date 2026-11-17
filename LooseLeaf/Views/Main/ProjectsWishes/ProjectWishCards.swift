@@ -1,46 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 造物项目状态语义 (Project Status)
-
-/// 造物项目状态语义字典（全应用唯一真源）。
-/// 四端统一为中文四态（与后端 validProjectStatuses 白名单一致）；
-/// 存量英文/历史表述由 normalize 兼容读取。
-public enum ProjectStatus: String, CaseIterable, Identifiable, Sendable {
-    case inProgress = "进行中"
-    case completed = "已完成"
-    case maintaining = "维护中"
-    case shelved = "已搁置"
-
-    public var id: String { rawValue }
-    public var displayName: String { rawValue }
-
-    public var isActiveLike: Bool {
-        switch self {
-        case .inProgress, .maintaining: return true
-        case .completed, .shelved: return false
-        }
-    }
-
-    public static func normalize(_ raw: String?) -> ProjectStatus {
-        guard let raw, !raw.isEmpty else { return .inProgress }
-        if let matched = ProjectStatus(rawValue: raw) {
-            return matched
-        }
-        switch raw.lowercased() {
-        case "active", "wip": return .inProgress
-        case "maintained", "持续维护": return .maintaining
-        case "archived", "已归档": return .shelved
-        default: return .inProgress
-        }
-    }
-
-    public static func matches(_ raw: String?, selected: String) -> Bool {
-        if selected == "all" { return true }
-        return normalize(raw).rawValue == selected
-    }
-}
-
 /// 城市 / 省份回忆抽屉的选择载荷（TravelAtlasView 与抽屉 Sheet 共用）
 public struct DrawerCitySelection: Identifiable, Equatable, Sendable {
     public var id: String { code }

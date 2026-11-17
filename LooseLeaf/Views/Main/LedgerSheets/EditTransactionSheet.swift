@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// 账本流水修订弹窗 (EditTransactionSheet)
-/// 统一收口至 `PaperSheetScaffold`（带自适应 `ScrollView`，展开分期表单永不裁切底栏按钮），
-/// 并修正 `DEC-09` 后空渠道引导文案为指向 Web 展厅后台。
+/// 统一收口至 `PaperSheetScaffold` 与共享 `CreditChannelInstallmentSection` 分期配置区。
 @MainActor
 public struct EditTransactionSheet: View {
     @Bindable var appState: AppState
@@ -55,13 +54,6 @@ public struct EditTransactionSheet: View {
 
     private var selectedCreditChannel: CreditChannel? {
         availableCreditChannels.first { $0.code == installmentChannelCode }
-    }
-
-    private func normalizeInstallmentChannel() {
-        guard let first = availableCreditChannels.first else { return }
-        if !availableCreditChannels.contains(where: { $0.code == installmentChannelCode }) {
-            installmentChannelCode = first.code
-        }
     }
 
     private var willCancelInstallment: Bool {
@@ -148,66 +140,15 @@ public struct EditTransactionSheet: View {
                 }
 
                 if type == "expense" {
-                    Toggle("分期付款", isOn: $wantsInstallment)
-                        .toggleStyle(.paperCheckbox)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
-                        .disabled(availableCreditChannels.isEmpty)
-                        .help(availableCreditChannels.isEmpty ? "请前往 Web 展厅后台「资产 → 渠道管理」配置分期渠道" : "")
-                        .onChange(of: wantsInstallment) { _, isOn in
-                            installmentTouched = true
-                            if isOn { normalizeInstallmentChannel() }
-                        }
-                        .onChange(of: appState.creditChannels) { _, _ in
-                            if wantsInstallment { normalizeInstallmentChannel() }
-                        }
-
-                    if availableCreditChannels.isEmpty {
-                        HStack(spacing: 8) {
-                            Text("请前往 Web 展厅后台「资产 → 渠道管理」配置分期渠道与每月还款日。")
-                                .font(ArchiveTypography.bodySans(size: 11))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                            if let hubURL = URL(string: appState.hubURLString) {
-                                Link("打开 Web 后台 ↗", destination: hubURL)
-                                    .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.accentWarm)
-                            }
-                        }
-                    }
-                }
-
-                if wantsInstallment && type == "expense" {
-                    HStack(spacing: ArchiveSpacing.s) {
-                        PaperSelect(
-                            selection: $installmentChannelCode,
-                            options: availableCreditChannels.map {
-                                PaperSelectOption(value: $0.code, label: "\($0.name) (每月\($0.repaymentDay)日)")
-                            },
-                            label: "分期渠道："
-                        )
-
-                        PaperSelect(
-                            selection: $installmentMonths,
-                            options: ArchiveInstallmentOptions.installmentOptions.map {
-                                PaperSelectOption(value: $0, label: "\($0) 期")
-                            },
-                            label: "期数："
-                        )
-                    }
-
-                    if let channel = selectedCreditChannel {
-                        Text("还款日跟随渠道：每月 \(channel.repaymentDay) 日")
-                            .font(ArchiveTypography.monoScale(size: 11))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-
-                    let cents = FormatUtils.parseYuanToCents(amountYuan) ?? 0
-                    let validInstallment = cents > 0 && installmentMonths > 0
-                    Text(validInstallment
-                         ? "每期 ¥\(FormatUtils.formattedYuan(cents: cents / Int64(installmentMonths))) · 总额 ¥\(FormatUtils.formattedYuan(cents: cents))"
-                         : "输入有效金额后自动核算每期应还")
-                        .font(ArchiveTypography.monoScale(size: 11))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .lineLimit(1)
+                    CreditChannelInstallmentSection(
+                        channels: availableCreditChannels,
+                        hubURLString: appState.hubURLString,
+                        isInstallment: $wantsInstallment,
+                        channelCode: $installmentChannelCode,
+                        months: $installmentMonths,
+                        amountCents: FormatUtils.parseYuanToCents(amountYuan) ?? 0,
+                        onToggleChanged: { _ in installmentTouched = true }
+                    )
                 }
 
                 if willCancelInstallment {

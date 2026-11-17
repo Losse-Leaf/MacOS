@@ -202,12 +202,42 @@ public struct SystemStatus: Codable, Equatable, Sendable {
     public var hasPasscodeSet: Bool
     public var siteName: String
     public var curatorName: String
+    public var oidcEnabled: Bool
+    public var oidcProviderName: String?
 
     enum CodingKeys: String, CodingKey {
         case initialized
         case hasPasscodeSet = "has_passcode_set"
         case siteName = "site_name"
         case curatorName = "curator_name"
+        case oidcEnabled = "oidc_enabled"
+        case oidcProviderName = "oidc_provider_name"
+    }
+
+    public init(
+        initialized: Bool = false,
+        hasPasscodeSet: Bool = false,
+        siteName: String = "",
+        curatorName: String = "",
+        oidcEnabled: Bool = false,
+        oidcProviderName: String? = nil
+    ) {
+        self.initialized = initialized
+        self.hasPasscodeSet = hasPasscodeSet
+        self.siteName = siteName
+        self.curatorName = curatorName
+        self.oidcEnabled = oidcEnabled
+        self.oidcProviderName = oidcProviderName
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        initialized = (try? container.decode(Bool.self, forKey: .initialized)) ?? false
+        hasPasscodeSet = (try? container.decode(Bool.self, forKey: .hasPasscodeSet)) ?? false
+        siteName = (try? container.decode(String.self, forKey: .siteName)) ?? ""
+        curatorName = (try? container.decode(String.self, forKey: .curatorName)) ?? ""
+        oidcEnabled = (try? container.decode(Bool.self, forKey: .oidcEnabled)) ?? false
+        oidcProviderName = try? container.decodeIfPresent(String.self, forKey: .oidcProviderName)
     }
 }
 

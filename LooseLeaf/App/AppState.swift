@@ -676,6 +676,11 @@ public final class AppState {
 
     /// 冷启动引导是否已执行（防止重复拉取）
     @ObservationIgnored private var hasBootstrapped: Bool = false
+    /// 正在握手或已核销的一次性配对工单集合（防止 .onOpenURL 与 AppDelegate 双通道重复核销同一 ticket）
+    @ObservationIgnored private var inFlightPairTickets: Set<String> = []
+    @ObservationIgnored private var redeemedPairTickets: Set<String> = []
+    /// 浏览器深链回调正在自动握手时的状态指示
+    public private(set) var isConfirmingIncomingPairTicket: Bool = false
 
     /// 当前是否存在需要关闭的主窗口内自定义浮层（独立详情窗口有原生 NSWindow.performClose，不阻塞主窗口工具栏）
     public var hasOpenOverlay: Bool {
@@ -1563,6 +1568,35 @@ public final class AppState {
 
     // MARK: - 设备配对与密钥授权 (Device Pairing & Credential Vault)
 
+    /// 组装 Vesper Auth OIDC 跨端授权入口地址：`{hubURL}/api/v1/auth/oidc/login?platform=...&device_name=...`
+    public nonisolated static func buildOIDCLoginURL(
+        hubURL: String,
+        platform: String = "macos",
+        deviceName: String
+    ) -> URL? {
+        var base = hubURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasSuffix("/") {
+            base.removeLast()
+        }
+        guard !base.isEmpty,
+              let parsedBase = URL(string: base),
+              let scheme = parsedBase.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              parsedBase.host?.isEmpty == false,
+              var comps = URLComponents(string: "\(base)/api/v1/auth/oidc/login") else {
+            return nil
+        }
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "platform", value: platform)
+        ]
+        let cleanName = deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanName.isEmpty {
+            items.append(URLQueryItem(name: "device_name", value: cleanName))
+        }
+        comps.queryItems = items
+        return comps.url
+    }
+
     /// 解析配对深链文本：`looseleaf://pair?hub=<中枢地址>&ticket=<配对工单>`
     /// hub 缺失时返回空串（调用方回退到当前 `hubURLString`）；ticket 缺失或非配对链接返回 nil。
     public nonisolated static func parsePairLink(_ raw: String) -> (hub: String, ticket: String)? {
@@ -1578,15 +1612,21 @@ public final class AppState {
     }
 
     public func pairWithTicket(_ ticket: String, hubURL: String) async throws {
+        let cleanTicket = ticket.trimmingCharacters(in: .whitespacesAndNewlines)
         APIClient.shared.setBaseURL(hubURL)
         self.hubURLString = APIClient.shared.baseURLString
-        let hostName = Host.current().localizedName ?? "MacBook"
+        let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
         let _ = try await APIClient.shared.confirmPairing(
-            ticket: ticket.trimmingCharacters(in: .whitespacesAndNewlines),
+            ticket: cleanTicket,
             deviceName: "\(hostName) · macOS",
             deviceModel: "Mac"
         )
+        if redeemedPairTickets.count >= 64 {
+            redeemedPairTickets.removeAll()
+        }
+        redeemedPairTickets.insert(cleanTicket)
         self.isPaired = true
+        self.errorBanner = nil
         // 换了一个中枢：往年今日的当日缓存必须失效。
         onThisDayCacheDateKey = nil
         showTemporaryBanner("配对工单握手成功，凭证已写入本机受保护档案")
@@ -1696,16 +1736,29 @@ public final class AppState {
     }
 
     /// 处理自定义 URL Scheme:
-    /// - looseleaf://pair?hub=http://...&ticket=pair_tk_...
+    /// - looseleaf://pair?hub=https://...&ticket=pair_tk_...
     /// - looseleaf://entry/123
     public func handleIncomingURL(_ url: URL) {
         guard url.scheme == "looseleaf" else { return }
         if url.host == "pair" {
             guard let parsed = Self.parsePairLink(url.absoluteString) else { return }
+            let cleanTicket = parsed.ticket.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanTicket.isEmpty,
+                  !inFlightPairTickets.contains(cleanTicket),
+                  !redeemedPairTickets.contains(cleanTicket) else {
+                return
+            }
+            inFlightPairTickets.insert(cleanTicket)
+            isConfirmingIncomingPairTicket = true
             let hub = parsed.hub.isEmpty ? hubURLString : parsed.hub
             Task { @MainActor in
+                defer {
+                    self.inFlightPairTickets.remove(cleanTicket)
+                    self.isConfirmingIncomingPairTicket = !self.inFlightPairTickets.isEmpty
+                }
                 do {
-                    try await pairWithTicket(parsed.ticket, hubURL: hub)
+                    try await pairWithTicket(cleanTicket, hubURL: hub)
+                    NSApp?.activate(ignoringOtherApps: true)
                 } catch {
                     self.errorBanner = error.localizedDescription
                 }

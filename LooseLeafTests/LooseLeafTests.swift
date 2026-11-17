@@ -774,4 +774,67 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertGreaterThan(ArchiveSpacing.m, ArchiveSpacing.s)
         XCTAssertGreaterThanOrEqual(ArchiveTypography.Scale.micro, 10, "正文级最小字号不得低于 10pt")
     }
+
+    // MARK: - Vesper Auth OIDC & Pair Deep-Link Tests
+
+    func testSystemStatusOIDCDecodingResilience() throws {
+        // 1) 新版 /api/v1/system/status 返回（无 has_passcode_set，含 oidc_enabled 与 oidc_provider_name）
+        let oidcJSON = """
+        {
+            "code": 0,
+            "message": "ok",
+            "data": {
+                "initialized": false,
+                "site_name": "散页",
+                "curator_name": "Starry",
+                "oidc_enabled": true,
+                "oidc_provider_name": "Vesper Auth"
+            }
+        }
+        """.data(using: .utf8)!
+        let env = try JSONDecoder().decode(APIEnvelope<SystemStatus>.self, from: oidcJSON)
+        XCTAssertEqual(env.data?.initialized, false)
+        XCTAssertEqual(env.data?.hasPasscodeSet, false)
+        XCTAssertEqual(env.data?.oidcEnabled, true)
+        XCTAssertEqual(env.data?.oidcProviderName, "Vesper Auth")
+
+        // 2) 兼容缺省 oidc_enabled 的旧版中枢响应
+        let legacyJSON = """
+        {
+            "initialized": true,
+            "site_name": "散页",
+            "curator_name": "Starry"
+        }
+        """.data(using: .utf8)!
+        let legacy = try JSONDecoder().decode(SystemStatus.self, from: legacyJSON)
+        XCTAssertTrue(legacy.initialized)
+        XCTAssertFalse(legacy.oidcEnabled)
+        XCTAssertNil(legacy.oidcProviderName)
+    }
+
+    func testBuildOIDCLoginURLAndPairDeepLinkParsing() throws {
+        XCTAssertEqual(APIClient.defaultHubURL, "https://leaf.starryheavens.uk")
+
+        let loginURL = try XCTUnwrap(
+            AppState.buildOIDCLoginURL(
+                hubURL: "https://leaf.starryheavens.uk/",
+                platform: "macos",
+                deviceName: "Starry MacBook Pro"
+            )
+        )
+        let comps = try XCTUnwrap(URLComponents(url: loginURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(comps.scheme, "https")
+        XCTAssertEqual(comps.host, "leaf.starryheavens.uk")
+        XCTAssertEqual(comps.path, "/api/v1/auth/oidc/login")
+        let queryMap = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(queryMap["platform"], "macos")
+        XCTAssertEqual(queryMap["device_name"], "Starry MacBook Pro")
+
+        XCTAssertNil(AppState.buildOIDCLoginURL(hubURL: "javascript:alert(1)", platform: "macos", deviceName: "Mac"))
+
+        let deepLink = "looseleaf://pair?hub=https%3A%2F%2Fleaf.starryheavens.uk&ticket=pair_tk_90sec_sample"
+        let parsed = try XCTUnwrap(AppState.parsePairLink(deepLink))
+        XCTAssertEqual(parsed.hub, "https://leaf.starryheavens.uk")
+        XCTAssertEqual(parsed.ticket, "pair_tk_90sec_sample")
+    }
 }

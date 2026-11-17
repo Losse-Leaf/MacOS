@@ -23,7 +23,7 @@ public enum APIError: LocalizedError, Equatable, Sendable {
         case .invalidURL(let path):
             return "无效的接口地址: \(path)"
         case .unauthorized(let msg):
-            return msg.isEmpty ? "设备凭据未授权或已失效，请重新完成设备配对（在 Web 页面生成配对二维码）" : msg
+            return msg.isEmpty ? "设备凭据未授权或已失效，请通过 Vesper Auth 通行证或配对深链重新接入" : msg
         case .notModified:
             return "数据未变更 (304)"
         case .serverError(_, let msg):
@@ -43,6 +43,7 @@ public enum APIError: LocalizedError, Equatable, Sendable {
 public actor APIClient {
     public static let shared = APIClient()
     public static let hubURLDefaultsKey = "looseleaf_hub_base_url"
+    public static let defaultHubURL = "https://leaf.starryheavens.uk"
 
     private static let logger = Logger(subsystem: "com.looseleaf.mac", category: "api")
 
@@ -124,7 +125,7 @@ public actor APIClient {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let resolved: String
         if saved.isEmpty {
-            resolved = "http://localhost:8088"
+            resolved = Self.defaultHubURL
         } else {
             resolved = saved.hasSuffix("/") ? String(saved.dropLast()) : saved
         }

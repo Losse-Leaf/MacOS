@@ -73,7 +73,7 @@ struct HubDevicesSettingsView: View {
 
                         Text(appState.isPaired
                              ? appState.hubURLString
-                             : "请在主窗口配对门禁页输入工单号或使用配对深链完成首次握手")
+                             : "请在主窗口配对门禁页通过 Vesper Auth 通行证或配对深链完成首次握手")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }

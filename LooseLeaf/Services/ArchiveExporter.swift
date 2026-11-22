@@ -20,7 +20,7 @@ public enum ArchiveExporter {
             lines.append("")
 
             var meta: [String] = ["`\(entry.parsedDate.dotDateTime)`"]
-            if let loc = entry.location ?? entry.cityName, !loc.isEmpty {
+            if let loc = entry.location, !loc.isEmpty {
                 meta.append(loc)
             }
             lines.append(meta.joined(separator: " · "))

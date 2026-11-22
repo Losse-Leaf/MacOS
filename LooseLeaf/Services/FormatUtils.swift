@@ -417,20 +417,4 @@ public enum FormatUtils {
         let start2 = cal.startOfDay(for: max(d1, d2))
         return cal.dateComponents([.day], from: start1, to: start2).day ?? 0
     }
-
-    // MARK: - 城市名称与行政区划代码智能解析 (CityCodeResolver)
-
-    /// 自动从地点字符串中识别对应的 6 位城市代码（如 "杭州 · 西湖" -> "330100"）
-    /// 词典为全国地级行政区全量标准表（`CityDictionary`，与 web `web/src/utils/cities.ts` 对表一致）
-    public static func resolveCityCode(from locationText: String) -> String? {
-        let cleaned = locationText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return nil }
-
-        // 如果用户本身就输入了 6 位数字代码，直接使用
-        if cleaned.count == 6 && cleaned.allSatisfy({ $0.isNumber }) {
-            return cleaned
-        }
-
-        return CityDictionary.code(forLocation: cleaned)
-    }
 }

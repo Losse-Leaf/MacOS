@@ -48,8 +48,6 @@ final class SnapshotPerformanceTests: XCTestCase {
                 content: String(repeating: "这是第 \(i) 则手稿的正文内容，", count: 40),
                 occurredAt: "2026-10-\(String(format: "%02d", (i % 28) + 1))T10:00:00+08:00",
                 location: "某市某区某街道 \(i) 号",
-                cityCode: "110100",
-                cityName: "北京市",
                 attachments: [],
                 createdAt: "2026-10-01T10:00:00+08:00",
                 updatedAt: "2026-10-01T10:00:00+08:00"

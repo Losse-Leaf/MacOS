@@ -11,8 +11,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
     public var note: String?
     public var paymentMethod: String?
     public var wishId: Int?
-    public var footprintId: Int?
-    public var cityCode: String?
     public var occurredAt: String
 
     // 分期付款核心字段 (RC-53)
@@ -40,8 +38,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         case note
         case paymentMethod = "payment_method"
         case wishId = "wish_id"
-        case footprintId = "footprint_id"
-        case cityCode = "city_code"
         case occurredAt = "occurred_at"
         case isInstallment = "is_installment"
         case installmentChannelCode = "installment_channel_code"
@@ -65,8 +61,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         note: String? = nil,
         paymentMethod: String? = nil,
         wishId: Int? = nil,
-        footprintId: Int? = nil,
-        cityCode: String? = nil,
         occurredAt: String = FormatUtils.beijingISOString(),
         isInstallment: Bool? = false,
         installmentChannelCode: String? = nil,
@@ -88,8 +82,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         self.note = note
         self.paymentMethod = paymentMethod
         self.wishId = wishId
-        self.footprintId = footprintId
-        self.cityCode = cityCode
         self.occurredAt = occurredAt
         self.isInstallment = isInstallment
         self.installmentChannelCode = installmentChannelCode
@@ -115,8 +107,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         note = try? c.decodeIfPresent(String.self, forKey: .note)
         paymentMethod = try? c.decodeIfPresent(String.self, forKey: .paymentMethod)
         wishId = try? c.decodeIfPresent(Int.self, forKey: .wishId)
-        footprintId = try? c.decodeIfPresent(Int.self, forKey: .footprintId)
-        cityCode = try? c.decodeIfPresent(String.self, forKey: .cityCode)
         occurredAt = (try? c.decode(String.self, forKey: .occurredAt)) ?? ""
         isInstallment = try? c.decodeIfPresent(Bool.self, forKey: .isInstallment)
         installmentChannelCode = try? c.decodeIfPresent(String.self, forKey: .installmentChannelCode)
@@ -146,8 +136,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
             note: note,
             paymentMethod: paymentMethod,
             wishId: wishId,
-            footprintId: footprintId,
-            cityCode: cityCode,
             occurredAt: occurredAt,
             isInstallment: isInstallment,
             installmentChannelCode: installmentChannelCode,
@@ -206,7 +194,6 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
             content: summaryText,
             occurredAt: occurredAt,
             location: nil,
-            cityCode: cityCode,
             syncStatus: syncStatus
         )
     }
@@ -457,8 +444,6 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     public var note: String?
     public var paymentMethod: String?
     public var wishId: Int?
-    public var footprintId: Int?
-    public var cityCode: String?
     public var occurredAt: String
     /// 是否为分期账目
     ///
@@ -480,16 +465,10 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
     public var installmentMonthlyPay: Int64?
     public var installmentRemainMonths: Int?
     public var repaymentDay: Int?
-    /// 显式清空属地城市（契约 A，仅修订路径使用）：true 时服务端清空 city_code，
-    /// 优先于 city_code 字段。创建路径恒为 nil（不下发）。
-    public var clearCity: Bool?
     /// 幂等创建键（契约 C）：首次在线直发前生成，发件箱持久化后重试复用同一个 ——
     /// 服务端按它查重，杜绝同一笔账被重复上传成两份。
     /// nil 仅代表升级前的旧载荷，发送前会补签。
     public var clientRequestId: String?
-    public var linkGearAsset: Bool
-    public var gearCategory: String?
-    public var gearSpec: String?
 
     enum CodingKeys: String, CodingKey {
         case amount
@@ -499,8 +478,6 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         case note
         case paymentMethod = "payment_method"
         case wishId = "wish_id"
-        case footprintId = "footprint_id"
-        case cityCode = "city_code"
         case occurredAt = "occurred_at"
         case isInstallment = "is_installment"
         case clearInstallment = "clear_installment"
@@ -510,11 +487,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         case installmentMonthlyPay = "installment_monthly_pay"
         case installmentRemainMonths = "installment_remain_months"
         case repaymentDay = "repayment_day"
-        case clearCity = "clear_city"
         case clientRequestId = "client_request_id"
-        case linkGearAsset = "link_gear_asset"
-        case gearCategory = "gear_category"
-        case gearSpec = "gear_spec"
     }
 
     public init(
@@ -525,8 +498,6 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         note: String? = nil,
         paymentMethod: String? = nil,
         wishId: Int? = nil,
-        footprintId: Int? = nil,
-        cityCode: String? = nil,
         occurredAt: String = FormatUtils.beijingISOString(),
         isInstallment: Bool? = nil,
         clearInstallment: Bool = false,
@@ -536,11 +507,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         installmentMonthlyPay: Int64? = nil,
         installmentRemainMonths: Int? = nil,
         repaymentDay: Int? = nil,
-        clearCity: Bool? = nil,
-        clientRequestId: String? = nil,
-        linkGearAsset: Bool = false,
-        gearCategory: String? = nil,
-        gearSpec: String? = nil
+        clientRequestId: String? = nil
     ) {
         self.amount = amount
         self.type = type
@@ -549,8 +516,6 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         self.note = note
         self.paymentMethod = paymentMethod
         self.wishId = wishId
-        self.footprintId = footprintId
-        self.cityCode = cityCode
         self.occurredAt = occurredAt
         self.isInstallment = isInstallment
         self.clearInstallment = clearInstallment
@@ -560,253 +525,7 @@ public struct CreateTransactionRequest: Codable, Equatable, Sendable {
         self.installmentMonthlyPay = installmentMonthlyPay
         self.installmentRemainMonths = installmentRemainMonths
         self.repaymentDay = repaymentDay
-        self.clearCity = clearCity
         self.clientRequestId = clientRequestId
-        self.linkGearAsset = linkGearAsset
-        self.gearCategory = gearCategory
-        self.gearSpec = gearSpec
-    }
-}
-
-/// 随身装备与固定资产单品 (GearItem RC-53)
-/// 恢复随身设备的响应
-public struct RestoreGearAssetResponse: Codable, Sendable {
-    public var id: String
-    public var restored: Bool
-}
-
-/// 恢复随身设备请求载荷（⌘Z 撤销用）
-public struct RestoreGearAssetRequest: Codable, Sendable {
-    public var id: String
-    public var name: String
-    public var spec: String?
-    public var category: String
-    public var status: String?
-    public var priceCents: Int64?
-    public var purchaseDate: String?
-    public var soldPriceCents: Int64?
-    public var soldDate: String?
-    public var note: String?
-    /// 原先在档案数组中的位置（-1 = 追加到末尾）
-    public var index: Int
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case spec
-        case category
-        case status
-        case priceCents = "price_cents"
-        case purchaseDate = "purchase_date"
-        case soldPriceCents = "sold_price_cents"
-        case soldDate = "sold_date"
-        case note
-        case index
-    }
-
-    public init(
-        id: String,
-        name: String,
-        spec: String? = nil,
-        category: String = "数码器材",
-        status: String? = nil,
-        priceCents: Int64? = nil,
-        purchaseDate: String? = nil,
-        soldPriceCents: Int64? = nil,
-        soldDate: String? = nil,
-        note: String? = nil,
-        index: Int = -1
-    ) {
-        self.id = id
-        self.name = name
-        self.spec = spec
-        self.category = category
-        self.status = status
-        self.priceCents = priceCents
-        self.purchaseDate = purchaseDate
-        self.soldPriceCents = soldPriceCents
-        self.soldDate = soldDate
-        self.note = note
-        self.index = index
-    }
-}
-
-public struct GearItem: Codable, Identifiable, Equatable, Sendable {
-    public var id: String
-    public var name: String
-    public var spec: String?
-    public var category: String
-    public var status: String? // "active" | "sold"
-    public var priceCents: Int64?
-    public var purchaseDate: String?
-    public var soldPriceCents: Int64?
-    public var soldDate: String?
-    public var note: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case spec
-        case category
-        case status
-        case priceCents = "price_cents"
-        case purchaseDate = "purchase_date"
-        case soldPriceCents = "sold_price_cents"
-        case soldDate = "sold_date"
-        case note
-    }
-
-    public init(
-        id: String = UUID().uuidString,
-        name: String,
-        spec: String? = nil,
-        category: String,
-        status: String? = "active",
-        priceCents: Int64? = nil,
-        purchaseDate: String? = nil,
-        soldPriceCents: Int64? = nil,
-        soldDate: String? = nil,
-        note: String? = nil
-    ) {
-        self.id = id
-        self.name = name
-        self.spec = spec
-        self.category = category
-        self.status = status
-        self.priceCents = priceCents
-        self.purchaseDate = purchaseDate
-        self.soldPriceCents = soldPriceCents
-        self.soldDate = soldDate
-        self.note = note
-    }
-}
-
-/// 新增固定资产设备请求载荷 (POST /api/v1/assets/gear)
-/// 严格遵循 RC-132 契约：同步记账字段为 create_transaction
-public struct AddGearAssetRequest: Codable, Sendable {
-    public var name: String
-    public var spec: String?
-    public var category: String
-    public var priceCents: Int64
-    public var purchaseDate: String
-    public var note: String?
-    public var createTransaction: Bool
-    public var paymentMethod: String?
-    /// 是否按分期购入（与账目分期同一套协议）
-    public var isInstallment: Bool
-    public var installmentChannelCode: String?
-    public var installmentTotalAmount: Int64?
-    public var installmentMonths: Int?
-    public var repaymentDay: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case spec
-        case category
-        case priceCents = "price_cents"
-        case purchaseDate = "purchase_date"
-        case note
-        case createTransaction = "create_transaction"
-        case paymentMethod = "payment_method"
-        case isInstallment = "is_installment"
-        case installmentChannelCode = "installment_channel_code"
-        case installmentTotalAmount = "installment_total_amount"
-        case installmentMonths = "installment_months"
-        case repaymentDay = "repayment_day"
-    }
-
-    public init(
-        name: String,
-        spec: String? = nil,
-        category: String,
-        priceCents: Int64,
-        purchaseDate: String = FormatUtils.beijingDateString(),
-        note: String? = nil,
-        createTransaction: Bool = true,
-        paymentMethod: String? = nil,
-        isInstallment: Bool = false,
-        installmentChannelCode: String? = nil,
-        installmentTotalAmount: Int64? = nil,
-        installmentMonths: Int? = nil,
-        repaymentDay: Int? = nil
-    ) {
-        self.name = name
-        self.spec = spec
-        self.category = category
-        self.priceCents = priceCents
-        self.purchaseDate = purchaseDate
-        self.note = note
-        self.createTransaction = createTransaction
-        self.paymentMethod = paymentMethod
-        self.isInstallment = isInstallment
-        self.installmentChannelCode = installmentChannelCode
-        self.installmentTotalAmount = installmentTotalAmount
-        self.installmentMonths = installmentMonths
-        self.repaymentDay = repaymentDay
-    }
-}
-
-/// 资产大盘看板聚合响应 (GET /api/v1/assets/overview)
-public struct AssetsOverview: Codable, Equatable, Sendable {
-    public var netWorth: Int64
-    public var liquidBalance: Int64
-    public var initialLiquidBalance: Int64
-    public var fixedAssets: Int64
-    public var totalLiabilities: Int64
-    public var monthlyLiabilities: Int64
-    public var gearSummary: GearSummary?
-    public var channelLiabilities: [ChannelLiability]?
-
-    enum CodingKeys: String, CodingKey {
-        case netWorth = "net_worth"
-        case liquidBalance = "liquid_balance"
-        case initialLiquidBalance = "initial_liquid_balance"
-        case fixedAssets = "fixed_assets"
-        case totalLiabilities = "total_liabilities"
-        case monthlyLiabilities = "monthly_liabilities"
-        case gearSummary = "gear_summary"
-        case channelLiabilities = "channel_liabilities"
-    }
-}
-
-public struct GearSummary: Codable, Equatable, Sendable {
-    public var totalCount: Int
-    public var activeCount: Int
-    public var activeValue: Int64
-    public var soldCount: Int
-    public var soldRecoveredValue: Int64
-    public var items: [GearItem]?
-
-    enum CodingKeys: String, CodingKey {
-        case totalCount = "total_count"
-        case activeCount = "active_count"
-        case activeValue = "active_value"
-        case soldCount = "sold_count"
-        case soldRecoveredValue = "sold_recovered_value"
-        case items
-    }
-}
-
-public struct ChannelLiability: Codable, Identifiable, Equatable, Sendable {
-    public var id: String { channelCode }
-    public var channelCode: String
-    public var channelName: String
-    public var repaymentDay: Int
-    public var color: String?
-    public var totalDebt: Int64
-    public var monthlyPay: Int64
-    public var daysUntilRepayment: Int
-    public var activeCount: Int
-
-    enum CodingKeys: String, CodingKey {
-        case channelCode = "channel_code"
-        case channelName = "channel_name"
-        case repaymentDay = "repayment_day"
-        case color
-        case totalDebt = "total_debt"
-        case monthlyPay = "monthly_pay"
-        case daysUntilRepayment = "days_until_repayment"
-        case activeCount = "active_count"
     }
 }
 
@@ -848,7 +567,7 @@ public struct CreditChannel: Codable, Identifiable, Equatable, Sendable {
 /// 自定义分类字典项 (GET /api/v1/categories)
 public struct CategoryOption: Codable, Identifiable, Equatable, Sendable {
     public var id: Int
-    public var scope: String // "expense", "income", "gear", "payment", "project"
+    public var scope: String // "expense", "income", "payment"
     public var name: String
     public var sortOrder: Int
     public var isBuiltin: Bool

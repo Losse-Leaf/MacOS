@@ -66,23 +66,22 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(gapDays, 19)
     }
 
-    // MARK: - 5. Domain Model Codable Contract Tests (RC-132 create_transaction)
+    // MARK: - 5. Domain Model Codable Contract Tests
 
-    func testTransactionAndGearAssetCodableContract() throws {
-        let req = AddGearAssetRequest(
-            name: "Leica M6 TTL",
-            spec: "0.72x 取景器",
-            category: "数码器材",
-            priceCents: 1850000,
-            purchaseDate: "2026-10-13",
-            note: "成色极佳",
-            createTransaction: true,
-            paymentMethod: "银行卡"
+    func testCreateTransactionCodableContract() throws {
+        let req = CreateTransactionRequest(
+            amount: 18500,
+            type: "expense",
+            category: "餐饮",
+            title: "手冲咖啡豆",
+            note: "耶加雪菲",
+            paymentMethod: "银行卡",
+            occurredAt: "2026-10-13T10:00:00+08:00"
         )
         let encoded = try JSONEncoder().encode(req)
         let jsonObject = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-        XCTAssertEqual(jsonObject?["price_cents"] as? Int64, 1850000)
-        XCTAssertEqual(jsonObject?["create_transaction"] as? Bool, true)
+        XCTAssertEqual(jsonObject?["amount"] as? Int64, 18500)
+        XCTAssertEqual(jsonObject?["type"] as? String, "expense")
         XCTAssertEqual(jsonObject?["payment_method"] as? String, "银行卡")
     }
 
@@ -154,26 +153,15 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertFalse(processed.compressedData.isEmpty)
     }
 
-    // MARK: - 7. City Code Auto Resolver Tests (CityCodeResolver)
+    // MARK: - 8. Resolve Wish Request Codable Tests
 
-    func testCityCodeResolver() {
-        XCTAssertEqual(FormatUtils.resolveCityCode(from: "杭州 · 西湖"), "330100")
-        XCTAssertEqual(FormatUtils.resolveCityCode(from: "云南省大理市"), "532900")
-        XCTAssertEqual(FormatUtils.resolveCityCode(from: "苏州市"), "320500")
-        XCTAssertEqual(FormatUtils.resolveCityCode(from: "532900"), "532900")
-        XCTAssertNil(FormatUtils.resolveCityCode(from: "未知神秘小岛"))
-    }
-
-    // MARK: - 8. Resolve Wish & Sell Gear Request Codable Tests
-
-    func testResolveWishAndSellGearCodableContracts() throws {
+    func testResolveWishCodableContract() throws {
         let resolveReq = ResolveWishRequest(
             fulfilledAt: "2026-10-13T16:00:00+08:00",
             actualCost: 199900,
             resolutionType: "exact",
             actualTitle: "Leica M6",
             createTransaction: true,
-            createGearAsset: true,
             createLifeEntry: true,
             entryContent: "圆梦 Leica M6"
         )
@@ -182,18 +170,7 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(resolveJson?["actual_cost"] as? Int64, 199900)
         XCTAssertEqual(resolveJson?["resolution_type"] as? String, "exact")
         XCTAssertEqual(resolveJson?["create_transaction"] as? Bool, true)
-        XCTAssertEqual(resolveJson?["create_gear_asset"] as? Bool, true)
-
-        let sellReq = SellGearRequest(
-            soldPriceCents: 120000,
-            soldDate: "2026-10-13",
-            note: "闲鱼同城自提"
-        )
-        let sellData = try JSONEncoder().encode(sellReq)
-        let sellJson = try JSONSerialization.jsonObject(with: sellData) as? [String: Any]
-        XCTAssertEqual(sellJson?["sold_price_cents"] as? Int64, 120000)
-        XCTAssertEqual(sellJson?["sold_date"] as? String, "2026-10-13")
-        XCTAssertEqual(sellJson?["note"] as? String, "闲鱼同城自提")
+        XCTAssertEqual(resolveJson?["create_life_entry"] as? Bool, true)
     }
 
     // MARK: - 10. Sync Merge, Cursor & Local Temp ID Logic Tests

@@ -143,7 +143,7 @@ public struct LooseLeafApp: App {
 
     public init() {}
 
-    private static let contentShortcuts: [KeyEquivalent] = ["1", "2", "3", "4", "5", "6"]
+    private static let contentShortcuts: [KeyEquivalent] = ["1", "2"]
     private static let configurationShortcuts: [KeyEquivalent] = ["1", "2", "3"]
 
     /// 关闭主窗口最上层的自定义弹层（无弹层时走原生 `NSWindow.performClose`）
@@ -310,14 +310,6 @@ public struct LooseLeafApp: App {
                     appState.openSettings(tab: .general)
                 }
                 .keyboardShortcut(KeyEquivalent(Character("/")), modifiers: [.command])
-
-                Divider()
-
-                Button("生活刻度与主理人…") {
-                    appState.activeSection = .dossier
-                }
-                .keyboardShortcut("s", modifiers: [.command, .option])
-                .disabled(!appState.isPaired)
 
                 Divider()
 

@@ -77,16 +77,14 @@ final class OptimizationRegressionTests: XCTestCase {
         appState.publishHandoffActivity(for: privateEntry)
     }
 
-    // MARK: - 3. 跨端照片防误删：心愿与足迹无图编辑不得写出空的 attachment_ids
+    // MARK: - 3. 跨端照片防误删：心愿无图编辑不得写出空的 attachment_ids
 
-    func testWishAndFootprintRequestsOmitAttachmentIdsByDefault() throws {
+    func testWishRequestOmitsAttachmentIdsByDefault() throws {
         let wishReq = CreateWishRequest(
             title: "北海道冬日漫游",
             kind: "travel",
             note: "看雪",
             spec: "7天6晚自由行",
-            cityCode: "990000",
-            cityName: "札幌",
             budget: 1200000,
             isPrivate: true
         )
@@ -97,23 +95,6 @@ final class OptimizationRegressionTests: XCTestCase {
         )
         XCTAssertTrue(wishJSON.contains("\"spec\":\"7天6晚自由行\""), "旅程心愿同样必须保留 spec 字段")
         XCTAssertTrue(wishJSON.contains("\"is_private\":true"))
-
-        let fpReq = CreateFootprintRequest(
-            cityCode: "330100",
-            cityName: "杭州市",
-            title: "秋日西湖",
-            visitedAt: "2026-10-20T10:00:00+08:00",
-            departedAt: "2026-10-23",
-            note: "桂花雨",
-            isPrivate: true
-        )
-        let fpJSON = try XCTUnwrap(String(data: JSONEncoder().encode(fpReq), encoding: .utf8))
-        XCTAssertFalse(
-            fpJSON.contains("attachment_ids"),
-            "无图修订足迹时绝不可默认写出 attachment_ids: []：\(fpJSON)"
-        )
-        XCTAssertTrue(fpJSON.contains("\"departed_at\":\"2026-10-23\""))
-        XCTAssertTrue(fpJSON.contains("\"is_private\":true"))
     }
 
     // MARK: - 4. 散页清空最后一张相纸三态契约：clear_attachments = true

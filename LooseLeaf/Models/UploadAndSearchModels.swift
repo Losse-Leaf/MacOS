@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 媒体预签名上传、器材转让与检索聚合载荷
+// MARK: - 媒体预签名上传与检索聚合载荷
 
 public struct PresignUploadRequest: Codable, Sendable {
     public var filename: String
@@ -99,29 +99,6 @@ public struct UnifiedUploadResponse: Codable, Sendable {
     }
 }
 
-/// 随身器材转售回血请求 (POST /api/v1/assets/gear/:id/sell)
-public struct SellGearRequest: Codable, Sendable {
-    public var soldPriceCents: Int64
-    public var soldDate: String
-    public var note: String?
-
-    enum CodingKeys: String, CodingKey {
-        case soldPriceCents = "sold_price_cents"
-        case soldDate = "sold_date"
-        case note
-    }
-
-    public init(
-        soldPriceCents: Int64,
-        soldDate: String = FormatUtils.beijingDateString(),
-        note: String? = nil
-    ) {
-        self.soldPriceCents = soldPriceCents
-        self.soldDate = soldDate
-        self.note = note
-    }
-}
-
 public struct OnThisDayResponse: Codable, Equatable, Sendable {
     public var month: Int
     public var day: Int
@@ -144,31 +121,23 @@ public struct OnThisDayResponse: Codable, Equatable, Sendable {
 public struct GlobalSearchResponse: Codable, Equatable, Sendable {
     public var query: String
     public var entries: [LifeEntry]
-    public var footprints: [Footprint]
     public var wishes: [Wish]
-    public var projects: [Project]
 
     public init(
         query: String = "",
         entries: [LifeEntry] = [],
-        footprints: [Footprint] = [],
-        wishes: [Wish] = [],
-        projects: [Project] = []
+        wishes: [Wish] = []
     ) {
         self.query = query
         self.entries = entries
-        self.footprints = footprints
         self.wishes = wishes
-        self.projects = projects
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         query = (try? container.decode(String.self, forKey: .query)) ?? ""
         entries = (try? container.decodeIfPresent([LifeEntry].self, forKey: .entries)) ?? []
-        footprints = (try? container.decodeIfPresent([Footprint].self, forKey: .footprints)) ?? []
         wishes = (try? container.decodeIfPresent([Wish].self, forKey: .wishes)) ?? []
-        projects = (try? container.decodeIfPresent([Project].self, forKey: .projects)) ?? []
     }
 }
 

@@ -53,7 +53,7 @@ struct WorkbenchSidebar: View {
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 导航菜单项：6 大生活内容板块 + 原生独立设置窗口入口
+            // 导航菜单项：散页与记账两大板块 + 原生独立设置窗口入口
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("生活卷宗")

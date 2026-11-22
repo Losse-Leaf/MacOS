@@ -599,7 +599,7 @@ public actor APIClient {
         try await performDelete(path: "/api/v1/entries/\(id)", purge: purge)
     }
 
-    // MARK: - 4. 独立记账与资产管理中枢 (Transactions & Assets Hub)
+    // MARK: - 4. 独立记账与分期渠道 (Transactions & Credit Channels)
 
     public func fetchTransactions(
         year: Int? = nil,
@@ -657,80 +657,11 @@ public actor APIClient {
         try await performDelete(path: "/api/v1/transactions/\(id)", purge: purge)
     }
 
-    public func fetchAssetsOverview() async throws -> AssetsOverview {
-        try await performEnvelopeRequest(path: "/api/v1/assets/overview")
-    }
-
-    public func updateInitialLiquidBalance(cents: Int64) async throws {
-        struct Payload: Codable {
-            let initial_liquid_balance: Int64
-        }
-        let _: EmptyPayload = try await performEnvelopeRequest(
-            path: "/api/v1/assets/liquid-balance",
-            method: "PUT",
-            body: Payload(initial_liquid_balance: cents)
-        )
-    }
-
-    public func addGearAsset(_ req: AddGearAssetRequest) async throws -> GearItem {
-        try await performEnvelopeRequest(path: "/api/v1/assets/gear", method: "POST", body: req)
-    }
-
-    public func sellGearAsset(id: String, _ req: SellGearRequest) async throws -> GearItem {
-        try await performEnvelopeRequest(path: "/api/v1/assets/gear/\(escapePathComponent(id))/sell", method: "POST", body: req)
-    }
-
-    /// 恢复一件被删除的随身设备（⌘Z 撤销用）
-    ///
-    /// 关键：设备本体存在**主理人档案的 JSON 列**里，删除是「从数组里移除」——
-    /// 没有 deleted_at 可标记，所以恢复必须把**原始设备数据**带回去，
-    /// 由服务端按原 id 插回（并连带恢复伴生散页）。
-    public func restoreGearAsset(_ gear: GearItem, index: Int) async throws {
-        let req = RestoreGearAssetRequest(
-            id: gear.id,
-            name: gear.name,
-            spec: gear.spec,
-            category: gear.category,
-            status: gear.status,
-            priceCents: gear.priceCents,
-            purchaseDate: gear.purchaseDate,
-            soldPriceCents: gear.soldPriceCents,
-            soldDate: gear.soldDate,
-            note: gear.note,
-            index: index
-        )
-        let _: RestoreGearAssetResponse = try await performEnvelopeRequest(
-            path: "/api/v1/assets/gear/restore",
-            method: "POST",
-            body: req
-        )
-    }
-
-    public func deleteGearAsset(id: String) async throws {
-        try await performDelete(path: "/api/v1/assets/gear/\(escapePathComponent(id))")
-    }
-
     public func fetchCreditChannels() async throws -> [CreditChannel] {
         try await performEnvelopeRequest(path: "/api/v1/credit-channels")
     }
 
-    // MARK: - 5. 造物、心愿单与旅游足迹 (Projects, Wishes & Footprints)
-
-    public func fetchProjects() async throws -> [Project] {
-        try await performEnvelopeRequest(path: "/api/v1/projects?limit=0")
-    }
-
-    public func createProject(_ req: CreateProjectRequest) async throws -> Project {
-        try await performEnvelopeRequest(path: "/api/v1/projects", method: "POST", body: req)
-    }
-
-    public func updateProject(id: Int, _ req: CreateProjectRequest) async throws -> Project {
-        try await performEnvelopeRequest(path: "/api/v1/projects/\(id)", method: "PUT", body: req)
-    }
-
-    public func deleteProject(id: Int) async throws {
-        try await performDelete(path: "/api/v1/projects/\(id)")
-    }
+    // MARK: - 5. 心愿单 (Wishes)
 
     public func fetchWishes(
         page: Int = 1,
@@ -765,31 +696,6 @@ public actor APIClient {
 
     public func deleteWish(id: Int) async throws {
         try await performDelete(path: "/api/v1/wishes/\(id)")
-    }
-
-    public func fetchFootprints(year: Int? = nil) async throws -> [Footprint] {
-        var query: [URLQueryItem] = []
-        if let year {
-            query.append(URLQueryItem(name: "year", value: String(year)))
-        }
-        return try await performEnvelopeRequest(path: "/api/v1/footprints", queryItems: query)
-    }
-
-    public func createFootprint(_ req: CreateFootprintRequest) async throws -> Footprint {
-        try await performEnvelopeRequest(path: "/api/v1/footprints", method: "POST", body: req)
-    }
-
-    public func updateFootprint(id: Int, _ req: CreateFootprintRequest) async throws -> Footprint {
-        try await performEnvelopeRequest(path: "/api/v1/footprints/\(id)", method: "PUT", body: req)
-    }
-
-    public func deleteFootprint(id: Int) async throws {
-        try await performDelete(path: "/api/v1/footprints/\(id)")
-    }
-
-    /// 获取单座城市回忆抽屉四重聚合数据 (GET /api/v1/footprints/cities/:city_code/drawer)
-    public func fetchCityMemoryDrawer(cityCode: String) async throws -> CityMemoryDrawerResponse {
-        try await performEnvelopeRequest(path: "/api/v1/footprints/cities/\(escapePathComponent(cityCode))/drawer")
     }
 
     // MARK: - 6. 媒体预签名与统一上传 (R2 Presign & Multipart Fallback)

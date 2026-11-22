@@ -115,13 +115,10 @@ extension AppState {
     func clearPrivateArchiveState() {
         entries = []
         transactions = []
-        projects = []
         wishes = []
-        footprints = []
         onThisDayEntries = []
         onThisDayCacheDateKey = nil
         clearGlobalSearchResult()
-        assetsOverview = nil
         transactionSummary = TransactionSummary()
         profile = CuratorProfile()
         siteConfig = SiteConfig()
@@ -138,8 +135,7 @@ extension AppState {
         lightboxAttachment = nil
         activeConfirmDialog = nil
         navigation.highlightedWishId = nil
-        navigation.highlightedProjectId = nil
-        navigation.highlightedFootprintCity = nil
+        navigation.ledgerSubTab = .ledger
         pendingUploadCount = 0
         failedUploadCount = 0
         pendingEntriesCount = 0
@@ -222,7 +218,7 @@ extension AppState {
         }
         let activity = NSUserActivity(activityType: Self.userActivityType)
         let baseTitle = entry.title.isEmpty ? "散页手稿" : entry.title
-        if let place = entry.cityName ?? entry.location, !place.isEmpty {
+        if let place = entry.location, !place.isEmpty {
             activity.title = "\(baseTitle) · \(place)"
         } else {
             activity.title = baseTitle

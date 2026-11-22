@@ -22,18 +22,14 @@ struct SearchableLifeEntry: Sendable {
 /// 扁平化检索命中：供 ↑/↓/Return 键盘导航与 ForEach 复用
 enum SearchResultHit: Identifiable {
     case entry(LifeEntry)
-    case footprint(Footprint)
     case wish(Wish)
-    case project(Project)
 
     var id: String { scrollId }
 
     var scrollId: String {
         switch self {
         case .entry(let e): return "hit-e-\(e.id)"
-        case .footprint(let f): return "hit-f-\(f.id)"
         case .wish(let w): return "hit-w-\(w.id)"
-        case .project(let p): return "hit-p-\(p.id)"
         }
     }
 }
@@ -122,15 +118,6 @@ struct SearchPresentation {
                 hits: mergedEntries.map { .entry($0) }
             ))
         }
-        if let remote, !remote.footprints.isEmpty {
-            presentation.sections.append(SearchSection(
-                id: "section-footprints",
-                title: "山川足迹 (\(remote.footprints.count))",
-                icon: "map",
-                tint: ArchivePalette.accentWarm,
-                hits: remote.footprints.map { .footprint($0) }
-            ))
-        }
         if let remote, !remote.wishes.isEmpty {
             presentation.sections.append(SearchSection(
                 id: "section-wishes",
@@ -138,15 +125,6 @@ struct SearchPresentation {
                 icon: "sparkles",
                 tint: ArchivePalette.accentWarm,
                 hits: remote.wishes.map { .wish($0) }
-            ))
-        }
-        if let remote, !remote.projects.isEmpty {
-            presentation.sections.append(SearchSection(
-                id: "section-projects",
-                title: "造物项目 (\(remote.projects.count))",
-                icon: "hammer",
-                tint: ArchivePalette.accentMoss,
-                hits: remote.projects.map { .project($0) }
             ))
         }
 

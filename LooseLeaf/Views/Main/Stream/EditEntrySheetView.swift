@@ -18,8 +18,6 @@ public struct EditEntrySheetView: View {
     @State private var editTitle: String
     @State private var editContent: String
     @State private var editLocation: String
-    @State private var editCityCode: String
-    @State private var editCityName: String
     @State private var editIsPrivate: Bool
     @State private var media: EntryMediaState
     @State private var isDropTargeted: Bool = false
@@ -43,8 +41,6 @@ public struct EditEntrySheetView: View {
         _editTitle = State(initialValue: entry.title)
         _editContent = State(initialValue: entry.content)
         _editLocation = State(initialValue: entry.location ?? "")
-        _editCityCode = State(initialValue: entry.cityCode ?? "")
-        _editCityName = State(initialValue: entry.cityName ?? "")
         _editIsPrivate = State(initialValue: entry.isPrivate)
         _media = State(initialValue: EntryMediaState(initialAttachments: entry.attachments))
     }
@@ -108,27 +104,19 @@ public struct EditEntrySheetView: View {
                             .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                     )
 
-                // 4. 行政省市与细粒度具体地点独立并列（互不覆盖）
-                HStack(spacing: 10) {
-                    PaperCityPicker(
-                        selectedCode: $editCityCode,
-                        selectedName: $editCityName,
-                        placeholder: "选择城市…"
+                // 4. 具体地点（可选）
+                TextField("具体地点（可选，如：街角书店）", text: $editLocation)
+                    .accessibilityLabel("具体地点")
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
                     )
-
-                    TextField("具体地点（可选，如：街角书店）", text: $editLocation)
-                        .accessibilityLabel("具体地点")
-                        .textFieldStyle(.plain)
-                        .font(ArchiveTypography.bodySans(size: 12))
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
-                        .background(ArchivePalette.archiveSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                        )
-                }
 
                 // 5. 照片相纸附件装裱区（共享 EntryMediaAttachmentsSection）
                 EntryMediaAttachmentsSection(media: media)
@@ -193,10 +181,7 @@ public struct EditEntrySheetView: View {
             saveError = "标题、正文与相纸不能同时为空"
             return
         }
-        let cleanCity = editCityName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanLoc = editLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cityCleared = cleanCity.isEmpty && editCityCode.isEmpty
-        let code: String? = editCityCode.isEmpty ? nil : editCityCode
         let shouldClearAttachments = !entry.attachments.isEmpty && currentAttachments.isEmpty
         let req = UpdateEntryRequest(
             type: editType.rawValue,
@@ -204,9 +189,6 @@ public struct EditEntrySheetView: View {
             content: cleanContent,
             occurredAt: FormatUtils.beijingISOString(from: editOccurredAt),
             location: cleanLoc,
-            cityCode: code,
-            cityName: cleanCity,
-            clearCity: cityCleared ? true : nil,
             isPrivate: editIsPrivate,
             attachmentIds: currentAttachments.map(\.id),
             clearAttachments: shouldClearAttachments ? true : nil

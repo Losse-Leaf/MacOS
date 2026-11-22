@@ -291,15 +291,12 @@ struct StreamEntryDetailView: View {
                 }
                 .padding(.vertical, 6)
             } else {
-                let placeParts = [entry.cityName, entry.location]
-                    .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                let uniquePlaces = Array(NSOrderedSet(array: placeParts)) as? [String] ?? placeParts
-                if !uniquePlaces.isEmpty {
+                let trimmedLocation = entry.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !trimmedLocation.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: ArchiveIcon.location.systemName)
                             .font(.system(size: 10))
-                        Text(uniquePlaces.joined(separator: " · "))
+                        Text(trimmedLocation)
                             .font(ArchiveTypography.monoScale(size: 11))
                     }
                     .foregroundStyle(ArchivePalette.inkMuted)

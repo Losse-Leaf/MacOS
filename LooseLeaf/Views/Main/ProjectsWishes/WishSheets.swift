@@ -17,8 +17,6 @@ public struct WishEditorSheet: View {
     @State private var budgetYuan: String
     @State private var spec: String
     @State private var note: String
-    @State private var cityCode: String
-    @State private var cityName: String
     @State private var isPrivate: Bool
     @State private var plantedAt: Date
     @State private var isSubmitting: Bool = false
@@ -35,8 +33,6 @@ public struct WishEditorSheet: View {
             _budgetYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
             _spec = State(initialValue: wish.spec ?? "")
             _note = State(initialValue: wish.note ?? "")
-            _cityCode = State(initialValue: wish.cityCode ?? "")
-            _cityName = State(initialValue: wish.cityName ?? "")
             _isPrivate = State(initialValue: wish.isPrivate ?? false)
             _plantedAt = State(initialValue: FormatUtils.parseFlexDate(wish.plantedAt) ?? Date())
         } else {
@@ -45,8 +41,6 @@ public struct WishEditorSheet: View {
             _budgetYuan = State(initialValue: "")
             _spec = State(initialValue: "")
             _note = State(initialValue: "")
-            _cityCode = State(initialValue: "")
-            _cityName = State(initialValue: "")
             _isPrivate = State(initialValue: false)
             _plantedAt = State(initialValue: Date())
         }
@@ -79,10 +73,6 @@ public struct WishEditorSheet: View {
                     .padding(ArchiveSpacing.s)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-
-                if kind == "travel" {
-                    PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "点选目的地城市…")
-                }
 
                 TextField("规格参数或补充说明", text: $spec)
                     .accessibilityLabel("规格参数或补充说明")
@@ -156,8 +146,6 @@ public struct WishEditorSheet: View {
                         // 空串是显式清空；nil 会被后端当作保持原值；attachmentIds 默认 nil 不覆盖跨端附件。
                         note: note,
                         spec: spec,
-                        cityCode: kind == "travel" ? cityCode : "",
-                        cityName: kind == "travel" ? cityName : "",
                         budget: cents,
                         isPrivate: isPrivate
                     )
@@ -168,8 +156,6 @@ public struct WishEditorSheet: View {
                         kind: kind,
                         note: note.isEmpty ? nil : note,
                         spec: spec.isEmpty ? nil : spec,
-                        cityCode: kind == "travel" ? (cityCode.isEmpty ? nil : cityCode) : nil,
-                        cityName: kind == "travel" ? (cityName.isEmpty ? nil : cityName) : nil,
                         budget: cents,
                         plantedAt: FormatUtils.beijingDateString(from: plantedAt),
                         isPrivate: isPrivate
@@ -197,9 +183,7 @@ public struct ResolveWishSheet: View {
     @State private var actualCostYuan: String
     @State private var resolutionType: String = "exact" // exact | altered | relinquished
     @State private var createTransaction: Bool = true
-    @State private var createGearAsset: Bool
     @State private var createLifeEntry: Bool = true
-    @State private var createFootprint: Bool
     @State private var entryContent: String = ""
     @State private var alteredTitle: String = ""
     @State private var isSubmitting: Bool = false
@@ -211,8 +195,6 @@ public struct ResolveWishSheet: View {
         self.wish = wish
         self.onDismiss = onDismiss
         _actualCostYuan = State(initialValue: FormatUtils.formattedYuan(cents: wish.budget))
-        _createGearAsset = State(initialValue: wish.kind == "item")
-        _createFootprint = State(initialValue: wish.kind == "travel")
     }
 
     public var body: some View {
@@ -259,23 +241,9 @@ public struct ResolveWishSheet: View {
                 Divider().overlay(ArchivePalette.borderSubtle)
 
                 if resolutionType != "relinquished" {
-                    VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                        Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
-                            .toggleStyle(.paperCheckbox)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-
-                        if wish.kind == "item" {
-                            Toggle("联动建入随身固资设备库 (EDC Gear)", isOn: $createGearAsset)
-                                .toggleStyle(.paperCheckbox)
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                        }
-
-                        if wish.kind == "travel" {
-                            Toggle("同步点亮目的地城市足迹票根", isOn: $createFootprint)
-                                .toggleStyle(.paperCheckbox)
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                        }
-                    }
+                    Toggle("联动生成一笔记账支出流水", isOn: $createTransaction)
+                        .toggleStyle(.paperCheckbox)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 }
 
                 Toggle("伴生发布一篇时间流手稿日记", isOn: $createLifeEntry)
@@ -323,15 +291,13 @@ public struct ResolveWishSheet: View {
                     resolutionType: resolutionType,
                     actualTitle: resolutionType == "altered" ? cleanAlteredTitle : nil,
                     createTransaction: isRelinquished ? false : createTransaction,
-                    createGearAsset: isRelinquished ? false : createGearAsset,
                     createLifeEntry: createLifeEntry,
-                    createFootprint: isRelinquished ? false : createFootprint,
                     entryContent: entryContent.isEmpty ? nil : entryContent
                 )
                 _ = try await APIClient.shared.resolveWish(id: wish.id, req)
-                await appState.loadProjectsWishesFootprints()
+                await appState.loadWishes()
                 await appState.loadEntries(forceFull: false)
-                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadTransactions(forceFull: false)
                 await appState.loadConfigAndProfile()
                 onDismiss()
             } catch {

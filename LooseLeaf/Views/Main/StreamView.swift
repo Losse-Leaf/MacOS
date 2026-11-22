@@ -133,26 +133,16 @@ public struct StreamView: View {
                         appState.showNewEntrySheet = false
                     }
                 }) {
-                    NewEntryModal(
-                        appState: appState,
-                        initialKind: appState.newEntryInitialKind,
-                        initialProjectId: appState.newEntryInitialProjectId,
-                        initialCityCode: appState.newEntryInitialCityCode,
-                        initialCityName: appState.newEntryInitialCityName
-                    ) {
+                    NewEntryModal(appState: appState) {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                             appState.showNewEntrySheet = false
-                            appState.newEntryInitialKind = nil
-                            appState.newEntryInitialProjectId = nil
-                            appState.newEntryInitialCityCode = nil
-                            appState.newEntryInitialCityName = nil
                         }
                     }
                 }
                 .zIndex(110)
             }
 
-            // 全局聚光灯档案检索 (⌘K Spotlight) —— 命中二级实体后精准跳转并高亮/开抽屉
+            // 全局聚光灯档案检索 (⌘K Spotlight) —— 命中散页或心愿后精准跳转
             if appState.showSearchModal {
                 PaperModalOverlay(onDismiss: {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
@@ -169,25 +159,11 @@ public struct StreamView: View {
                         onSelectEntry: { entry in
                             appState.highlightedEntry = entry
                         },
-                        onSelectFootprint: { fp in
-                            appState.navigation.highlightedFootprintCity = CityJumpTarget(
-                                code: fp.cityCode,
-                                name: fp.cityName
-                            )
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
-                                appState.activeSection = .atlas
-                            }
-                        },
                         onSelectWish: { wish in
                             appState.navigation.highlightedWishId = wish.id
+                            appState.navigation.ledgerSubTab = .wishlist
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
-                                appState.activeSection = .wishes
-                            }
-                        },
-                        onSelectProject: { proj in
-                            appState.navigation.highlightedProjectId = proj.id
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
-                                appState.activeSection = .projects
+                                appState.activeSection = .ledger
                             }
                         }
                     )
@@ -272,14 +248,6 @@ public struct StreamView: View {
             streamTimelineCanvas
         case .ledger:
             LedgerAssetsView(appState: appState)
-        case .wishes:
-            WishlistView(appState: appState)
-        case .atlas:
-            TravelAtlasView(appState: appState)
-        case .projects:
-            ProjectsView(appState: appState)
-        case .dossier:
-            CuratorDossierView(appState: appState)
         case .preferences, .hub, .about:
             streamTimelineCanvas
         }
@@ -313,7 +281,7 @@ public struct StreamView: View {
                                 .foregroundStyle(ArchivePalette.inkPrimary)
 
                             let sub = appState.siteConfig.siteSubtitle ?? ""
-                            let subtitle = sub.isEmpty ? "日常 · 资产 · 心愿 · 行迹 · 造物" : sub
+                            let subtitle = sub.isEmpty ? "日常 · 流水 · 心愿" : sub
                             Text(subtitle)
                                 .font(ArchiveTypography.monoScale(size: 12))
                                 .foregroundStyle(ArchivePalette.inkMuted)
@@ -347,8 +315,8 @@ public struct StreamView: View {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 11))
                                 .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                            TextField("即时搜索散页与票根… (⌘F)", text: $localSearchText)
-                                .accessibilityLabel("搜索散页与票根")
+                            TextField("即时搜索散页手记… (⌘F)", text: $localSearchText)
+                                .accessibilityLabel("搜索散页手记")
                                 .textFieldStyle(.plain)
                                 .font(ArchiveTypography.bodySans(size: 12))
                                 .focused($isSearchFocused)

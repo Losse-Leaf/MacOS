@@ -46,7 +46,18 @@ struct EntryModalLifeForm: View {
 
             HStack(spacing: 12) {
                 PaperDatePicker(selection: $draft.occurredAt, enableTime: true, label: "发生时刻")
-                PaperCityPicker(selectedCode: $draft.cityCode, selectedName: $draft.cityName)
+                TextField("地点（可选）", text: $draft.location)
+                    .accessibilityLabel("地点")
+                    .textFieldStyle(.plain)
+                    .font(ArchiveTypography.bodySans(size: 12))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ArchiveRadius.xs)
+                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+                    )
             }
 
             EntryMediaAttachmentsSection(media: media)

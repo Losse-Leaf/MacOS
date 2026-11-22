@@ -426,13 +426,8 @@ public final class SyncManager {
             mix(UInt64(entry.content.utf8.count), into: &hash)
             mix(entry.occurredAt, into: &hash)
             mix(entry.location ?? "", into: &hash)
-            mix(entry.cityCode ?? "", into: &hash)
-            mix(entry.cityName ?? "", into: &hash)
-            mix(entry.gearId ?? "", into: &hash)
             mix(entry.deletedAt ?? "", into: &hash)
-            mix(UInt64(entry.projectId ?? 0), into: &hash)
             mix(UInt64(entry.wishId ?? 0), into: &hash)
-            mix(UInt64(bitPattern: Int64(entry.footprintId ?? 0)), into: &hash)
             mix(entry.isPrivate ? "1" : "0", into: &hash)
             for attachment in entry.attachments {
                 mix(UInt64(attachment.id), into: &hash)
@@ -458,7 +453,6 @@ public final class SyncManager {
             mix(tx.occurredAt, into: &hash)
             mix(tx.title, into: &hash)
             mix(tx.note ?? "", into: &hash)
-            mix(tx.cityCode ?? "", into: &hash)
             mix(tx.paymentMethod ?? "", into: &hash)
             mix(tx.isInstallment == true ? "1" : "0", into: &hash)
             mix(tx.installmentChannelCode ?? "", into: &hash)
@@ -468,7 +462,6 @@ public final class SyncManager {
             mix(UInt64(tx.installmentRemainMonths ?? 0), into: &hash)
             mix(UInt64(tx.repaymentDay ?? 0), into: &hash)
             mix(UInt64(bitPattern: Int64(tx.wishId ?? 0)), into: &hash)
-            mix(UInt64(bitPattern: Int64(tx.footprintId ?? 0)), into: &hash)
             mix(tx.deletedAt ?? "", into: &hash)
             let updated = tx.updatedAt ?? ""
             if !updated.isEmpty, updated > maxUpdatedAt { maxUpdatedAt = updated }
@@ -666,11 +659,7 @@ public final class SyncManager {
             content: req.content,
             occurredAt: req.occurredAt,
             location: req.location,
-            cityCode: req.cityCode,
-            cityName: req.cityName,
-            projectId: req.projectId,
             wishId: req.wishId,
-            footprintId: req.footprintId,
             isPrivate: req.isPrivate ?? false,
             attachments: attachments,
             syncStatus: "pending_create"
@@ -848,8 +837,6 @@ public final class SyncManager {
             note: req.note,
             paymentMethod: req.paymentMethod,
             wishId: req.wishId,
-            footprintId: req.footprintId,
-            cityCode: req.cityCode,
             occurredAt: req.occurredAt,
             isInstallment: req.isInstallment,
             installmentChannelCode: req.installmentChannelCode,
@@ -1269,7 +1256,6 @@ public final class SyncManager {
         }
         let statsEmpty = current.stats.totalEntries == 0
             && current.stats.totalPhotos == 0
-            && current.stats.totalProjects == 0
             && current.stats.monthExpense == 0
         if statsEmpty {
             merged.stats = loaded.stats

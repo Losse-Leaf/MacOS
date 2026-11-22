@@ -1,22 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// 桌面端独立记账与资产管理中枢视图 (LedgerAssetsView)
-/// 严格遵循 docs/backend.md §5.3 & §5.3.1 (RC-53 隐私隔离与 Cents 整型精度)
+/// 桌面端独立记账与心愿单视图 (LedgerAssetsView)
+/// 顶部分段切换「流水 | 心愿单」；流水页签下提供月度收支光谱、双模记账控制台与明细流水，
+/// 心愿单页签嵌入 `WishlistView(embedded: true)`，各司独立滚动容器避免嵌套 ScrollView。
 @MainActor
 public struct LedgerAssetsView: View {
     @Bindable var appState: AppState
 
+    public typealias LedgerSubTab = LooseLeaf.LedgerSubTab
+
     @State private var showVisualForm: Bool = false
-
-    public enum LedgerSubTab: String, CaseIterable, Identifiable {
-        case ledger = "收支流水"
-        case gear = "随身固资与信贷"
-
-        public var id: String { rawValue }
-    }
-
-    @State private var activeSubTab: LedgerSubTab = .ledger
 
     // 筛选与弹窗
     @State private var selectedYear: Int = FormatUtils.beijingCurrentYearMonth().year
@@ -26,10 +20,7 @@ public struct LedgerAssetsView: View {
     @State private var filterBySelectedMonth: Bool = true
     @State private var selectedCategoryFilter: String = "全部"
     @State private var visibleTxLimit: Int = 150
-    @State private var showCalibrateBalanceSheet: Bool = false
-    @State private var showAddGearSheet: Bool = false
     @State private var editingTransaction: Transaction?
-    @State private var sellingGear: GearItem?
     @State private var errorNotice: String?
     @State private var summaryLoadTask: Task<Void, Never>?
 
@@ -126,68 +117,52 @@ public struct LedgerAssetsView: View {
     }
 
     public var body: some View {
-        let transactions = filteredTransactions
-        let categories = allTransactionCategories
-        let gearList = appState.profile.edcGear
+        VStack(spacing: 0) {
+            headerSection
+                .padding(.horizontal, ArchiveSpacing.xl)
+                .padding(.top, ArchiveSpacing.xl)
+                .padding(.bottom, ArchiveSpacing.m)
 
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.l) {
-                headerSection
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-                if let overview = appState.assetsOverview {
-                    assetsOverviewGrid(overview)
-                }
-
-                if activeSubTab == .ledger {
-                    monthlySpectrumCard
-
-                    LedgerComposerCard(
-                        appState: appState,
-                        showVisualForm: $showVisualForm,
-                        errorNotice: $errorNotice
-                    )
-
-                    transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
-
-                    if transactions.isEmpty {
-                        transactionsEmptyState
-                    } else {
-                        transactionsList(transactions)
-                    }
-                } else {
-                    if let liabilities = appState.assetsOverview?.channelLiabilities, !liabilities.isEmpty {
-                        channelLiabilitiesSection(liabilities)
-                    }
-
-                    gearAssetsHeaderSection(gearCount: gearList.count)
-
-                    if gearList.isEmpty {
-                        gearEmptyState
-                    } else {
-                        gearGrid(gearList)
-                    }
-                }
+            if appState.navigation.ledgerSubTab == .ledger {
+                ledgerScrollContent
+            } else {
+                WishlistView(appState: appState, embedded: true)
             }
-            .padding(ArchiveSpacing.xl)
-        }
-        .sheet(isPresented: $showCalibrateBalanceSheet) {
-            CalibrateBalanceSheet(appState: appState) {
-                showCalibrateBalanceSheet = false
-            }
-        }
-        .sheet(isPresented: $showAddGearSheet) {
-            addGearSheetView
         }
         .sheet(item: $editingTransaction) { tx in
             editTransactionSheetView(tx)
-        }
-        .sheet(item: $sellingGear) { gear in
-            sellGearSheetView(gear)
         }
         .overlay(alignment: .top) {
             if let errorNotice {
                 errorBanner(text: errorNotice)
             }
+        }
+    }
+
+    private var ledgerScrollContent: some View {
+        let transactions = filteredTransactions
+        let categories = allTransactionCategories
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.l) {
+                monthlySpectrumCard
+
+                LedgerComposerCard(
+                    appState: appState,
+                    showVisualForm: $showVisualForm,
+                    errorNotice: $errorNotice
+                )
+
+                transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
+
+                if transactions.isEmpty {
+                    transactionsEmptyState
+                } else {
+                    transactionsList(transactions)
+                }
+            }
+            .padding(ArchiveSpacing.xl)
         }
     }
 
@@ -227,116 +202,34 @@ public struct LedgerAssetsView: View {
         .padding(.top, ArchiveSpacing.s)
     }
 
-    // MARK: - 1. 页眉
+    // MARK: - 1. 页眉（含 流水 | 心愿单 分段切换器）
 
     private var headerSection: some View {
-        HStack(alignment: .center) {
+        @Bindable var navigation = appState.navigation
+        return HStack(alignment: .center, spacing: ArchiveSpacing.m) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: ArchiveSpacing.m) {
-                    Text("资产大盘与记账")
-                        .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-
-                    HStack(spacing: 4) {
-                        ForEach(LedgerSubTab.allCases) { tab in
-                            PaperPillButton(
-                                title: tab.rawValue,
-                                isSelected: activeSubTab == tab
-                            ) {
-                                activeSubTab = tab
-                            }
-                        }
-                    }
-                }
-                Text("个人净资产与日常流水总览 · 每一笔收支皆有归处")
+                Text("记账")
+                    .font(ArchiveTypography.editorialSerif(size: 22, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Text(navigation.ledgerSubTab == .ledger
+                     ? "日常收支流水与月度类目光谱 · 每一笔花销皆有归处"
+                     : "好物 · 旅程 · 里程碑 · 心愿圆满时可联动入账并落墨散页")
                     .font(ArchiveTypography.bodySans(size: 12))
                     .foregroundStyle(ArchivePalette.inkSecondary)
+                    .lineLimit(1)
             }
-            Spacer()
 
-            HStack(spacing: ArchiveSpacing.s) {
-                if activeSubTab == .gear {
-                    Button {
-                        showAddGearSheet = true
-                    } label: {
-                        HStack(spacing: ArchiveSpacing.xs) {
-                            Image(systemName: "plus.circle")
-                            Text("添置随身设备")
-                        }
-                    }
-                    .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                    .paperButtonFocusRing()
-                }
+            Spacer(minLength: ArchiveSpacing.m)
 
-                Button {
-                    errorNotice = nil
-                    showCalibrateBalanceSheet = true
-                } label: {
-                    HStack(spacing: ArchiveSpacing.xs) {
-                        Image(systemName: "slider.horizontal.3")
-                        Text("校准底数")
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
-                .paperButtonFocusRing()
-            }
+            PaperSegmentedControl(
+                selection: $navigation.ledgerSubTab,
+                items: [
+                    PaperSegmentItem(.ledger, title: LedgerSubTab.ledger.rawValue, icon: ArchiveIcon.ledger.systemName),
+                    PaperSegmentItem(.wishlist, title: LedgerSubTab.wishlist.rawValue, icon: ArchiveIcon.wishes.systemName)
+                ]
+            )
+            .frame(width: 192)
         }
-    }
-
-    // MARK: - 2. 资产大盘四维指标卡片
-
-    private func assetsOverviewGrid(_ overview: AssetsOverview) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: ArchiveSpacing.m)], spacing: ArchiveSpacing.m) {
-            metricCard(
-                title: "总净资产",
-                cents: overview.netWorth,
-                subtitle: "流动余额 + 在用固资 - 待还分期",
-                accent: ArchivePalette.inkPrimary
-            )
-            metricCard(
-                title: "流动可用余额",
-                cents: overview.liquidBalance,
-                subtitle: "含初始底数 \(FormatUtils.formattedYuan(cents: overview.initialLiquidBalance, includeSymbol: true))",
-                accent: ArchivePalette.accentMoss
-            )
-            metricCard(
-                title: "在用器物固资",
-                cents: overview.fixedAssets,
-                subtitle: "随身设备 \(overview.gearSummary?.activeCount ?? appState.profile.edcGear.filter { $0.status != "sold" }.count) 件在役",
-                accent: ArchivePalette.inkSecondary
-            )
-            metricCard(
-                title: "待还信贷总额",
-                cents: overview.totalLiabilities,
-                subtitle: "月供 \(FormatUtils.formattedYuan(cents: overview.monthlyLiabilities, includeSymbol: true))",
-                accent: ArchivePalette.accentWarm
-            )
-        }
-    }
-
-    private func metricCard(title: String, cents: Int64, subtitle: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(ArchiveTypography.bodySans(size: 11.5))
-                .foregroundStyle(ArchivePalette.inkMuted)
-            Text(FormatUtils.formattedYuan(cents: cents, includeSymbol: true))
-                .font(ArchiveTypography.monoScale(size: 17, weight: .semibold))
-                .foregroundStyle(accent)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(subtitle)
-                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                .foregroundStyle(ArchivePalette.inkMuted)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(ArchiveCardMetrics.padding)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-        .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-        )
     }
 
     // MARK: - 3. 月度收支光谱卡片
@@ -443,117 +336,7 @@ public struct LedgerAssetsView: View {
         )
     }
 
-    // MARK: - 4. 信贷渠道负债明细 & 随身固资货架
-
-    private func channelLiabilitiesSection(_ liabilities: [ChannelLiability]) -> some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-            HStack {
-                Text("信贷与分期负债渠道 (\(liabilities.count))")
-                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                Spacer()
-                Text("按各渠道剩余待还与当期应还汇总")
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-            }
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: ArchiveSpacing.m)], spacing: ArchiveSpacing.m) {
-                ForEach(liabilities) { ch in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(ch.channelName)
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.inkPrimary)
-                            Spacer()
-                            Text(ch.daysUntilRepayment == 0 ? "今日还款" : "\(ch.daysUntilRepayment) 天后还款")
-                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                .foregroundStyle(ch.daysUntilRepayment <= 3 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                        }
-
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("剩余待还")
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                Text(FormatUtils.formattedYuan(cents: ch.totalDebt, includeSymbol: true))
-                                    .font(ArchiveTypography.monoScale(size: 15, weight: .semibold))
-                                    .foregroundStyle(ch.totalDebt > 0 ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 1) {
-                                Text("当月应还")
-                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                    .foregroundStyle(ArchivePalette.inkMuted)
-                                Text(FormatUtils.formattedYuan(cents: ch.monthlyPay, includeSymbol: true))
-                                    .font(ArchiveTypography.monoScale(size: 13.5, weight: .medium))
-                                    .foregroundStyle(ArchivePalette.inkPrimary)
-                            }
-                        }
-
-                        Text("每月 \(ch.repaymentDay) 日出账还款 · 在供 \(ch.activeCount) 笔")
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .padding(ArchiveCardMetrics.padding)
-                    .background(ArchivePalette.archiveSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                            .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                    )
-                }
-            }
-        }
-    }
-
-    private func gearAssetsHeaderSection(gearCount: Int) -> some View {
-        HStack {
-            Text("随身器物与桌面固资 (\(gearCount) 件)")
-                .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-            Spacer()
-            Text("服役中的固资将实时计入总资产大盘")
-                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                .foregroundStyle(ArchivePalette.inkMuted)
-        }
-    }
-
-    private var gearEmptyState: some View {
-        ArchiveEmptyState(
-            systemName: ArchiveIcon.gear.systemName,
-            title: "尚未登记任何随身器物",
-            message: "把相机、镜头、键盘等长期在役的设备登记进来，即可自动计入净资产大盘。",
-            primaryTitle: "添置随身设备",
-            primaryAction: { showAddGearSheet = true }
-        )
-    }
-
-    private func gearGrid(_ gearList: [GearItem]) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            ForEach(gearList) { gear in
-                GearAssetCardView(
-                    gear: gear,
-                    onSell: { sellingGear = $0 },
-                    onDelete: { g in
-                        appState.askConfirm(
-                            title: ArchiveSharedCopy.gearDeleteTitle,
-                            message: ArchiveSharedCopy.gearDeleteMessage,
-                            confirmText: ArchiveSharedCopy.gearDeleteConfirmText,
-                            danger: true
-                        ) {
-                            deleteGear(g)
-                        }
-                    }
-                )
-            }
-        }
-    }
-
-    // MARK: - 5. 流水列表
+    // MARK: - 3. 流水列表
 
     private func transactionsHeaderSection(categories: [String], transactionCount: Int) -> some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
@@ -811,42 +594,19 @@ public struct LedgerAssetsView: View {
 
     // MARK: - 弹窗表单
 
-    private var addGearSheetView: some View {
-        AddGearSheet(appState: appState) {
-            showAddGearSheet = false
-        }
-    }
-
     private func editTransactionSheetView(_ tx: Transaction) -> some View {
         EditTransactionSheet(appState: appState, transaction: tx) {
             editingTransaction = nil
         }
     }
 
-    private func sellGearSheetView(_ gear: GearItem) -> some View {
-        SellGearSheet(gear: gear) {
-            sellingGear = nil
-        } onSold: {
-            Task { @MainActor in
-                await appState.loadTransactionsAndAssets(forceFull: false)
-                await appState.loadConfigAndProfile()
-            }
-        }
-    }
-
     private func deleteTransaction(_ tx: Transaction) {
         appState.deleteTransactionAction(tx)
-    }
-
-    private func deleteGear(_ gear: GearItem) {
-        Task { @MainActor in
-            await appState.deleteGearAction(gear)
-        }
     }
 }
 
 #if DEBUG
-#Preview("柴米油盐 · 账本与固资") {
+#Preview("记账 · 流水与心愿单") {
     LedgerAssetsView(appState: ArchivePreviewFixtures.makeAppState())
         .frame(width: 1100, height: 760)
 }

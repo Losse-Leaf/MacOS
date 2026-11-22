@@ -225,10 +225,9 @@ final class UIRenderingBenchmarkTests: XCTestCase {
             .frame(width: 700, height: 120)
             .onDrop(of: [.fileURL], isTargeted: .constant(false)) { _ in false }
         }
-        measure("弹窗拆解·日期 + 城市 + 精选") {
+        measure("弹窗拆解·日期 + 精选") {
             HStack(spacing: 12) {
                 PaperDatePicker(selection: .constant(Date()), enableTime: true, label: "发生时刻")
-                PaperCityPicker(selectedCode: .constant("330100"), selectedName: .constant("杭州市"), placeholder: "点选城市…")
                 Toggle("精选", isOn: .constant(false))
                     .toggleStyle(PaperCheckboxToggleStyle())
             }
@@ -375,10 +374,6 @@ final class UIRenderingBenchmarkTests: XCTestCase {
             WishCardView(wish: Wish(id: 1, title: "走查心愿", kind: "item", note: "备注"), onResolve: {}, onEdit: {}, onDelete: {})
                 .frame(width: 300, height: 195)
         }
-        measure("造物卡 ProjectCardView") {
-            ProjectCardView(proj: Project(id: 1, title: "走查造物", description: "描述"), onEdit: {}, onDelete: {})
-                .frame(width: 300, height: 195)
-        }
         measure("相纸框 FilmFrameView") {
             FilmFrameView(imageURL: nil, localImage: nil, caption: "走查相纸", metaText: "2026-03-01")
                 .frame(width: 220, height: 160)
@@ -419,26 +414,19 @@ final class UIRenderingBenchmarkTests: XCTestCase {
         measure("创作弹窗 NewEntryModal（日常）") {
             NewEntryModal(
                 appState: appState,
-                initialKind: "life",
-                initialProjectId: nil,
-                initialCityCode: nil,
-                initialCityName: nil
+                initialKind: "life"
             ) { }
             .frame(width: 720, height: 620)
         }
     }
 
     func test04_ComposerSubFormRenderingCost() {
-        // 四个可编辑散页形态分支各自的渲染开销
         for kind in EntryType.editableCases.map(\.rawValue) {
             let appState = AppState.shared
             measure("创作弹窗形态分支 · \(kind)") {
                 NewEntryModal(
                     appState: appState,
-                    initialKind: kind,
-                    initialProjectId: nil,
-                    initialCityCode: nil,
-                    initialCityName: nil
+                    initialKind: kind
                 ) { }
                 .frame(width: 720, height: 620)
             }
@@ -446,11 +434,6 @@ final class UIRenderingBenchmarkTests: XCTestCase {
     }
 
     func test05_HeavyPickerRenderingCost() {
-        // 城市选择器与日期选择器是最重的两个控件
-        measure("城市选择器 PaperCityPicker") {
-            PaperCityPicker(selectedCode: .constant("330100"), selectedName: .constant("杭州市"), placeholder: "点选城市…")
-                .frame(width: 400, height: 60)
-        }
         measure("日期选择器 PaperDatePicker") {
             PaperDatePicker(selection: .constant(Date()), enableTime: true, label: "发生时刻")
                 .frame(width: 320, height: 60)

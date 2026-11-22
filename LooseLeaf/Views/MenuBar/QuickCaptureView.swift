@@ -182,7 +182,7 @@ public struct QuickCaptureView: View {
 
     private var entryTypeCapsules: some View {
         @Bindable var draft = appState.quickDraft
-        let quickTypes: [EntryType] = [.life, .travel]
+        let quickTypes: [EntryType] = [.life]
         return HStack(spacing: ArchiveSpacing.xs) {
             ForEach(quickTypes) { kind in
                 PaperPillButton(
@@ -260,12 +260,6 @@ public struct QuickCaptureView: View {
         @Bindable var draft = appState.quickDraft
         let media = draft.media
         return HStack(spacing: ArchiveSpacing.s) {
-            PaperCityPicker(
-                selectedCode: $draft.selectedCityCode,
-                selectedName: $draft.selectedCityName,
-                placeholder: appState.profile.displayCity.isEmpty ? "点选城市" : appState.profile.displayCity
-            )
-
             Button {
                 draft.showBackdatePicker.toggle()
             } label: {
@@ -550,13 +544,10 @@ public struct QuickCaptureView: View {
 
         Task { @MainActor in
             do {
-                let safeType: EntryType = (draft.entryType == .life || draft.entryType == .travel) ? draft.entryType : .life
                 let queuedOffline = try await appState.submitQuickCapture(
                     title: draft.titleText,
                     content: contentToSubmit,
-                    type: safeType,
-                    cityCode: draft.selectedCityCode.isEmpty ? nil : draft.selectedCityCode,
-                    cityName: draft.selectedCityName.isEmpty ? nil : draft.selectedCityName,
+                    type: .life,
                     attachmentIds: attachments.map(\.id),
                     attachments: attachments,
                     occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),

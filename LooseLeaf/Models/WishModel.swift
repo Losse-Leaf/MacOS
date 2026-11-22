@@ -8,8 +8,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
     public var kind: String // "item" | "travel" | "milestone"
     public var note: String?
     public var spec: String?
-    public var cityCode: String?
-    public var cityName: String?
     public var budget: Int64 // 单位：分
     public var actualCost: Int64 // 单位：分
     public var resolutionType: String?
@@ -21,8 +19,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
     public var fulfilledAt: String?
     public var transactionId: Int?
     public var lifeEntryId: Int?
-    public var footprintId: Int?
-    public var gearId: String?
     public var isPrivate: Bool?
     public var attachments: [Attachment]
     public var createdAt: String?
@@ -34,8 +30,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         case kind
         case note
         case spec
-        case cityCode = "city_code"
-        case cityName = "city_name"
         case budget
         case actualCost = "actual_cost"
         case resolutionType = "resolution_type"
@@ -46,8 +40,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         case fulfilledAt = "fulfilled_at"
         case transactionId = "transaction_id"
         case lifeEntryId = "life_entry_id"
-        case footprintId = "footprint_id"
-        case gearId = "gear_id"
         case isPrivate = "is_private"
         case attachments
         case createdAt = "created_at"
@@ -61,8 +53,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         kind = (try? container.decode(String.self, forKey: .kind)) ?? "item"
         note = try? container.decodeIfPresent(String.self, forKey: .note)
         spec = try? container.decodeIfPresent(String.self, forKey: .spec)
-        cityCode = try? container.decodeIfPresent(String.self, forKey: .cityCode)
-        cityName = try? container.decodeIfPresent(String.self, forKey: .cityName)
         budget = (try? container.decode(Int64.self, forKey: .budget)) ?? 0
         actualCost = (try? container.decode(Int64.self, forKey: .actualCost)) ?? 0
         resolutionType = try? container.decodeIfPresent(String.self, forKey: .resolutionType)
@@ -73,8 +63,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         fulfilledAt = try? container.decodeIfPresent(String.self, forKey: .fulfilledAt)
         transactionId = try? container.decodeIfPresent(Int.self, forKey: .transactionId)
         lifeEntryId = try? container.decodeIfPresent(Int.self, forKey: .lifeEntryId)
-        footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
-        gearId = try? container.decodeIfPresent(String.self, forKey: .gearId)
         isPrivate = try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
         createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
@@ -87,8 +75,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         kind: String = "item",
         note: String? = nil,
         spec: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
         budget: Int64 = 0,
         actualCost: Int64 = 0,
         status: String = "wanting",
@@ -99,8 +85,6 @@ public struct Wish: Codable, Identifiable, Equatable, Sendable {
         self.kind = kind
         self.note = note
         self.spec = spec
-        self.cityCode = cityCode
-        self.cityName = cityName
         self.budget = budget
         self.actualCost = actualCost
         self.status = status
@@ -127,8 +111,6 @@ public struct CreateWishRequest: Codable, Sendable {
     public var kind: String
     public var note: String?
     public var spec: String?
-    public var cityCode: String?
-    public var cityName: String?
     public var budget: Int64
     public var targetDate: String?
     /// 许下心愿的时刻（可选，支持补录过去的心愿）
@@ -143,8 +125,6 @@ public struct CreateWishRequest: Codable, Sendable {
         case kind
         case note
         case spec
-        case cityCode = "city_code"
-        case cityName = "city_name"
         case budget
         case targetDate = "target_date"
         case plantedAt = "planted_at"
@@ -158,8 +138,6 @@ public struct CreateWishRequest: Codable, Sendable {
         kind: String = "item",
         note: String? = nil,
         spec: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
         budget: Int64 = 0,
         targetDate: String? = nil,
         plantedAt: String? = nil,
@@ -171,8 +149,6 @@ public struct CreateWishRequest: Codable, Sendable {
         self.kind = kind
         self.note = note
         self.spec = spec
-        self.cityCode = cityCode
-        self.cityName = cityName
         self.budget = budget
         self.targetDate = targetDate
         self.plantedAt = plantedAt
@@ -189,11 +165,14 @@ public struct ResolveWishRequest: Codable, Sendable {
     public var resolutionType: String // exact | altered | relinquished
     public var actualTitle: String?
     public var createTransaction: Bool
-    public var createGearAsset: Bool
     public var createLifeEntry: Bool
-    public var createFootprint: Bool
     public var entryContent: String?
     public var attachmentIds: [Int]?
+    public var isInstallment: Bool?
+    public var installmentChannelCode: String?
+    public var installmentTotalAmount: Int64?
+    public var installmentMonths: Int?
+    public var repaymentDay: Int?
 
     enum CodingKeys: String, CodingKey {
         case fulfilledAt = "fulfilled_at"
@@ -201,11 +180,14 @@ public struct ResolveWishRequest: Codable, Sendable {
         case resolutionType = "resolution_type"
         case actualTitle = "actual_title"
         case createTransaction = "create_transaction"
-        case createGearAsset = "create_gear_asset"
         case createLifeEntry = "create_life_entry"
-        case createFootprint = "create_footprint"
         case entryContent = "entry_content"
         case attachmentIds = "attachment_ids"
+        case isInstallment = "is_installment"
+        case installmentChannelCode = "installment_channel_code"
+        case installmentTotalAmount = "installment_total_amount"
+        case installmentMonths = "installment_months"
+        case repaymentDay = "repayment_day"
     }
 
     public init(
@@ -214,21 +196,27 @@ public struct ResolveWishRequest: Codable, Sendable {
         resolutionType: String = "exact",
         actualTitle: String? = nil,
         createTransaction: Bool = true,
-        createGearAsset: Bool = false,
         createLifeEntry: Bool = true,
-        createFootprint: Bool = false,
         entryContent: String? = nil,
-        attachmentIds: [Int]? = nil
+        attachmentIds: [Int]? = nil,
+        isInstallment: Bool? = nil,
+        installmentChannelCode: String? = nil,
+        installmentTotalAmount: Int64? = nil,
+        installmentMonths: Int? = nil,
+        repaymentDay: Int? = nil
     ) {
         self.fulfilledAt = fulfilledAt
         self.actualCost = actualCost
         self.resolutionType = resolutionType
         self.actualTitle = actualTitle
         self.createTransaction = createTransaction
-        self.createGearAsset = createGearAsset
         self.createLifeEntry = createLifeEntry
-        self.createFootprint = createFootprint
         self.entryContent = entryContent
         self.attachmentIds = attachmentIds
+        self.isInstallment = isInstallment
+        self.installmentChannelCode = installmentChannelCode
+        self.installmentTotalAmount = installmentTotalAmount
+        self.installmentMonths = installmentMonths
+        self.repaymentDay = repaymentDay
     }
 }

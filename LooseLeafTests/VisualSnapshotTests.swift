@@ -82,15 +82,6 @@ final class VisualSnapshotTests: XCTestCase {
             .background(ArchivePalette.archivePaper)
         }
 
-        snapshot("04-造物卡", size: CGSize(width: 320, height: 210)) {
-            ProjectCardView(
-                proj: Project(id: 1, title: "写一个随手记工具", description: "把每天的碎片收进一个地方"),
-                onEdit: {}, onDelete: {}
-            )
-            .frame(width: 320, height: 210)
-            .background(ArchivePalette.archivePaper)
-        }
-
         snapshot("05-侧栏", size: CGSize(width: 240, height: 620)) {
             WorkbenchSidebar(
                 appState: AppState.shared,
@@ -122,8 +113,7 @@ final class VisualSnapshotTests: XCTestCase {
                 title: "",
                 content: bodies[i % bodies.count],
                 occurredAt: "2026-09-\(String(format: "%02d", (i % 28) + 1))T10:00:00+08:00",
-                cityCode: "330100",
-                cityName: "杭州市"
+                location: "杭州市"
             )
         }
         appState.transactions = (0..<6).map { i in
@@ -135,16 +125,13 @@ final class VisualSnapshotTests: XCTestCase {
         appState.wishes = (0..<5).map { i in
             Wish(id: i + 1, title: "第 \(i + 1) 个心愿", kind: "item", note: "想要一支能日常写的中性笔")
         }
-        appState.projects = (0..<4).map { i in
-            Project(id: i + 1, title: "第 \(i + 1) 个造物", description: "把每天的碎片收进一个地方")
-        }
 
         snapshot("10-主窗口（侧栏+时间流）", size: CGSize(width: 1280, height: 820)) {
             StreamView(appState: appState)
                 .frame(width: 1280, height: 820)
         }
         // 其它板块：确认时间流的改动没有波及它们
-        for section in [WorkbenchSection.ledger, .wishes, .projects] {
+        for section in [WorkbenchSection.ledger] {
             appState.activeSection = section
             snapshot("12-板块-\(section.rawValue)", size: CGSize(width: 1280, height: 820)) {
                 StreamView(appState: appState)
@@ -165,10 +152,7 @@ final class VisualSnapshotTests: XCTestCase {
         snapshot("06-创作弹窗-日常", size: CGSize(width: 760, height: 660)) {
             NewEntryModal(
                 appState: AppState.shared,
-                initialKind: "life",
-                initialProjectId: nil,
-                initialCityCode: nil,
-                initialCityName: nil
+                initialKind: "life"
             ) { }
             .frame(width: 760, height: 660)
             .background(ArchivePalette.archivePaper)

@@ -118,32 +118,6 @@ extension AppState {
         }
     }
 
-    public func deleteGearAction(_ gear: GearItem) async {
-        let originalIndex = profile.edcGear.firstIndex { $0.id == gear.id } ?? -1
-        do {
-            try await APIClient.shared.deleteGearAsset(id: gear.id)
-            await loadConfigAndProfile()
-            await loadTransactionsAndAssets(forceFull: false)
-            await loadEntries(forceFull: false)
-        } catch {
-            errorBanner = error.localizedDescription
-            return
-        }
-        registerUndo(label: "删除器物「\(gear.name)」") {
-            do {
-                try await APIClient.shared.restoreGearAsset(gear, index: originalIndex)
-                await self.loadConfigAndProfile()
-                await self.loadTransactionsAndAssets(forceFull: false)
-                await self.loadEntries(forceFull: false)
-                return true
-            } catch {
-                self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
-                return false
-            }
-        }
-        showTemporaryBanner("已删除器物 · 可按 ⌘Z 撤销")
-    }
-
     public func deleteTransactionAction(_ tx: Transaction) {
         if tx.id < 0 {
             SyncManager.shared.removeOptimisticTransaction(localTempId: tx.id)
@@ -168,7 +142,7 @@ extension AppState {
                 }
                 return
             }
-            await self.loadTransactionsAndAssets(forceFull: false)
+            await self.loadTransactions(forceFull: false)
             await self.loadEntries(forceFull: false)
             await self.loadConfigAndProfile()
             if self.highlightedEntry?.id == tx.id {
@@ -177,7 +151,7 @@ extension AppState {
             self.registerUndo(label: "删除账目「\(tx.title.isEmpty ? tx.category : tx.title)」") {
                 do {
                     _ = try await APIClient.shared.createTransaction(restoreRequest)
-                    await self.loadTransactionsAndAssets(forceFull: false)
+                    await self.loadTransactions(forceFull: false)
                     return true
                 } catch {
                     self.showTemporaryBanner("撤销失败：\(error.localizedDescription)")
@@ -200,8 +174,6 @@ extension AppState {
                     kind: wish.kind,
                     note: wish.note,
                     spec: wish.spec,
-                    cityCode: wish.cityCode,
-                    cityName: wish.cityName,
                     budget: wish.budget,
                     targetDate: wish.targetDate,
                     plantedAt: wish.plantedAt,
@@ -218,61 +190,6 @@ extension AppState {
         }
     }
 
-    public func deleteProjectAction(_ proj: Project) async throws {
-        try await APIClient.shared.deleteProject(id: proj.id)
-        await refreshAfterSecondaryWrite()
-        showTemporaryBanner("已移除造物项目「\(proj.title)」（可按 ⌘Z 撤销）")
-        registerUndo(label: "删除项目「\(proj.title)」") { [weak self] in
-            guard let self else { return false }
-            do {
-                let req = CreateProjectRequest(
-                    title: proj.title,
-                    subtitle: proj.subtitle,
-                    description: proj.description,
-                    story: proj.story,
-                    category: proj.category,
-                    status: proj.status,
-                    githubUrl: proj.githubUrl,
-                    order: proj.order,
-                    isPrivate: proj.isPrivate
-                )
-                _ = try await APIClient.shared.createProject(req)
-                await self.refreshAfterSecondaryWrite()
-                return true
-            } catch {
-                self.errorBanner = "撤销删除项目失败：\(error.localizedDescription)"
-                return false
-            }
-        }
-    }
-
-    public func deleteFootprintAction(_ fp: Footprint) async throws {
-        try await APIClient.shared.deleteFootprint(id: fp.id)
-        await refreshAfterSecondaryWrite()
-        showTemporaryBanner("已移除「\(fp.cityName)」足迹票根（可按 ⌘Z 撤销）")
-        registerUndo(label: "删除足迹「\(fp.cityName)」") { [weak self] in
-            guard let self else { return false }
-            do {
-                let req = CreateFootprintRequest(
-                    cityCode: fp.cityCode,
-                    cityName: fp.cityName,
-                    title: fp.title,
-                    visitedAt: fp.visitedAt,
-                    departedAt: fp.departedAt,
-                    note: fp.note,
-                    attachmentIds: fp.attachments.isEmpty ? nil : fp.attachments.map(\.id),
-                    isPrivate: fp.isPrivate
-                )
-                _ = try await APIClient.shared.createFootprint(req)
-                await self.refreshAfterSecondaryWrite()
-                return true
-            } catch {
-                self.errorBanner = "撤销删除足迹失败：\(error.localizedDescription)"
-                return false
-            }
-        }
-    }
-
     // MARK: - 极速闪念与快速记账提交 (Quick Capture & Quick Ledger)
 
     public func submitQuickCapture(
@@ -280,9 +197,6 @@ extension AppState {
         content: String,
         type: EntryType = .life,
         location: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
-        footprintId: Int? = nil,
         attachmentIds: [Int] = [],
         attachments: [Attachment] = [],
         occurredAt: String? = nil,
@@ -292,24 +206,12 @@ extension AppState {
             ? location!.trimmingCharacters(in: .whitespacesAndNewlines)
             : (profile.displayCity.isEmpty ? nil : profile.displayCity)
 
-        var resolvedCode = cityCode?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if resolvedCode?.isEmpty == true { resolvedCode = nil }
-        var resolvedCityName = cityName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if resolvedCityName?.isEmpty == true { resolvedCityName = nil }
-
-        if resolvedCode != nil && resolvedCityName == nil {
-            resolvedCityName = CityDictionary.standardCities.first(where: { $0.code == resolvedCode })?.name
-        }
-
         let req = CreateEntryRequest(
             type: type.rawValue,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             content: content.trimmingCharacters(in: .whitespacesAndNewlines),
             occurredAt: occurredAt ?? FormatUtils.beijingISOString(),
             location: finalLocation,
-            cityCode: resolvedCode,
-            cityName: resolvedCityName,
-            footprintId: footprintId,
             isPrivate: isPrivate,
             attachmentIds: attachmentIds
         )
@@ -331,7 +233,6 @@ extension AppState {
         title: String,
         note: String? = nil,
         paymentMethod: String? = nil,
-        cityCode: String? = nil,
         occurredAt: String? = nil
     ) async throws -> Bool {
         let req = CreateTransactionRequest(
@@ -341,7 +242,6 @@ extension AppState {
             title: title,
             note: note,
             paymentMethod: paymentMethod ?? paymentMethods.first ?? "微信支付",
-            cityCode: cityCode,
             occurredAt: occurredAt ?? FormatUtils.beijingISOString()
         )
 
@@ -352,7 +252,7 @@ extension AppState {
             return true
         }
         showTemporaryBanner("已记入账本：\(amountText)")
-        await loadTransactionsAndAssets(forceFull: false)
+        await loadTransactions(forceFull: false)
         await loadConfigAndProfile()
         return false
     }

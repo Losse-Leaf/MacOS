@@ -2,15 +2,13 @@ import SwiftUI
 
 /// 全局聚光灯档案检索模态框 (GlobalSearchModalView)
 /// 严格 1:1 对标 Web 端 `web/src/components/SearchModal.vue` (⌘K Spotlight)
-/// 融合本地 120ms 防抖即时检索与服务端 220ms 跨年历史归档检索 (生活手稿 / 山川足迹 / 心愿清单 / 造物项目)
+/// 融合本地 120ms 防抖即时检索与服务端 220ms 跨年历史归档检索 (生活手稿 / 心愿清单)
 @MainActor
 public struct GlobalSearchModalView: View {
     @Bindable var appState: AppState
     var onDismiss: () -> Void
     var onSelectEntry: (LifeEntry) -> Void
-    var onSelectFootprint: (Footprint) -> Void
     var onSelectWish: (Wish) -> Void
-    var onSelectProject: (Project) -> Void
 
     @State private var query: String = ""
     @State private var debouncedQuery: String = ""
@@ -33,9 +31,7 @@ public struct GlobalSearchModalView: View {
     private func activateHit(_ hit: SearchResultHit) {
         switch hit {
         case .entry(let e): onSelectEntry(e)
-        case .footprint(let f): onSelectFootprint(f)
         case .wish(let w): onSelectWish(w)
-        case .project(let p): onSelectProject(p)
         }
         onDismiss()
     }
@@ -44,16 +40,12 @@ public struct GlobalSearchModalView: View {
         appState: AppState,
         onDismiss: @escaping () -> Void,
         onSelectEntry: @escaping (LifeEntry) -> Void,
-        onSelectFootprint: @escaping (Footprint) -> Void,
-        onSelectWish: @escaping (Wish) -> Void,
-        onSelectProject: @escaping (Project) -> Void
+        onSelectWish: @escaping (Wish) -> Void
     ) {
         self.appState = appState
         self.onDismiss = onDismiss
         self.onSelectEntry = onSelectEntry
-        self.onSelectFootprint = onSelectFootprint
         self.onSelectWish = onSelectWish
-        self.onSelectProject = onSelectProject
     }
 
     public var body: some View {
@@ -64,7 +56,7 @@ public struct GlobalSearchModalView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(ArchivePalette.inkMuted)
 
-                TextField("搜索生活档案、山川足迹、心愿与造物…", text: $query)
+                TextField("搜索生活档案与心愿清单…", text: $query)
                     .accessibilityLabel("全局搜索")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.editorialSerif(size: 15))
@@ -147,7 +139,7 @@ public struct GlobalSearchModalView: View {
                                 Text("输入关键词开始检索全库档案")
                                     .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkSecondary)
-                                Text("支持跨年份检索生活记录、山川行迹、心愿单与造物手记")
+                                Text("支持跨年份检索生活记录与心愿清单")
                                     .font(ArchiveTypography.monoScale(size: 11))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
@@ -305,12 +297,8 @@ public struct GlobalSearchModalView: View {
         switch hit {
         case .entry(let entry):
             entryResultCard(entry, isHighlighted: isHighlighted)
-        case .footprint(let fp):
-            footprintResultCard(fp, isHighlighted: isHighlighted)
         case .wish(let wish):
             wishResultCard(wish, isHighlighted: isHighlighted)
-        case .project(let proj):
-            projectResultCard(proj, isHighlighted: isHighlighted)
         }
     }
 
@@ -352,7 +340,7 @@ public struct GlobalSearchModalView: View {
                         .lineLimit(2)
                 }
 
-                let loc = (entry.cityName?.isEmpty == false) ? entry.cityName! : (entry.location ?? "")
+                let loc = entry.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 if !loc.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "location.fill")
@@ -373,49 +361,6 @@ public struct GlobalSearchModalView: View {
             .background(isHighlighted ? ArchivePalette.accentWarm.opacity(0.06) : Color.clear)
             .paperHover()
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .paperButtonFocusRing(cornerRadius: 6)
-    }
-
-    private func footprintResultCard(_ fp: Footprint, isHighlighted: Bool) -> some View {
-        Button {
-            onSelectFootprint(fp)
-            onDismiss()
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
-                    let titleStr = (fp.title?.isEmpty == false) ? fp.title! : "旅程漫游"
-                    Text("\(fp.cityName) · \(titleStr)")
-                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                        .lineLimit(1)
-                    if fp.isPrivate == true {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .accessibilityLabel("私密行迹")
-                    }
-                    Spacer()
-                    Text(FormatUtils.formatDate(fp.visitedAt))
-                        .font(ArchiveTypography.monoScale(size: 10))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-                if let note = fp.note, !note.isEmpty {
-                    Text(note)
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(9)
-            .background(ArchivePalette.archiveSubtle.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHighlighted ? 1.2 : 0.5)
-            )
-            .paperHover()
         }
         .buttonStyle(.plain)
         .paperButtonFocusRing(cornerRadius: 6)
@@ -447,50 +392,6 @@ public struct GlobalSearchModalView: View {
                 }
                 if let note = wish.note, !note.isEmpty {
                     Text(note)
-                        .font(ArchiveTypography.bodySans(size: 11))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(9)
-            .background(ArchivePalette.archiveSubtle.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle, lineWidth: isHighlighted ? 1.2 : 0.5)
-            )
-            .paperHover()
-        }
-        .buttonStyle(.plain)
-        .paperButtonFocusRing(cornerRadius: 6)
-    }
-
-    private func projectResultCard(_ proj: Project, isHighlighted: Bool) -> some View {
-        Button {
-            onSelectProject(proj)
-            onDismiss()
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
-                    Text(proj.title)
-                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                        .lineLimit(1)
-                    if proj.isPrivate == true {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .accessibilityLabel("私密项目")
-                    }
-                    Spacer()
-                    if let st = proj.status, !st.isEmpty {
-                        Text(ProjectStatus.normalize(st).displayName)
-                            .font(ArchiveTypography.monoScale(size: 10))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                }
-                if !proj.description.isEmpty {
-                    Text(proj.description)
                         .font(ArchiveTypography.bodySans(size: 11))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .lineLimit(1)

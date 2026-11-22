@@ -142,7 +142,7 @@ enum SpotlightIndexer {
         let contentKey = indexesFullContent
             ? "\(entry.content.count)"
             : String(summary(of: entry.content).prefix(summaryLimit))
-        return "\(entry.updatedAt ?? "")|\(entry.title)|\(contentKey)|\(entry.cityName ?? "")|\(entry.location ?? "")|\(entry.isPrivate)"
+        return "\(entry.updatedAt ?? "")|\(entry.title)|\(contentKey)|\(entry.location ?? "")|\(entry.isPrivate)"
     }
 
     /// 过滤允许进入系统 Spotlight / Siri 索引的条目（私密散页与软删条目一律拦截）
@@ -170,7 +170,7 @@ enum SpotlightIndexer {
             attrs.contentDescription = Self.summary(of: entry.content)
         }
         attrs.contentCreationDate = FormatUtils.parseFlexDate(entry.occurredAt)
-        attrs.city = entry.cityName ?? entry.location
+        attrs.city = entry.location
         return CSSearchableItem(
             uniqueIdentifier: "looseleaf-entry-\(entry.id)",
             domainIdentifier: domainIdentifier,

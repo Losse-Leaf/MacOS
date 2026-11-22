@@ -152,8 +152,7 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     title: title,
                     content: "端到端走查正文",
                     occurredAt: FormatUtils.beijingISOString(),
-                    cityCode: "330100",
-                    cityName: "杭州市"
+                    location: "杭州市"
                 )
             )
         }
@@ -174,8 +173,7 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     title: title + "-改",
                     content: "端到端走查正文（已改）",
                     occurredAt: FormatUtils.beijingISOString(),
-                    cityCode: "330100",
-                    cityName: "杭州市"
+                    location: "杭州市"
                 )
             )
         }
@@ -201,8 +199,6 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     kind: "item",
                     note: "走查笔记",
                     spec: "规格",
-                    cityCode: "330100",
-                    cityName: "杭州市",
                     budget: 12800,
                     plantedAt: FormatUtils.beijingISOString()
                 )
@@ -226,8 +222,6 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     kind: "item",
                     note: "走查笔记",
                     spec: "规格",
-                    cityCode: "330100",
-                    cityName: "杭州市",
                     budget: 12800
                 )
             )
@@ -245,104 +239,6 @@ final class ArchiveWalkthroughTests: XCTestCase {
         XCTAssertNil(orphanWish, "删除心愿后时间流仍留有伴生散页")
     }
 
-    // MARK: - 3. 造物：创建 → 伴生散页 → 编辑 → 删除
-
-    func test03_ProjectLifecycleAndTimelineSync() async throws {
-        let title = uniqueMarker("走查造物")
-
-        let project = try await timed("创建造物") {
-            try await APIClient.shared.createProject(
-                CreateProjectRequest(
-                    title: title,
-                    description: "走查描述",
-                    category: "开源项目",
-                    status: ProjectStatus.inProgress.rawValue
-                )
-            )
-        }
-        XCTAssertGreaterThan(project.id, 0)
-
-        let companion = try await timed("造物 → 时间流伴生散页") {
-            try await findEntry { $0.projectId == project.id }
-        }
-        XCTAssertNotNil(companion, "造物在时间流里没有伴生散页")
-
-        _ = try await timed("编辑造物") {
-            try await APIClient.shared.updateProject(
-                id: project.id,
-                CreateProjectRequest(
-                    title: title + "-改",
-                    description: "走查描述（已改）",
-                    category: "开源项目",
-                    status: ProjectStatus.inProgress.rawValue
-                )
-            )
-        }
-        let editedProjectCompanion = try await findEntry { $0.projectId == project.id }
-        XCTAssertEqual(editedProjectCompanion?.title, title + "-改", "编辑造物后伴生散页标题未同步")
-
-        try await timed("删除造物") {
-            try await APIClient.shared.deleteProject(id: project.id)
-        }
-        let orphanProject = try await findEntry { $0.projectId == project.id }
-        XCTAssertNil(orphanProject, "删除造物后时间流仍留有伴生散页")
-    }
-
-    // MARK: - 4. 器物：添置 → 伴生散页 → 分期 → 转手 → 删除
-
-    func test04_GearLifecycleWithInstallment() async throws {
-        let name = uniqueMarker("走查设备")
-
-        let gear = try await timed("添置器物（含分期）") {
-            try await APIClient.shared.addGearAsset(
-                AddGearAssetRequest(
-                    name: name,
-                    spec: "16G/512G",
-                    category: "数码器材",
-                    priceCents: 599900,
-                    purchaseDate: "2026-03-01",
-                    note: "走查备注",
-                    createTransaction: true,
-                    paymentMethod: "信用卡",
-                    isInstallment: true,
-                    installmentChannelCode: "huabei",
-                    installmentTotalAmount: 599900,
-                    installmentMonths: 12,
-                    repaymentDay: 10
-                )
-            )
-        }
-        XCTAssertFalse(gear.id.isEmpty, "器物 id 为空")
-
-        let companion = try await timed("器物 → 时间流伴生散页") {
-            try await findEntry { $0.gearId == gear.id }
-        }
-        XCTAssertNotNil(companion, "器物在时间流里没有伴生散页")
-
-        // 伴生散页要落在购入日期上（补档）
-        if let companion {
-            XCTAssertTrue(
-                companion.occurredAt.hasPrefix("2026-03"),
-                "器物伴生散页应落在购入日期 2026-03-01，实际 \(companion.occurredAt)"
-            )
-        }
-
-        // 转手
-        try await timed("器物转手回血") {
-            try await APIClient.shared.sellGearAsset(
-                id: gear.id,
-                SellGearRequest(soldPriceCents: 400000, soldDate: "2026-09-01", note: "走查转手")
-            )
-        }
-
-        // 删除
-        try await timed("删除器物") {
-            try await APIClient.shared.deleteGearAsset(id: gear.id)
-        }
-        let orphanGear = try await findEntry { $0.gearId == gear.id }
-        XCTAssertNil(orphanGear, "删除器物后时间流仍留有伴生散页")
-    }
-
     // MARK: - 5. 账目：创建 → 时间流合成条目 → 编辑 → 删除
 
     func test05_TransactionLifecycle() async throws {
@@ -357,7 +253,6 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     title: title,
                     note: "走查备注",
                     paymentMethod: "微信支付",
-                    cityCode: "330100",
                     occurredAt: FormatUtils.beijingISOString()
                 )
             )
@@ -387,7 +282,6 @@ final class ArchiveWalkthroughTests: XCTestCase {
                     title: title + "-改",
                     note: "走查备注",
                     paymentMethod: "微信支付",
-                    cityCode: "330100",
                     occurredAt: FormatUtils.beijingISOString()
                 )
             )
@@ -398,30 +292,6 @@ final class ArchiveWalkthroughTests: XCTestCase {
         }
         let afterDelete = try await APIClient.shared.fetchTransactions(limit: 50, offset: 0)
         XCTAssertFalse(afterDelete.contains { $0.id == tx.id }, "删除后账目仍在列表里")
-    }
-
-    // MARK: - 6. 足迹：创建 → 伴生散页 → 删除
-
-    func test06_FootprintLifecycleAndTimelineSync() async throws {
-        let city = uniqueMarker("走查城")
-
-        let fp = try await timed("创建足迹") {
-            try await APIClient.shared.createFootprint(
-                CreateFootprintRequest(
-                    cityCode: "330100",
-                    cityName: city,
-                    title: "走查足迹",
-                    visitedAt: FormatUtils.beijingISOString(),
-                    note: "走查备注"
-                )
-            )
-        }
-        XCTAssertGreaterThan(fp.id, 0)
-
-        let companion = try await timed("足迹 → 时间流伴生散页") {
-            try await findEntry { $0.footprintId == fp.id }
-        }
-        XCTAssertNotNil(companion, "足迹在时间流里没有伴生散页")
     }
 
     // MARK: - 7. 图片上传：预签名 → 直传 → 绑定
@@ -458,17 +328,14 @@ final class ArchiveWalkthroughTests: XCTestCase {
         XCTAssertEqual(reloaded?.attachments.count, 1, "附件未正确绑定到散页")
     }
 
-    // MARK: - 8. 读取路径：配置 / 档案 / 分类 / 统计 / 资产大盘 / 信用渠道
+    // MARK: - 8. 读取路径：配置 / 档案 / 分类 / 统计 / 信用渠道
 
     func test08_AllReadEndpoints() async throws {
         try await timed("读取站点配置") { _ = try await APIClient.shared.fetchSiteConfig() }
         try await timed("读取主理人档案") { _ = try await APIClient.shared.fetchCuratorProfile() }
         try await timed("读取全局统计") { _ = try await APIClient.shared.fetchGlobalStats() }
         try await timed("读取分类字典") { _ = try await APIClient.shared.fetchCategories() }
-        try await timed("读取造物项目") { _ = try await APIClient.shared.fetchProjects() }
         try await timed("读取心愿单") { _ = try await APIClient.shared.fetchWishes(page: 1, pageSize: 50) }
-        try await timed("读取足迹") { _ = try await APIClient.shared.fetchFootprints() }
-        try await timed("读取资产大盘") { _ = try await APIClient.shared.fetchAssetsOverview() }
         try await timed("读取信用渠道") { _ = try await APIClient.shared.fetchCreditChannels() }
         try await timed("读取月度汇总") {
             let ym = FormatUtils.beijingCurrentYearMonth()
@@ -528,15 +395,5 @@ final class ArchiveLocalStateWalkthroughTests: XCTestCase {
         )
         XCTAssertEqual(optimistic.syncStatus, "pending_create")
         XCTAssertTrue(optimistic.isPrivate, "乐观写入必须原样保留 isPrivate 私密标记")
-    }
-
-    func test11_CityResolutionHasNoProvinceMismatch() throws {
-        let yibin = FormatUtils.resolveCityCode(from: "宜宾市")
-        XCTAssertEqual(yibin, "511500", "宜宾市应解析为 511500（四川），实际 \(yibin ?? "nil")")
-        if let yibin {
-            let prov = CityDictionary.provincePrefixMap[String(yibin.prefix(2))] ?? ""
-            XCTAssertEqual(prov, "四川", "宜宾市的省份应为四川，实际 \(prov)")
-        }
-        XCTAssertEqual(FormatUtils.resolveCityCode(from: "杭州"), "330100")
     }
 }

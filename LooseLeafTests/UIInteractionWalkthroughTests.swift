@@ -84,8 +84,7 @@ final class UIInteractionWalkthroughTests: XCTestCase {
                 title: "第 \(i + 1) 条随笔",
                 content: bodies[i % bodies.count],
                 occurredAt: "2026-09-\(day)T10:00:00+08:00",
-                cityCode: "330100",
-                cityName: "杭州市"
+                location: "杭州市"
             ))
         }
         appState.entries = entries
@@ -102,12 +101,6 @@ final class UIInteractionWalkthroughTests: XCTestCase {
         }
         appState.wishes = (0..<12).map { i in
             Wish(id: i + 1, title: "第 \(i + 1) 个心愿", kind: "item", note: "备注")
-        }
-        appState.projects = (0..<8).map { i in
-            Project(id: i + 1, title: "第 \(i + 1) 个造物", description: "描述")
-        }
-        appState.footprints = (0..<8).map { i in
-            Footprint(id: i + 1, cityCode: "330100", cityName: "杭州市", visitedAt: "2026-09-10T10:00:00+08:00")
         }
     }
 
@@ -244,10 +237,7 @@ final class UIInteractionWalkthroughTests: XCTestCase {
 
         let modal = NewEntryModal(
             appState: appState,
-            initialKind: "life",
-            initialProjectId: nil,
-            initialCityCode: nil,
-            initialCityName: nil
+            initialKind: "life"
         ) { }
         mount(modal, size: size)
         flush()
@@ -279,10 +269,7 @@ final class UIInteractionWalkthroughTests: XCTestCase {
         for kind in EntryType.editableCases.map(\.rawValue) {
             let modal = NewEntryModal(
                 appState: appState,
-                initialKind: kind,
-                initialProjectId: nil,
-                initialCityCode: nil,
-                initialCityName: nil
+                initialKind: kind
             ) { }
             let start = Date()
             mount(modal, size: size)

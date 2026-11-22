@@ -17,7 +17,7 @@ final class GlobalSearchPresentationTests: XCTestCase {
         entries.map { entry in
             SearchableLifeEntry(
                 entry: entry,
-                haystack: [entry.title, entry.content, entry.location ?? "", entry.cityName ?? ""]
+                haystack: [entry.title, entry.content, entry.location ?? ""]
                     .joined(separator: "\n")
                     .lowercased()
             )
@@ -50,9 +50,7 @@ final class GlobalSearchPresentationTests: XCTestCase {
         let remote = GlobalSearchResponse(
             query: "咖啡",
             entries: [entry(2, title: "咖啡 2"), entry(9, title: "咖啡 9")],
-            footprints: [],
-            wishes: [],
-            projects: []
+            wishes: []
         )
         let presentation = SearchPresentation.make(
             query: "咖啡",
@@ -91,9 +89,7 @@ final class GlobalSearchPresentationTests: XCTestCase {
         let staleRemote = GlobalSearchResponse(
             query: "咖啡",
             entries: [],
-            footprints: [],
-            wishes: [Wish(id: 1, title: "咖啡机")],
-            projects: []
+            wishes: [Wish(id: 1, title: "咖啡机")]
         )
         let presentation = SearchPresentation.make(
             query: "茶",

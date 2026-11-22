@@ -21,7 +21,7 @@ extension AppState {
         navigation.requestStreamSearchFocus()
     }
 
-    /// 全局检索语料：每个条目预先拼好「标题 + 正文 + 地点 + 城市」的小写串，按 entriesRevision 记忆化。
+    /// 全局检索语料：每个条目预先拼好「标题 + 正文 + 地点」的小写串，按 entriesRevision 记忆化。
     var searchableEntries: [SearchableLifeEntry] {
         if let memo = searchCorpusMemo, memo.0 == entriesRevision {
             return memo.1
@@ -32,8 +32,7 @@ extension AppState {
                 haystack: [
                     entry.title,
                     entry.content,
-                    entry.location ?? "",
-                    entry.cityName ?? ""
+                    entry.location ?? ""
                 ].joined(separator: "\n").lowercased()
             )
         }
@@ -82,7 +81,6 @@ extension AppState {
                     entry.title.lowercased().contains(q)
                     || entry.content.lowercased().contains(q)
                     || (entry.location?.lowercased().contains(q) ?? false)
-                    || (entry.cityName?.lowercased().contains(q) ?? false)
                 }
             }
             return source

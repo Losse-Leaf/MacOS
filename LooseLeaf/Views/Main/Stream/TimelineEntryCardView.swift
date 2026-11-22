@@ -174,7 +174,7 @@ struct TimelineEntryCardView: View {
                         .accessibilityLabel("仅自己可见")
                     }
 
-                    if let loc = entry.location ?? entry.cityName, !loc.isEmpty {
+                    if let loc = entry.location, !loc.isEmpty {
                         HStack(spacing: 3) {
                             Image(systemName: ArchiveIcon.location.systemName)
                                 .font(.system(size: 9.5))

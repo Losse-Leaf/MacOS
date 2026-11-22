@@ -15,7 +15,6 @@ public struct CuratorProfile: Codable, Equatable, Sendable {
     public var email: String?
     public var github: String?
     public var socialLinks: [String: String]?
-    public var edcGear: [GearItem]
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -31,7 +30,6 @@ public struct CuratorProfile: Codable, Equatable, Sendable {
         case email
         case github
         case socialLinks = "social_links"
-        case edcGear = "edc_gear"
         case updatedAt = "updated_at"
     }
 
@@ -48,7 +46,6 @@ public struct CuratorProfile: Codable, Equatable, Sendable {
         email: String? = nil,
         github: String? = nil,
         socialLinks: [String: String]? = nil,
-        edcGear: [GearItem] = [],
         updatedAt: String? = nil
     ) {
         self.name = name
@@ -63,7 +60,6 @@ public struct CuratorProfile: Codable, Equatable, Sendable {
         self.email = email
         self.github = github
         self.socialLinks = socialLinks
-        self.edcGear = edcGear
         self.updatedAt = updatedAt
     }
 
@@ -81,7 +77,6 @@ public struct CuratorProfile: Codable, Equatable, Sendable {
         email = try? container.decodeIfPresent(String.self, forKey: .email)
         github = try? container.decodeIfPresent(String.self, forKey: .github)
         socialLinks = try? container.decodeIfPresent([String: String].self, forKey: .socialLinks)
-        edcGear = (try? container.decodeIfPresent([GearItem].self, forKey: .edcGear)) ?? []
         updatedAt = try? container.decodeIfPresent(String.self, forKey: .updatedAt)
     }
 
@@ -95,7 +90,6 @@ public struct CuratorProfile: Codable, Equatable, Sendable {
 }
 
 /// 更新主理人档案请求载荷 (PUT /api/v1/profile)
-/// 遵循 RC-132 定案：不携带 edc_gear，防止覆盖独立设备生命周期接口
 public struct UpdateProfileRequest: Codable, Sendable {
     public var name: String?
     public var title: String?
@@ -154,7 +148,6 @@ public struct SiteConfig: Codable, Equatable, Sendable {
     public var curatorName: String
     public var defaultLocation: String
     public var initialized: Bool
-    public var initialLiquidBalance: Int64?
 
     enum CodingKeys: String, CodingKey {
         case siteName = "site_name"
@@ -163,7 +156,6 @@ public struct SiteConfig: Codable, Equatable, Sendable {
         case curatorName = "curator_name"
         case defaultLocation = "default_location"
         case initialized
-        case initialLiquidBalance = "initial_liquid_balance"
     }
 
     public init(
@@ -172,8 +164,7 @@ public struct SiteConfig: Codable, Equatable, Sendable {
         siteDesc: String? = nil,
         curatorName: String = "",
         defaultLocation: String = "",
-        initialized: Bool = false,
-        initialLiquidBalance: Int64? = 0
+        initialized: Bool = false
     ) {
         self.siteName = siteName
         self.siteSubtitle = siteSubtitle
@@ -181,7 +172,6 @@ public struct SiteConfig: Codable, Equatable, Sendable {
         self.curatorName = curatorName
         self.defaultLocation = defaultLocation
         self.initialized = initialized
-        self.initialLiquidBalance = initialLiquidBalance
     }
 
     public init(from decoder: Decoder) throws {
@@ -192,7 +182,6 @@ public struct SiteConfig: Codable, Equatable, Sendable {
         curatorName = (try? container.decode(String.self, forKey: .curatorName)) ?? ""
         defaultLocation = (try? container.decode(String.self, forKey: .defaultLocation)) ?? ""
         initialized = (try? container.decode(Bool.self, forKey: .initialized)) ?? false
-        initialLiquidBalance = try? container.decodeIfPresent(Int64.self, forKey: .initialLiquidBalance)
     }
 }
 

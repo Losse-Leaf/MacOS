@@ -42,17 +42,6 @@ public enum StreamPrivacyFilter: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 城市回忆抽屉精准定位目标（全局检索 ⌘K 联动）
-public struct CityJumpTarget: Equatable, Sendable {
-    public let code: String
-    public let name: String
-
-    public init(code: String, name: String) {
-        self.code = code
-        self.name = name
-    }
-}
-
 /// 导航与检索状态 (Navigation & Search)
 ///
 /// 与档案数据分离：切换板块、输入搜索词这类交互不会再让数据视图无谓重算。
@@ -61,6 +50,8 @@ public struct CityJumpTarget: Equatable, Sendable {
 public final class AppNavigation {
     /// 当前侧栏板块
     public var activeSection: WorkbenchSection = .stream
+    /// 记账板块内当前子页签（流水 | 心愿单）
+    public var ledgerSubTab: LedgerSubTab = .ledger
     /// 当前分类视角
     public var selectedCategory: ArchiveCategory = .all
     /// 时间流私密态筛选
@@ -74,14 +65,7 @@ public final class AppNavigation {
     /// 编程式唤起独立设置窗口的自增请求计数
     public var settingsOpenToken: Int = 0
     /// 全局检索 (⌘K) 精准跳转定位目标
-    public var highlightedFootprintCity: CityJumpTarget?
     public var highlightedWishId: Int?
-    public var highlightedProjectId: Int?
-    /// 新建散页时的初始形态（如从「造物」入口打开）
-    public var newEntryInitialKind: String?
-    public var newEntryInitialProjectId: Int?
-    public var newEntryInitialCityCode: String?
-    public var newEntryInitialCityName: String?
 
     public init() {}
 

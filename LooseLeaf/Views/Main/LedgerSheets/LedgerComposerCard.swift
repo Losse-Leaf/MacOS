@@ -14,12 +14,7 @@ struct LedgerComposerCard: View {
     @State private var formCategory: String = "餐饮"
     @State private var formPaymentMethod: String
     @State private var formNote: String = ""
-    @State private var formCityCode: String = ""
-    @State private var formCityName: String = ""
     @State private var formOccurredAt: Date = Date()
-    @State private var formLinkGear: Bool = false
-    @State private var formGearCategory: String = "数码器材"
-    @State private var formGearSpec: String = ""
     @State private var formIsInstallment: Bool = false
     @State private var formInstallmentChannelCode: String = ""
     @State private var formInstallmentMonths: Int = 12
@@ -191,10 +186,6 @@ struct LedgerComposerCard: View {
 
                         Spacer()
 
-                        Toggle("建入固资大盘", isOn: $formLinkGear)
-                            .toggleStyle(.paperCheckbox)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-
                         if formType == "expense" {
                             Toggle("分期付款", isOn: $formIsInstallment)
                                 .toggleStyle(.paperCheckbox)
@@ -208,7 +199,7 @@ struct LedgerComposerCard: View {
                     }
 
                     HStack(spacing: 10) {
-                        Text("时空：")
+                        Text("时间：")
                             .font(ArchiveTypography.bodySans(size: 11.5))
                             .foregroundStyle(ArchivePalette.inkMuted)
 
@@ -216,36 +207,6 @@ struct LedgerComposerCard: View {
                         PaperTimePicker(selection: $formOccurredAt)
 
                         Spacer()
-
-                        HStack(spacing: ArchiveSpacing.xs) {
-                            Text("省市：")
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-
-                            PaperCityPicker(
-                                selectedCode: $formCityCode,
-                                selectedName: $formCityName,
-                                placeholder: appState.profile.displayCity.isEmpty ? "选择省市" : appState.profile.displayCity
-                            )
-                        }
-                    }
-
-                    if formLinkGear {
-                        HStack(spacing: ArchiveSpacing.s) {
-                            PaperSelect(
-                                selection: $formGearCategory,
-                                options: appState.gearCategories.map { PaperSelectOption(value: $0, label: $0) },
-                                label: "固资分类："
-                            )
-
-                            TextField("规格参数", text: $formGearSpec)
-                                .accessibilityLabel("规格参数")
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                                .padding(6)
-                                .background(ArchivePalette.archivePaper)
-                                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                        }
                     }
 
                     if formIsInstallment && formType == "expense" {
@@ -346,7 +307,6 @@ struct LedgerComposerCard: View {
                     paymentMethod: appState.paymentMethods.contains(formPaymentMethod)
                         ? formPaymentMethod
                         : (appState.paymentMethods.first ?? formPaymentMethod),
-                    cityCode: formCityCode.isEmpty ? nil : formCityCode,
                     occurredAt: FormatUtils.beijingISOString(from: formOccurredAt),
                     isInstallment: isInst,
                     installmentChannelCode: resolvedChannel?.code,
@@ -354,21 +314,15 @@ struct LedgerComposerCard: View {
                     installmentMonths: isInst ? months : nil,
                     installmentMonthlyPay: monthlyPay,
                     installmentRemainMonths: isInst ? months : nil,
-                    repaymentDay: resolvedChannel?.repaymentDay,
-                    linkGearAsset: formLinkGear,
-                    gearCategory: formLinkGear ? formGearCategory : nil,
-                    gearSpec: formLinkGear ? formGearSpec : nil
+                    repaymentDay: resolvedChannel?.repaymentDay
                 )
                 _ = try await SyncManager.shared.submitTransaction(req)
                 formAmountYuan = ""
                 formTitle = ""
                 formNote = ""
-                formCityCode = ""
-                formCityName = ""
                 formOccurredAt = Date()
-                formLinkGear = false
                 formIsInstallment = false
-                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadTransactions(forceFull: false)
                 await appState.loadConfigAndProfile()
             } catch {
                 errorNotice = error.localizedDescription

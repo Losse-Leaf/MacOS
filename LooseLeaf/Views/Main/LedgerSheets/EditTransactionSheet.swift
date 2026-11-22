@@ -14,8 +14,6 @@ public struct EditTransactionSheet: View {
     @State private var category: String
     @State private var paymentMethod: String
     @State private var note: String
-    @State private var cityCode: String
-    @State private var cityName: String
     @State private var occurredDate: Date
     @State private var isSubmitting: Bool = false
     @State private var errorText: String?
@@ -37,11 +35,6 @@ public struct EditTransactionSheet: View {
         _category = State(initialValue: transaction.category)
         _paymentMethod = State(initialValue: transaction.paymentMethod ?? appState.paymentMethods.first ?? "微信支付")
         _note = State(initialValue: transaction.note ?? "")
-        _cityCode = State(initialValue: transaction.cityCode ?? "")
-        let resolvedName = transaction.cityCode.flatMap { code in
-            CityDictionary.standardCities.first(where: { $0.code == code })?.name
-        } ?? ""
-        _cityName = State(initialValue: resolvedName)
         _occurredDate = State(initialValue: FormatUtils.parseFlexDate(transaction.occurredAt) ?? Date())
         _wantsInstallment = State(initialValue: transaction.isInstallment == true)
         _installmentChannelCode = State(initialValue: transaction.installmentChannelCode ?? "")
@@ -160,7 +153,6 @@ public struct EditTransactionSheet: View {
                 HStack(spacing: ArchiveSpacing.s) {
                     PaperDateTimePicker(selection: $occurredDate, label: "发生时间", showQuickShortcuts: true)
                     Spacer()
-                    PaperCityPicker(selectedCode: $cityCode, selectedName: $cityName, placeholder: "属地城市")
                 }
 
                 TextField("备注", text: $note)
@@ -213,7 +205,6 @@ public struct EditTransactionSheet: View {
                     title: title,
                     note: note,
                     paymentMethod: paymentMethod,
-                    cityCode: cityCode.isEmpty ? nil : cityCode,
                     occurredAt: FormatUtils.beijingISOString(from: occurredDate),
                     isInstallment: installmentFields.isInstallment,
                     clearInstallment: installmentFields.clearInstallment,
@@ -222,11 +213,10 @@ public struct EditTransactionSheet: View {
                     installmentMonths: installmentFields.months,
                     installmentMonthlyPay: installmentFields.monthlyPay,
                     installmentRemainMonths: installmentFields.remainMonths,
-                    repaymentDay: installmentFields.repaymentDay,
-                    clearCity: cityCode.isEmpty ? true : nil
+                    repaymentDay: installmentFields.repaymentDay
                 )
                 _ = try await APIClient.shared.updateTransaction(id: transaction.id, req)
-                await appState.loadTransactionsAndAssets(forceFull: false)
+                await appState.loadTransactions(forceFull: false)
                 await appState.loadEntries(forceFull: false)
                 onDismiss()
             } catch {

@@ -8,58 +8,41 @@ public struct APIEnvelope<T: Decodable & Sendable>: Decodable, Sendable {
     public let data: T?
 }
 
-/// 生活档案底层四维母体类型 (RC-128)
+/// 生活档案底层形态类型
 public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
     case life = "life"
-    case travel = "travel"
-    case project = "project"
     case wish = "wish"
     case transaction = "transaction"
-    /// 器物（添置随身设备等二级对象在时间流里的伴生散页）
-    case gear = "gear"
 
     public var id: String { rawValue }
 
-    /// 允许用户在新建/编辑手稿中手动切换的四维生活形态（排除系统合成的 transaction 与 gear）
+    /// 允许用户在新建/编辑手稿中手动切换的生活形态（排除系统合成的 transaction）
     public static var editableCases: [EntryType] {
-        [.life, .travel, .project, .wish]
+        [.life, .wish]
     }
 
     public var label: String {
         switch self {
         case .life: return "日常"
-        case .travel: return "游历"
-        case .project: return "造物"
         case .wish: return "心愿"
         case .transaction: return "账目"
-        case .gear: return "器物"
         }
     }
 
     /// 时间流 / 详情页上的**形态徽章文案**（全应用唯一真源）
-    ///
-    /// 关键：此前这份映射有四份实现（时间流卡片、详情页、StreamView 的死代码、
-    /// 导出器），其中详情页那份**漏了 gear 分支** ——
-    /// 于是器物条目在时间流上显示「器物印记」，在详情页却显示「日常随笔」。
     public var badgeLabel: String {
         switch self {
-        case .travel: return "山川游历"
-        case .project: return "造物演进"
         case .wish: return "心愿印记"
         case .transaction: return "柴米油盐"
-        case .gear: return "器物印记"
-        default: return "日常随笔"
+        case .life: return "日常随笔"
         }
     }
 
     public var symbolName: String {
         switch self {
         case .life: return ArchiveIcon.entryLife.systemName
-        case .travel: return ArchiveIcon.entryTravel.systemName
-        case .project: return ArchiveIcon.entryProject.systemName
         case .wish: return ArchiveIcon.entryWish.systemName
         case .transaction: return ArchiveIcon.entryTransaction.systemName
-        case .gear: return ArchiveIcon.gear.systemName
         }
     }
 }
@@ -68,11 +51,8 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
 public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
     case all = "all"
     case daily = "daily"
-    case travel = "travel"
-    case project = "project"
     case wish = "wish"
     case transaction = "transaction"
-    case gear = "gear"
 
     public var id: String { rawValue }
 
@@ -80,11 +60,8 @@ public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .all: return "全部印记"
         case .daily: return "日常"
-        case .travel: return "游历"
-        case .project: return "造物"
         case .wish: return "心愿"
         case .transaction: return "账目"
-        case .gear: return "器物"
         }
     }
 }
@@ -145,7 +122,6 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
     public let id: Int
     public var entryId: Int?
     public var wishId: Int?
-    public var footprintId: Int?
     public var objectKey: String
     public var originalFilename: String
     public var mimeType: String
@@ -165,7 +141,6 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         case id
         case entryId = "entry_id"
         case wishId = "wish_id"
-        case footprintId = "footprint_id"
         case objectKey = "object_key"
         case originalFilename = "original_filename"
         case mimeType = "mime_type"
@@ -181,7 +156,6 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         id: Int,
         entryId: Int? = nil,
         wishId: Int? = nil,
-        footprintId: Int? = nil,
         objectKey: String,
         originalFilename: String,
         mimeType: String,
@@ -195,7 +169,6 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
         self.id = id
         self.entryId = entryId
         self.wishId = wishId
-        self.footprintId = footprintId
         self.objectKey = objectKey
         self.originalFilename = originalFilename
         self.mimeType = mimeType
@@ -226,7 +199,7 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// 统一生活时间线档案条目 (LifeEntry)
-/// 作为一级母体记录，承载文字、现场相片、所处地点与关联造物/心愿/足迹
+/// 作为一级母体记录，承载文字、现场相片、所处地点与关联心愿
 public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var id: Int
     public var type: String
@@ -234,15 +207,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var content: String
     public var occurredAt: String
     public var location: String?
-    public var cityCode: String?
-    public var cityName: String?
-    public var projectId: Int?
-    public var project: Project?
     public var wishId: Int?
     public var wish: Wish?
-    /// 器物伴生散页（器物 id 为字符串）
-    public var gearId: String?
-    public var footprintId: Int?
     public var isPrivate: Bool
     public var attachments: [Attachment]
     public var deletedAt: String?
@@ -259,14 +225,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         case content
         case occurredAt = "occurred_at"
         case location
-        case cityCode = "city_code"
-        case cityName = "city_name"
-        case projectId = "project_id"
-        case project
         case wishId = "wish_id"
         case wish
-        case gearId = "gear_id"
-        case footprintId = "footprint_id"
         case isPrivate = "is_private"
         case attachments
         case deletedAt = "deleted_at"
@@ -282,14 +242,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         content: String,
         occurredAt: String,
         location: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
-        projectId: Int? = nil,
-        project: Project? = nil,
         wishId: Int? = nil,
         wish: Wish? = nil,
-        gearId: String? = nil,
-        footprintId: Int? = nil,
         isPrivate: Bool = false,
         attachments: [Attachment] = [],
         deletedAt: String? = nil,
@@ -303,14 +257,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         self.content = content
         self.occurredAt = occurredAt
         self.location = location
-        self.cityCode = cityCode
-        self.cityName = cityName
-        self.projectId = projectId
-        self.project = project
         self.wishId = wishId
         self.wish = wish
-        self.gearId = gearId
-        self.footprintId = footprintId
         self.isPrivate = isPrivate
         self.attachments = attachments
         self.deletedAt = deletedAt
@@ -327,14 +275,8 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         content = (try? container.decode(String.self, forKey: .content)) ?? ""
         occurredAt = (try? container.decode(String.self, forKey: .occurredAt)) ?? FormatUtils.beijingISOString()
         location = try? container.decodeIfPresent(String.self, forKey: .location)
-        cityCode = try? container.decodeIfPresent(String.self, forKey: .cityCode)
-        cityName = try? container.decodeIfPresent(String.self, forKey: .cityName)
-        projectId = try? container.decodeIfPresent(Int.self, forKey: .projectId)
-        project = try? container.decodeIfPresent(Project.self, forKey: .project)
         wishId = try? container.decodeIfPresent(Int.self, forKey: .wishId)
         wish = try? container.decodeIfPresent(Wish.self, forKey: .wish)
-        gearId = try? container.decodeIfPresent(String.self, forKey: .gearId)
-        footprintId = try? container.decodeIfPresent(Int.self, forKey: .footprintId)
         isPrivate = (try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)) ?? false
         attachments = (try? container.decodeIfPresent([Attachment].self, forKey: .attachments)) ?? []
         deletedAt = try? container.decodeIfPresent(String.self, forKey: .deletedAt)
@@ -350,16 +292,10 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
             return true
         case .daily:
             return type == EntryType.life.rawValue
-        case .travel:
-            return type == EntryType.travel.rawValue || !(cityCode ?? "").isEmpty
-        case .project:
-            return type == EntryType.project.rawValue || (projectId ?? 0) > 0
         case .wish:
             return type == EntryType.wish.rawValue || (wishId ?? 0) > 0
         case .transaction:
             return type == "transaction"
-        case .gear:
-            return type == "gear" || !(gearId ?? "").isEmpty
         }
     }
 
@@ -385,11 +321,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
             content: content,
             occurredAt: occurredAt,
             location: location,
-            cityCode: cityCode,
-            cityName: cityName,
-            projectId: projectId,
             wishId: wishId,
-            footprintId: footprintId,
             isPrivate: isPrivate,
             attachmentIds: attachments.map(\.id)
         )
@@ -418,11 +350,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
     public var content: String
     public var occurredAt: String
     public var location: String?
-    public var cityCode: String?
-    public var cityName: String?
-    public var projectId: Int?
     public var wishId: Int?
-    public var footprintId: Int?
     public var isPrivate: Bool?
     public var attachmentIds: [Int]
     /// 幂等创建键（契约 C）：离线发件箱 CREATE 事件在入队时生成 UUID 并
@@ -437,11 +365,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         case content
         case occurredAt = "occurred_at"
         case location
-        case cityCode = "city_code"
-        case cityName = "city_name"
-        case projectId = "project_id"
         case wishId = "wish_id"
-        case footprintId = "footprint_id"
         case isPrivate = "is_private"
         case attachmentIds = "attachment_ids"
         case clientRequestId = "client_request_id"
@@ -453,11 +377,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         content: String,
         occurredAt: String = FormatUtils.beijingISOString(),
         location: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
-        projectId: Int? = nil,
         wishId: Int? = nil,
-        footprintId: Int? = nil,
         isPrivate: Bool? = nil,
         attachmentIds: [Int] = [],
         clientRequestId: String? = nil
@@ -467,11 +387,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         self.content = content
         self.occurredAt = occurredAt
         self.location = location
-        self.cityCode = cityCode
-        self.cityName = cityName
-        self.projectId = projectId
         self.wishId = wishId
-        self.footprintId = footprintId
         self.isPrivate = isPrivate
         self.attachmentIds = attachmentIds
         self.clientRequestId = clientRequestId
@@ -485,15 +401,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
     public var content: String?
     public var occurredAt: String?
     public var location: String?
-    public var cityCode: String?
-    public var cityName: String?
-    /// 显式清空属地城市（契约 A）：true 时服务端清空 city_code，
-    /// 优先于 city_code 字段。此前「清空城市」发 nil（省略）会被
-    /// 后端按「保持原值」处理 —— 用户清了城市，保存后原样还在。
-    public var clearCity: Bool?
-    public var projectId: Int?
     public var wishId: Int?
-    public var footprintId: Int?
     public var isPrivate: Bool?
     public var attachmentIds: [Int]?
     /// 显式清空全部已绑附件（契约三态铁律：删除最后一张照片时需传 `attachment_ids: []` + `clear_attachments: true`）
@@ -505,12 +413,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         case content
         case occurredAt = "occurred_at"
         case location
-        case cityCode = "city_code"
-        case cityName = "city_name"
-        case clearCity = "clear_city"
-        case projectId = "project_id"
         case wishId = "wish_id"
-        case footprintId = "footprint_id"
         case isPrivate = "is_private"
         case attachmentIds = "attachment_ids"
         case clearAttachments = "clear_attachments"
@@ -522,12 +425,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         content: String? = nil,
         occurredAt: String? = nil,
         location: String? = nil,
-        cityCode: String? = nil,
-        cityName: String? = nil,
-        clearCity: Bool? = nil,
-        projectId: Int? = nil,
         wishId: Int? = nil,
-        footprintId: Int? = nil,
         isPrivate: Bool? = nil,
         attachmentIds: [Int]? = nil,
         clearAttachments: Bool? = nil
@@ -537,12 +435,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         self.content = content
         self.occurredAt = occurredAt
         self.location = location
-        self.cityCode = cityCode
-        self.cityName = cityName
-        self.clearCity = clearCity
-        self.projectId = projectId
         self.wishId = wishId
-        self.footprintId = footprintId
         self.isPrivate = isPrivate
         self.attachmentIds = attachmentIds
         self.clearAttachments = clearAttachments
@@ -553,7 +446,6 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
 public struct GlobalStats: Codable, Equatable, Sendable {
     public var totalEntries: Int
     public var totalPhotos: Int
-    public var totalProjects: Int
     public var monthExpense: Int64
     public var currentYear: Int
     public var currentMonth: Int
@@ -561,7 +453,6 @@ public struct GlobalStats: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case totalEntries = "total_entries"
         case totalPhotos = "total_photos"
-        case totalProjects = "total_projects"
         case monthExpense = "month_expense"
         case currentYear = "current_year"
         case currentMonth = "current_month"
@@ -570,14 +461,12 @@ public struct GlobalStats: Codable, Equatable, Sendable {
     public init(
         totalEntries: Int = 0,
         totalPhotos: Int = 0,
-        totalProjects: Int = 0,
         monthExpense: Int64 = 0,
         currentYear: Int = FormatUtils.beijingCurrentYearMonth().year,
         currentMonth: Int = FormatUtils.beijingCurrentYearMonth().month
     ) {
         self.totalEntries = totalEntries
         self.totalPhotos = totalPhotos
-        self.totalProjects = totalProjects
         self.monthExpense = monthExpense
         self.currentYear = currentYear
         self.currentMonth = currentMonth

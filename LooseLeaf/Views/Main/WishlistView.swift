@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 public struct WishlistView: View {
     @Bindable var appState: AppState
+    public var embedded: Bool = false
 
     @State private var selectedKind: String = "all"
     @State private var selectedStatus: String = "wanting"
@@ -18,8 +19,9 @@ public struct WishlistView: View {
     @State private var errorMessage: String?
     @State private var highlightedId: Int?
 
-    public init(appState: AppState) {
+    public init(appState: AppState, embedded: Bool = false) {
         self.appState = appState
+        self.embedded = embedded
     }
 
     private var allWishes: [Wish] { appState.wishes }
@@ -153,7 +155,7 @@ public struct WishlistView: View {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: ArchiveSpacing.s) {
                     Text("心愿清单")
-                        .font(ArchiveTypography.editorialSerif(size: 24, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: embedded ? 18 : 24, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                     Text("好物 · 旅程 · 里程碑")
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))

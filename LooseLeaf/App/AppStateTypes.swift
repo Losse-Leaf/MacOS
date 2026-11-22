@@ -27,23 +27,27 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 桌面端主窗口侧栏导航模块 (对标 Web HeaderNav 6 大平级主视图)
+/// 记账板块内部分段页签（流水 | 心愿单）
+public enum LedgerSubTab: String, CaseIterable, Identifiable, Sendable {
+    case ledger = "流水"
+    case wishlist = "心愿单"
+
+    public var id: String { rawValue }
+}
+
+/// 桌面端主窗口侧栏导航模块（散页与记账两大主视图 + 独立设置入口）
 public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
-    case stream = "stream"       // 时间流 (home)
-    case ledger = "ledger"       // 资产 (transactions)
-    case wishes = "wishes"       // 心愿 (wishes)
-    case atlas = "atlas"         // 足迹 (atlas)
-    case projects = "projects"   // 项目 (projects)
-    case dossier = "dossier"     // 主理人 (about)
+    case stream = "stream"           // 散页 (home)
+    case ledger = "ledger"           // 记账 (transactions + wishlist)
     case preferences = "preferences" // 偏好设置
-    case hub = "hub"             // 中枢与设备
-    case about = "about"         // 关于活页
+    case hub = "hub"                 // 中枢与设备
+    case about = "about"             // 关于活页
 
     public var id: String { rawValue }
 
-    /// 六大核心生活内容板块（与 Web HeaderNav 对齐，⌘1–⌘6 绑定到这些）
+    /// 核心生活内容板块（⌘1 散页 · ⌘2 记账）
     public static var contentSections: [WorkbenchSection] {
-        [.stream, .ledger, .wishes, .atlas, .projects, .dossier]
+        [.stream, .ledger]
     }
 
     /// 配置类条目（重定向至独立 Settings 窗口）
@@ -53,12 +57,8 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
 
     public var title: String {
         switch self {
-        case .stream: return "时间流"
-        case .ledger: return "资产"
-        case .wishes: return "心愿"
-        case .atlas: return "足迹"
-        case .projects: return "项目"
-        case .dossier: return "主理人"
+        case .stream: return "散页"
+        case .ledger: return "记账"
         case .preferences: return "偏好设置"
         case .hub: return "中枢与设备"
         case .about: return "关于活页"
@@ -69,10 +69,6 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .stream: return ArchiveIcon.stream.systemName
         case .ledger: return ArchiveIcon.ledger.systemName
-        case .wishes: return ArchiveIcon.wishes.systemName
-        case .atlas: return ArchiveIcon.atlas.systemName
-        case .projects: return ArchiveIcon.projects.systemName
-        case .dossier: return ArchiveIcon.dossier.systemName
         case .preferences: return ArchiveIcon.preferences.systemName
         case .hub: return ArchiveIcon.hub.systemName
         case .about: return ArchiveIcon.about.systemName
@@ -150,8 +146,6 @@ public final class QuickCaptureDraft {
     public var entryType: EntryType = .life
     public var titleText: String = ""
     public var contentText: String = ""
-    public var selectedCityCode: String = ""
-    public var selectedCityName: String = ""
     public var occurredAt: Date = Date()
     public var showBackdatePicker: Bool = false
     public var isPrivate: Bool = false
@@ -165,16 +159,12 @@ public final class QuickCaptureDraft {
     public var ledgerSelectedType: String = "expense"
     public var ledgerSelectedCategory: String = ""
     public var ledgerSelectedPayment: String = ""
-    public var ledgerSelectedCityCode: String = ""
-    public var ledgerSelectedCityName: String = ""
     public var ledgerOccurredAt: Date = Date()
     public var ledgerShowDatePicker: Bool = false
 
     public func resetThought() {
         titleText = ""
         contentText = ""
-        selectedCityCode = ""
-        selectedCityName = ""
         media.removeAll()
         occurredAt = Date()
         showBackdatePicker = false

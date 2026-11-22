@@ -2,56 +2,14 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// 全局统一三合一创作模态窗口 (NewEntryModal)
-/// 优化：
-/// 1. 响应式窗口高度（`minHeight: 460, idealHeight: 600, maxHeight: 680`），小屏不裁切
-/// 2. 整窗支持拖放照片与聚焦输入框内 `⌘V` 直贴截图
-/// 3. 造物手记改走 `SyncManager.shared.submitEntry` 离线发件箱闭环；乐观上屏完整透传 `attachments`
-/// 4. 创作草稿持久化至 `0700` 受保护档案目录（`0600` 权限）并完整保存/恢复/重置 `isPrivate`
+/// 全局散页创作模态窗口 (NewEntryModal)
+/// 职责：定格日常散页手稿与相纸装裱
 @MainActor
 public struct NewEntryModal: View {
     @Bindable var appState: AppState
     var initialKind: String?
-    var initialProjectId: Int?
-    var initialCityCode: String?
-    var initialCityName: String?
     var onDismiss: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    public enum Kind: String, CaseIterable, Identifiable {
-        case life = "life"
-        case travel = "travel"
-        case project = "project"
-
-        public var id: String { rawValue }
-
-        public var label: String {
-            switch self {
-            case .life: return "日常散页"
-            case .travel: return "山川游历"
-            case .project: return "造物手记"
-            }
-        }
-
-        public var subtitle: String {
-            switch self {
-            case .life: return "身边小事、随笔思考与定格光影"
-            case .travel: return "山川行迹与漫游记忆，点亮城市足迹图谱"
-            case .project: return "为进行中或已归档的造物项目追加演进手记"
-            }
-        }
-
-        public var icon: String {
-            switch self {
-            case .life: return "leaf"
-            case .travel: return "airplane"
-            case .project: return "hammer"
-            }
-        }
-    }
-
-    @State private var selectedKind: Kind = .life
     @State private var isSubmitting: Bool = false
     @State private var didSubmitSuccessfully: Bool = false
     @State private var isModalDropTargeted: Bool = false
@@ -68,16 +26,10 @@ public struct NewEntryModal: View {
     public init(
         appState: AppState,
         initialKind: String? = nil,
-        initialProjectId: Int? = nil,
-        initialCityCode: String? = nil,
-        initialCityName: String? = nil,
         onDismiss: @escaping () -> Void
     ) {
         self.appState = appState
         self.initialKind = initialKind
-        self.initialProjectId = initialProjectId
-        self.initialCityCode = initialCityCode
-        self.initialCityName = initialCityName
         self.onDismiss = onDismiss
     }
 
@@ -89,23 +41,12 @@ public struct NewEntryModal: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(selectedKind.subtitle)
+                    Text("身边小事、随笔思考与定格光影")
                         .font(ArchiveTypography.editorialSerif(size: 12))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(.horizontal, 4)
 
-                    Group {
-                        switch selectedKind {
-                        case .life:
-                            EntryModalLifeForm(draft: draft, media: media)
-                        case .travel:
-                            EntryModalTravelForm(draft: draft, appState: appState, media: media)
-                        case .project:
-                            EntryModalProjectForm(draft: draft, appState: appState, media: media)
-                        }
-                    }
-                    .id(selectedKind)
-                    .transition(.opacity)
+                    EntryModalLifeForm(draft: draft, media: media)
                 }
                 .padding(24)
             }
@@ -134,14 +75,6 @@ public struct NewEntryModal: View {
         .onAppear {
             setupInitialState()
         }
-        .onChange(of: selectedKind) { _, newKind in
-            switch newKind {
-            case .travel:
-                break
-            case .life, .project:
-                draft.selectedFootprintId = nil
-            }
-        }
         .onDisappear {
             if !didSubmitSuccessfully {
                 saveDraft()
@@ -152,50 +85,17 @@ public struct NewEntryModal: View {
         }
     }
 
-    // MARK: - 顶栏与形态切换胶囊
+    // MARK: - 顶栏
     private var headerBar: some View {
         HStack(spacing: 0) {
-            Text("记一笔")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
-                .foregroundStyle(ArchivePalette.inkPrimary)
-                .frame(width: 90, alignment: .leading)
-
-            Spacer()
-
-            HStack(spacing: 3) {
-                ForEach(Kind.allCases) { kind in
-                    let isSelected = (selectedKind == kind)
-                    Button {
-                        guard !isSelected else { return }
-                        selectedKind = kind
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: kind.icon)
-                                .font(.system(size: 10.5))
-                            Text(kind.label)
-                                .font(ArchiveTypography.bodySans(size: 12, weight: isSelected ? .semibold : .regular))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .frame(minHeight: ArchiveHitTarget.minPointer)
-                        .background(isSelected ? ArchivePalette.archivePaper : Color.clear)
-                        .foregroundStyle(isSelected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(isSelected ? ArchivePalette.borderSubtle : Color.clear, lineWidth: 0.5)
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .paperButtonFocusRing(cornerRadius: 6)
-                    .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: selectedKind)
-                }
+            HStack(spacing: 6) {
+                Image(systemName: "leaf")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                Text("记一笔 · 日常散页")
+                    .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
             }
-            .padding(3)
-            .background(ArchivePalette.archiveSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Spacer()
 
@@ -210,7 +110,6 @@ public struct NewEntryModal: View {
                 onDismiss()
             }
             .keyboardShortcut(.escape, modifiers: [])
-            .frame(width: 90, alignment: .trailing)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -296,7 +195,7 @@ public struct NewEntryModal: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .semibold))
                     }
-                    Text(isSubmitting ? "正在归册…" : submitButtonTitle)
+                    Text(isSubmitting ? "正在归册…" : "定格散页 (⌘↵)")
                 }
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
@@ -306,43 +205,16 @@ public struct NewEntryModal: View {
         }
     }
 
-    private var submitButtonTitle: String {
-        switch selectedKind {
-        case .life: return "定格散页 (⌘↵)"
-        case .travel: return "点亮游历 (⌘↵)"
-        case .project: return draft.projectMode == "new" ? "立项造物 (⌘↵)" : "追加手记 (⌘↵)"
-        }
-    }
-
     private var displayErrorMessage: String? {
         errorMessage ?? media.errorMessage
     }
 
     // MARK: - 逻辑与提交
     private func setupInitialState() {
-        if draft.newProjectCategory.isEmpty || draft.newProjectCategory == "开源造物" {
-            draft.newProjectCategory = appState.projectCategories.first ?? "开源项目"
-        }
-        if let initK = initialKind, let k = Kind(rawValue: initK) {
-            selectedKind = k
-        }
-        if let initProjId = initialProjectId {
-            draft.selectedProjectId = initProjId
-            draft.projectMode = "entry"
-        } else if draft.selectedProjectId == nil && !appState.projects.isEmpty {
-            draft.selectedProjectId = appState.projects.first?.id
-        }
-        if let cCode = initialCityCode, !cCode.isEmpty {
-            draft.cityCode = cCode
-            draft.cityName = initialCityName ?? ""
-        } else if draft.cityCode.isEmpty {
+        if draft.location.isEmpty {
             let profileCity = appState.profile.currentCity.trimmingCharacters(in: .whitespacesAndNewlines)
-            if profileCity.isEmpty {
-                draft.cityCode = ""
-                draft.cityName = ""
-            } else {
-                draft.cityCode = FormatUtils.resolveCityCode(from: profileCity) ?? ""
-                draft.cityName = profileCity
+            if !profileCity.isEmpty {
+                draft.location = profileCity
             }
         }
         restoreDraft()
@@ -355,22 +227,11 @@ public struct NewEntryModal: View {
         Task { @MainActor in
             defer { isSubmitting = false }
             do {
-                switch selectedKind {
-                case .life:
-                    try await submitLife()
-                case .travel:
-                    try await submitTravel()
-                case .project:
-                    try await submitProject()
-                }
+                try await submitLife()
                 clearDraft()
                 didSubmitSuccessfully = true
                 if appState.enablesHapticFeedback {
                     ArchiveFeedback.success()
-                }
-                if selectedKind == .project {
-                    await appState.loadProjectsWishesFootprints()
-                    await appState.loadEntries(forceFull: false)
                 }
                 await appState.loadConfigAndProfile()
                 onDismiss()
@@ -384,96 +245,28 @@ public struct NewEntryModal: View {
         guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.uploadedAttachments.isEmpty else {
             throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "正文内容与相纸不能同时为空"])
         }
+        let cleanLocation = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
         _ = try await appState.submitQuickCapture(
             title: draft.effectiveTitle,
             content: draft.content,
             type: .life,
-            location: nil,
-            cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
-            cityName: draft.cityName.isEmpty ? nil : draft.cityName,
-            footprintId: nil,
+            location: cleanLocation.isEmpty ? nil : cleanLocation,
             attachmentIds: media.uploadedAttachments.map(\.id),
             attachments: media.uploadedAttachments,
             occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
             isPrivate: draft.isPrivate
         )
-    }
-
-    private func submitTravel() async throws {
-        guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draft.title.isEmpty || !media.uploadedAttachments.isEmpty else {
-            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "游历标题或内容不能为空"])
-        }
-        _ = try await appState.submitQuickCapture(
-            title: draft.title.isEmpty ? (draft.cityName.isEmpty ? "游历手记" : "\(draft.cityName) · 游记") : draft.title,
-            content: draft.content,
-            type: .travel,
-            location: nil,
-            cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
-            cityName: draft.cityName.isEmpty ? nil : draft.cityName,
-            footprintId: draft.selectedFootprintId,
-            attachmentIds: media.uploadedAttachments.map(\.id),
-            attachments: media.uploadedAttachments,
-            occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
-            isPrivate: draft.isPrivate
-        )
-    }
-
-    private func submitProject() async throws {
-        if draft.projectMode == "new" {
-            guard !draft.newProjectTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "项目名称不能为空"])
-            }
-            let req = CreateProjectRequest(
-                title: draft.newProjectTitle,
-                subtitle: draft.newProjectSubtitle.isEmpty ? nil : draft.newProjectSubtitle,
-                description: draft.newProjectDesc.isEmpty ? draft.newProjectTitle : draft.newProjectDesc,
-                category: draft.newProjectCategory.isEmpty ? nil : draft.newProjectCategory,
-                status: draft.newProjectStatus,
-                githubUrl: draft.newProjectGithub.isEmpty ? nil : draft.newProjectGithub,
-                isPrivate: draft.isPrivate
-            )
-            _ = try await APIClient.shared.createProject(req)
-        } else {
-            guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "进展手记正文不能为空"])
-            }
-            let req = CreateEntryRequest(
-                type: "project",
-                title: draft.title,
-                content: draft.content,
-                occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),
-                location: nil,
-                cityCode: draft.cityCode.isEmpty ? nil : draft.cityCode,
-                cityName: draft.cityName.isEmpty ? nil : draft.cityName,
-                projectId: draft.selectedProjectId,
-                wishId: nil,
-                footprintId: nil,
-                isPrivate: draft.isPrivate,
-                attachmentIds: media.uploadedAttachments.map(\.id)
-            )
-            let (_, queuedOffline) = try await SyncManager.shared.submitEntry(req, attachments: media.uploadedAttachments)
-            if queuedOffline {
-                appState.showTemporaryBanner("造物手记已暂存至本地发件箱，网络恢复后自动同步")
-            } else {
-                appState.showTemporaryBanner("已追加造物进展手记")
-            }
-        }
     }
 
     // MARK: - 受保护草稿持久化 (`0600` 文件权限 + `isPrivate` 闭环)
     private func saveDraft() {
         guard !draft.title.isEmpty || !draft.content.isEmpty else { return }
-        var dict: [String: Any] = [
-            "kind": selectedKind.rawValue,
+        let dict: [String: Any] = [
             "title": draft.title,
             "content": draft.content,
-            "cityCode": draft.cityCode,
-            "cityName": draft.cityName,
+            "location": draft.location,
             "isPrivate": draft.isPrivate
         ]
-        if let projectId = draft.selectedProjectId {
-            dict["projectId"] = projectId
-        }
         if let data = try? JSONSerialization.data(withJSONObject: dict) {
             try? data.write(to: draftFileURL, options: .atomic)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: draftFileURL.path)
@@ -494,21 +287,10 @@ public struct NewEntryModal: View {
         guard let data,
               let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
 
-        if initialKind == nil,
-           let k = dict["kind"] as? String,
-           let kind = Kind(rawValue: k) {
-            selectedKind = kind
-        }
-        if initialProjectId == nil, let pid = dict["projectId"] as? Int {
-            draft.selectedProjectId = pid
-        }
         if let t = dict["title"] as? String { draft.title = t }
         if let c = dict["content"] as? String { draft.content = c }
+        if let loc = dict["location"] as? String, !loc.isEmpty { draft.location = loc }
         if let priv = dict["isPrivate"] as? Bool { draft.isPrivate = priv }
-        if initialCityCode == nil || initialCityCode?.isEmpty == true {
-            if let code = dict["cityCode"] as? String { draft.cityCode = code }
-            if let name = dict["cityName"] as? String { draft.cityName = name }
-        }
     }
 
     private func clearDraft() {
@@ -516,6 +298,7 @@ public struct NewEntryModal: View {
         UserDefaults.standard.removeObject(forKey: legacyDraftDefaultsKey)
         draft.title = ""
         draft.content = ""
+        draft.location = ""
         draft.isPrivate = false
         media.removeAll()
     }

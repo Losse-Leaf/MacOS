@@ -61,22 +61,15 @@ enum UIWalkthroughRunner {
             Step(name: "关闭创作弹窗", hold: 1.0) { s in
                 s.showNewEntrySheet = false
             },
-            Step(name: "切到账目页", hold: 1.5) { s in
+            Step(name: "切到记账流水", hold: 1.5) { s in
+                s.navigation.ledgerSubTab = .ledger
                 s.activeSection = .ledger
             },
-            Step(name: "切到心愿页", hold: 1.5) { s in
-                s.activeSection = .wishes
+            Step(name: "切到心愿单", hold: 1.5) { s in
+                s.navigation.ledgerSubTab = .wishlist
+                s.activeSection = .ledger
             },
-            Step(name: "切到足迹页", hold: 1.5) { s in
-                s.activeSection = .atlas
-            },
-            Step(name: "切到造物页", hold: 1.5) { s in
-                s.activeSection = .projects
-            },
-            Step(name: "切到主理人页", hold: 2.0) { s in
-                s.activeSection = .dossier
-            },
-            Step(name: "切回时间流", hold: 1.5) { s in
+            Step(name: "切回散页", hold: 1.5) { s in
                 s.activeSection = .stream
             },
             Step(name: "打开全局检索", hold: 2.0) { s in

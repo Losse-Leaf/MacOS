@@ -37,22 +37,6 @@ final class EntryDraft {
     }
     var content: String = ""
     var occurredAt: Date = Date()
-    var cityCode: String = ""
-    var cityName: String = ""
+    var location: String = ""
     var isPrivate: Bool = false
-
-    // MARK: - 游历专有
-
-    var selectedFootprintId: Int?
-
-    // MARK: - 造物专有
-
-    var projectMode: String = "entry" // "new" 或 "entry"
-    var selectedProjectId: Int?
-    var newProjectTitle: String = ""
-    var newProjectSubtitle: String = ""
-    var newProjectCategory: String = "开源项目"
-    var newProjectStatus: String = ProjectStatus.inProgress.rawValue
-    var newProjectGithub: String = ""
-    var newProjectDesc: String = ""
 }

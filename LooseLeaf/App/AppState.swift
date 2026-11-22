@@ -35,13 +35,10 @@ public final class AppState {
         }
     }
     public var transactionSummary: TransactionSummary = TransactionSummary()
-    public var assetsOverview: AssetsOverview?
     public var profile: CuratorProfile = CuratorProfile()
     public var siteConfig: SiteConfig = SiteConfig()
     public var stats: GlobalStats = GlobalStats()
-    public var projects: [Project] = []
     public var wishes: [Wish] = []
-    public var footprints: [Footprint] = []
     public var trustedDevices: [TrustedDevice] = []
     public var creditChannels: [CreditChannel] = []
     public var outboxItems: [OutboxItem] = []
@@ -50,8 +47,6 @@ public final class AppState {
     // MARK: - 动态分类字典 (由 /api/v1/categories 下发驱动)
     public var expenseCategories: [String] = ["餐饮", "交通", "购物", "数码器材", "娱乐", "学习", "住房", "医疗", "旅行度假", "其他"]
     public var incomeCategories: [String] = ["工资收入", "二手回血", "稿酬设计", "投资理财", "礼金红包", "退款报销", "其他收入"]
-    public var gearCategories: [String] = ["数码器材", "影像与暗房", "工作台与算力", "手冲咖啡工坊", "夜骑巡航", "纸笔与日常", "生活好物"]
-    public var projectCategories: [String] = ["开源项目", "独立开发", "硬件改造", "设计作品", "写作出版"]
     public var paymentMethods: [String] = ["微信支付", "支付宝", "银行卡", "现金", "其他"]
 
     // MARK: - 导航与交互状态（拆分到独立可观察对象）
@@ -63,22 +58,6 @@ public final class AppState {
         set { navigation.activeSection = newValue }
     }
     public var showNewEntrySheet: Bool = false
-    public var newEntryInitialKind: String? {
-        get { navigation.newEntryInitialKind }
-        set { navigation.newEntryInitialKind = newValue }
-    }
-    public var newEntryInitialProjectId: Int? {
-        get { navigation.newEntryInitialProjectId }
-        set { navigation.newEntryInitialProjectId = newValue }
-    }
-    public var newEntryInitialCityCode: String? {
-        get { navigation.newEntryInitialCityCode }
-        set { navigation.newEntryInitialCityCode = newValue }
-    }
-    public var newEntryInitialCityName: String? {
-        get { navigation.newEntryInitialCityName }
-        set { navigation.newEntryInitialCityName = newValue }
-    }
     public var showSearchModal: Bool = false
     public var selectedCategory: ArchiveCategory {
         get { navigation.selectedCategory }
@@ -419,8 +398,8 @@ public final class AppState {
             if self.isPaired {
                 group.addTask { await self.loadEntries(forceFull: forceFull) }
                 group.addTask { await self.loadCategories() }
-                group.addTask { await self.loadProjectsWishesFootprints() }
-                group.addTask { await self.loadTransactionsAndAssets(forceFull: forceFull) }
+                group.addTask { await self.loadWishes() }
+                group.addTask { await self.loadTransactions(forceFull: forceFull) }
             }
         }
     }
@@ -437,8 +416,6 @@ public final class AppState {
         guard let list = try? await APIClient.shared.fetchCategories() else { return }
         self.expenseCategories = list.filter { $0.scope == "expense" }.map(\.name)
         self.incomeCategories = list.filter { $0.scope == "income" }.map(\.name)
-        self.gearCategories = list.filter { $0.scope == "gear" }.map(\.name)
-        self.projectCategories = list.filter { $0.scope == "project" }.map(\.name)
         self.paymentMethods = list.filter { $0.scope == "payment" }.map(\.name)
     }
 
@@ -503,7 +480,7 @@ public final class AppState {
         }
     }
 
-    public func loadTransactionsAndAssets(forceFull: Bool = false) async {
+    public func loadTransactions(forceFull: Bool = false) async {
         guard isPaired else { return }
         let snap = SyncManager.shared.currentSnapshot()
         let rawCursor = (forceFull || snap.transactions.isEmpty) ? nil : snap.lastTransactionsSyncCursor
@@ -521,13 +498,13 @@ public final class AppState {
         } catch let APIError.serverError(_, message) where message.localizedCaseInsensitiveContains("since") || message.localizedCaseInsensitiveContains("时间格式") {
             SyncManager.shared.resetSyncCursors()
             if !forceFull {
-                await loadTransactionsAndAssets(forceFull: true)
+                await loadTransactions(forceFull: true)
                 return
             }
         } catch where error.localizedDescription.localizedCaseInsensitiveContains("since") || error.localizedDescription.localizedCaseInsensitiveContains("时间格式") {
             SyncManager.shared.resetSyncCursors()
             if !forceFull {
-                await loadTransactionsAndAssets(forceFull: true)
+                await loadTransactions(forceFull: true)
                 return
             }
         } catch {
@@ -535,7 +512,6 @@ public final class AppState {
         }
 
         let ym = FormatUtils.beijingCurrentYearMonth()
-        async let overviewTask = try? APIClient.shared.fetchAssetsOverview()
         async let channelsTask = try? APIClient.shared.fetchCreditChannels()
         for _ in 0..<2 {
             let before = SyncManager.shared.fingerprint(for: SyncManager.shared.currentSnapshot()).transactions
@@ -548,39 +524,26 @@ public final class AppState {
                 break
             }
         }
-        let (overview, channels) = await (overviewTask, channelsTask)
-        if let overview {
-            self.assetsOverview = overview
-        }
-        if let channels {
+        if let channels = await channelsTask {
             self.creditChannels = channels
         }
     }
 
     public func refreshAfterSecondaryWrite() async {
-        await loadProjectsWishesFootprints()
+        await loadWishes()
         await loadEntries(forceFull: false)
     }
 
-    public func loadProjectsWishesFootprints() async {
+    public func loadWishes() async {
         secondaryLoadGeneration &+= 1
         let gen = secondaryLoadGeneration
 
-        async let projectsTask = try? APIClient.shared.fetchProjects()
-        async let wishesTask = try? Pagination.fetchAllWishes()
-        async let footprintsTask = try? APIClient.shared.fetchFootprints()
-        let (projs, allWishes, fps) = await (projectsTask, wishesTask, footprintsTask)
+        let allWishes = try? await Pagination.fetchAllWishes()
 
         guard gen == secondaryLoadGeneration else { return }
 
-        if let projs {
-            self.projects = projs
-        }
         if let allWishes {
             self.wishes = allWishes
-        }
-        if let fps {
-            self.footprints = fps
         }
     }
 

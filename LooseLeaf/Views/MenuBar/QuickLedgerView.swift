@@ -299,12 +299,6 @@ public struct QuickLedgerView: View {
             .accessibilityLabel("补记历史时刻")
             .help("补记过去发生的账目时刻")
 
-            PaperCityPicker(
-                selectedCode: $draft.ledgerSelectedCityCode,
-                selectedName: $draft.ledgerSelectedCityName,
-                placeholder: appState.profile.displayCity.isEmpty ? "属地" : appState.profile.displayCity
-            )
-
             Button {
                 submitLedger()
             } label: {
@@ -366,7 +360,6 @@ public struct QuickLedgerView: View {
         localError = nil
         localSuccess = nil
 
-        let cityCodeToSubmit: String? = draft.ledgerSelectedCityCode.isEmpty ? nil : draft.ledgerSelectedCityCode
         let payToSubmit = effectiveSelectedPayment
         let dateToSubmit = draft.ledgerOccurredAt
 
@@ -378,7 +371,6 @@ public struct QuickLedgerView: View {
                     category: parsed.category,
                     title: parsed.title,
                     paymentMethod: payToSubmit,
-                    cityCode: cityCodeToSubmit,
                     occurredAt: FormatUtils.beijingISOString(from: dateToSubmit)
                 )
                 draft.resetLedger()

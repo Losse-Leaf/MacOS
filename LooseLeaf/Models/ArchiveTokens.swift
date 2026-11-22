@@ -155,26 +155,21 @@ public enum ArchiveElevation {
 
 /// 图标语义字典 (Iconography)
 public enum ArchiveIcon {
-    case stream, ledger, wishes, atlas, projects, dossier
+    case stream, ledger, wishes
     case preferences, hub, about
-    case entryLife, entryTravel, entryProject, entryWish, entryTransaction
+    case entryLife, entryWish, entryTransaction
     case search, sync, add, edit, delete, detail, close, location
-    case export, gear, camera, lock, cloud
+    case export, camera, lock, cloud
 
     public var systemName: String {
         switch self {
         case .stream: return "book.pages"
         case .ledger: return "chart.bar.doc.horizontal"
         case .wishes: return "sparkles"
-        case .atlas: return "map"
-        case .projects: return "hammer"
-        case .dossier: return "person.text.rectangle"
         case .preferences: return "slider.horizontal.3"
         case .hub: return "laptopcomputer.and.iphone"
         case .about: return "info.circle"
         case .entryLife: return "leaf"
-        case .entryTravel: return "safari"
-        case .entryProject: return "hammer"
         case .entryWish: return "sparkles"
         case .entryTransaction: return "creditcard"
         case .search: return "magnifyingglass"
@@ -186,7 +181,6 @@ public enum ArchiveIcon {
         case .close: return "xmark"
         case .location: return "mappin"
         case .export: return "square.and.arrow.up"
-        case .gear: return "shippingbox"
         case .camera: return "camera"
         case .lock: return "lock"
         case .cloud: return "icloud"

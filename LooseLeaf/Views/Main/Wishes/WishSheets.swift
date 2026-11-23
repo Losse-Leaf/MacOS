@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 心愿典藏相关弹窗集合 (WishEditorSheet / ResolveWishSheet)
 /// 1. WishEditorSheet —— 统一新建与修订心愿（修订时全类型保留 spec，省略 attachment_ids 杜绝清空跨端照片）
-/// 2. ResolveWishSheet —— 圆满归册心愿，并可联动生成流水 / 固资 / 足迹票根 / 时间流手稿
+/// 2. ResolveWishSheet —— 圆满归册心愿，并可联动生成记账支出流水与时间流手稿
 
 // MARK: - 统一心愿新建与修订弹窗 (WishEditorSheet)
 

@@ -1,18 +1,6 @@
 import SwiftUI
 import AppKit
 
-/// 城市 / 省份回忆抽屉的选择载荷（TravelAtlasView 与抽屉 Sheet 共用）
-public struct DrawerCitySelection: Identifiable, Equatable, Sendable {
-    public var id: String { code }
-    public let code: String
-    public let name: String
-
-    public init(code: String, name: String) {
-        self.code = code
-        self.name = name
-    }
-}
-
 /// 统一样式与等高对齐的心愿典藏卡片 (WishCardView)
 struct WishCardView: View {
     let wish: Wish

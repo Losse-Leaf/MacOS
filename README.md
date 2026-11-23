@@ -121,10 +121,10 @@ mac/
 │   │   └── FormatUtils.swift          # Int64 分转换、UTC+8 北京时间解析与自然语言记账解析
 │   └── Views/
 │       ├── MenuBar/                   # QuickCaptureView & QuickLedgerView（跨窗口共享草稿与相纸上传）
-│       ├── Main/                      # StreamView (NavigationSplitView) / WishlistView / ProjectsView / TravelAtlasView / LedgerAssetsView / CuratorDossierView / SettingsView
-│       │   ├── EntryModal/            # NewEntryModal /EntryMediaState / 表单子模块
-│       │   ├── LedgerSheets/          # AddGearSheet / SellGearSheet / EditTransactionSheet
-│       │   ├── ProjectsWishes/        # ProjectWishCards / WishSheets / ProjectSheets / FootprintSheets / CityMemoryDrawers
+│       ├── Main/                      # StreamView (NavigationSplitView) / LedgerAssetsView / WishlistView / SettingsView
+│       │   ├── EntryModal/            # NewEntryModal / EntryMediaState / 表单子模块
+│       │   ├── LedgerSheets/          # LedgerComposerCard / EditTransactionSheet / CreditChannelInstallmentSection
+│       │   ├── Wishes/                # WishCards / WishSheets
 │       │   ├── Settings/              # PreferencesSettingsView / HubDevicesSettingsView / AboutSettingsView / SettingsCardComponents
 │       │   └── Stream/                # TimelineEntryCardView / StreamEntryDetailView / EditEntrySheetView / EditorialLightboxView / WorkbenchSidebar
 │       └── Components/                # FilmFrameView / LifeCalendarChartView / PaperKit / PaperButtons / PaperCityPicker / PaperDateTimePicker / SpectrumBar

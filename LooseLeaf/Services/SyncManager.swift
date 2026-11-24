@@ -423,6 +423,7 @@ public final class SyncManager {
             mix(entry.syncStatus ?? "", into: &hash)
             mix(entry.title, into: &hash)
             mix(entry.type, into: &hash)
+            mix(entry.category, into: &hash)
             mix(UInt64(entry.content.utf8.count), into: &hash)
             mix(entry.occurredAt, into: &hash)
             mix(entry.location ?? "", into: &hash)
@@ -655,6 +656,7 @@ public final class SyncManager {
         let optimistic = LifeEntry(
             id: tempId,
             type: req.type,
+            category: req.category,
             title: req.title,
             content: req.content,
             occurredAt: req.occurredAt,

@@ -257,7 +257,7 @@ public struct TransactionSummary: Codable, Equatable, Sendable {
 /// `amount = ¥6,000`、`installment_total_amount = ¥12,000`、`monthly_pay = ¥500`，
 /// 资产大盘仍按 ¥12,000 计负债（实算 ¥11,500）。
 /// 用户明明把金额改小了，**负债却纹丝不动**，
-/// 展厅与桌面端显示的「分期总额」也对不上。
+/// Web 管理端与桌面端显示的「分期总额」也对不上。
 ///
 /// 口径与 Web / Android 一致：**分期总额 == 账目金额**。
 /// 金额没改时沿用原值（总额可能本就与金额不同，例如「首付 + 分期」）。

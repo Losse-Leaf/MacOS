@@ -71,7 +71,7 @@ final class VisualSnapshotTests: XCTestCase {
         }
     }
 
-    /// 心愿卡 / 造物卡 / 侧栏
+    /// 心愿卡 / 侧栏
     func test02_CardsAndSidebar() {
         snapshot("03-心愿卡", size: CGSize(width: 320, height: 210)) {
             WishCardView(

@@ -210,8 +210,8 @@ struct AboutSettingsView: View {
                 settingsCardRow(
                     icon: "server.rack",
                     iconColor: badge.dotColor,
-                    title: "数据中枢",
-                    subtitle: appState.isPaired ? appState.hubURLString : "未配对中枢 (单机离线状态)"
+                    title: "同步服务器",
+                    subtitle: appState.isPaired ? appState.hubURLString : "未登录（离线状态）"
                 ) {
                     Text(badge.label)
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))

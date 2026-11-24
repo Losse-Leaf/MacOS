@@ -3,7 +3,7 @@ import SwiftUI
 /// 配置中心分类标签枚举
 public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case general = "偏好设置"
-    case devices = "中枢与设备"
+    case devices = "账号与连接"
     case about = "关于活页"
 
     public var id: String { rawValue }
@@ -109,7 +109,7 @@ public struct SettingsView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(badge.label)，版本 v\(UpdateChecker.shared.currentVersion)")
-            .help(appState.isPaired ? "数据中枢节点: \(appState.hubURLString) (\(badge.label))" : "尚未配对生活数据中枢")
+            .help(appState.isPaired ? "同步服务器: \(appState.hubURLString) (\(badge.label))" : "尚未登录")
         }
         .padding(.horizontal, ArchiveSpacing.l)
         .frame(height: 52)

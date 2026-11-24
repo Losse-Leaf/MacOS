@@ -47,21 +47,124 @@ public enum EntryType: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 顶层展厅过滤分类视角
+/// 散页原生分类（方式 A：与后端及 Vesper Space 四大展区 1:1 对齐）
+public enum EntryCategory: String, Codable, CaseIterable, Identifiable, Sendable {
+    case daily = ""
+    case photography = "Photography"
+    case travel = "Travel"
+    case stillLife = "Still Life"
+    case motion = "Motion"
+
+    public var id: String { rawValue }
+
+    /// 归一化解析后端取值或中英文别名（与后端 `normalizeEntryCategory` 严格对齐，未知值回落为 `.daily`）
+    public init(normalized raw: String?) {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch trimmed {
+        case "", "daily", "life", "日常", "日常随笔":
+            self = .daily
+        case "photography", "摄影":
+            self = .photography
+        case "travel", "旅途", "旅行":
+            self = .travel
+        case "still life", "still_life", "still-life", "stilllife", "静物", "器物":
+            self = .stillLife
+        case "motion", "video", "影像":
+            self = .motion
+        default:
+            self = .daily
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try? container.decode(String.self)
+        self = EntryCategory(normalized: raw)
+    }
+
+    /// 画廊四大展区分类（不含默认日常）
+    public static var galleryCases: [EntryCategory] {
+        [.photography, .travel, .stillLife, .motion]
+    }
+
+    /// 胶囊选择器与筛选栏短文案
+    public var label: String {
+        switch self {
+        case .daily: return "日常"
+        case .photography: return "摄影"
+        case .travel: return "旅途"
+        case .stillLife: return "静物"
+        case .motion: return "影像"
+        }
+    }
+
+    /// 时间流与详情页上的徽章文案
+    public var badgeLabel: String {
+        switch self {
+        case .daily: return "日常随笔"
+        case .photography: return "摄影"
+        case .travel: return "旅途"
+        case .stillLife: return "静物"
+        case .motion: return "影像"
+        }
+    }
+
+    /// 对应 SF Symbol 图标名
+    public var symbolName: String {
+        switch self {
+        case .daily: return "doc.text"
+        case .photography: return "camera"
+        case .travel: return "map"
+        case .stillLife: return "cup.and.saucer"
+        case .motion: return "film"
+        }
+    }
+}
+
+/// 时间流顶层过滤视角（覆盖基础视角与 Vesper Space 四大画廊分区）
 public enum ArchiveCategory: String, CaseIterable, Identifiable, Sendable {
     case all = "all"
     case daily = "daily"
+    case photography = "Photography"
+    case travel = "Travel"
+    case stillLife = "Still Life"
+    case motion = "Motion"
     case wish = "wish"
     case transaction = "transaction"
 
     public var id: String { rawValue }
 
+    /// 基础形态视角（全部 / 日常 / 心愿 / 账目）
+    public static var primaryCases: [ArchiveCategory] {
+        [.all, .daily, .wish, .transaction]
+    }
+
+    /// 画廊内容分区视角（摄影 / 旅途 / 静物 / 影像）
+    public static var galleryCases: [ArchiveCategory] {
+        [.photography, .travel, .stillLife, .motion]
+    }
+
     public var label: String {
         switch self {
         case .all: return "全部印记"
         case .daily: return "日常"
+        case .photography: return "摄影"
+        case .travel: return "旅途"
+        case .stillLife: return "静物"
+        case .motion: return "影像"
         case .wish: return "心愿"
         case .transaction: return "账目"
+        }
+    }
+
+    /// 若为画廊内容分区，返回对应的 `EntryCategory`
+    public var entryCategory: EntryCategory? {
+        switch self {
+        case .photography: return .photography
+        case .travel: return .travel
+        case .stillLife: return .stillLife
+        case .motion: return .motion
+        default: return nil
         }
     }
 }
@@ -203,6 +306,7 @@ public struct Attachment: Codable, Identifiable, Equatable, Sendable {
 public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public var id: Int
     public var type: String
+    public var category: String
     public var title: String
     public var content: String
     public var occurredAt: String
@@ -221,6 +325,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case type
+        case category
         case title
         case content
         case occurredAt = "occurred_at"
@@ -238,6 +343,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public init(
         id: Int,
         type: String = EntryType.life.rawValue,
+        category: String = "",
         title: String,
         content: String,
         occurredAt: String,
@@ -253,6 +359,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.type = type
+        self.category = category
         self.title = title
         self.content = content
         self.occurredAt = occurredAt
@@ -271,6 +378,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Int.self, forKey: .id)
         type = (try? container.decode(String.self, forKey: .type)) ?? EntryType.life.rawValue
+        category = (try? container.decodeIfPresent(String.self, forKey: .category)) ?? ""
         title = (try? container.decode(String.self, forKey: .title)) ?? ""
         content = (try? container.decode(String.self, forKey: .content)) ?? ""
         occurredAt = (try? container.decode(String.self, forKey: .occurredAt)) ?? FormatUtils.beijingISOString()
@@ -285,17 +393,71 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
         syncStatus = (try? container.decodeIfPresent(String.self, forKey: .syncStatus)) ?? "synced"
     }
 
-    /// 匹配顶层分类视角 (与 Web 端 getEntryCategory 逻辑严格对齐)
+    /// 归一化后的散页原生分类（仅对 `type == "life"` 具业务语义，未知值回落为 `.daily`）
+    public var resolvedCategory: EntryCategory {
+        EntryCategory(normalized: category)
+    }
+
+    /// 时间流 / 详情页 / 全局检索共享的徽章文案（全应用唯一事实源）
+    public var displayBadgeLabel: String {
+        switch EntryType(rawValue: type) {
+        case .wish:
+            return EntryType.wish.badgeLabel
+        case .transaction:
+            return EntryType.transaction.badgeLabel
+        case .life, .none:
+            return resolvedCategory.badgeLabel
+        }
+    }
+
+    private static let legacyPlaceholderTitles: Set<String> = ["无题随笔", "无题"]
+    private static let legacyPlaceholderPrefixes: [String] = ["现场快门 · ", "现场记录 · "]
+
+    /// 标题是否值得单独成行（与 Android v2.2.1 `hasDistinctTitle` 规则 1:1 对齐）
+    ///
+    /// 以下情形视为派生标题或历史占位，卡片与详情页隐藏独立标题行，避免同一句话出现两次：
+    /// - 标题为空或纯空白；
+    /// - 历史占位标题（"无题随笔"、"无题"、"现场快门 · "、"现场记录 · " 前缀）；
+    /// - 去掉末尾省略号后与正文开头完全重叠的派生标题。
+    public var hasDistinctTitle: Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if Self.legacyPlaceholderTitles.contains(trimmed) { return false }
+        if Self.legacyPlaceholderPrefixes.contains(where: { trimmed.hasPrefix($0) }) { return false }
+
+        var core = trimmed
+        if core.hasSuffix("…") {
+            core.removeLast()
+        }
+        if core.hasSuffix("...") {
+            core.removeLast(3)
+        }
+        core = core.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !core.isEmpty else { return false }
+
+        let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !( !body.isEmpty && body.hasPrefix(core) )
+    }
+
+    /// 匹配顶层分类视角（画廊四区按原生分类精确匹配，`.daily` 保持匹配全部 `life` 散页）
     public func matches(category: ArchiveCategory) -> Bool {
         switch category {
         case .all:
             return true
         case .daily:
             return type == EntryType.life.rawValue
+        case .photography:
+            return type == EntryType.life.rawValue && EntryCategory(normalized: self.category) == .photography
+        case .travel:
+            return type == EntryType.life.rawValue && EntryCategory(normalized: self.category) == .travel
+        case .stillLife:
+            return type == EntryType.life.rawValue && EntryCategory(normalized: self.category) == .stillLife
+        case .motion:
+            return type == EntryType.life.rawValue && EntryCategory(normalized: self.category) == .motion
         case .wish:
             return type == EntryType.wish.rawValue || (wishId ?? 0) > 0
         case .transaction:
-            return type == "transaction"
+            return type == EntryType.transaction.rawValue
         }
     }
 
@@ -317,6 +479,7 @@ public struct LifeEntry: Codable, Identifiable, Equatable, Sendable {
     public func toCreateRequest() -> CreateEntryRequest {
         CreateEntryRequest(
             type: type,
+            category: category,
             title: title,
             content: content,
             occurredAt: occurredAt,
@@ -346,6 +509,7 @@ public struct EntriesListResponse: Codable, Sendable {
 /// 新建生活记录请求载荷
 public struct CreateEntryRequest: Codable, Equatable, Sendable {
     public var type: String
+    public var category: String
     public var title: String
     public var content: String
     public var occurredAt: String
@@ -361,6 +525,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case type
+        case category
         case title
         case content
         case occurredAt = "occurred_at"
@@ -373,6 +538,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
 
     public init(
         type: String = EntryType.life.rawValue,
+        category: String = "",
         title: String = "",
         content: String,
         occurredAt: String = FormatUtils.beijingISOString(),
@@ -383,6 +549,7 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         clientRequestId: String? = nil
     ) {
         self.type = type
+        self.category = category
         self.title = title
         self.content = content
         self.occurredAt = occurredAt
@@ -392,11 +559,28 @@ public struct CreateEntryRequest: Codable, Equatable, Sendable {
         self.attachmentIds = attachmentIds
         self.clientRequestId = clientRequestId
     }
+
+    /// 兼容旧版离线发件箱快照（无 `category` 字段时安全回落为空串）
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = (try? container.decodeIfPresent(String.self, forKey: .type)) ?? EntryType.life.rawValue
+        category = (try? container.decodeIfPresent(String.self, forKey: .category)) ?? ""
+        title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        content = try container.decode(String.self, forKey: .content)
+        occurredAt = (try? container.decodeIfPresent(String.self, forKey: .occurredAt)) ?? FormatUtils.beijingISOString()
+        location = try? container.decodeIfPresent(String.self, forKey: .location)
+        wishId = try? container.decodeIfPresent(Int.self, forKey: .wishId)
+        isPrivate = try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)
+        attachmentIds = (try? container.decodeIfPresent([Int].self, forKey: .attachmentIds)) ?? []
+        clientRequestId = try? container.decodeIfPresent(String.self, forKey: .clientRequestId)
+    }
 }
 
 /// 编辑生活记录请求载荷
 public struct UpdateEntryRequest: Codable, Equatable, Sendable {
     public var type: String?
+    /// 散页原生分类三态：`nil` 表示不修改（服务端保持原值）；`""` 表示显式归回「日常」；非空值设置对应画廊分区
+    public var category: String?
     public var title: String?
     public var content: String?
     public var occurredAt: String?
@@ -409,6 +593,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case type
+        case category
         case title
         case content
         case occurredAt = "occurred_at"
@@ -421,6 +606,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
 
     public init(
         type: String? = nil,
+        category: String? = nil,
         title: String? = nil,
         content: String? = nil,
         occurredAt: String? = nil,
@@ -431,6 +617,7 @@ public struct UpdateEntryRequest: Codable, Equatable, Sendable {
         clearAttachments: Bool? = nil
     ) {
         self.type = type
+        self.category = category
         self.title = title
         self.content = content
         self.occurredAt = occurredAt

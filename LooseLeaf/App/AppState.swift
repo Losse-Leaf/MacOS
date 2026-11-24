@@ -87,6 +87,8 @@ public final class AppState {
 
     // MARK: - 鉴权、网络与偏好设置状态
     public var isPaired: Bool = false
+    public var accountName: String = ""
+    public var accountEmail: String = ""
     public var hubURLString: String = APIClient.shared.baseURLString
     public var isLoading: Bool = false
     public var isOnline: Bool = true
@@ -235,6 +237,8 @@ public final class AppState {
         }
 
         self.isPaired = (CredentialStore.getToken()?.isEmpty == false)
+        self.accountName = CredentialStore.getAccountName() ?? ""
+        self.accountEmail = CredentialStore.getAccountEmail() ?? ""
         self.showsDockIcon = UserDefaults.standard.object(forKey: "looseleaf_shows_dock_icon") as? Bool ?? true
         self.launchesAtLogin = UserDefaults.standard.object(forKey: "looseleaf_launches_at_login") as? Bool ?? false
         self.notifiesOnSync = UserDefaults.standard.object(forKey: "looseleaf_notifies_on_sync") as? Bool ?? true
@@ -299,7 +303,7 @@ public final class AppState {
                 CredentialStore.clearAllCredentials()
                 self.isPaired = false
                 self.wipeAllLocalDeviceData()
-                self.errorBanner = "设备授权已过期或被吊销，本机私密快照已自动清理，请重新完成配对"
+                self.errorBanner = "登录状态已过期，本机缓存已自动清理，请通过 Vesper Auth 重新登录"
             }
         }
     }

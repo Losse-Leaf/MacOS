@@ -809,9 +809,14 @@ final class LooseLeafTests: XCTestCase {
 
         XCTAssertNil(AppState.buildOIDCLoginURL(hubURL: "javascript:alert(1)", platform: "macos", deviceName: "Mac"))
 
-        let deepLink = "looseleaf://pair?hub=https%3A%2F%2Fleaf.starryheavens.uk&ticket=pair_tk_90sec_sample"
-        let parsed = try XCTUnwrap(AppState.parsePairLink(deepLink))
-        XCTAssertEqual(parsed.hub, "https://leaf.starryheavens.uk")
-        XCTAssertEqual(parsed.ticket, "pair_tk_90sec_sample")
+        let oauthCallback = "looseleaf://auth/callback?hub=https%3A%2F%2Fleaf.starryheavens.uk&code=auth_code_90sec_sample"
+        let parsedOAuth = try XCTUnwrap(AppState.parsePairLink(oauthCallback))
+        XCTAssertEqual(parsedOAuth.hub, "https://leaf.starryheavens.uk")
+        XCTAssertEqual(parsedOAuth.ticket, "auth_code_90sec_sample")
+
+        let legacyDeepLink = "looseleaf://pair?hub=https%3A%2F%2Fleaf.starryheavens.uk&ticket=pair_tk_90sec_sample"
+        let parsedLegacy = try XCTUnwrap(AppState.parsePairLink(legacyDeepLink))
+        XCTAssertEqual(parsedLegacy.hub, "https://leaf.starryheavens.uk")
+        XCTAssertEqual(parsedLegacy.ticket, "pair_tk_90sec_sample")
     }
 }

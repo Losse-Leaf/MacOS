@@ -69,7 +69,7 @@ struct SearchPresentation {
 
         // 远端结果是按输入去抖异步返回的：新关键词刚输入、旧请求还没回来时，
         // appState.globalSearchResult 仍属于上一个关键词。直接采用会让「茶」
-        // 下面短暂挂着「咖啡」的足迹/心愿/造物命中 —— 只认 query 与当前输入一致的结果。
+        // 下面短暂挂着「咖啡」的散页与心愿命中 —— 只认 query 与当前输入一致的结果。
         let remote = remote.flatMap { response in
             response.query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == q
                 ? response

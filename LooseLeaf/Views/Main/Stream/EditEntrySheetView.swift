@@ -3,8 +3,8 @@ import UniformTypeIdentifiers
 
 /// 修改散页手稿弹窗表单 (EditEntrySheetView)
 /// 统一复用 `EntryMediaState` + `EntryMediaAttachmentsSection` 相纸装裱管线：
-/// 1. 拆分独立 `editLocation` 与 `editCityCode/editCityName`，根除保存修订时将细粒度地点覆盖为城市名的缺陷
-/// 2. 类型选择收敛至 `EntryType.editableCases`，屏蔽仅系统合成的 `.transaction` / `.gear`（防 HTTP 400）
+/// 1. 保留独立 `editLocation` 与散页原生 `editCategory` 选择（日常 / 摄影 / 旅途 / 静物 / 影像）
+/// 2. 类型选择收敛至 `EntryType.editableCases`，屏蔽仅系统合成的 `.transaction`（防 HTTP 400）
 /// 3. 删空全部附件时显式发送 `clearAttachments: true`（P0 三态解绑契约）
 /// 4. 支持整窗拖放照片、聚焦输入框内 `⌘V` 粘贴截图、逐张进度与单张重试
 @MainActor
@@ -14,6 +14,7 @@ public struct EditEntrySheetView: View {
     public var onCancel: () -> Void
 
     @State private var editType: EntryType
+    @State private var editCategory: EntryCategory
     @State private var editOccurredAt: Date
     @State private var editTitle: String
     @State private var editContent: String
@@ -37,6 +38,7 @@ public struct EditEntrySheetView: View {
         let rawType = EntryType(rawValue: entry.type) ?? .life
         let safeType = EntryType.editableCases.contains(rawType) ? rawType : .life
         _editType = State(initialValue: safeType)
+        _editCategory = State(initialValue: EntryCategory(normalized: entry.category))
         _editOccurredAt = State(initialValue: FormatUtils.parseFlexDate(entry.occurredAt) ?? Date())
         _editTitle = State(initialValue: entry.title)
         _editContent = State(initialValue: entry.content)
@@ -56,7 +58,7 @@ public struct EditEntrySheetView: View {
             onSubmit: { Task { await save() } }
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                // 1. 手稿类型切换（仅暴露合法四维类型）
+                // 1. 手稿类型切换（日常散页 / 心愿印记）
                 HStack(spacing: 6) {
                     Text("类型：")
                         .font(ArchiveTypography.monoScale(size: 11.5))
@@ -71,6 +73,11 @@ public struct EditEntrySheetView: View {
                             editType = t
                         }
                     }
+                }
+
+                // 1b. 散页原生分类（仅日常散页可选，1:1 映射 Vesper Space 四大展区）
+                if editType == .life {
+                    EntryCategoryPickerRow(selection: $editCategory, label: "分类：", isCompact: true)
                 }
 
                 // 2. 发生时刻
@@ -127,7 +134,7 @@ public struct EditEntrySheetView: View {
                         Text("仅自己可见（私密）")
                             .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
-                        Text("开启后展厅公开时不会展示此条记录，亦不写入系统 Spotlight")
+                        Text("开启后仅自己可见，不对外公开或同步至 Vesper Space，亦不写入系统 Spotlight")
                             .font(ArchiveTypography.monoScale(size: 10.5))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
@@ -185,6 +192,7 @@ public struct EditEntrySheetView: View {
         let shouldClearAttachments = !entry.attachments.isEmpty && currentAttachments.isEmpty
         let req = UpdateEntryRequest(
             type: editType.rawValue,
+            category: editType == .life ? editCategory.rawValue : "",
             title: cleanTitle,
             content: cleanContent,
             occurredAt: FormatUtils.beijingISOString(from: editOccurredAt),

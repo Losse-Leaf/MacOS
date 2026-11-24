@@ -189,7 +189,7 @@ extension AppState {
         return "\(entriesRevision)|\(txPart)|\(category.rawValue)|\(searchQuery)|\(privacyFilter.rawValue)"
     }
 
-    /// 全库跨模块网络搜索（当已配对时发起，支持足迹、心愿与造物项目联动检索）
+    /// 全库跨模块网络搜索（当已配对时发起，支持散页与心愿清单联动检索）
     public func performGlobalSearch(query: String) async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, isPaired else {

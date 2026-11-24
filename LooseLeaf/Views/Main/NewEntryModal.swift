@@ -250,6 +250,7 @@ public struct NewEntryModal: View {
             title: draft.effectiveTitle,
             content: draft.content,
             type: .life,
+            category: draft.category,
             location: cleanLocation.isEmpty ? nil : cleanLocation,
             attachmentIds: media.uploadedAttachments.map(\.id),
             attachments: media.uploadedAttachments,
@@ -260,8 +261,9 @@ public struct NewEntryModal: View {
 
     // MARK: - 受保护草稿持久化 (`0600` 文件权限 + `isPrivate` 闭环)
     private func saveDraft() {
-        guard !draft.title.isEmpty || !draft.content.isEmpty else { return }
+        guard !draft.title.isEmpty || !draft.content.isEmpty || draft.category != .daily else { return }
         let dict: [String: Any] = [
+            "category": draft.category.rawValue,
             "title": draft.title,
             "content": draft.content,
             "location": draft.location,
@@ -287,6 +289,7 @@ public struct NewEntryModal: View {
         guard let data,
               let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
 
+        if let rawCat = dict["category"] as? String { draft.category = EntryCategory(normalized: rawCat) }
         if let t = dict["title"] as? String { draft.title = t }
         if let c = dict["content"] as? String { draft.content = c }
         if let loc = dict["location"] as? String, !loc.isEmpty { draft.location = loc }
@@ -296,6 +299,7 @@ public struct NewEntryModal: View {
     private func clearDraft() {
         try? FileManager.default.removeItem(at: draftFileURL)
         UserDefaults.standard.removeObject(forKey: legacyDraftDefaultsKey)
+        draft.category = .daily
         draft.title = ""
         draft.content = ""
         draft.location = ""

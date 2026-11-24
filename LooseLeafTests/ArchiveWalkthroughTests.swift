@@ -124,7 +124,7 @@ final class ArchiveWalkthroughTests: XCTestCase {
 
     /// 翻遍所有页找出满足条件的散页
     ///
-    /// 关键：伴生记录（心愿/器物/造物）的 `occurred_at` 落在**历史日期**上，
+    /// 关键：伴生记录（如心愿圆梦）的 `occurred_at` 落在**历史日期**上，
     /// 当档案里已有大量更晚的记录时，它会排到很后面的页 —— 只查第 1 页会漏掉。
     private func findEntry(pages: Int = 20, pageSize: Int = 100, where predicate: (LifeEntry) -> Bool) async throws -> LifeEntry? {
         for page in 1...pages {

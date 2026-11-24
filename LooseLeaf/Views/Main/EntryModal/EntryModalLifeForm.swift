@@ -6,20 +6,22 @@ import SwiftUI
 
 /// 日常形态表单（散页 / 随笔）
 ///
-/// **设计：朋友圈式单输入框**
+/// **设计：朋友圈式单输入框 + 原生内容分类**
 /// 不再单列「标题」输入框 —— 就像发朋友圈一样，只写正文，
 /// 标题由**正文第一行**自动派生（`FormatUtils.derivedTitle`），
 /// 用于列表展示、全局检索与 Spotlight 索引。
 /// 想显式给标题时，仍可在编辑已建成的散页时补上。
 ///
 /// **性能要点**：本 View 独立成体，输入正文时只会重绘本视图，
-/// 父 `NewEntryModal` 的 body 与其它四个分支完全不受影响。
+/// 父 `NewEntryModal` 的 body 不受影响。
 struct EntryModalLifeForm: View {
     @Bindable var draft: EntryDraft
     let media: EntryMediaState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            EntryCategoryPickerRow(selection: $draft.category, label: "分类：", isCompact: false)
+
             // 朋友圈式：一个大正文框，标题由第一行派生
             EntryPaperTextArea(
                 placeholder: "此刻在想什么…",

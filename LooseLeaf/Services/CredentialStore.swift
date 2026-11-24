@@ -19,11 +19,17 @@ public enum CredentialStore {
         var deviceToken: String?
         var deviceId: String?
         var deviceName: String?
+        var accountSub: String?
+        var accountName: String?
+        var accountEmail: String?
 
         enum CodingKeys: String, CodingKey {
             case deviceToken = "device_token"
             case deviceId = "device_id"
             case deviceName = "device_name"
+            case accountSub = "account_sub"
+            case accountName = "account_name"
+            case accountEmail = "account_email"
         }
     }
 
@@ -68,6 +74,29 @@ public enum CredentialStore {
 
     public static func getDeviceName() -> String? {
         read { $0?.deviceName }
+    }
+
+    // MARK: - OAuth2 / OIDC Account Identity
+
+    @discardableResult
+    public static func saveAccountIdentity(sub: String?, name: String?, email: String?) -> Bool {
+        mutate {
+            $0.accountSub = sub?.trimmingCharacters(in: .whitespacesAndNewlines)
+            $0.accountName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            $0.accountEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    public static func getAccountSub() -> String? {
+        read { $0?.accountSub }
+    }
+
+    public static func getAccountName() -> String? {
+        read { $0?.accountName }
+    }
+
+    public static func getAccountEmail() -> String? {
+        read { $0?.accountEmail }
     }
 
     public static func clearAllCredentials() {

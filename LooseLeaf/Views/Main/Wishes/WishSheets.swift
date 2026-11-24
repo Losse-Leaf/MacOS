@@ -109,7 +109,7 @@ public struct WishEditorSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
                 HStack {
-                    Label("私密心愿（仅配对主理人设备可见）", systemImage: ArchiveIcon.lock.systemName)
+                    Label("私密心愿（仅主理人账号可见）", systemImage: ArchiveIcon.lock.systemName)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                     Spacer()

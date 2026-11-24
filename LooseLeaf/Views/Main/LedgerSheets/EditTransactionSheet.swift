@@ -183,7 +183,7 @@ public struct EditTransactionSheet: View {
             transaction: transaction
         )
         if intent == .apply && selectedCreditChannel == nil {
-            errorText = "请先前往 Web 展厅后台「资产 → 渠道管理」配置并选择分期渠道"
+            errorText = "请先前往 Web 管理端「资产 → 渠道管理」配置并选择分期渠道"
             return
         }
         let installmentFields = InstallmentEditing.fields(

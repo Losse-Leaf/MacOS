@@ -303,7 +303,13 @@ public struct GlobalSearchModalView: View {
     }
 
     private func entryResultCard(_ entry: LifeEntry, isHighlighted: Bool) -> some View {
-        let badgeText = EntryType(rawValue: entry.type)?.badgeLabel ?? entry.type
+        let badgeText = entry.displayBadgeLabel
+        let firstContentLine = entry.content
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let headline = entry.hasDistinctTitle ? entry.title : (firstContentLine.isEmpty ? "无题记事" : firstContentLine)
         return Button {
             onSelectEntry(entry)
             onDismiss()
@@ -312,9 +318,9 @@ public struct GlobalSearchModalView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text("[\(badgeText)]")
                         .font(ArchiveTypography.monoScale(size: 10, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .foregroundStyle(entry.displayAccentColor)
 
-                    Text(entry.title.isEmpty ? "无题记事" : entry.title)
+                    Text(headline)
                         .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)

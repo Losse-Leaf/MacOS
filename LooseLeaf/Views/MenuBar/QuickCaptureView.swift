@@ -156,7 +156,7 @@ public struct QuickCaptureView: View {
         return VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-                    entryTypeCapsules
+                    entryCategoryCapsules
                     titleField
                     contentEditor
                     exifStrip
@@ -180,20 +180,9 @@ public struct QuickCaptureView: View {
         .frame(maxHeight: .infinity)
     }
 
-    private var entryTypeCapsules: some View {
+    private var entryCategoryCapsules: some View {
         @Bindable var draft = appState.quickDraft
-        let quickTypes: [EntryType] = [.life]
-        return HStack(spacing: ArchiveSpacing.xs) {
-            ForEach(quickTypes) { kind in
-                PaperPillButton(
-                    title: kind.label,
-                    icon: kind.symbolName,
-                    isSelected: draft.entryType == kind
-                ) {
-                    draft.entryType = kind
-                }
-            }
-        }
+        return EntryCategoryPickerRow(selection: $draft.category, isCompact: true)
     }
 
     private var titleField: some View {
@@ -291,7 +280,7 @@ public struct QuickCaptureView: View {
             }
             .buttonStyle(.plain)
             .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
-            .accessibilityLabel(draft.isPrivate ? "仅自己可见（私密）" : "公开可见（随展厅设置）")
+            .accessibilityLabel(draft.isPrivate ? "仅自己可见（私密）" : "公开可见（含图自动同步至 Vesper Space）")
             .accessibilityAddTraits(draft.isPrivate ? .isSelected : AccessibilityTraits())
             .help(draft.isPrivate ? "已设为仅自己可见（私密）" : "设为仅自己可见（私密）")
 
@@ -548,6 +537,7 @@ public struct QuickCaptureView: View {
                     title: draft.titleText,
                     content: contentToSubmit,
                     type: .life,
+                    category: draft.category,
                     attachmentIds: attachments.map(\.id),
                     attachments: attachments,
                     occurredAt: FormatUtils.beijingISOString(from: draft.occurredAt),

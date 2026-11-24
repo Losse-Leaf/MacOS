@@ -138,14 +138,19 @@ final class ArchiveSyncIntegrityTests: XCTestCase {
 
     // MARK: - 分类与条目类型契约
 
-    /// 分类枚举必须覆盖精简后的核心分类（全部/日常/账目/心愿）
+    /// 分类枚举必须覆盖基础视角（全部/日常/心愿/账目）与四大画廊分类（摄影/旅途/静物/影像）
     func testArchiveCategoryCoversEveryType() {
         let labels = Set(ArchiveCategory.allCases.map(\.label))
         XCTAssertTrue(labels.contains("全部印记"))
         XCTAssertTrue(labels.contains("日常"))
+        XCTAssertTrue(labels.contains("摄影"))
+        XCTAssertTrue(labels.contains("旅途"))
+        XCTAssertTrue(labels.contains("静物"))
+        XCTAssertTrue(labels.contains("影像"))
         XCTAssertTrue(labels.contains("账目"))
         XCTAssertTrue(labels.contains("心愿"))
-        XCTAssertEqual(ArchiveCategory.allCases.count, 4)
+        XCTAssertEqual(ArchiveCategory.allCases.count, 8)
+        XCTAssertEqual(EntryCategory.allCases.count, 5, "EntryCategory 应包含 daily + 四大画廊分区")
         XCTAssertEqual(EntryType.allCases.count, 3, "EntryType 应包含 life/wish/transaction")
     }
 

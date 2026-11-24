@@ -60,7 +60,7 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
         case .stream: return "散页"
         case .ledger: return "记账"
         case .preferences: return "偏好设置"
-        case .hub: return "中枢与设备"
+        case .hub: return "账号与连接"
         case .about: return "关于活页"
         }
     }
@@ -94,7 +94,7 @@ public enum HubConnectionBadgeState: Sendable, Equatable {
     public var label: String {
         switch self {
         case .unpaired:
-            return "未配对中枢"
+            return "未登录"
         case .offline:
             return "离线发件箱守护"
         case .syncFailed(let count):
@@ -144,6 +144,7 @@ public final class QuickCaptureDraft {
     public var activeTab: QuickCaptureTab = .thought
     // 极速记录草稿
     public var entryType: EntryType = .life
+    public var category: EntryCategory = .daily
     public var titleText: String = ""
     public var contentText: String = ""
     public var occurredAt: Date = Date()
@@ -163,6 +164,7 @@ public final class QuickCaptureDraft {
     public var ledgerShowDatePicker: Bool = false
 
     public func resetThought() {
+        category = .daily
         titleText = ""
         contentText = ""
         media.removeAll()

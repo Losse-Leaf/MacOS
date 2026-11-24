@@ -1,10 +1,10 @@
 import Foundation
 import AppKit
 
-// MARK: - 设备配对、解绑全清、深链直达与 Handoff 接力
+// MARK: - OAuth2 / OIDC 账号登录、退出全清、深链直达与 Handoff 接力
 
 extension AppState {
-    /// UI 测试用中枢地址（启动参数 `-UITestHubURL <url>` 或环境变量 `LOOSELEAF_HUB_URL`）
+    /// UI 测试用服务器地址（启动参数 `-UITestHubURL <url>` 或环境变量 `LOOSELEAF_HUB_URL`）
     nonisolated static var uiTestHubURL: String? {
         if let idx = CommandLine.arguments.firstIndex(of: "-UITestHubURL"),
            idx + 1 < CommandLine.arguments.count {
@@ -16,7 +16,7 @@ extension AppState {
         return nil
     }
 
-    /// 组装 Vesper Auth OIDC 跨端授权入口地址：`{hubURL}/api/v1/auth/oidc/login?platform=...&device_name=...`
+    /// 组装 Vesper Auth OIDC 跨端登录入口地址：`{hubURL}/api/v1/auth/oidc/login?platform=...&device_name=...`
     public nonisolated static func buildOIDCLoginURL(
         hubURL: String,
         platform: String = "macos",
@@ -45,60 +45,93 @@ extension AppState {
         return comps.url
     }
 
-    /// 解析配对深链文本：`looseleaf://pair?hub=<中枢地址>&ticket=<配对工单>`
+    /// 解析 OAuth2 回调深链（同时兼容旧版 `looseleaf://pair?hub=...&ticket=...`）：
+    /// - 标准格式：`looseleaf://auth/callback?hub=<服务器地址>&code=<一次性授权码>`
+    /// - 兼容格式：`looseleaf://pair?hub=<服务器地址>&ticket=<工单>`
     public nonisolated static func parsePairLink(_ raw: String) -> (hub: String, ticket: String)? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let comps = URLComponents(string: trimmed),
-              comps.scheme == "looseleaf",
-              comps.host == "pair" else { return nil }
+              comps.scheme == "looseleaf" else { return nil }
+        let host = (comps.host ?? "").lowercased()
+        let isOAuthCallback = (host == "auth")
+        let isLegacyPair = (host == "pair")
+        guard isOAuthCallback || isLegacyPair else { return nil }
+
         let items = comps.queryItems ?? []
-        let ticket = items.first(where: { $0.name == "ticket" })?.value ?? ""
-        guard !ticket.isEmpty else { return nil }
+        let code = items.first(where: { $0.name == "code" })?.value
+            ?? items.first(where: { $0.name == "ticket" })?.value
+            ?? ""
+        guard !code.isEmpty else { return nil }
         let hub = items.first(where: { $0.name == "hub" })?.value ?? ""
-        return (hub, ticket)
+        return (hub, code)
     }
 
+    /// 用一次性 OAuth2 授权码建立本机登录会话
     public func pairWithTicket(_ ticket: String, hubURL: String) async throws {
-        let cleanTicket = ticket.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanCode = ticket.trimmingCharacters(in: .whitespacesAndNewlines)
         APIClient.shared.setBaseURL(hubURL)
         self.hubURLString = APIClient.shared.baseURLString
         let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-        _ = try await APIClient.shared.confirmPairing(
-            ticket: cleanTicket,
+        let resp = try await APIClient.shared.exchangeOIDCCode(
+            code: cleanCode,
             deviceName: "\(hostName) · macOS",
             deviceModel: "Mac"
         )
         if redeemedPairTickets.count >= 64 {
             redeemedPairTickets.removeAll()
         }
-        redeemedPairTickets.insert(cleanTicket)
+        redeemedPairTickets.insert(cleanCode)
+        self.accountName = resp.account?.name ?? ""
+        self.accountEmail = resp.account?.email ?? ""
         self.isPaired = true
         self.errorBanner = nil
         onThisDayCacheDateKey = nil
-        showTemporaryBanner("配对工单握手成功，凭证已写入本机受保护档案")
+        let label = self.accountName.isEmpty ? self.accountEmail : self.accountName
+        showTemporaryBanner(label.isEmpty ? "登录成功" : "欢迎回来，\(label)")
         await refreshAll(forceFull: true)
     }
 
+    /// 静默刷新当前登录账号摘要（兼容旧会话自动补齐账号名与邮箱）
+    public func refreshAccountSession() async {
+        guard isPaired else { return }
+        if let session = try? await APIClient.shared.fetchSession(),
+           let acct = session.account {
+            let name = (acct.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let email = (acct.email ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { self.accountName = name }
+            if !email.isEmpty { self.accountEmail = email }
+            CredentialStore.saveAccountIdentity(
+                sub: acct.sub,
+                name: self.accountName.isEmpty ? nil : self.accountName,
+                email: self.accountEmail.isEmpty ? nil : self.accountEmail
+            )
+        }
+    }
+
+    /// 退出账号登录：向服务端注销会话并彻底清除本机缓存
     public func disconnectDevice() async {
-        if let devId = CredentialStore.getDeviceId() {
-            do {
-                try await APIClient.shared.revokeDevice(id: devId)
-            } catch let apiErr as APIError {
-                if case .serverError = apiErr {
-                    // 4xx：服务端已不认识这台设备，等价于已吊销，继续本地清除
-                } else {
-                    showTemporaryBanner("解除失败：无法联系中枢，本机数据与待同步记录均未清除，请联网后重试")
-                    return
-                }
-            } catch {
-                showTemporaryBanner("解除失败：无法联系中枢，本机数据与待同步记录均未清除，请联网后重试")
+        let hasUnsynced = !outboxItems.isEmpty
+        do {
+            try await APIClient.shared.logout()
+        } catch let apiErr as APIError {
+            if case .serverError = apiErr {
+                // 4xx：服务端已不认识当前会话，继续本地清除
+            } else if hasUnsynced {
+                showTemporaryBanner("退出失败：无法连接服务器，待同步记录尚未清除，请联网同步后重试")
+                return
+            }
+        } catch {
+            if hasUnsynced {
+                showTemporaryBanner("退出失败：无法连接服务器，待同步记录尚未清除，请联网同步后重试")
                 return
             }
         }
         CredentialStore.clearAllCredentials()
         self.isPaired = false
+        self.accountName = ""
+        self.accountEmail = ""
         wipeAllLocalDeviceData()
-        showTemporaryBanner("已安全吊销凭证并彻底清除本机私密快照与缓存")
+        showTemporaryBanner("已退出登录并清除本机缓存")
     }
 
     /// 彻底抹除本地快照、媒体缓存、HTTP 缓存、Spotlight 索引、接力活动与内存态（A3 全清策略）
@@ -111,7 +144,7 @@ extension AppState {
         clearPrivateArchiveState()
     }
 
-    /// 解除配对 / 401 吊销 / 切换中枢时清空一切属于旧中枢的内存状态。
+    /// 退出登录 / 401 过期 / 切换服务器时清空一切内存状态。
     func clearPrivateArchiveState() {
         entries = []
         transactions = []
@@ -174,34 +207,36 @@ extension AppState {
     }
 
     /// 处理自定义 URL Scheme:
-    /// - looseleaf://pair?hub=https://...&ticket=pair_tk_...
+    /// - looseleaf://auth/callback?hub=https://...&code=auth_code_...
+    /// - looseleaf://pair?hub=https://...&ticket=pair_tk_...（历史兼容）
     /// - looseleaf://entry/123
     public func handleIncomingURL(_ url: URL) {
         guard url.scheme == "looseleaf" else { return }
-        if url.host == "pair" {
+        let host = (url.host ?? "").lowercased()
+        if host == "auth" || host == "pair" {
             guard let parsed = Self.parsePairLink(url.absoluteString) else { return }
-            let cleanTicket = parsed.ticket.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleanTicket.isEmpty,
-                  !inFlightPairTickets.contains(cleanTicket),
-                  !redeemedPairTickets.contains(cleanTicket) else {
+            let cleanCode = parsed.ticket.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanCode.isEmpty,
+                  !inFlightPairTickets.contains(cleanCode),
+                  !redeemedPairTickets.contains(cleanCode) else {
                 return
             }
-            inFlightPairTickets.insert(cleanTicket)
+            inFlightPairTickets.insert(cleanCode)
             isConfirmingIncomingPairTicket = true
             let hub = parsed.hub.isEmpty ? hubURLString : parsed.hub
             Task { @MainActor in
                 defer {
-                    self.inFlightPairTickets.remove(cleanTicket)
+                    self.inFlightPairTickets.remove(cleanCode)
                     self.isConfirmingIncomingPairTicket = !self.inFlightPairTickets.isEmpty
                 }
                 do {
-                    try await pairWithTicket(cleanTicket, hubURL: hub)
+                    try await pairWithTicket(cleanCode, hubURL: hub)
                     NSApp?.activate(ignoringOtherApps: true)
                 } catch {
                     self.errorBanner = error.localizedDescription
                 }
             }
-        } else if url.host == "entry" {
+        } else if host == "entry" {
             if let idStr = url.pathComponents.last, let entryId = Int(idStr) {
                 navigateToEntry(id: entryId)
             }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 信贷分期渠道与期数共享配置区
-/// 供 `LedgerComposerCard`、`AddGearSheet`、`EditTransactionSheet` 三处统一复用。
+/// 供 `LedgerComposerCard` 与 `EditTransactionSheet` 统一复用。
 @MainActor
 struct CreditChannelInstallmentSection: View {
     let channels: [CreditChannel]
@@ -35,7 +35,7 @@ struct CreditChannelInstallmentSection: View {
                     .toggleStyle(.paperCheckbox)
                     .font(ArchiveTypography.bodySans(size: 11.5))
                     .disabled(isToggleDisabled || channels.isEmpty)
-                    .help(channels.isEmpty ? "请前往 Web 展厅后台「资产 → 渠道管理」配置分期渠道" : "")
+                    .help(channels.isEmpty ? "请前往 Web 管理端「资产 → 渠道管理」配置分期渠道" : "")
                     .onChange(of: isInstallment) { _, isOn in
                         onToggleChanged?(isOn)
                         if isOn { normalizeChannelSelection() }
@@ -47,11 +47,11 @@ struct CreditChannelInstallmentSection: View {
 
             if showEmptyHint && channels.isEmpty {
                 HStack(spacing: 8) {
-                    Text("请前往 Web 展厅后台「资产 → 渠道管理」配置分期渠道与每月还款日。")
+                    Text("请前往 Web 管理端「资产 → 渠道管理」配置分期渠道与每月还款日。")
                         .font(ArchiveTypography.bodySans(size: 11))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     if let hubURL = URL(string: hubURLString) {
-                        Link("打开 Web 后台 ↗", destination: hubURL)
+                        Link("打开 Web 管理端 ↗", destination: hubURL)
                             .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
                             .foregroundStyle(ArchivePalette.accentWarm)
                     }

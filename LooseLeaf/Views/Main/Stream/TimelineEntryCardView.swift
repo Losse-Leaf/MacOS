@@ -49,7 +49,7 @@ final class TimelineEntryActions {
                         UpdateEntryRequest(isPrivate: nextPrivate)
                     )
                     await state.loadEntries(forceFull: false)
-                    state.showTemporaryBanner(nextPrivate ? "已设为仅自己可见（私密）" : "已恢复为随展厅公开展示")
+                    state.showTemporaryBanner(nextPrivate ? "已设为仅自己可见（私密）" : "已设为公开（含图自动同步至 Vesper Space）")
                 } catch {
                     state.showTemporaryBanner("切换私密状态失败：\(error.localizedDescription)")
                 }
@@ -104,17 +104,11 @@ struct TimelineEntryCardView: View {
     }
 
     private var typeAccentColor: Color {
-        switch entry.type {
-        case "travel": return ArchivePalette.accentWarm
-        case "project": return ArchivePalette.spectrumStudy
-        case "wish": return ArchivePalette.spectrumLeisure
-        case "transaction": return ArchivePalette.spectrumDining
-        default: return ArchivePalette.accentMoss
-        }
+        entry.displayAccentColor
     }
 
     private var entryTypeBadgeName: String {
-        EntryType(rawValue: entry.type)?.badgeLabel ?? "日常随笔"
+        entry.displayBadgeLabel
     }
 
     var body: some View {
@@ -302,8 +296,7 @@ struct TimelineEntryCardView: View {
                     .animation(nil, value: isHovering)
                 }
 
-                let derived = FormatUtils.derivedTitle(from: entry.content)
-                if !entry.title.isEmpty && entry.title != derived {
+                if entry.hasDistinctTitle {
                     Text(entry.title)
                         .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)

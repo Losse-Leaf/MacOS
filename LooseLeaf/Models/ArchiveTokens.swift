@@ -26,6 +26,12 @@ public enum ArchivePalette {
     public static let accentWarm = Color("AccentWarm", bundle: ArchiveResourceBundle.bundle)
     public static let accentMoss = Color("AccentMoss", bundle: ArchiveResourceBundle.bundle)
 
+    // 散页原生分类矿物色（与 Vesper Space 四大展区 1:1 对齐，浅/深自适应并通过 WCAG AA 对比度校验）
+    public static let tagPhotography = Color("TagPhotography", bundle: ArchiveResourceBundle.bundle)
+    public static let tagTravel = Color("TagTravel", bundle: ArchiveResourceBundle.bundle)
+    public static let tagStillLife = Color("TagStillLife", bundle: ArchiveResourceBundle.bundle)
+    public static let tagMotion = Color("TagMotion", bundle: ArchiveResourceBundle.bundle)
+
     // 光谱语义色静态缓存（避免视图每次渲染构造 Color(name:bundle:)）
     public static let spectrumDining = Color("SpectrumDining", bundle: ArchiveResourceBundle.bundle)
     public static let spectrumTransit = Color("SpectrumTransit", bundle: ArchiveResourceBundle.bundle)
@@ -61,6 +67,33 @@ public enum ArchivePalette {
         default:
             let hash = category.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
             return spectrumRing[abs(hash) % spectrumRing.count]
+        }
+    }
+}
+
+public extension EntryCategory {
+    /// 散页原生分类对应的纸墨矿物强调色（日常沿用松绿，画廊四区取石青 / 花青 / 赭石 / 青莲）
+    var accentColor: Color {
+        switch self {
+        case .daily: return ArchivePalette.accentMoss
+        case .photography: return ArchivePalette.tagPhotography
+        case .travel: return ArchivePalette.tagTravel
+        case .stillLife: return ArchivePalette.tagStillLife
+        case .motion: return ArchivePalette.tagMotion
+        }
+    }
+}
+
+public extension LifeEntry {
+    /// 时间流卡片、详情页与检索结果共享的形态 / 分类强调色（全应用唯一事实源）
+    var displayAccentColor: Color {
+        switch EntryType(rawValue: type) {
+        case .wish:
+            return ArchivePalette.spectrumLeisure
+        case .transaction:
+            return ArchivePalette.spectrumDining
+        case .life, .none:
+            return resolvedCategory.accentColor
         }
     }
 }

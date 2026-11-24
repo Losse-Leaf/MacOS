@@ -385,46 +385,78 @@ public actor APIClient {
         public var purged: Bool?
     }
 
-    // MARK: - 1. 系统探针与鉴权配对 (System & Device Pairing)
+    // MARK: - 1. 系统探针与 OAuth2 / OIDC 账号会话
 
     public func fetchSystemStatus() async throws -> SystemStatus {
         try await performEnvelopeRequest(path: "/api/v1/system/status")
     }
 
-    /// 配对工单（链接/二维码）握手确认配对 (POST /api/v1/auth/pair/confirm)
+    /// 用 OAuth2 一次性回调授权码换取登录会话 (POST /api/v1/auth/oidc/exchange，404 时兼容旧路由)
+    public func exchangeOIDCCode(
+        code: String,
+        deviceName: String,
+        deviceModel: String = "Mac"
+    ) async throws -> ConfirmPairingResponse {
+        let payload = ConfirmPairingRequest(
+            code: code,
+            ticket: code,
+            deviceName: deviceName,
+            platform: "macos",
+            deviceModel: deviceModel
+        )
+        let resp: ConfirmPairingResponse
+        do {
+            resp = try await performEnvelopeRequest(
+                path: "/api/v1/auth/oidc/exchange",
+                method: "POST",
+                body: payload
+            )
+        } catch let APIError.serverError(statusCode, _) where statusCode == 404 {
+            resp = try await performEnvelopeRequest(
+                path: "/api/v1/auth/pair/confirm",
+                method: "POST",
+                body: payload
+            )
+        }
+        // 换服务器地址必须发生在写入新令牌之前，避免 setBaseURL 误删刚保存的凭证
+        if let hub = resp.hubUrl, !hub.isEmpty {
+            setBaseURL(hub)
+        }
+        guard CredentialStore.saveToken(resp.resolvedToken),
+              CredentialStore.saveDeviceIdentity(deviceId: resp.resolvedSessionId, deviceName: resp.deviceName) else {
+            throw APIError.serverError(
+                code: 0,
+                message: "无法写入本机凭据档案（磁盘权限或空间异常），登录未生效，请检查后重试"
+            )
+        }
+        if let acct = resp.account {
+            CredentialStore.saveAccountIdentity(sub: acct.sub, name: acct.name, email: acct.email)
+        }
+        invalidateCaches()
+        return resp
+    }
+
+    /// 兼容旧调用名的别名方法
     public func confirmPairing(
         ticket: String,
         deviceName: String,
         deviceModel: String = "Mac"
     ) async throws -> ConfirmPairingResponse {
-        let payload = ConfirmPairingRequest(
-            ticket: ticket,
-            deviceName: deviceName,
-            platform: "macos",
-            deviceModel: deviceModel
-        )
-        let resp: ConfirmPairingResponse = try await performEnvelopeRequest(
-            path: "/api/v1/auth/pair/confirm",
+        try await exchangeOIDCCode(code: ticket, deviceName: deviceName, deviceModel: deviceModel)
+    }
+
+    /// 获取当前登录会话与账号信息 (GET /api/v1/auth/session)
+    public func fetchSession() async throws -> AuthSessionResponse {
+        try await performEnvelopeRequest(path: "/api/v1/auth/session")
+    }
+
+    /// 退出账号登录并在服务端注销当前会话令牌 (POST /api/v1/auth/logout)
+    public func logout() async throws {
+        let _: LogoutResponse = try await performEnvelopeRequest(
+            path: "/api/v1/auth/logout",
             method: "POST",
-            body: payload
+            body: EmptyPayload()
         )
-        // 换中枢必须发生在写入新令牌**之前**：setBaseURL 在地址变化时会删除旧令牌，
-        // 若先 saveToken 后 setBaseURL，刚保存的配对令牌会被当作「旧中枢的令牌」误删，
-        // 配对「成功」却立刻全量 401、被踢回配对门禁。
-        if let hub = resp.hubUrl, !hub.isEmpty {
-            setBaseURL(hub)
-        }
-        guard CredentialStore.saveToken(resp.deviceToken),
-              CredentialStore.saveDeviceIdentity(deviceId: resp.deviceId, deviceName: resp.deviceName) else {
-            throw APIError.serverError(
-                code: 0,
-                message: "无法写入本机凭据档案（磁盘权限或空间异常），配对未生效，请检查后重试"
-            )
-        }
-        // 无条件复位「仅广播一次」的未授权标志：未配对冷启动的 401 可能已把它消耗掉，
-        // 复位后将来真正的吊销才能再次触发回到配对门禁（地址未变化时 setBaseURL 不会走到）。
-        invalidateCaches()
-        return resp
     }
 
     /// 获取已信任设备列表 (GET /api/v1/auth/devices)

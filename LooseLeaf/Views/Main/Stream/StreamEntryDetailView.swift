@@ -141,9 +141,21 @@ struct StreamEntryDetailView: View {
         let matchingTx = isTx ? appState.transactionById[txId] : nil
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Text(Self.entryTypeBadge(entry.type))
-                    .font(ArchiveTypography.monoScale(size: 11))
-                    .foregroundStyle(ArchivePalette.accentWarm)
+                HStack(spacing: 4) {
+                    if entry.type == EntryType.life.rawValue {
+                        Circle()
+                            .fill(entry.displayAccentColor)
+                            .frame(width: 5.5, height: 5.5)
+                            .accessibilityHidden(true)
+                    }
+                    Text(Self.entryTypeBadge(entry))
+                        .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+                }
+                .foregroundStyle(entry.displayAccentColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(entry.displayAccentColor.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
 
                 if entry.isPrivate {
                     HStack(spacing: 3) {
@@ -302,7 +314,7 @@ struct StreamEntryDetailView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
-                if !entry.title.isEmpty {
+                if entry.hasDistinctTitle {
                     Text(entry.title)
                         .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
@@ -358,7 +370,7 @@ struct StreamEntryDetailView: View {
         .background(ArchivePalette.archivePaper)
     }
 
-    static func entryTypeBadge(_ raw: String) -> String {
-        EntryType(rawValue: raw)?.badgeLabel ?? "日常随笔"
+    static func entryTypeBadge(_ entry: LifeEntry) -> String {
+        entry.displayBadgeLabel
     }
 }

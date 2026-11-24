@@ -68,6 +68,7 @@ public struct StreamView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var keyboardScrollPosition: Int?
@@ -309,70 +310,84 @@ public struct StreamView: View {
                             .padding(.top, 1)
                     }
 
-                    // 检索与分类胶囊工具条（窄窗/分屏下分类胶囊自动横向滚动，绝不挤压搜索框）
-                    HStack(spacing: 12) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 11))
-                                .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                            TextField("即时搜索散页手记… (⌘F)", text: $localSearchText)
-                                .accessibilityLabel("搜索散页手记")
-                                .textFieldStyle(.plain)
-                                .font(ArchiveTypography.bodySans(size: 12))
-                                .focused($isSearchFocused)
-                                .frame(maxWidth: .infinity)
-                                .onChange(of: localSearchText) { _, newVal in
-                                    searchDebounceTask?.cancel()
-                                    if newVal.isEmpty {
-                                        appState.searchQuery = ""
-                                        visibleRowLimit = 150
-                                    } else {
-                                        searchDebounceTask = Task { @MainActor in
-                                            try? await Task.sleep(nanoseconds: 120_000_000)
-                                            guard !Task.isCancelled else { return }
-                                            appState.searchQuery = newVal
+                    // 检索与双层分类过滤条（搜索框与私密开关独立一行，下方横滚过滤条分组承载基础视角与画廊分区，13"/14" 分屏不挤压不截断）
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
+                                TextField("即时搜索散页手记… (⌘F)", text: $localSearchText)
+                                    .accessibilityLabel("搜索散页手记")
+                                    .textFieldStyle(.plain)
+                                    .font(ArchiveTypography.bodySans(size: 12))
+                                    .focused($isSearchFocused)
+                                    .frame(maxWidth: .infinity)
+                                    .onChange(of: localSearchText) { _, newVal in
+                                        searchDebounceTask?.cancel()
+                                        if newVal.isEmpty {
+                                            appState.searchQuery = ""
                                             visibleRowLimit = 150
+                                        } else {
+                                            searchDebounceTask = Task { @MainActor in
+                                                try? await Task.sleep(nanoseconds: 120_000_000)
+                                                guard !Task.isCancelled else { return }
+                                                appState.searchQuery = newVal
+                                                visibleRowLimit = 150
+                                            }
                                         }
                                     }
+                                if !localSearchText.isEmpty {
+                                    Button {
+                                        searchDebounceTask?.cancel()
+                                        localSearchText = ""
+                                        appState.searchQuery = ""
+                                        visibleRowLimit = 150
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(ArchivePalette.inkMuted)
+                                            .frame(minWidth: 24, minHeight: 24)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .accessibilityLabel("清空搜索关键词")
+                                    .buttonStyle(.plain)
+                                    .paperButtonFocusRing(cornerRadius: 4)
                                 }
-                            if !localSearchText.isEmpty {
-                                Button {
-                                    searchDebounceTask?.cancel()
-                                    localSearchText = ""
-                                    appState.searchQuery = ""
-                                    visibleRowLimit = 150
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(ArchivePalette.inkMuted)
-                                        .frame(minWidth: 24, minHeight: 24)
-                                        .contentShape(Rectangle())
-                                }
-                                .accessibilityLabel("清空搜索关键词")
-                                .buttonStyle(.plain)
-                                .paperButtonFocusRing(cornerRadius: 4)
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(minWidth: 200, idealWidth: 280, maxWidth: 340)
+                            .frame(height: 32)
+                            .background(ArchivePalette.archivePaper)
+                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                                    .stroke(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.6), lineWidth: isSearchFocused ? 1.0 : 0.5)
+                            )
+                            .paperElevation(1)
+
+                            Spacer(minLength: 8)
+
+                            // 私密条目快捷筛选胶囊
+                            let privateOnly = appState.navigation.streamPrivacyFilter == .privateOnly
+                            PaperPillButton(
+                                title: "私密",
+                                icon: "lock.fill",
+                                isSelected: privateOnly
+                            ) {
+                                appState.navigation.streamPrivacyFilter = privateOnly ? .all : .privateOnly
+                                visibleRowLimit = 150
                             }
                         }
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 260)
-                        .frame(height: 32)
-                        .background(ArchivePalette.archivePaper)
-                        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                                .stroke(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.6), lineWidth: isSearchFocused ? 1.0 : 0.5)
-                        )
-                        .paperElevation(1)
-
-                        Spacer(minLength: 8)
 
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 4) {
-                                ForEach(ArchiveCategory.allCases) { cat in
+                            HStack(spacing: 5) {
+                                ForEach(ArchiveCategory.primaryCases) { cat in
                                     if cat != .transaction || appState.isPaired {
                                         PaperPillButton(
                                             title: cat.label,
-                                            isSelected: appState.selectedCategory == cat
+                                            isSelected: appState.selectedCategory == cat,
+                                            isCompact: true
                                         ) {
                                             guard appState.selectedCategory != cat else { return }
                                             appState.selectedCategory = cat
@@ -381,15 +396,26 @@ public struct StreamView: View {
                                     }
                                 }
 
-                                // 私密条目快捷筛选胶囊
-                                let privateOnly = appState.navigation.streamPrivacyFilter == .privateOnly
-                                PaperPillButton(
-                                    title: "私密",
-                                    icon: "lock.fill",
-                                    isSelected: privateOnly
-                                ) {
-                                    appState.navigation.streamPrivacyFilter = privateOnly ? .all : .privateOnly
-                                    visibleRowLimit = 150
+                                Rectangle()
+                                    .fill(ArchivePalette.borderDivider)
+                                    .frame(width: 1, height: 14)
+                                    .padding(.horizontal, 4)
+                                    .accessibilityHidden(true)
+
+                                ForEach(ArchiveCategory.galleryCases) { cat in
+                                    let entryCat = cat.entryCategory
+                                    PaperPillButton(
+                                        title: cat.label,
+                                        icon: differentiateWithoutColor ? entryCat?.symbolName : nil,
+                                        leadingDotColor: differentiateWithoutColor ? nil : entryCat?.accentColor,
+                                        accentColor: entryCat?.accentColor,
+                                        isSelected: appState.selectedCategory == cat,
+                                        isCompact: true
+                                    ) {
+                                        guard appState.selectedCategory != cat else { return }
+                                        appState.selectedCategory = cat
+                                        visibleRowLimit = 150
+                                    }
                                 }
                             }
                         }
@@ -543,7 +569,12 @@ public struct StreamView: View {
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(appState.onThisDayEntries.prefix(4)) { entry in
-                        let mainText = entry.title.isEmpty ? (entry.content.isEmpty ? "无题散页" : entry.content) : entry.title
+                        let firstContentLine = entry.content
+                            .split(whereSeparator: \.isNewline)
+                            .first
+                            .map(String.init)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        let mainText = entry.hasDistinctTitle ? entry.title : (firstContentLine.isEmpty ? "无题散页" : firstContentLine)
                         Button {
                             appState.highlightedEntry = entry
                         } label: {
@@ -561,7 +592,7 @@ public struct StreamView: View {
                                             .lineLimit(1)
                                     }
 
-                                    if !entry.title.isEmpty && !entry.content.isEmpty {
+                                    if entry.hasDistinctTitle && !entry.content.isEmpty {
                                         Text(entry.content)
                                             .font(ArchiveTypography.bodySans(size: 11))
                                             .foregroundStyle(ArchivePalette.inkSecondary)

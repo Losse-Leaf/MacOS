@@ -196,6 +196,7 @@ extension AppState {
         title: String,
         content: String,
         type: EntryType = .life,
+        category: EntryCategory = .daily,
         location: String? = nil,
         attachmentIds: [Int] = [],
         attachments: [Attachment] = [],
@@ -208,6 +209,7 @@ extension AppState {
 
         let req = CreateEntryRequest(
             type: type.rawValue,
+            category: type == .life ? category.rawValue : "",
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             content: content.trimmingCharacters(in: .whitespacesAndNewlines),
             occurredAt: occurredAt ?? FormatUtils.beijingISOString(),

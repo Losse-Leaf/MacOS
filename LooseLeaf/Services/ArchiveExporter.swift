@@ -15,7 +15,7 @@ public enum ArchiveExporter {
         for entry in entries {
             lines.append("---")
             lines.append("")
-            let title = entry.title.isEmpty ? (EntryType(rawValue: entry.type)?.badgeLabel ?? entry.type) : entry.title
+            let title = entry.hasDistinctTitle ? entry.title : entry.displayBadgeLabel
             lines.append("## \(title)")
             lines.append("")
 

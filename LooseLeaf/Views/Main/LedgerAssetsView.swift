@@ -94,7 +94,7 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    /// 交易流水筛选结果（严格按北京时间 `parsedDate.dateKey` 自然月过滤，修复 UTC 跨月偏移）
+    /// 交易流水筛选结果（严格按北京时间 `parsedDate.dateKey` 自然月过滤，修复 UTC 跨月偏移，并响应工具栏 `.searchable`）
     private var filteredTransactions: [Transaction] {
         var list = appState.transactions
         if filterBySelectedMonth {
@@ -104,7 +104,20 @@ public struct LedgerAssetsView: View {
         if selectedCategoryFilter != "全部" {
             list = list.filter { $0.category == selectedCategoryFilter }
         }
+        let q = appState.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty, appState.activeSection == .ledger && appState.navigation.ledgerSubTab == .ledger {
+            let lowered = q.lowercased()
+            list = list.filter { Self.matchesSearch($0, lowercasedQuery: lowered) }
+        }
         return list
+    }
+
+    nonisolated static func matchesSearch(_ tx: Transaction, lowercasedQuery q: String) -> Bool {
+        if q.isEmpty { return true }
+        return tx.title.lowercased().contains(q)
+            || tx.category.lowercased().contains(q)
+            || (tx.note?.lowercased().contains(q) ?? false)
+            || (tx.paymentMethod?.lowercased().contains(q) ?? false)
     }
 
     private var allTransactionCategories: [String] {

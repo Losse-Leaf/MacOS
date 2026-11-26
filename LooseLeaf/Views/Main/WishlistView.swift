@@ -62,7 +62,9 @@ public struct WishlistView: View {
     }
 
     private var filteredWishes: [Wish] {
-        allWishes.filter { wish in
+        let q = appState.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let shouldApplySearch = !q.isEmpty && (!embedded || (appState.activeSection == .ledger && appState.navigation.ledgerSubTab == .wishlist))
+        return allWishes.filter { wish in
             let matchKind = (selectedKind == "all") || (wish.kind == selectedKind)
             let matchStatus: Bool
             if selectedStatus == "all" {
@@ -72,8 +74,16 @@ public struct WishlistView: View {
             } else {
                 matchStatus = (wish.status == selectedStatus)
             }
-            return matchKind && matchStatus
+            let matchQuery = !shouldApplySearch || Self.matchesSearch(wish, lowercasedQuery: q)
+            return matchKind && matchStatus && matchQuery
         }
+    }
+
+    nonisolated static func matchesSearch(_ wish: Wish, lowercasedQuery q: String) -> Bool {
+        if q.isEmpty { return true }
+        return wish.title.lowercased().contains(q)
+            || (wish.note?.lowercased().contains(q) ?? false)
+            || (wish.spec?.lowercased().contains(q) ?? false)
     }
 
     public var body: some View {

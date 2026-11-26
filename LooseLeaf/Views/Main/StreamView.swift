@@ -75,13 +75,43 @@ public struct StreamView: View {
     @State private var localSearchText: String = ""
     @State private var searchDebounceTask: Task<Void, Never>?
     @State private var visibleRowLimit: Int = 150
-    @FocusState private var isSearchFocused: Bool
 
-    @State private var visitedSections: Set<WorkbenchSection> = [.stream]
     @State private var timelineActions = TimelineEntryActions()
 
     public init(appState: AppState) {
         self.appState = appState
+    }
+
+    private var currentWindowTitle: String {
+        switch appState.activeSection {
+        case .ledger:
+            return appState.navigation.ledgerSubTab == .ledger ? "记账 · 流水" : "记账 · 心愿单"
+        case .stream, .preferences, .hub, .about:
+            let rawName = appState.siteConfig.siteName.split(separator: "·").first?.trimmingCharacters(in: .whitespaces) ?? "散页"
+            return rawName.isEmpty ? "散页" : rawName
+        }
+    }
+
+    private var currentWindowSubtitle: String {
+        switch appState.activeSection {
+        case .ledger:
+            return appState.navigation.ledgerSubTab == .ledger
+                ? "日常收支流水与月度类目光谱"
+                : "好物 · 旅程 · 里程碑"
+        case .stream, .preferences, .hub, .about:
+            return [appState.profile.displayCity, FormatUtils.beijingDateString()]
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+        }
+    }
+
+    private var currentSearchPrompt: String {
+        switch appState.activeSection {
+        case .ledger:
+            return appState.navigation.ledgerSubTab == .ledger ? "筛选账目流水…" : "筛选心愿清单…"
+        case .stream, .preferences, .hub, .about:
+            return "搜索散页手记…"
+        }
     }
 
     public var body: some View {
@@ -93,29 +123,29 @@ public struct StreamView: View {
                 ZStack {
                     NoiseBackground(useSubtleSurface: false, enableVibrancy: false)
 
-                    ZStack {
-                        if visitedSections.contains(.stream) {
+                    Group {
+                        switch appState.activeSection {
+                        case .ledger:
+                            sectionContentView(for: .ledger)
+                                .modifier(WorkbenchCanvasMaxWidth(maxWidth: 1120))
+                                .transition(.opacity)
+                        case .stream, .preferences, .hub, .about:
                             sectionContentView(for: .stream)
                                 .modifier(WorkbenchCanvasMaxWidth(maxWidth: 960))
-                                .opacity(appState.activeSection == .stream ? 1 : 0)
-                                .allowsHitTesting(appState.activeSection == .stream)
-                                .zIndex(appState.activeSection == .stream ? 1 : 0)
-                        }
-
-                        if appState.activeSection != .stream {
-                            let section = appState.activeSection
-                            sectionContentView(for: section)
-                                .modifier(WorkbenchCanvasMaxWidth(maxWidth: 1120))
                                 .transition(.opacity)
                         }
                     }
+                    .id(appState.activeSection == .ledger ? WorkbenchSection.ledger : WorkbenchSection.stream)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: appState.activeSection)
                     .overlay(alignment: .top) {
                         StreamBannerOverlay(banners: appState.banners)
                     }
                 }
+                .navigationTitle(currentWindowTitle)
+                .navigationSubtitle(currentWindowSubtitle)
             }
+            .searchable(text: $localSearchText, placement: .toolbar, prompt: currentSearchPrompt)
             .accessibilityHidden(appState.hasOpenOverlay)
 
             // 暗房全屏看图灯箱
@@ -206,7 +236,32 @@ public struct StreamView: View {
         }
         .onAppear {
             localSearchText = appState.searchQuery
-            visitedSections.insert(appState.activeSection)
+        }
+        .onChange(of: localSearchText) { _, newVal in
+            searchDebounceTask?.cancel()
+            if newVal.isEmpty {
+                appState.searchQuery = ""
+                visibleRowLimit = 150
+            } else {
+                searchDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    guard !Task.isCancelled else { return }
+                    appState.searchQuery = newVal
+                    visibleRowLimit = 150
+                }
+            }
+        }
+        .onChange(of: appState.searchQuery) { _, newVal in
+            if localSearchText != newVal {
+                localSearchText = newVal
+            }
+        }
+        .onChange(of: appState.searchFocusRequest) { _, _ in
+            ToolbarSearchFocus.activate()
+        }
+        .onChange(of: appState.detailWindowEntry?.id) { _, newValue in
+            guard let id = newValue else { return }
+            openWindow(id: "detail", value: id)
         }
         .onChange(of: appState.activeSection) { _, newSec in
             // 若旧路径误把 activeSection 切到配置枚举，自动重定向打开独立 Settings 窗口并保持当前内容板块
@@ -222,7 +277,6 @@ public struct StreamView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 return
             }
-            visitedSections.insert(newSec)
         }
         .onChange(of: appState.navigation.settingsOpenToken) { _, _ in
             openSettings()
@@ -256,7 +310,6 @@ public struct StreamView: View {
             appState: appState,
             onSelect: { section in
                 guard appState.activeSection != section else { return }
-                visitedSections.insert(section)
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
                     appState.activeSection = section
                 }
@@ -269,9 +322,9 @@ public struct StreamView: View {
     private var streamTimelineCanvas: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // 1. 刊头诗意排版
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
+                // 1. 刊头诗意排版（窗口标题与日期已上移至原生标题栏）
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center) {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             let rawName = appState.siteConfig.siteName.split(separator: "·").first?.trimmingCharacters(in: .whitespaces) ?? "散页"
                             Text(rawName.isEmpty ? "散页" : rawName)
@@ -286,17 +339,18 @@ public struct StreamView: View {
                                 .lineLimit(1)
                         }
 
-                        Spacer()
+                        Spacer(minLength: 8)
 
-                        HStack(spacing: 4) {
-                            if !appState.profile.displayCity.isEmpty {
-                                Text("\(appState.profile.displayCity) ·")
-                            }
-                            Text(FormatUtils.beijingDateString())
+                        // 私密条目快捷筛选胶囊
+                        let privateOnly = appState.navigation.streamPrivacyFilter == .privateOnly
+                        PaperPillButton(
+                            title: "私密",
+                            icon: "lock.fill",
+                            isSelected: privateOnly
+                        ) {
+                            appState.navigation.streamPrivacyFilter = privateOnly ? .all : .privateOnly
+                            visibleRowLimit = 150
                         }
-                        .font(ArchiveTypography.monoScale(size: 11.5))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .lineLimit(1)
                     }
 
                     if !appState.profile.motto.isEmpty {
@@ -304,80 +358,9 @@ public struct StreamView: View {
                             .font(ArchiveTypography.editorialSerif(size: 13))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .italic()
-                            .padding(.top, 1)
                     }
 
-                    // 检索与双层分类过滤条（搜索框与私密开关独立一行，下方横滚过滤条分组承载基础视角与画廊分区，13"/14" 分屏不挤压不截断）
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                                TextField("即时搜索散页手记… (⌘F)", text: $localSearchText)
-                                    .accessibilityLabel("搜索散页手记")
-                                    .textFieldStyle(.plain)
-                                    .font(ArchiveTypography.bodySans(size: 12))
-                                    .focused($isSearchFocused)
-                                    .frame(maxWidth: .infinity)
-                                    .onChange(of: localSearchText) { _, newVal in
-                                        searchDebounceTask?.cancel()
-                                        if newVal.isEmpty {
-                                            appState.searchQuery = ""
-                                            visibleRowLimit = 150
-                                        } else {
-                                            searchDebounceTask = Task { @MainActor in
-                                                try? await Task.sleep(nanoseconds: 120_000_000)
-                                                guard !Task.isCancelled else { return }
-                                                appState.searchQuery = newVal
-                                                visibleRowLimit = 150
-                                            }
-                                        }
-                                    }
-                                if !localSearchText.isEmpty {
-                                    Button {
-                                        searchDebounceTask?.cancel()
-                                        localSearchText = ""
-                                        appState.searchQuery = ""
-                                        visibleRowLimit = 150
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(ArchivePalette.inkMuted)
-                                            .frame(minWidth: 24, minHeight: 24)
-                                            .contentShape(Rectangle())
-                                    }
-                                    .accessibilityLabel("清空搜索关键词")
-                                    .buttonStyle(.plain)
-                                    .paperButtonFocusRing(cornerRadius: 4)
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(minWidth: 200, idealWidth: 280, maxWidth: 340)
-                            .frame(height: 32)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                                    .stroke(isSearchFocused ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.6), lineWidth: isSearchFocused ? 1.0 : 0.5)
-                            )
-                            .paperElevation(1)
-
-                            Spacer(minLength: 8)
-
-                            // 私密条目快捷筛选胶囊
-                            let privateOnly = appState.navigation.streamPrivacyFilter == .privateOnly
-                            PaperPillButton(
-                                title: "私密",
-                                icon: "lock.fill",
-                                isSelected: privateOnly
-                            ) {
-                                appState.navigation.streamPrivacyFilter = privateOnly ? .all : .privateOnly
-                                visibleRowLimit = 150
-                            }
-                        }
-
-                        ScrollView(.horizontal, showsIndicators: false) {
+                    ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 5) {
                                 ForEach(ArchiveCategory.primaryCases) { cat in
                                     if cat != .transaction || appState.isPaired {
@@ -415,7 +398,6 @@ public struct StreamView: View {
                                     }
                                 }
                             }
-                        }
                     }
                 }
                 .padding(.bottom, 6)
@@ -477,15 +459,15 @@ public struct StreamView: View {
             .padding(.bottom, 48)
         }
         .scrollPosition(id: $keyboardScrollPosition)
-        .onChange(of: appState.searchFocusRequest) { _, _ in
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                isSearchFocused = true
+        .onAppear {
+            if keyboardScrollPosition == nil, let saved = appState.navigation.streamScrollEntryId {
+                keyboardScrollPosition = saved
             }
         }
-        .onChange(of: appState.detailWindowEntry?.id) { _, newValue in
-            guard let id = newValue else { return }
-            openWindow(id: "detail", value: id)
+        .onChange(of: keyboardScrollPosition) { _, newValue in
+            if appState.activeSection == .stream, let newValue {
+                appState.navigation.streamScrollEntryId = newValue
+            }
         }
         .onChange(of: appState.keyboardFocusedEntryId) { _, newValue in
             guard let id = newValue else { return }

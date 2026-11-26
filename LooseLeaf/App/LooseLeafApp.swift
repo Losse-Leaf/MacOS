@@ -234,8 +234,8 @@ public struct LooseLeafApp: App {
                 }
             }
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        .windowStyle(.automatic)
+        .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1180, height: 780)
         .commands {
             CommandGroup(after: .appInfo) {
@@ -272,7 +272,7 @@ public struct LooseLeafApp: App {
                 }
                 .keyboardShortcut("w", modifiers: [.command])
 
-                Button("搜索散页…") {
+                Button("筛选当前视图…") {
                     appState.requestStreamSearchFocus()
                 }
                 .keyboardShortcut("f", modifiers: [.command])

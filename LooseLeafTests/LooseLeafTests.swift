@@ -837,4 +837,32 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(parsedLegacy.hub, "https://leaf.starryheavens.uk")
         XCTAssertEqual(parsedLegacy.ticket, "pair_tk_90sec_sample")
     }
+
+    @MainActor
+    func testLedgerAndWishlistSearchMatchingAndFocusPreservesSection() {
+        let tx = Transaction(
+            id: 10,
+            amount: 4250,
+            type: "expense",
+            category: "餐饮",
+            title: "手冲咖啡",
+            note: "街头小馆",
+            paymentMethod: "微信支付"
+        )
+        XCTAssertTrue(LedgerAssetsView.matchesSearch(tx, lowercasedQuery: "咖啡"))
+        XCTAssertTrue(LedgerAssetsView.matchesSearch(tx, lowercasedQuery: "微信"))
+        XCTAssertFalse(LedgerAssetsView.matchesSearch(tx, lowercasedQuery: "地铁"))
+
+        let wish = Wish(id: 20, title: "富士镜头", kind: "item", note: "人文挂机头", spec: "XF 35mm f/1.4")
+        XCTAssertTrue(WishlistView.matchesSearch(wish, lowercasedQuery: "35mm"))
+        XCTAssertTrue(WishlistView.matchesSearch(wish, lowercasedQuery: "人文"))
+        XCTAssertFalse(WishlistView.matchesSearch(wish, lowercasedQuery: "北海道"))
+
+        let nav = AppNavigation()
+        nav.activeSection = .ledger
+        let prevReq = nav.searchFocusRequest
+        nav.requestStreamSearchFocus()
+        XCTAssertEqual(nav.activeSection, .ledger, "⌘F 聚焦工具栏检索框不应强行跳回散页")
+        XCTAssertEqual(nav.searchFocusRequest, prevReq + 1)
+    }
 }

@@ -58,7 +58,9 @@ public final class AppNavigation {
     public var streamPrivacyFilter: StreamPrivacyFilter = .all
     /// 时间流本地搜索词
     public var searchQuery: String = ""
-    /// ⌘F 请求聚焦搜索框（自增 token 驱动 onChange）
+    /// 时间流离屏切换时保存的滚动锚点条目 ID
+    public var streamScrollEntryId: Int? = nil
+    /// ⌘F 请求聚焦工具栏搜索框（自增 token 驱动 onChange）
     public var searchFocusRequest: Int = 0
     /// 独立设置窗口当前激活标签页（支持 ⌘, 与 ⌥⌘1–3 联动）
     public var settingsSelectedTab: SettingsTab = .general
@@ -69,9 +71,8 @@ public final class AppNavigation {
 
     public init() {}
 
-    /// 请求时间流搜索框聚焦
+    /// 请求聚焦工具栏搜索框（适用于当前所在板块）
     public func requestStreamSearchFocus() {
-        activeSection = .stream
         searchFocusRequest += 1
     }
 }

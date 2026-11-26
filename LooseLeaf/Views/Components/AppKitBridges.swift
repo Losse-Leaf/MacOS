@@ -185,3 +185,14 @@ public extension View {
         modifier(PasteboardImageShortcutModifier(onPasteImage: action))
     }
 }
+
+/// 激活当前主窗口工具栏上的原生 `.searchable` 检索框 (`NSSearchToolbarItem`)
+@MainActor
+public enum ToolbarSearchFocus {
+    public static func activate() {
+        guard let window = NSApp?.keyWindow ?? NSApp?.mainWindow else { return }
+        if let searchItem = window.toolbar?.items.compactMap({ $0 as? NSSearchToolbarItem }).first {
+            searchItem.beginSearchInteraction()
+        }
+    }
+}

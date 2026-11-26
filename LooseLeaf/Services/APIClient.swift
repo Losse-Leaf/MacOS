@@ -619,6 +619,10 @@ public actor APIClient {
         )
     }
 
+    public func fetchEntry(id: Int) async throws -> LifeEntry {
+        try await performEnvelopeRequest(path: "/api/v1/entries/\(id)")
+    }
+
     public func createEntry(_ req: CreateEntryRequest) async throws -> LifeEntry {
         try await performEnvelopeRequest(path: "/api/v1/entries", method: "POST", body: req)
     }

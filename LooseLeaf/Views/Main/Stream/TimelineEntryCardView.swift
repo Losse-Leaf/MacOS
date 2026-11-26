@@ -29,7 +29,8 @@ final class TimelineEntryActions {
         onEditEntry = { entry in state.editingEntry = entry }
         onEditTransaction = { tx in state.editingTransaction = tx }
         onOpenDetail = { entry in
-            MainThreadWatchdog.shared.noteAction("点击卡片（打开详情）")
+            MainThreadWatchdog.shared.noteAction("点击卡片（展开检视器）")
+            state.keyboardFocusedEntryId = entry.id
             state.highlightedEntry = entry
         }
         onOpenInNewWindow = { entry in
@@ -40,20 +41,7 @@ final class TimelineEntryActions {
         onRetrySync = { id in state.reuploadEntry(id: id) }
         onReuploadEntry = { entry in state.reuploadEntry(id: entry.id) }
         onTogglePrivacy = { entry in
-            guard entry.id > 0 else { return }
-            let nextPrivate = !entry.isPrivate
-            Task { @MainActor in
-                do {
-                    _ = try await APIClient.shared.updateEntry(
-                        id: entry.id,
-                        UpdateEntryRequest(isPrivate: nextPrivate)
-                    )
-                    await state.loadEntries(forceFull: false)
-                    state.showTemporaryBanner(nextPrivate ? "已设为仅自己可见（私密）" : "已设为公开（含图自动同步至 Vesper Space）")
-                } catch {
-                    state.showTemporaryBanner("切换私密状态失败：\(error.localizedDescription)")
-                }
-            }
+            state.toggleEntryPrivacy(entry)
         }
         onDeleteEntry = { entry in
             state.askConfirm(
@@ -94,10 +82,15 @@ struct TimelineEntryCardView: View {
     let entry: LifeEntry
     var timeLabel: String = ""
     let transaction: Transaction?
+    var isSelected: Bool = false
     var isKeyboardFocused: Bool = false
     var actions: TimelineEntryActions = TimelineEntryActions()
 
     @State private var isHovering: Bool = false
+
+    private var isCardHighlighted: Bool {
+        isSelected || isKeyboardFocused
+    }
 
     private var parsed: FormatUtils.ParsedBeijingDate {
         entry.parsedDate
@@ -239,10 +232,6 @@ struct TimelineEntryCardView: View {
                     }
 
                     Spacer()
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            actions.onOpenDetail(entry)
-                        }
 
                     // 右侧操作按钮：常驻视图树保障全键盘与读屏可达，避免在高频滚动列表卡内挂载 @FocusState 造成 O(N²) 焦点图开销
                     HStack(spacing: 4) {
@@ -292,7 +281,7 @@ struct TimelineEntryCardView: View {
                             actions.onOpenDetail(entry)
                         }
                     }
-                    .opacity(isHovering || isKeyboardFocused ? 1 : 0.45)
+                    .opacity(isHovering || isCardHighlighted ? 1 : 0.45)
                     .animation(nil, value: isHovering)
                 }
 
@@ -301,24 +290,13 @@ struct TimelineEntryCardView: View {
                         .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .padding(.bottom, 1)
-                        .onTapGesture(count: 2) {
-                            actions.onOpenDetail(entry)
-                        }
                 }
 
-                // 仅在聚焦/悬停卡片上挂载重型 AppKit textSelection 包装器，长列表滚动更轻盈且不抢双击选词
-                if isHovering || isKeyboardFocused {
-                    Text(entry.content)
-                        .font(ArchiveTypography.bodySans(size: 13.5))
-                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
-                        .lineSpacing(5)
-                        .textSelection(.enabled)
-                } else {
-                    Text(entry.content)
-                        .font(ArchiveTypography.bodySans(size: 13.5))
-                        .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
-                        .lineSpacing(5)
-                }
+                // 单击选中在右侧检视器中全文阅读与划词；卡片本体保持轻盈无文本选区包装开销
+                Text(entry.content)
+                    .font(ArchiveTypography.bodySans(size: 13.5))
+                    .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
+                    .lineSpacing(5)
 
                 // 附件胶片相框画廊（显示走缩略图、导出走 4K 原图、占位锁定原始宽高比零跳动）
                 if !entry.attachments.isEmpty {
@@ -352,17 +330,23 @@ struct TimelineEntryCardView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isHovering ? typeAccentColor.opacity(0.06) : Color.clear)
+                .fill(isCardHighlighted ? ArchivePalette.accentWarm.opacity(0.06) : (isHovering ? typeAccentColor.opacity(0.06) : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
                 .stroke(
-                    isKeyboardFocused ? ArchivePalette.accentWarm : (isHovering ? typeAccentColor.opacity(0.25) : Color.clear),
-                    lineWidth: isKeyboardFocused ? 1.5 : 0.6
+                    isCardHighlighted ? ArchivePalette.accentWarm : (isHovering ? typeAccentColor.opacity(0.25) : Color.clear),
+                    lineWidth: isCardHighlighted ? 1.5 : 0.6
                 )
         )
         .onHover { isHovering = $0 }
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            actions.onOpenInNewWindow(entry)
+        }
+        .onTapGesture {
+            actions.onOpenDetail(entry)
+        }
         .accessibilityAction(.default) {
             actions.onOpenDetail(entry)
         }

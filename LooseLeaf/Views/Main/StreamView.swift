@@ -71,6 +71,7 @@ public struct StreamView: View {
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var splitContainerWidth: CGFloat = 1180
     @State private var keyboardScrollPosition: Int?
     @State private var localSearchText: String = ""
     @State private var searchDebounceTask: Task<Void, Never>?
@@ -114,6 +115,31 @@ public struct StreamView: View {
         }
     }
 
+    private var inspectorPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { appState.activeSection == .stream && appState.highlightedEntry != nil },
+            set: { presented in
+                if !presented {
+                    appState.highlightedEntry = nil
+                }
+            }
+        )
+    }
+
+    private func toggleInspector() {
+        guard appState.activeSection == .stream else { return }
+        if appState.highlightedEntry != nil {
+            appState.highlightedEntry = nil
+        } else if let focusedId = appState.keyboardFocusedEntryId,
+                  let found = appState.filteredStreamEntries.first(where: { $0.id == focusedId })
+                    ?? appState.entries.first(where: { $0.id == focusedId }) {
+            appState.highlightedEntry = found
+        } else if let first = appState.filteredStreamEntries.first {
+            appState.keyboardFocusedEntryId = first.id
+            appState.highlightedEntry = first
+        }
+    }
+
     public var body: some View {
         ZStack {
             NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -144,6 +170,66 @@ public struct StreamView: View {
                 }
                 .navigationTitle(currentWindowTitle)
                 .navigationSubtitle(currentWindowSubtitle)
+            }
+            .inspector(isPresented: inspectorPresentedBinding) {
+                Group {
+                    if let entry = appState.highlightedEntry {
+                        StreamEntryDetailView(
+                            entry: entry,
+                            appState: appState,
+                            presentationStyle: .inspector,
+                            onClose: { appState.highlightedEntry = nil },
+                            onOpenInNewWindow: { appState.detailWindowEntry = $0 },
+                            onEditEntry: { appState.editingEntry = $0 },
+                            onEditTransaction: { appState.editingTransaction = $0 },
+                            onDeleteTransaction: { appState.deleteTransactionAction($0) }
+                        )
+                    }
+                }
+                .inspectorColumnWidth(min: 300, ideal: 360, max: 520)
+            }
+            .toolbar {
+                if appState.activeSection == .stream {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            toggleInspector()
+                        } label: {
+                            Label("检视散页详情", systemImage: "sidebar.trailing")
+                        }
+                        .help("切换右侧散页检视器 (⌥⌘I)")
+                        .keyboardShortcut("i", modifiers: [.command, .option])
+                        .disabled(!appState.isPaired || appState.hasOpenOverlay)
+                    }
+                }
+            }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear {
+                            splitContainerWidth = proxy.size.width
+                        }
+                        .onChange(of: proxy.size.width) { _, newWidth in
+                            splitContainerWidth = newWidth
+                            if inspectorPresentedBinding.wrappedValue, newWidth < 1040, columnVisibility != .detailOnly {
+                                columnVisibility = .detailOnly
+                            }
+                        }
+                }
+            )
+            .onChange(of: appState.highlightedEntry?.id) { _, newId in
+                if newId != nil, appState.activeSection == .stream, splitContainerWidth < 1040, columnVisibility != .detailOnly {
+                    columnVisibility = .detailOnly
+                }
+            }
+            .onChange(of: appState.entries) { _, newEntries in
+                guard let current = appState.highlightedEntry, current.type != "transaction" else { return }
+                if let updated = newEntries.first(where: { $0.id == current.id }) {
+                    if updated != current {
+                        appState.highlightedEntry = updated
+                    }
+                } else if current.id > 0 {
+                    appState.highlightedEntry = nil
+                }
             }
             .searchable(text: $localSearchText, placement: .toolbar, prompt: currentSearchPrompt)
             .accessibilityHidden(appState.hasOpenOverlay)
@@ -209,10 +295,6 @@ public struct StreamView: View {
                 appState.editingTransaction = nil
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
-        }
-        .sheet(item: $appState.highlightedEntry) { entry in
-            entryDetailSheet(entry: entry)
-                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
         .alert(
             appState.activeConfirmDialog?.title ?? "请确认",
@@ -430,6 +512,7 @@ public struct StreamView: View {
                                 entry: entry,
                                 timeLabel: row.timeLabel,
                                 transaction: matchingTransaction(for: entry),
+                                isSelected: appState.highlightedEntry?.id == entry.id,
                                 isKeyboardFocused: appState.keyboardFocusedEntryId == entry.id,
                                 actions: timelineActions
                             )
@@ -636,18 +719,5 @@ public struct StreamView: View {
         } onCancel: {
             appState.editingEntry = nil
         }
-    }
-
-    private func entryDetailSheet(entry: LifeEntry) -> some View {
-        StreamEntryDetailView(
-            entry: entry,
-            appState: appState,
-            isStandaloneWindow: false,
-            onEditEntry: { appState.editingEntry = $0 },
-            onEditTransaction: { appState.editingTransaction = $0 },
-            onDeleteTransaction: { appState.deleteTransactionAction($0) }
-        )
-        .frame(width: 560)
-        .background(ArchivePalette.archivePaper)
     }
 }

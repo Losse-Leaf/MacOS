@@ -198,9 +198,16 @@ extension AppState {
             publishHandoffActivity(for: found)
         } else {
             Task { @MainActor in
+                if let remote = try? await APIClient.shared.fetchEntry(id: entryId) {
+                    self.detailWindowEntry = remote
+                    self.publishHandoffActivity(for: remote)
+                    await self.loadEntries(forceFull: false)
+                    return
+                }
                 await self.loadEntries(forceFull: true)
                 if let found = self.entries.first(where: { $0.id == entryId }) {
                     self.detailWindowEntry = found
+                    self.publishHandoffActivity(for: found)
                 }
             }
         }

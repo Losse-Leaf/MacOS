@@ -191,7 +191,6 @@ public final class AppState {
             || showSearchModal
             || showNewEntrySheet
             || lightboxAttachment != nil
-            || highlightedEntry != nil
             || editingEntry != nil
             || editingTransaction != nil
     }

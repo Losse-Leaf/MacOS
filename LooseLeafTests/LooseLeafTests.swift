@@ -865,4 +865,37 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(nav.activeSection, .ledger, "⌘F 聚焦工具栏检索框不应强行跳回散页")
         XCTAssertEqual(nav.searchFocusRequest, prevReq + 1)
     }
+
+    @MainActor
+    func testMoveSelectionFollowsInspectorWhenOpen() {
+        let state = AppState.shared
+        let savedEntries = state.entries
+        let savedFocused = state.keyboardFocusedEntryId
+        let savedHighlighted = state.highlightedEntry
+        let savedCategory = state.selectedCategory
+        let savedQuery = state.searchQuery
+        defer {
+            state.entries = savedEntries
+            state.keyboardFocusedEntryId = savedFocused
+            state.highlightedEntry = savedHighlighted
+            state.selectedCategory = savedCategory
+            state.searchQuery = savedQuery
+        }
+
+        let e1 = LifeEntry(id: 901, title: "第一篇", content: "正文一", occurredAt: "2026-10-20T12:00:00+08:00")
+        let e2 = LifeEntry(id: 902, title: "第二篇", content: "正文二", occurredAt: "2026-10-20T11:00:00+08:00")
+        state.selectedCategory = .all
+        state.searchQuery = ""
+        state.entries = [e1, e2]
+        state.keyboardFocusedEntryId = e1.id
+        state.highlightedEntry = e1
+
+        state.moveSelection(by: 1)
+        XCTAssertEqual(state.keyboardFocusedEntryId, e2.id)
+        XCTAssertEqual(state.highlightedEntry?.id, e2.id, "检视器展开时，键盘上下切换应同步更新右侧检视条目")
+
+        state.openKeyboardFocusedEntry()
+        XCTAssertEqual(state.detailWindowEntry?.id, e2.id, "已检视当前条目时再按 ⌘↩ 应开启独立窗口")
+        state.detailWindowEntry = nil
+    }
 }

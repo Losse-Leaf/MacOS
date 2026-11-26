@@ -271,14 +271,22 @@ extension AppState {
         } else {
             targetIndex = delta >= 0 ? 0 : list.count - 1
         }
-        keyboardFocusedEntryId = list[targetIndex].id
+        let target = list[targetIndex]
+        keyboardFocusedEntryId = target.id
+        if highlightedEntry != nil {
+            highlightedEntry = target
+        }
     }
 
-    /// 打开当前键盘聚焦的散页详情（支持「账目」等合成条目视角）
+    /// 打开当前键盘聚焦的散页（若检视器尚未展开则展开右侧检视器；若已正在检视该散页则开独立窗口）
     public func openKeyboardFocusedEntry() {
         guard let id = keyboardFocusedEntryId,
               let entry = filteredStreamEntries.first(where: { $0.id == id })
                 ?? entries.first(where: { $0.id == id }) else { return }
-        highlightedEntry = entry
+        if highlightedEntry?.id == entry.id {
+            detailWindowEntry = entry
+        } else {
+            highlightedEntry = entry
+        }
     }
 }

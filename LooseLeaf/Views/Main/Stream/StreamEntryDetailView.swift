@@ -113,74 +113,280 @@ public struct EditorialProseTextView: View {
 }
 
 /// 散页详情视图 (Entry Detail)
-/// 既用于主窗口内的详情弹层，也用于「在新窗口打开」的独立详情窗口（支持多窗口并排对照、窗口内编辑/删除/灯箱闭环）。
+/// 支持三种承载形式：主窗口右侧原生 `.inspector()` 检视器、独立对照窗口 (`WindowGroup`) 与模态弹窗。
 struct StreamEntryDetailView: View {
+    enum PresentationStyle: Sendable {
+        case inspector
+        case standaloneWindow
+        case sheet
+    }
+
     @Environment(\.dismiss) private var dismiss
     let entry: LifeEntry
     let appState: AppState
-    /// 是否运行在独立详情窗口中（独立窗口自适应全窗宽高，Sheet 模式约束版心）
+    /// 是否运行在独立详情窗口中（兼容既有调用方）
     var isStandaloneWindow: Bool = false
+    var presentationStyle: PresentationStyle? = nil
     var onClose: (() -> Void)? = nil
+    var onOpenInNewWindow: ((LifeEntry) -> Void)? = nil
     var onEditEntry: (LifeEntry) -> Void = { _ in }
     var onEditTransaction: (Transaction) -> Void = { _ in }
     var onDeleteTransaction: (Transaction) -> Void = { _ in }
     var onDeleteEntryOverride: ((LifeEntry) -> Void)? = nil
     var onOpenAttachment: ((Attachment) -> Void)? = nil
 
+    @State private var hydratedEntry: LifeEntry?
+
+    private var resolvedStyle: PresentationStyle {
+        presentationStyle ?? (isStandaloneWindow ? .standaloneWindow : .sheet)
+    }
+
+    private var displayEntry: LifeEntry {
+        if let hydratedEntry, hydratedEntry.id == entry.id {
+            return hydratedEntry
+        }
+        return entry
+    }
+
     private func handleClose() {
-        if !isStandaloneWindow {
+        if resolvedStyle != .standaloneWindow {
             appState.highlightedEntry = nil
         }
         onClose?()
-        dismiss()
+        if resolvedStyle == .sheet {
+            dismiss()
+        }
     }
 
     var body: some View {
-        let isTx = (entry.type == "transaction")
-        let txId = Int(entry.associatedTransactionId ?? Int64(entry.id))
+        let current = displayEntry
+        let isTx = (current.type == "transaction")
+        let txId = Int(current.associatedTransactionId ?? Int64(current.id))
         let matchingTx = isTx ? appState.transactionById[txId] : nil
+
+        Group {
+            if resolvedStyle == .inspector {
+                inspectorBody(current: current, isTx: isTx, matchingTx: matchingTx)
+            } else {
+                modalOrWindowBody(current: current, isTx: isTx, matchingTx: matchingTx)
+            }
+        }
+        .background(ArchivePalette.archivePaper)
+        .task(id: entry.id) {
+            hydratedEntry = nil
+            guard resolvedStyle == .inspector,
+                  entry.id > 0,
+                  entry.type != "transaction",
+                  !appState.entries.contains(where: { $0.id == entry.id }) else { return }
+            if let remote = try? await APIClient.shared.fetchEntry(id: entry.id) {
+                hydratedEntry = remote
+            }
+        }
+    }
+
+    // MARK: - 原生三栏 Inspector 布局（300–520pt 窄栏自适应，无 .cancelAction 冲突）
+
+    private func inspectorBody(current: LifeEntry, isTx: Bool, matchingTx: Transaction?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    badgeTag(for: current)
+
+                    if current.isPrivate {
+                        privateTag
+                    }
+
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 2) {
+                        if appState.isPaired && (current.id > 0 || (isTx && matchingTx != nil)) {
+                            if isTx {
+                                if let tx = matchingTx {
+                                    PaperIconButton(
+                                        systemName: ArchiveIcon.edit.systemName,
+                                        label: "编辑账目",
+                                        size: 11,
+                                        tint: ArchivePalette.inkSecondary
+                                    ) {
+                                        onEditTransaction(tx)
+                                    }
+                                    PaperIconButton(
+                                        systemName: ArchiveIcon.delete.systemName,
+                                        label: "删除账目",
+                                        size: 11,
+                                        tint: ArchivePalette.accentWarm
+                                    ) {
+                                        appState.askConfirm(
+                                            title: ArchiveSharedCopy.transactionDeleteTitle,
+                                            message: ArchiveSharedCopy.transactionDeleteMessage,
+                                            confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
+                                            danger: true
+                                        ) {
+                                            onDeleteTransaction(tx)
+                                        }
+                                    }
+                                }
+                            } else {
+                                if current.id > 0 {
+                                    PaperIconButton(
+                                        systemName: ArchiveIcon.edit.systemName,
+                                        label: "编辑手稿",
+                                        size: 11,
+                                        tint: ArchivePalette.inkSecondary
+                                    ) {
+                                        onEditEntry(current)
+                                    }
+                                    PaperIconButton(
+                                        systemName: current.isPrivate ? "lock.open" : "lock.fill",
+                                        label: current.isPrivate ? "设为公开可见" : "设为仅自己可见",
+                                        size: 11,
+                                        tint: current.isPrivate ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary
+                                    ) {
+                                        appState.toggleEntryPrivacy(current)
+                                    }
+                                }
+                                PaperIconButton(
+                                    systemName: "macwindow.badge.plus",
+                                    label: "在新窗口打开",
+                                    size: 11,
+                                    tint: ArchivePalette.inkSecondary
+                                ) {
+                                    if let onOpenInNewWindow {
+                                        onOpenInNewWindow(current)
+                                    } else {
+                                        appState.detailWindowEntry = current
+                                    }
+                                }
+                                PaperIconButton(
+                                    systemName: ArchiveIcon.delete.systemName,
+                                    label: "删除记录",
+                                    size: 11,
+                                    tint: ArchivePalette.accentWarm
+                                ) {
+                                    appState.askConfirm(
+                                        title: ArchiveSharedCopy.entryDeleteTitle,
+                                        message: ArchiveSharedCopy.entryDeleteMessage,
+                                        confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
+                                        danger: true
+                                    ) {
+                                        appState.deleteEntryAction(current)
+                                    }
+                                }
+                            }
+                        }
+
+                        PaperIconButton(
+                            systemName: ArchiveIcon.close.systemName,
+                            label: "收起检视器",
+                            size: 11,
+                            tint: ArchivePalette.inkMuted
+                        ) {
+                            handleClose()
+                        }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Text(current.parsedDate.dotDateTime)
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+
+                    let trimmedLocation = current.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if !trimmedLocation.isEmpty {
+                        HStack(spacing: 3) {
+                            Image(systemName: ArchiveIcon.location.systemName)
+                                .font(.system(size: 9.5))
+                            Text(trimmedLocation)
+                                .font(ArchiveTypography.monoScale(size: 11))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                }
+            }
+
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.7))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if let tx = matchingTx {
+                        transactionDetailContent(tx)
+                    } else {
+                        if current.hasDistinctTitle {
+                            Text(current.title)
+                                .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
+                                .foregroundStyle(ArchivePalette.inkPrimary)
+                                .textSelection(.enabled)
+                        }
+
+                        if !current.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            EditorialProseTextView(
+                                current.content,
+                                font: ArchiveTypography.bodySans(size: 13.5),
+                                color: ArchivePalette.inkPrimary,
+                                lineSpacing: 5
+                            )
+                            .textSelection(.enabled)
+                        }
+
+                        if !current.attachments.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(current.attachments) { att in
+                                    if let url = att.resolvedDisplayURL(preferThumbnail: true) {
+                                        FilmFrameView(
+                                            imageURL: url,
+                                            originalURL: att.resolvedDisplayURL(preferThumbnail: false),
+                                            preferredFilename: att.originalFilename,
+                                            intrinsicSize: att.intrinsicSize,
+                                            caption: current.title.isEmpty ? att.originalFilename : current.title,
+                                            metaText: current.parsedDate.dotDate,
+                                            maxHeight: 240
+                                        ) {
+                                            if let onOpenAttachment {
+                                                onOpenAttachment(att)
+                                            } else {
+                                                appState.lightboxAttachment = att
+                                            }
+                                        } onExportNotice: { message in
+                                            appState.showTemporaryBanner(message)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                }
+                            }
+                            .padding(.top, 2)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 12)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - 独立窗口 / 弹窗布局
+
+    private func modalOrWindowBody(current: LifeEntry, isTx: Bool, matchingTx: Transaction?) -> some View {
+        let standalone = (resolvedStyle == .standaloneWindow)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                HStack(spacing: 4) {
-                    if entry.type == EntryType.life.rawValue {
-                        Circle()
-                            .fill(entry.displayAccentColor)
-                            .frame(width: 5.5, height: 5.5)
-                            .accessibilityHidden(true)
-                    }
-                    Text(Self.entryTypeBadge(entry))
-                        .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
-                }
-                .foregroundStyle(entry.displayAccentColor)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(entry.displayAccentColor.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                badgeTag(for: current)
 
-                if entry.isPrivate {
-                    HStack(spacing: 3) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9.5))
-                        Text("仅自己可见")
-                            .font(ArchiveTypography.monoScale(size: 10.5))
-                    }
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(ArchivePalette.accentWarm.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                    .accessibilityLabel("私密记录，仅自己可见")
+                if current.isPrivate {
+                    privateTag
                 }
 
-                Text(entry.parsedDate.dotDateTime)
+                Text(current.parsedDate.dotDateTime)
                     .font(ArchiveTypography.monoScale(size: 11.5))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Spacer()
-                if appState.isPaired && (entry.id > 0 || (isTx && matchingTx != nil)) {
+                if appState.isPaired && (current.id > 0 || (isTx && matchingTx != nil)) {
                     if isTx {
                         if let tx = matchingTx {
                             Button("编辑账目") {
-                                if !isStandaloneWindow { handleClose() }
+                                if !standalone { handleClose() }
                                 onEditTransaction(tx)
                             }
                             .font(ArchiveTypography.bodySans(size: 12))
@@ -189,8 +395,8 @@ struct StreamEntryDetailView: View {
                             .paperButtonFocusRing(cornerRadius: 4)
 
                             Button("删除账目") {
-                                if let onDeleteTx = isStandaloneWindow ? onDeleteTransaction : nil {
-                                    onDeleteTx(tx)
+                                if standalone {
+                                    onDeleteTransaction(tx)
                                 } else {
                                     appState.askConfirm(
                                         title: ArchiveSharedCopy.transactionDeleteTitle,
@@ -210,8 +416,8 @@ struct StreamEntryDetailView: View {
                         }
                     } else {
                         Button("编辑手稿") {
-                            let target = entry
-                            if !isStandaloneWindow { handleClose() }
+                            let target = current
+                            if !standalone { handleClose() }
                             onEditEntry(target)
                         }
                         .font(ArchiveTypography.bodySans(size: 12))
@@ -221,7 +427,7 @@ struct StreamEntryDetailView: View {
 
                         Button("删除记录") {
                             if let onDeleteEntryOverride {
-                                onDeleteEntryOverride(entry)
+                                onDeleteEntryOverride(current)
                             } else {
                                 appState.askConfirm(
                                     title: ArchiveSharedCopy.entryDeleteTitle,
@@ -230,7 +436,7 @@ struct StreamEntryDetailView: View {
                                     danger: true
                                 ) {
                                     handleClose()
-                                    appState.deleteEntryAction(entry)
+                                    appState.deleteEntryAction(current)
                                 }
                             }
                         }
@@ -249,61 +455,9 @@ struct StreamEntryDetailView: View {
             }
 
             if let tx = matchingTx {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(tx.title.isEmpty ? tx.category : tx.title)
-                            .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.inkPrimary)
-                        Spacer()
-                        Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
-                            .font(ArchiveTypography.monoScale(size: 22, weight: .bold))
-                            .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
-                    }
-
-                    HStack(spacing: 8) {
-                        Text(tx.category)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(ArchivePalette.archiveSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                        if let pay = tx.paymentMethod, !pay.isEmpty {
-                            Text(pay)
-                                .font(ArchiveTypography.bodySans(size: 11.5))
-                                .foregroundStyle(ArchivePalette.inkMuted)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(ArchivePalette.archiveSubtle)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                        }
-
-                        if let badgeText = tx.installmentBadgeText {
-                            Text(badgeText)
-                                .font(ArchiveTypography.monoScale(size: 11))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
-                                )
-                        }
-                    }
-
-                    if let note = tx.note, !note.isEmpty {
-                        EditorialProseTextView(
-                            note,
-                            font: ArchiveTypography.bodySans(size: 13.5),
-                            color: ArchivePalette.inkPrimary.opacity(0.88)
-                        )
-                        .padding(.top, 4)
-                    }
-                }
-                .padding(.vertical, 6)
+                transactionDetailContent(tx)
             } else {
-                let trimmedLocation = entry.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let trimmedLocation = current.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 if !trimmedLocation.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: ArchiveIcon.location.systemName)
@@ -314,8 +468,8 @@ struct StreamEntryDetailView: View {
                     .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
-                if entry.hasDistinctTitle {
-                    Text(entry.title)
+                if current.hasDistinctTitle {
+                    Text(current.title)
                         .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                 }
@@ -323,25 +477,25 @@ struct StreamEntryDetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         EditorialProseTextView(
-                            entry.content,
+                            current.content,
                             font: ArchiveTypography.bodySans(size: 14),
                             color: ArchivePalette.inkPrimary,
                             lineSpacing: 5
                         )
                         .textSelection(.enabled)
 
-                        if !entry.attachments.isEmpty {
+                        if !current.attachments.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
-                                    ForEach(entry.attachments) { att in
+                                    ForEach(current.attachments) { att in
                                         if let url = att.resolvedDisplayURL(preferThumbnail: true) {
                                             FilmFrameView(
                                                 imageURL: url,
                                                 originalURL: att.resolvedDisplayURL(preferThumbnail: false),
                                                 preferredFilename: att.originalFilename,
                                                 intrinsicSize: att.intrinsicSize,
-                                                caption: entry.title.isEmpty ? att.originalFilename : entry.title,
-                                                metaText: entry.parsedDate.dotDate,
+                                                caption: current.title.isEmpty ? att.originalFilename : current.title,
+                                                metaText: current.parsedDate.dotDate,
                                                 maxHeight: 220
                                             ) {
                                                 if let onOpenAttachment {
@@ -361,13 +515,102 @@ struct StreamEntryDetailView: View {
                         }
                     }
                 }
-                .frame(minHeight: 160, maxHeight: isStandaloneWindow ? .infinity : 460)
+                .frame(minHeight: 160, maxHeight: standalone ? .infinity : 460)
             }
         }
         .padding(24)
-        .frame(maxWidth: isStandaloneWindow ? 760 : 560, maxHeight: isStandaloneWindow ? .infinity : nil, alignment: .topLeading)
-        .frame(maxWidth: isStandaloneWindow ? .infinity : nil)
-        .background(ArchivePalette.archivePaper)
+        .frame(maxWidth: standalone ? 760 : 560, maxHeight: standalone ? .infinity : nil, alignment: .topLeading)
+        .frame(maxWidth: standalone ? .infinity : nil)
+    }
+
+    private func badgeTag(for current: LifeEntry) -> some View {
+        HStack(spacing: 4) {
+            if current.type == EntryType.life.rawValue {
+                Circle()
+                    .fill(current.displayAccentColor)
+                    .frame(width: 5.5, height: 5.5)
+                    .accessibilityHidden(true)
+            }
+            Text(Self.entryTypeBadge(current))
+                .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+        }
+        .foregroundStyle(current.displayAccentColor)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(current.displayAccentColor.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+    }
+
+    private var privateTag: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 9.5))
+            Text("仅自己可见")
+                .font(ArchiveTypography.monoScale(size: 10.5))
+        }
+        .foregroundStyle(ArchivePalette.accentWarm)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(ArchivePalette.accentWarm.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+        .accessibilityLabel("私密记录，仅自己可见")
+    }
+
+    private func transactionDetailContent(_ tx: Transaction) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(tx.title.isEmpty ? tx.category : tx.title)
+                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                Spacer()
+                Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
+                    .font(ArchiveTypography.monoScale(size: 22, weight: .bold))
+                    .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
+            }
+
+            HStack(spacing: 8) {
+                Text(tx.category)
+                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .foregroundStyle(ArchivePalette.inkSecondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(ArchivePalette.archiveSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                if let pay = tx.paymentMethod, !pay.isEmpty {
+                    Text(pay)
+                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(ArchivePalette.archiveSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+
+                if let badgeText = tx.installmentBadgeText {
+                    Text(badgeText)
+                        .font(ArchiveTypography.monoScale(size: 11))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
+                        )
+                }
+            }
+
+            if let note = tx.note, !note.isEmpty {
+                EditorialProseTextView(
+                    note,
+                    font: ArchiveTypography.bodySans(size: 13.5),
+                    color: ArchivePalette.inkPrimary.opacity(0.88)
+                )
+                .textSelection(.enabled)
+                .padding(.top, 4)
+            }
+        }
+        .padding(.vertical, 6)
     }
 
     static func entryTypeBadge(_ entry: LifeEntry) -> String {

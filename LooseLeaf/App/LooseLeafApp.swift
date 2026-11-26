@@ -13,11 +13,15 @@ private struct StandaloneEntryDetailWindow: View {
     @State private var localEditingTx: Transaction?
     @State private var localLightbox: Attachment?
     @State private var localConfirm: ConfirmDialogRequest?
+    @State private var fetchedEntry: LifeEntry?
 
     private var resolvedEntry: LifeEntry? {
         if let id = entryId {
             if let live = appState.entries.first(where: { $0.id == id }) {
                 return live
+            }
+            if let fetchedEntry, fetchedEntry.id == id {
+                return fetchedEntry
             }
             if appState.detailWindowEntry?.id == id {
                 return appState.detailWindowEntry
@@ -146,6 +150,12 @@ private struct StandaloneEntryDetailWindow: View {
                 appState.detailWindowEntry = nil
             }
         }
+        .task(id: entryId) {
+            guard let id = entryId, id > 0, resolvedEntry == nil, appState.isPaired else { return }
+            if let remote = try? await APIClient.shared.fetchEntry(id: id) {
+                fetchedEntry = remote
+            }
+        }
     }
 }
 
@@ -177,8 +187,6 @@ public struct LooseLeafApp: App {
                 appState.editingEntry = nil
             } else if appState.editingTransaction != nil {
                 appState.editingTransaction = nil
-            } else if appState.highlightedEntry != nil {
-                appState.highlightedEntry = nil
             }
         } else {
             NSApp.keyWindow?.performClose(nil)

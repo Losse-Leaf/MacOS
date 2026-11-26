@@ -73,6 +73,32 @@ extension AppState {
         activeConfirmDialog = nil
     }
 
+    // MARK: - 隐私切换
+
+    /// 切换散页私密可见性（同步刷新列表与当前检视器，保障 Spotlight / Handoff 隐私防线即时生效）
+    public func toggleEntryPrivacy(_ entry: LifeEntry) {
+        guard entry.id > 0 else { return }
+        let nextPrivate = !entry.isPrivate
+        Task { @MainActor in
+            do {
+                let updated = try await APIClient.shared.updateEntry(
+                    id: entry.id,
+                    UpdateEntryRequest(isPrivate: nextPrivate)
+                )
+                await loadEntries(forceFull: false)
+                if highlightedEntry?.id == entry.id {
+                    highlightedEntry = entries.first(where: { $0.id == entry.id }) ?? updated
+                }
+                if detailWindowEntry?.id == entry.id {
+                    detailWindowEntry = entries.first(where: { $0.id == entry.id }) ?? updated
+                }
+                showTemporaryBanner(nextPrivate ? "已设为仅自己可见（私密）" : "已设为公开（含图自动同步至 Vesper Space）")
+            } catch {
+                showTemporaryBanner("切换私密状态失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - 可撤销删除动作
 
     public func deleteEntryAction(_ entry: LifeEntry) {

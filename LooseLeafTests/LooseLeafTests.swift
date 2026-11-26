@@ -151,6 +151,24 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(processed.height, 300)
         XCTAssertEqual(processed.mimeType, "image/jpeg")
         XCTAssertFalse(processed.compressedData.isEmpty)
+        XCTAssertEqual(
+            ImageProcessor.formatPlacemarkName(
+                locality: "上海市",
+                subLocality: "黄浦区",
+                thoroughfare: "延安东路",
+                name: "126号"
+            ),
+            "上海市 · 延安东路"
+        )
+        XCTAssertEqual(
+            ImageProcessor.formatPlacemarkName(
+                locality: "北京市",
+                subLocality: "朝阳区",
+                thoroughfare: "三里屯路",
+                name: "三里屯太古里"
+            ),
+            "北京市 · 三里屯太古里"
+        )
     }
 
     // MARK: - 8. Resolve Wish Request Codable Tests

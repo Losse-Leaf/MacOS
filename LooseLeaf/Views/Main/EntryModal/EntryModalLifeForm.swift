@@ -46,9 +46,23 @@ struct EntryModalLifeForm: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("标题将自动取正文首行")
 
+            let timeBinding = Binding<Date>(
+                get: { draft.occurredAt },
+                set: {
+                    draft.occurredAt = $0
+                    draft.userEditedTime = true
+                }
+            )
+            let locationBinding = Binding<String>(
+                get: { draft.location },
+                set: {
+                    draft.location = $0
+                    draft.userEditedLocation = !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+            )
             HStack(spacing: 12) {
-                PaperDatePicker(selection: $draft.occurredAt, enableTime: true, label: "发生时刻")
-                TextField("地点（可选）", text: $draft.location)
+                PaperDatePicker(selection: timeBinding, enableTime: true, label: "发生时刻")
+                TextField("地点（可选）", text: locationBinding)
                     .accessibilityLabel("地点")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 12))

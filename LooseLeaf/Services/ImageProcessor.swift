@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import CoreGraphics
+import CoreLocation
 import UniformTypeIdentifiers
 
 /// 端侧暗房相纸图像处理器 (ImageIO EXIF 提取与 4K 85% 智能压制)
@@ -27,6 +28,8 @@ public enum ImageProcessor {
         public var exposureTime: Double?
         public var iso: Int?
         public var capturedAt: String?
+        public var latitude: Double?
+        public var longitude: Double?
 
         public init(
             cameraMake: String = "",
@@ -36,7 +39,9 @@ public enum ImageProcessor {
             fNumber: Double? = nil,
             exposureTime: Double? = nil,
             iso: Int? = nil,
-            capturedAt: String? = nil
+            capturedAt: String? = nil,
+            latitude: Double? = nil,
+            longitude: Double? = nil
         ) {
             self.cameraMake = cameraMake
             self.cameraModel = cameraModel
@@ -46,6 +51,8 @@ public enum ImageProcessor {
             self.exposureTime = exposureTime
             self.iso = iso
             self.capturedAt = capturedAt
+            self.latitude = latitude
+            self.longitude = longitude
         }
 
         /// 拼装暗房相纸底款说明，如 "Fujifilm X100V · 23mm F2.0 · ISO 400"
@@ -135,6 +142,7 @@ public enum ImageProcessor {
     private static func exifSummary(from metadata: [CFString: Any]) -> EXIFSummary {
         let exif = metadata[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiff = metadata[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+        let gps = metadata[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
 
         let make = (tiff[kCGImagePropertyTIFFMake] as? String) ?? ""
         let model = (tiff[kCGImagePropertyTIFFModel] as? String) ?? ""
@@ -143,11 +151,30 @@ public enum ImageProcessor {
         let fNumber = exif[kCGImagePropertyExifFNumber] as? Double
         let exposureTime = exif[kCGImagePropertyExifExposureTime] as? Double
         let iso = (exif[kCGImagePropertyExifISOSpeedRatings] as? [Int])?.first
-        let dateTimeOriginal = exif[kCGImagePropertyExifDateTimeOriginal] as? String
+        let dateTimeOriginal = (exif[kCGImagePropertyExifDateTimeOriginal] as? String)
+            ?? (exif[kCGImagePropertyExifDateTimeDigitized] as? String)
+            ?? (tiff[kCGImagePropertyTIFFDateTime] as? String)
 
         var isoDateStr: String?
-        if let rawDate = dateTimeOriginal, let parsed = FormatUtils.parseFlexDate(rawDate) {
+        if let rawDate = dateTimeOriginal, !rawDate.hasPrefix("0000"), let parsed = FormatUtils.parseFlexDate(rawDate) {
             isoDateStr = FormatUtils.beijingISOString(from: parsed)
+        }
+
+        var latitude: Double?
+        var longitude: Double?
+        if let rawLat = (gps[kCGImagePropertyGPSLatitude] as? NSNumber)?.doubleValue,
+           let rawLon = (gps[kCGImagePropertyGPSLongitude] as? NSNumber)?.doubleValue {
+            let latRef = (gps[kCGImagePropertyGPSLatitudeRef] as? String)?.uppercased() ?? "N"
+            let lonRef = (gps[kCGImagePropertyGPSLongitudeRef] as? String)?.uppercased() ?? "E"
+            let signedLat = latRef == "S" ? -abs(rawLat) : abs(rawLat)
+            let signedLon = lonRef == "W" ? -abs(rawLon) : abs(rawLon)
+            if signedLat.isFinite, signedLon.isFinite,
+               (-90.0...90.0).contains(signedLat),
+               (-180.0...180.0).contains(signedLon),
+               (abs(signedLat) > 1e-6 || abs(signedLon) > 1e-6) {
+                latitude = signedLat
+                longitude = signedLon
+            }
         }
 
         return EXIFSummary(
@@ -158,8 +185,62 @@ public enum ImageProcessor {
             fNumber: fNumber,
             exposureTime: exposureTime,
             iso: iso,
-            capturedAt: isoDateStr
+            capturedAt: isoDateStr,
+            latitude: latitude,
+            longitude: longitude
         )
+    }
+
+    /// 将照片 EXIF 中的 GPS 坐标异步逆地理编码为易读地点名（如 "上海市 · 延安东路"）
+    public static func reverseGeocodeLocation(latitude: Double, longitude: Double) async -> String? {
+        guard latitude.isFinite, longitude.isFinite,
+              (-90.0...90.0).contains(latitude),
+              (-180.0...180.0).contains(longitude),
+              (abs(latitude) > 1e-6 || abs(longitude) > 1e-6) else {
+            return nil
+        }
+        let location = CLLocation(latitude: latitude, longitude: longitude)
+        let geocoder = CLGeocoder()
+        guard let placemarks = try? await geocoder.reverseGeocodeLocation(
+            location,
+            preferredLocale: Locale(identifier: "zh_CN")
+        ), let pm = placemarks.first else {
+            return nil
+        }
+        return formatPlacemarkName(
+            locality: pm.locality ?? pm.administrativeArea,
+            subLocality: pm.subLocality,
+            thoroughfare: pm.thoroughfare,
+            name: pm.name
+        )
+    }
+
+    public static func formatPlacemarkName(
+        locality: String?,
+        subLocality: String?,
+        thoroughfare: String?,
+        name: String?
+    ) -> String? {
+        let cleanCity = locality?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .takeIfNonEmpty()
+        let cleanSub = subLocality?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .takeIfNonEmpty()
+        let cleanRoad = thoroughfare?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .takeIfMeaningful(excluding: [cleanCity, cleanSub])
+        let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .takeIfMeaningful(excluding: [cleanCity, cleanSub])
+
+        let detail = cleanName ?? cleanRoad ?? cleanSub
+        switch (cleanCity, detail) {
+        case let (city?, det?) where city != det:
+            return det.hasPrefix(city) ? det : "\(city) · \(det)"
+        case let (_, det?):
+            return det
+        case let (city?, nil):
+            return city
+        default:
+            return nil
+        }
     }
 
     /// 执行端侧 4K (最长边 3840px) 缩放与 85% 质量 JPEG 压制
@@ -344,5 +425,20 @@ public enum ImageProcessor {
         try await BackgroundExecutor.run {
             try processImageData(rawData, originalFilename: originalFilename, maxPixelSize: maxPixelSize, quality: quality)
         }
+    }
+}
+
+private extension String {
+    func takeIfNonEmpty() -> String? {
+        isEmpty ? nil : self
+    }
+
+    func takeIfMeaningful(excluding: [String?]) -> String? {
+        guard !isEmpty else { return nil }
+        if caseInsensitiveCompare("Unnamed Road") == .orderedSame { return nil }
+        if excluding.compactMap({ $0 }).contains(self) { return nil }
+        let stripped = trimmingCharacters(in: CharacterSet(charactersIn: "0123456789号楼室单元层-—#/. "))
+        if stripped.isEmpty { return nil }
+        return self
     }
 }

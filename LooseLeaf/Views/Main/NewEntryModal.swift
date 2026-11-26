@@ -215,9 +215,24 @@ public struct NewEntryModal: View {
             let profileCity = appState.profile.currentCity.trimmingCharacters(in: .whitespacesAndNewlines)
             if !profileCity.isEmpty {
                 draft.location = profileCity
+                // 个人资料城市仅作默认占位，若装入含 GPS EXIF 的照片仍优先填充拍摄地点
+                draft.userEditedLocation = false
             }
         }
         restoreDraft()
+        media.onPhotoMetadataExtracted = { capturedAt, lat, lon in
+            if let capturedAt, !draft.userEditedTime, let date = FormatUtils.parseFlexDate(capturedAt) {
+                draft.occurredAt = date
+            }
+            if let lat, let lon, (!draft.userEditedLocation || draft.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                Task { @MainActor in
+                    if let resolved = await ImageProcessor.reverseGeocodeLocation(latitude: lat, longitude: lon),
+                       (!draft.userEditedLocation || draft.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                        draft.location = resolved
+                    }
+                }
+            }
+        }
     }
 
     private func handleSubmit() {
@@ -242,8 +257,10 @@ public struct NewEntryModal: View {
     }
 
     private func submitLife() async throws {
-        guard !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.uploadedAttachments.isEmpty else {
-            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "正文内容与相纸不能同时为空"])
+        let cleanTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty || !cleanContent.isEmpty || !media.uploadedAttachments.isEmpty else {
+            throw NSError(domain: "LooseLeaf", code: -1, userInfo: [NSLocalizedDescriptionKey: "标题、正文与相纸不能同时为空"])
         }
         let cleanLocation = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
         _ = try await appState.submitQuickCapture(

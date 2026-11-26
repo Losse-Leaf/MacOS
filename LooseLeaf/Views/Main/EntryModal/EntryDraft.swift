@@ -31,5 +31,7 @@ final class EntryDraft {
     var content: String = ""
     var occurredAt: Date = Date()
     var location: String = ""
+    var userEditedTime: Bool = false
+    var userEditedLocation: Bool = false
     var isPrivate: Bool = false
 }

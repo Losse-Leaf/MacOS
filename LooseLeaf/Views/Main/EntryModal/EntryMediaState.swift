@@ -87,6 +87,8 @@ final class EntryMediaState {
     var items: [EntryUploadItem] = []
     /// 相机底款信息（EXIF 摘要，来自最近一张成功解析的相纸）
     var extractedCameraLine: String = ""
+    /// 当解析到照片 EXIF 元信息（拍摄时间、GPS 经纬度）时的回调，由父视图按用户编辑状态决定是否自动填充
+    var onPhotoMetadataExtracted: (@MainActor (_ capturedAt: String?, _ latitude: Double?, _ longitude: Double?) -> Void)?
     /// 失败汇总提示（与原「相纸上传失败：xxx」文案保持一致）
     var errorMessage: String?
 
@@ -120,13 +122,21 @@ final class EntryMediaState {
 
     // MARK: - 入队
 
-    /// 入队一批本地文件（来自「选择相纸照片」/ 拖拽 / 剪贴板文件 URL）
+    /// 入队一批本地文件（来自「选择相纸照片」/ 拖拽 / 剪贴板文件 URL），自动跳过同路径重复文件
     func enqueueFiles(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        var seenURLs = Set(items.compactMap { $0.sourceURL?.standardizedFileURL })
+        var added = false
         for url in urls {
-            items.append(EntryUploadItem(displayName: url.lastPathComponent, sourceURL: url))
+            let std = url.standardizedFileURL
+            if seenURLs.insert(std).inserted {
+                items.append(EntryUploadItem(displayName: url.lastPathComponent, sourceURL: url))
+                added = true
+            }
         }
-        startRunner()
+        if added {
+            startRunner()
+        }
     }
 
     /// 入队一张内存图片（⌘V 粘贴的截图）
@@ -264,11 +274,16 @@ final class EntryMediaState {
                 )
             }
 
-            // 3. 相机底款信息（原先只写不读，用户看不到 EXIF 相机信息）
+            // 3. 相机底款与拍摄时间/GPS 地点回调
             let camera = processed.exifMetadata.formattedCameraLine
             if !camera.isEmpty {
                 extractedCameraLine = camera
             }
+            onPhotoMetadataExtracted?(
+                processed.exifMetadata.capturedAt,
+                processed.exifMetadata.latitude,
+                processed.exifMetadata.longitude
+            )
 
             // 4. 直传对象存储（带逐张进度回调）
             let bridge = EntryProgressBridge { value in

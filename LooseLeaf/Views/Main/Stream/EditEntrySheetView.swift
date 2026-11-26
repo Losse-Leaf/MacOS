@@ -20,6 +20,9 @@ public struct EditEntrySheetView: View {
     @State private var editContent: String
     @State private var editLocation: String
     @State private var editIsPrivate: Bool
+    @State private var userEditedTime: Bool = false
+    @State private var userEditedLocation: Bool
+    @State private var hadPhotosOnStart: Bool
     @State private var media: EntryMediaState
     @State private var isDropTargeted: Bool = false
     @State private var isSaving: Bool = false
@@ -44,6 +47,8 @@ public struct EditEntrySheetView: View {
         _editContent = State(initialValue: entry.content)
         _editLocation = State(initialValue: entry.location ?? "")
         _editIsPrivate = State(initialValue: entry.isPrivate)
+        _userEditedLocation = State(initialValue: !(entry.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        _hadPhotosOnStart = State(initialValue: !entry.attachments.isEmpty)
         _media = State(initialValue: EntryMediaState(initialAttachments: entry.attachments))
     }
 
@@ -81,7 +86,14 @@ public struct EditEntrySheetView: View {
                 }
 
                 // 2. 发生时刻
-                PaperDatePicker(selection: $editOccurredAt, enableTime: true, label: "发生时刻：")
+                PaperDatePicker(
+                    selection: Binding(
+                        get: { editOccurredAt },
+                        set: { editOccurredAt = $0; userEditedTime = true }
+                    ),
+                    enableTime: true,
+                    label: "发生时刻："
+                )
 
                 // 3. 标题与自适应多行正文
                 TextField("标题（可留空由正文第一行派生）", text: $editTitle)
@@ -112,7 +124,13 @@ public struct EditEntrySheetView: View {
                     )
 
                 // 4. 具体地点（可选）
-                TextField("具体地点（可选，如：街角书店）", text: $editLocation)
+                TextField("具体地点（可选，如：街角书店）", text: Binding(
+                    get: { editLocation },
+                    set: {
+                        editLocation = $0
+                        userEditedLocation = !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }
+                ))
                     .accessibilityLabel("具体地点")
                     .textFieldStyle(.plain)
                     .font(ArchiveTypography.bodySans(size: 12))
@@ -166,6 +184,19 @@ public struct EditEntrySheetView: View {
         }
         .onAppear {
             isContentFocused = true
+            media.onPhotoMetadataExtracted = { capturedAt, lat, lon in
+                if let capturedAt, !hadPhotosOnStart, !userEditedTime, let date = FormatUtils.parseFlexDate(capturedAt) {
+                    editOccurredAt = date
+                }
+                if let lat, let lon, editLocation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !userEditedLocation {
+                    Task { @MainActor in
+                        if let resolved = await ImageProcessor.reverseGeocodeLocation(latitude: lat, longitude: lon),
+                           editLocation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !userEditedLocation {
+                            editLocation = resolved
+                        }
+                    }
+                }
+            }
         }
         .onDrop(of: [.image, .fileURL, .rawImage], isTargeted: $isDropTargeted) { providers in
             media.handleDrop(providers: providers)

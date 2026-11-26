@@ -79,13 +79,13 @@
 - **修复拖拽超时仍会卡死**：`DropLoader.withTimeout` 不再用 TaskGroup 等待永不回调的 `NSItemProvider`。
 - **修复全局搜索旧结果覆盖新结果**：加入请求代号，只接受最新查询结果。
 
-详细设计与工程规范见 [`docs/macos.md`](../docs/macos.md) 与总台账 [`docs/backlog.md`](../docs/backlog.md)。
+详细设计与工程规范见 [`docs/macos.md`](https://github.com/Losse-Leaf/docs/blob/main/macos.md) 与总台账 [`docs/backlog.md`](https://github.com/Losse-Leaf/docs/blob/main/backlog.md)。
 
 ---
 
 ## v1.6.0 变更摘要
 
-本次是一次覆盖**性能、数据完整性、原生化与可访问性**的深度优化批次（详见 [`docs/macos.md`](../docs/macos.md)）：
+本次是一次覆盖**性能、数据完整性、原生化与可访问性**的深度优化批次（详见 [`docs/macos.md`](https://github.com/Losse-Leaf/docs/blob/main/macos.md)）：
 
 - **数据不再丢失**：快照引入 `schemaVersion` 与迁移链；写盘改为「版本号守卫的串行写」；关闭「系统突然终止」导致退出前未落盘的问题；Outbox 增加死信上限；凭据改为持锁读取 + 先设权限再原子替换。
 - **主线程不再被阻塞**：选图、热更新校验、剪贴板读取、拖拽落盘全部移出主线程；冷启动改为后台解码 + 注水，首屏不再白屏。

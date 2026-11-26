@@ -22,6 +22,13 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
     public var installmentRemainMonths: Int?
     public var repaymentDay: Int?
 
+    // 真实分期流水扩展 (RC-140)
+    public var source: String?
+    public var installmentPlanId: Int?
+    public var installmentItemId: Int?
+    public var principalAmount: Int64?
+    public var feeAmount: Int64?
+
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -46,6 +53,11 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         case installmentMonthlyPay = "installment_monthly_pay"
         case installmentRemainMonths = "installment_remain_months"
         case repaymentDay = "repayment_day"
+        case source
+        case installmentPlanId = "installment_plan_id"
+        case installmentItemId = "installment_item_id"
+        case principalAmount = "principal_amount"
+        case feeAmount = "fee_amount"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -69,6 +81,11 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         installmentMonthlyPay: Int64? = nil,
         installmentRemainMonths: Int? = nil,
         repaymentDay: Int? = nil,
+        source: String? = nil,
+        installmentPlanId: Int? = nil,
+        installmentItemId: Int? = nil,
+        principalAmount: Int64? = nil,
+        feeAmount: Int64? = nil,
         deletedAt: String? = nil,
         createdAt: String? = nil,
         updatedAt: String? = nil,
@@ -90,6 +107,11 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         self.installmentMonthlyPay = installmentMonthlyPay
         self.installmentRemainMonths = installmentRemainMonths
         self.repaymentDay = repaymentDay
+        self.source = source
+        self.installmentPlanId = installmentPlanId
+        self.installmentItemId = installmentItemId
+        self.principalAmount = principalAmount
+        self.feeAmount = feeAmount
         self.deletedAt = deletedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -115,10 +137,30 @@ public struct Transaction: Codable, Identifiable, Equatable, Sendable {
         installmentMonthlyPay = try? c.decodeIfPresent(Int64.self, forKey: .installmentMonthlyPay)
         installmentRemainMonths = try? c.decodeIfPresent(Int.self, forKey: .installmentRemainMonths)
         repaymentDay = try? c.decodeIfPresent(Int.self, forKey: .repaymentDay)
+        source = try? c.decodeIfPresent(String.self, forKey: .source)
+        installmentPlanId = try? c.decodeIfPresent(Int.self, forKey: .installmentPlanId)
+        installmentItemId = try? c.decodeIfPresent(Int.self, forKey: .installmentItemId)
+        principalAmount = try? c.decodeIfPresent(Int64.self, forKey: .principalAmount)
+        feeAmount = try? c.decodeIfPresent(Int64.self, forKey: .feeAmount)
         deletedAt = try? c.decodeIfPresent(String.self, forKey: .deletedAt)
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try? c.decodeIfPresent(String.self, forKey: .updatedAt)
         syncStatus = (try? c.decodeIfPresent(String.self, forKey: .syncStatus)) ?? "synced"
+    }
+
+    /// 是否为分期计划自动生成的还款流水（后端禁止直接改金额）
+    public var isInstallmentRepayment: Bool {
+        source == "installment_repay"
+    }
+
+    /// 表格排序用有符号金额（收入为正、支出为负）
+    public var signedAmountForSort: Int64 {
+        type == "income" ? amount : -amount
+    }
+
+    /// 表格排序用展示标题（空标题回落类目名）
+    public var sortableTitle: String {
+        title.isEmpty ? category : title
     }
 
     /// 北京时间派生日期结构

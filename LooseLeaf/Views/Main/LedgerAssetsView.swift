@@ -2,24 +2,29 @@ import SwiftUI
 import AppKit
 
 /// 桌面端独立记账与心愿单视图 (LedgerAssetsView)
-/// 顶部分段切换「流水 | 心愿单」；流水页签下提供月度收支光谱、双模记账控制台与明细流水，
-/// 心愿单页签嵌入 `WishlistView(embedded: true)`，各司独立滚动容器避免嵌套 ScrollView。
+/// 顶部分段切换「流水 | 心愿单」；流水页签下固定顶部单行快记条与可折叠月度收支光谱，
+/// 账目明细升级为原生 `Table`（支持列排序、列宽拖拽、多选净额汇总与上下文菜单），
+/// 完整收支与分期表单通过原生 `.sheet` (`NewTransactionSheet`) 呈现。
 @MainActor
 public struct LedgerAssetsView: View {
     @Bindable var appState: AppState
 
     public typealias LedgerSubTab = LooseLeaf.LedgerSubTab
 
-    @State private var showVisualForm: Bool = false
+    @State private var showNewTransactionSheet: Bool = false
+    @State private var isSpectrumExpanded: Bool = true
 
-    // 筛选与弹窗
+    // 筛选、排序与弹窗
     @State private var selectedYear: Int = FormatUtils.beijingCurrentYearMonth().year
     @State private var selectedMonth: Int = FormatUtils.beijingCurrentYearMonth().month
     @State private var customMonthSummary: TransactionSummary?
     @State private var isLoadingSummary: Bool = false
     @State private var filterBySelectedMonth: Bool = true
     @State private var selectedCategoryFilter: String = "全部"
-    @State private var visibleTxLimit: Int = 150
+    @State private var selectedTransactionIds: Set<Transaction.ID> = []
+    @State private var sortOrder: [KeyPathComparator<Transaction>] = [
+        KeyPathComparator(\.occurredAt, order: .reverse)
+    ]
     @State private var editingTransaction: Transaction?
     @State private var errorNotice: String?
     @State private var summaryLoadTask: Task<Void, Never>?
@@ -63,7 +68,7 @@ public struct LedgerAssetsView: View {
         }
         selectedYear = y
         selectedMonth = m
-        visibleTxLimit = 150
+        selectedTransactionIds.removeAll()
         reloadSummary(year: y, month: m)
     }
 
@@ -112,6 +117,10 @@ public struct LedgerAssetsView: View {
         return list
     }
 
+    private var sortedTransactions: [Transaction] {
+        filteredTransactions.sorted(using: sortOrder)
+    }
+
     nonisolated static func matchesSearch(_ tx: Transaction, lowercasedQuery q: String) -> Bool {
         if q.isEmpty { return true }
         return tx.title.lowercased().contains(q)
@@ -133,19 +142,26 @@ public struct LedgerAssetsView: View {
         VStack(spacing: 0) {
             headerSection
                 .padding(.horizontal, ArchiveSpacing.xl)
-                .padding(.top, ArchiveSpacing.xl)
+                .padding(.top, ArchiveSpacing.m)
                 .padding(.bottom, ArchiveSpacing.m)
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
             if appState.navigation.ledgerSubTab == .ledger {
-                ledgerScrollContent
+                ledgerWorkspaceContent
             } else {
                 WishlistView(appState: appState, embedded: true)
             }
         }
+        .sheet(isPresented: $showNewTransactionSheet) {
+            NewTransactionSheet(appState: appState) {
+                showNewTransactionSheet = false
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        }
         .sheet(item: $editingTransaction) { tx in
             editTransactionSheetView(tx)
+                .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
         }
         .overlay(alignment: .top) {
             if let errorNotice {
@@ -154,28 +170,41 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    private var ledgerScrollContent: some View {
-        let transactions = filteredTransactions
+    private var ledgerWorkspaceContent: some View {
+        let transactions = sortedTransactions
         let categories = allTransactionCategories
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: ArchiveSpacing.l) {
+        let selectedRows = transactions.filter { selectedTransactionIds.contains($0.id) }
+
+        return VStack(spacing: ArchiveSpacing.m) {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
                 monthlySpectrumCard
 
                 LedgerComposerCard(
                     appState: appState,
-                    showVisualForm: $showVisualForm,
                     errorNotice: $errorNotice
-                )
+                ) {
+                    showNewTransactionSheet = true
+                }
 
                 transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
-
-                if transactions.isEmpty {
-                    transactionsEmptyState
-                } else {
-                    transactionsList(transactions)
-                }
             }
-            .padding(ArchiveSpacing.xl)
+            .padding(.horizontal, ArchiveSpacing.xl)
+            .padding(.top, ArchiveSpacing.m)
+
+            if transactions.isEmpty {
+                transactionsEmptyState
+                    .padding(.horizontal, ArchiveSpacing.xl)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                transactionsTable(transactions)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            if selectedRows.count > 1 {
+                multiSelectionBar(for: selectedRows)
+                    .padding(.horizontal, ArchiveSpacing.xl)
+                    .padding(.bottom, ArchiveSpacing.m)
+            }
         }
     }
 
@@ -220,7 +249,7 @@ public struct LedgerAssetsView: View {
     private var headerSection: some View {
         @Bindable var navigation = appState.navigation
         return HStack(alignment: .center, spacing: ArchiveSpacing.m) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("记账")
                     .font(ArchiveTypography.editorialSerif(size: 22, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
@@ -245,11 +274,11 @@ public struct LedgerAssetsView: View {
         }
     }
 
-    // MARK: - 3. 月度收支光谱卡片
+    // MARK: - 2. 月度收支光谱卡片（可折叠省高度，汇总完全对齐后端 /transactions/summary）
 
     private var monthlySpectrumCard: some View {
         let sum = activeSummary
-        return VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
+        return VStack(alignment: .leading, spacing: isSpectrumExpanded ? ArchiveSpacing.m : 0) {
             HStack(alignment: .center) {
                 HStack(spacing: ArchiveSpacing.s) {
                     Button {
@@ -271,7 +300,7 @@ public struct LedgerAssetsView: View {
                     .accessibilityLabel("上一月")
                     .help("查看上一月收支")
 
-                    Text(verbatim: "\(sum.year) 年 \(sum.month) 月 · 收支类目光谱")
+                    Text(verbatim: "\(sum.year) 年 \(sum.month) 月 · 收支光谱")
                         .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
@@ -299,7 +328,7 @@ public struct LedgerAssetsView: View {
                             let now = FormatUtils.beijingCurrentYearMonth()
                             selectedYear = now.year
                             selectedMonth = now.month
-                            visibleTxLimit = 150
+                            selectedTransactionIds.removeAll()
                             summaryLoadTask?.cancel()
                             customMonthSummary = nil
                         }
@@ -335,12 +364,26 @@ public struct LedgerAssetsView: View {
                     Text("结余 \(FormatUtils.formattedYuan(cents: sum.balance, includeSymbol: true))")
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkSecondary)
+
+                    PaperIconButton(
+                        systemName: isSpectrumExpanded ? "chevron.up" : "chevron.down",
+                        label: isSpectrumExpanded ? "收起类目光谱" : "展开类目光谱",
+                        size: 10.5,
+                        tint: ArchivePalette.inkMuted
+                    ) {
+                        withAnimation(ArchiveMotion.quick) {
+                            isSpectrumExpanded.toggle()
+                        }
+                    }
                 }
             }
 
-            ExpenseSpectrumBar(summary: sum, showLegend: true)
+            if isSpectrumExpanded {
+                ExpenseSpectrumBar(summary: sum, showLegend: true)
+            }
         }
-        .padding(ArchiveSpacing.l)
+        .padding(.horizontal, ArchiveSpacing.l)
+        .padding(.vertical, isSpectrumExpanded ? ArchiveSpacing.m : ArchiveSpacing.s)
         .background(ArchivePalette.archiveSubtle)
         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
         .overlay(
@@ -349,7 +392,7 @@ public struct LedgerAssetsView: View {
         )
     }
 
-    // MARK: - 3. 流水列表
+    // MARK: - 3. 流水筛选栏与原生 Table
 
     private func transactionsHeaderSection(categories: [String], transactionCount: Int) -> some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
@@ -369,7 +412,7 @@ public struct LedgerAssetsView: View {
                         isCompact: true
                     ) {
                         filterBySelectedMonth = true
-                        visibleTxLimit = 150
+                        selectedTransactionIds.removeAll()
                     }
                     PaperPillButton(
                         title: "全部历史",
@@ -377,7 +420,7 @@ public struct LedgerAssetsView: View {
                         isCompact: true
                     ) {
                         filterBySelectedMonth = false
-                        visibleTxLimit = 150
+                        selectedTransactionIds.removeAll()
                     }
 
                     Rectangle()
@@ -387,12 +430,12 @@ public struct LedgerAssetsView: View {
 
                     PaperPillButton(title: "全部类目", isSelected: selectedCategoryFilter == "全部", isCompact: true) {
                         selectedCategoryFilter = "全部"
-                        visibleTxLimit = 150
+                        selectedTransactionIds.removeAll()
                     }
                     ForEach(categories, id: \.self) { cat in
                         PaperPillButton(title: cat, isSelected: selectedCategoryFilter == cat, isCompact: true) {
                             selectedCategoryFilter = cat
-                            visibleTxLimit = 150
+                            selectedTransactionIds.removeAll()
                         }
                     }
                 }
@@ -406,202 +449,268 @@ public struct LedgerAssetsView: View {
         ArchiveEmptyState(
             systemName: ArchiveIcon.ledger.systemName,
             title: "尚无账目流水记录",
-            message: "可在上方控制台或菜单栏极速记账面板随时记录每一笔真实花销。",
+            message: "可在上方快记条直接输入「42.5 咖啡」，或打开详细表单录入完整收支与分期。",
             primaryTitle: "记第一笔账",
-            primaryAction: { showVisualForm = true }
+            primaryAction: { showNewTransactionSheet = true }
         )
     }
 
-    private func transactionsList(_ transactions: [Transaction]) -> some View {
-        let windowed = filterBySelectedMonth ? transactions : Array(transactions.prefix(visibleTxLimit))
-        let hasMore = !filterBySelectedMonth && transactions.count > windowed.count
-
-        return LazyVStack(spacing: ArchiveSpacing.s) {
-            ForEach(windowed) { tx in
-                transactionRow(tx)
+    @ViewBuilder
+    private func transactionsTable(_ transactions: [Transaction]) -> some View {
+        Table(transactions, selection: $selectedTransactionIds, sortOrder: $sortOrder) {
+            TableColumn("日期", value: \.occurredAt) { tx in
+                Text(tx.parsedDate.dotDateTime)
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
             }
+            .width(min: 112, ideal: 128, max: 156)
 
-            if hasMore {
-                Button {
-                    visibleTxLimit += 150
-                } label: {
-                    Text("继续展开更多历史流水（已展示 \(windowed.count) / \(transactions.count) 笔）")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, ArchiveSpacing.s)
+            TableColumn("类目", value: \.category) { tx in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(ArchivePalette.categoryColor(for: tx.category))
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(tx.category)
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
-                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
-                .onAppear {
-                    if visibleTxLimit < transactions.count {
-                        visibleTxLimit += 150
-                    }
+            }
+            .width(min: 86, ideal: 106, max: 140)
+
+            TableColumn("摘要", value: \.sortableTitle) { tx in
+                transactionSummaryCell(tx)
+            }
+            .width(min: 180, ideal: 300)
+
+            TableColumn("支付方式") { tx in
+                Text(tx.paymentMethod?.isEmpty == false ? tx.paymentMethod! : "—")
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
+            }
+            .width(min: 76, ideal: 96, max: 132)
+
+            TableColumn("金额", value: \.signedAmountForSort) { tx in
+                HStack {
+                    Spacer(minLength: 0)
+                    Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.heading, weight: .semibold))
+                        .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
                 }
+            }
+            .width(min: 98, ideal: 118, max: 150)
+        }
+        .tableStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(ArchivePalette.archivePaper)
+        .contextMenu(forSelectionType: Transaction.ID.self) { ids in
+            let rows = transactions.filter { ids.contains($0.id) }
+            if rows.count == 1, let tx = rows.first {
+                singleTransactionContextMenu(tx)
+            } else if rows.count > 1 {
+                multiTransactionContextMenu(rows)
+            }
+        } primaryAction: { ids in
+            if ids.count == 1,
+               let id = ids.first,
+               let tx = transactions.first(where: { $0.id == id }),
+               tx.id > 0 {
+                editingTransaction = tx
             }
         }
     }
 
-    private func transactionRow(_ tx: Transaction) -> some View {
+    private func transactionSummaryCell(_ tx: Transaction) -> some View {
         let syncState = tx.syncStatus ?? "synced"
-        return HStack(spacing: ArchiveSpacing.m) {
-            Circle()
-                .fill(ArchivePalette.categoryColor(for: tx.category))
-                .frame(width: 8, height: 8)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(tx.sortableTitle)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
+                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .lineLimit(1)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(tx.title.isEmpty ? tx.category : tx.title)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
+                if let badge = tx.installmentBadgeText {
+                    Text(badge)
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
+                        )
+                }
 
-                    Text(tx.category)
-                        .font(ArchiveTypography.bodySans(size: 10.5))
+                if tx.isInstallmentRepayment {
+                    let feeText = (tx.feeAmount ?? 0) > 0
+                        ? "分期还款 · 息费 \(FormatUtils.formattedYuan(cents: tx.feeAmount ?? 0, includeSymbol: true))"
+                        : "分期还款"
+                    Text(feeText)
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(ArchivePalette.archivePaper)
+                        .padding(.vertical, 1)
+                        .background(ArchivePalette.archiveSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                    if let badge = tx.installmentBadgeText {
-                        Text(badge)
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(ArchivePalette.accentWarm, lineWidth: 0.5)
-                            )
-                    }
-
-                    if syncState == "failed" {
-                        HStack(spacing: 4) {
-                            Text("同步失败")
-                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                            Button("重试") {
-                                appState.reuploadTransaction(id: tx.id)
-                            }
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .semibold))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                            .buttonStyle(.plain)
-                            .paperButtonFocusRing(cornerRadius: 2)
-                        }
-                    } else if syncState != "synced" {
-                        Text("待同步")
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                    }
                 }
 
-                HStack(spacing: ArchiveSpacing.s) {
-                    Text(tx.parsedDate.dotDateTime)
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    if let method = tx.paymentMethod, !method.isEmpty {
-                        Text("· \(method)")
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                            .foregroundStyle(ArchivePalette.inkMuted)
+                if syncState == "failed" {
+                    HStack(spacing: 4) {
+                        Text("同步失败")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                            .foregroundStyle(ArchivePalette.accentWarm)
+                        Button("重试") {
+                            appState.reuploadTransaction(id: tx.id)
+                        }
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .semibold))
+                        .foregroundStyle(ArchivePalette.accentWarm)
+                        .buttonStyle(.plain)
+                        .paperButtonFocusRing(cornerRadius: 2)
                     }
-                    if let note = tx.note, !note.isEmpty {
-                        Text("· \(note)")
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .lineLimit(1)
-                    }
+                } else if syncState != "synced" {
+                    Text("待同步")
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                        .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }
+
+            if let note = tx.note, !note.isEmpty {
+                Text(note)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func singleTransactionContextMenu(_ tx: Transaction) -> some View {
+        let syncState = tx.syncStatus ?? "synced"
+        if tx.id > 0 {
+            Button {
+                editingTransaction = tx
+            } label: {
+                Label("修订此笔账目", systemImage: "pencil")
+            }
+        }
+        if syncState == "failed" {
+            Button {
+                appState.reuploadTransaction(id: tx.id)
+            } label: {
+                Label("重新上传此账目", systemImage: ArchiveIcon.sync.systemName)
+            }
+        }
+        Button(role: .destructive) {
+            appState.askConfirm(
+                title: ArchiveSharedCopy.transactionDeleteTitle,
+                message: ArchiveSharedCopy.transactionDeleteMessage,
+                confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
+                danger: true
+            ) {
+                deleteTransaction(tx)
+                selectedTransactionIds.remove(tx.id)
+            }
+        } label: {
+            Label("删除该笔账目", systemImage: ArchiveIcon.delete.systemName)
+        }
+        Divider()
+        Button {
+            SecureClipboard.copy(FormatUtils.formattedYuan(cents: tx.amount))
+            appState.showTemporaryBanner("已拷贝金额至剪贴板")
+        } label: {
+            Label("拷贝金额", systemImage: "doc.on.doc")
+        }
+        Button {
+            SecureClipboard.copy(tx.sortableTitle)
+            appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
+        } label: {
+            Label("拷贝账目摘要", systemImage: "text.quote")
+        }
+    }
+
+    @ViewBuilder
+    private func multiTransactionContextMenu(_ rows: [Transaction]) -> some View {
+        Button {
+            copySummary(for: rows)
+        } label: {
+            Label("拷贝 \(rows.count) 笔汇总明细", systemImage: "doc.on.doc")
+        }
+        Button(role: .destructive) {
+            confirmBatchDelete(rows)
+        } label: {
+            Label("删除选中的 \(rows.count) 笔账目", systemImage: ArchiveIcon.delete.systemName)
+        }
+    }
+
+    private func multiSelectionBar(for rows: [Transaction]) -> some View {
+        let netCents = rows.reduce(Int64(0)) { $0 + $1.signedAmountForSort }
+        let netPrefix = netCents >= 0 ? "+" : "-"
+        let netFormatted = "\(netPrefix)\(FormatUtils.formattedYuan(cents: abs(netCents), includeSymbol: true))"
+
+        return HStack(spacing: ArchiveSpacing.m) {
+            Text("已选 \(rows.count) 笔 · 净额 \(netFormatted)")
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
 
             Spacer()
 
-            Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
-                .font(ArchiveTypography.monoScale(size: 13.5, weight: .semibold))
-                .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
-
-            HStack(spacing: ArchiveSpacing.s) {
-                if tx.id > 0 {
-                    PaperIconButton(
-                        systemName: "pencil",
-                        label: "修订此笔账目",
-                        help: "修订此笔账目",
-                        size: 11.5,
-                        tint: ArchivePalette.inkMuted
-                    ) {
-                        editingTransaction = tx
-                    }
-                }
-
-                PaperIconButton(
-                    systemName: ArchiveIcon.delete.systemName,
-                    label: "删除该笔账目",
-                    help: "删除该笔账目",
-                    size: 11.5,
-                    tint: ArchivePalette.inkMuted
-                ) {
-                    appState.askConfirm(
-                        title: ArchiveSharedCopy.transactionDeleteTitle,
-                        message: ArchiveSharedCopy.transactionDeleteMessage,
-                        confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
-                        danger: true
-                    ) {
-                        deleteTransaction(tx)
-                    }
-                }
+            Button("拷贝明细") {
+                copySummary(for: rows)
             }
+            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            .paperButtonFocusRing()
+
+            Button("批量删除") {
+                confirmBatchDelete(rows)
+            }
+            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
+            .foregroundStyle(ArchivePalette.accentWarm)
+            .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
+            .paperButtonFocusRing()
+
+            Button("取消选择") {
+                selectedTransactionIds.removeAll()
+            }
+            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+            .buttonStyle(.plain)
+            .foregroundStyle(ArchivePalette.inkMuted)
+            .paperButtonFocusRing(cornerRadius: 4)
         }
         .padding(.horizontal, ArchiveCardMetrics.padding)
-        .padding(.vertical, 10)
+        .padding(.vertical, ArchiveSpacing.s)
         .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
         .overlay(
-            RoundedRectangle(cornerRadius: 5)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
+                .stroke(ArchivePalette.borderDivider, lineWidth: 0.6)
         )
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            if tx.id > 0 { editingTransaction = tx }
+    }
+
+    private func copySummary(for rows: [Transaction]) {
+        let lines = rows.map { tx in
+            let sign = tx.type == "income" ? "+" : "-"
+            return "\(tx.parsedDate.dotDate)  \(tx.category)  \(tx.sortableTitle)  \(sign)\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))"
         }
-        .contextMenu {
-            if tx.id > 0 {
-                Button {
-                    editingTransaction = tx
-                } label: {
-                    Label("修订此笔账目", systemImage: "pencil")
-                }
+        SecureClipboard.copy(lines.joined(separator: "\n"))
+        appState.showTemporaryBanner("已拷贝 \(rows.count) 笔账目明细至剪贴板")
+    }
+
+    private func confirmBatchDelete(_ rows: [Transaction]) {
+        appState.askConfirm(
+            title: "删除选中的 \(rows.count) 笔账目？",
+            message: "将逐条提交删除，可在短时间内按 ⌘Z 依次撤销。",
+            confirmText: "删除 \(rows.count) 笔",
+            danger: true
+        ) {
+            for tx in rows {
+                deleteTransaction(tx)
             }
-            if syncState == "failed" {
-                Button {
-                    appState.reuploadTransaction(id: tx.id)
-                } label: {
-                    Label("重新上传此账目", systemImage: ArchiveIcon.sync.systemName)
-                }
-            }
-            Button(role: .destructive) {
-                appState.askConfirm(
-                    title: ArchiveSharedCopy.transactionDeleteTitle,
-                    message: ArchiveSharedCopy.transactionDeleteMessage,
-                    confirmText: ArchiveSharedCopy.transactionDeleteConfirmText,
-                    danger: true
-                ) {
-                    deleteTransaction(tx)
-                }
-            } label: {
-                Label("删除该笔账目", systemImage: ArchiveIcon.delete.systemName)
-            }
-            Divider()
-            Button {
-                SecureClipboard.copy(FormatUtils.formattedYuan(cents: tx.amount))
-                appState.showTemporaryBanner("已拷贝金额至剪贴板")
-            } label: {
-                Label("拷贝金额", systemImage: "doc.on.doc")
-            }
-            Button {
-                SecureClipboard.copy(tx.title.isEmpty ? tx.category : tx.title)
-                appState.showTemporaryBanner("已拷贝账目摘要至剪贴板")
-            } label: {
-                Label("拷贝账目摘要", systemImage: "text.quote")
-            }
+            selectedTransactionIds.removeAll()
         }
     }
 

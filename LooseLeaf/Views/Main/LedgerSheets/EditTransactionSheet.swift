@@ -73,12 +73,15 @@ public struct EditTransactionSheet: View {
                             category = appState.expenseCategories.first ?? "餐饮"
                         }
                     }
+                    .disabled(transaction.isInstallmentRepayment)
+
                     PaperPillButton(title: "收入", isSelected: type == "income") {
                         type = "income"
                         if !appState.incomeCategories.contains(category) {
                             category = appState.incomeCategories.first ?? "工资收入"
                         }
                     }
+                    .disabled(transaction.isInstallmentRepayment)
 
                     HStack(spacing: ArchiveSpacing.xs) {
                         Text("¥")
@@ -88,6 +91,7 @@ public struct EditTransactionSheet: View {
                             .textFieldStyle(.plain)
                             .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
                             .focused($isAmountFocused)
+                            .disabled(transaction.isInstallmentRepayment)
                             .frame(minWidth: 80, idealWidth: 120, maxWidth: 160)
                             .accessibilityLabel("账目金额")
                     }
@@ -95,6 +99,13 @@ public struct EditTransactionSheet: View {
                     .padding(.vertical, 5)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
+                    .opacity(transaction.isInstallmentRepayment ? 0.65 : 1.0)
+                }
+
+                if transaction.isInstallmentRepayment {
+                    Text("分期还款账目金额不可直接修改；如需变动请在 Web 端分期计划中撤销还款后重新标记。")
+                        .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                        .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
                 TextField("账目名称", text: $title)
@@ -175,11 +186,14 @@ public struct EditTransactionSheet: View {
     }
 
     private func saveChanges() {
-        guard let cents = FormatUtils.parseYuanToCents(amountYuan), cents > 0, !isSubmitting else { return }
+        guard let parsedCents = FormatUtils.parseYuanToCents(amountYuan), !isSubmitting else { return }
+        let cents = transaction.isInstallmentRepayment ? transaction.amount : parsedCents
+        let effectiveType = transaction.isInstallmentRepayment ? transaction.type : type
+        guard cents > 0 else { return }
         let intent = InstallmentEditing.intent(
             wantsInstallment: wantsInstallment,
             touched: installmentTouched,
-            isExpense: type == "expense",
+            isExpense: effectiveType == "expense",
             transaction: transaction
         )
         if intent == .apply && selectedCreditChannel == nil {
@@ -200,7 +214,7 @@ public struct EditTransactionSheet: View {
             do {
                 let req = CreateTransactionRequest(
                     amount: cents,
-                    type: type,
+                    type: effectiveType,
                     category: category,
                     title: title,
                     note: note,

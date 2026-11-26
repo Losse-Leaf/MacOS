@@ -898,4 +898,36 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(state.detailWindowEntry?.id, e2.id, "已检视当前条目时再按 ⌘↩ 应开启独立窗口")
         state.detailWindowEntry = nil
     }
+
+    func testTransactionInstallmentRepaymentDecodingAndSorting() throws {
+        let json = """
+        {
+            "id": 501,
+            "amount": 100500,
+            "type": "expense",
+            "category": "数码器材",
+            "title": "第 1/12 期还款",
+            "occurred_at": "2026-11-10T10:00:00+08:00",
+            "source": "installment_repay",
+            "installment_plan_id": 12,
+            "installment_item_id": 88,
+            "principal_amount": 100000,
+            "fee_amount": 500
+        }
+        """.data(using: .utf8)!
+
+        let tx = try JSONDecoder().decode(Transaction.self, from: json)
+        XCTAssertTrue(tx.isInstallmentRepayment)
+        XCTAssertEqual(tx.installmentPlanId, 12)
+        XCTAssertEqual(tx.installmentItemId, 88)
+        XCTAssertEqual(tx.principalAmount, 100_000)
+        XCTAssertEqual(tx.feeAmount, 500)
+        XCTAssertEqual(tx.signedAmountForSort, -100_500)
+        XCTAssertEqual(tx.sortableTitle, "第 1/12 期还款")
+
+        let income = Transaction(id: 502, amount: 50_000, type: "income", category: "工资收入", title: "")
+        XCTAssertFalse(income.isInstallmentRepayment)
+        XCTAssertEqual(income.signedAmountForSort, 50_000)
+        XCTAssertEqual(income.sortableTitle, "工资收入")
+    }
 }

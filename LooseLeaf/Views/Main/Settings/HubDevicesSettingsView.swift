@@ -50,7 +50,7 @@ struct HubDevicesSettingsView: View {
                             .fill(ArchivePalette.accentMoss.opacity(0.12))
                             .frame(width: 36, height: 36)
                         Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 18))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.detailTitle))
                             .foregroundStyle(appState.isPaired ? ArchivePalette.accentMoss : ArchivePalette.inkMuted)
                             .accessibilityHidden(true)
                     }
@@ -130,7 +130,7 @@ struct HubDevicesSettingsView: View {
                                     ProgressView().controlSize(.small)
                                 } else {
                                     Image(systemName: ArchiveIcon.sync.systemName)
-                                        .font(.system(size: 10.5))
+                                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.label))
                                 }
                                 Text("立即同步")
                             }

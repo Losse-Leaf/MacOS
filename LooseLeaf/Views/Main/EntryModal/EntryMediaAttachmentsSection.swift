@@ -80,7 +80,7 @@ struct EntryMediaAttachmentsSection: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 10.5))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.label))
                     Text("粘贴相纸")
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 }
@@ -95,7 +95,7 @@ struct EntryMediaAttachmentsSection: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 10.5))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.label))
                     Text(media.isUploading ? "正在装裱…" : "添加相纸照片")
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 }
@@ -119,7 +119,7 @@ struct EntryMediaAttachmentsSection: View {
                     media.remove(item)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .background(ArchivePalette.archivePaper)
                         .clipShape(Circle())
@@ -134,7 +134,7 @@ struct EntryMediaAttachmentsSection: View {
             // 状态行
             HStack(spacing: 3) {
                 Image(systemName: item.status.icon)
-                    .font(.system(size: 8))
+                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.tinyIcon))
                 Text(item.status.label)
                     .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
             }
@@ -156,7 +156,7 @@ struct EntryMediaAttachmentsSection: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 8))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.tinyIcon))
                         Text("重试")
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                     }
@@ -200,7 +200,7 @@ struct EntryMediaAttachmentsSection: View {
                     .frame(width: 72, height: 72)
                     .overlay(
                         Image(systemName: "photo")
-                            .font(.system(size: 18))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.detailTitle))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     )
                     .overlay(

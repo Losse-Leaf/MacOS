@@ -79,7 +79,7 @@ struct AboutSettingsView: View {
                                         .fill(ArchivePalette.accentWarm.opacity(0.15))
                                         .frame(width: 28, height: 28)
                                     Image(systemName: "arrow.down.circle.fill")
-                                        .font(.system(size: 14))
+                                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.subheadline))
                                         .foregroundStyle(ArchivePalette.accentWarm)
                                 }
 
@@ -259,7 +259,7 @@ struct AboutSettingsView: View {
                         HStack(spacing: ArchiveSpacing.xs) {
                             Text("访问仓库")
                             Image(systemName: "arrow.up.forward.app")
-                                .font(.system(size: 10))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                                 .accessibilityHidden(true)
                         }
                     }
@@ -284,7 +284,7 @@ struct AboutSettingsView: View {
                         HStack(spacing: ArchiveSpacing.xs) {
                             Text("提交反馈")
                             Image(systemName: "arrow.up.forward.app")
-                                .font(.system(size: 10))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                                 .accessibilityHidden(true)
                         }
                     }

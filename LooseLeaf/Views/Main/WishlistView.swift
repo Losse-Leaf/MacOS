@@ -179,7 +179,7 @@ public struct WishlistView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .medium))
                         Text("许下心愿")
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
                     }
@@ -224,15 +224,15 @@ public struct WishlistView: View {
     private func statCard(title: String, count: String, subText: String?, accentColor: Color) -> some View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
             Text(title)
-                .font(ArchiveTypography.monoScale(size: 10.5))
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                 .foregroundStyle(ArchivePalette.inkMuted)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(count)
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.statValue, weight: .semibold))
                     .foregroundStyle(count.hasPrefix("0") ? ArchivePalette.inkMuted : accentColor)
                 if let sub = subText {
                     Text("(\(sub))")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                 }
             }

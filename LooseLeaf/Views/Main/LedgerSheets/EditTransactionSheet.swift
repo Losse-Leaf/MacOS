@@ -89,7 +89,7 @@ public struct EditTransactionSheet: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                         TextField("0.00", text: $amountYuan)
                             .textFieldStyle(.plain)
-                            .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.subheadline, weight: .semibold))
                             .focused($isAmountFocused)
                             .disabled(transaction.isInstallmentRepayment)
                             .frame(minWidth: 80, idealWidth: 120, maxWidth: 160)
@@ -104,7 +104,7 @@ public struct EditTransactionSheet: View {
 
                 if transaction.isInstallmentRepayment {
                     Text("分期还款账目金额不可直接修改；如需变动请在 Web 端分期计划中撤销还款后重新标记。")
-                        .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote, weight: .medium))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
@@ -157,7 +157,7 @@ public struct EditTransactionSheet: View {
 
                 if willCancelInstallment {
                     Text("保存后将取消分期：账期、期数、月供与渠道会被一并清空，负债相应减少。")
-                        .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote, weight: .medium))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
 
@@ -175,7 +175,7 @@ public struct EditTransactionSheet: View {
 
                 if let errorText {
                     Text(errorText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }

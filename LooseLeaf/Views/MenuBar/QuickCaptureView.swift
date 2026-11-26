@@ -425,7 +425,7 @@ public struct QuickCaptureView: View {
             HStack(spacing: ArchiveSpacing.xs) {
                 if differentiateWithoutColor {
                     Image(systemName: badge.symbolName)
-                        .font(.system(size: 10))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                         .foregroundStyle(badge.dotColor)
                         .accessibilityHidden(true)
                 } else {

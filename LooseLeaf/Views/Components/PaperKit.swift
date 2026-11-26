@@ -32,7 +32,7 @@ public struct PaperIconButton: View {
     public var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size))
+                .font(ArchiveTypography.icon(size: size))
                 .foregroundStyle(tint ?? ArchivePalette.inkSecondary)
                 .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                 .contentShape(Rectangle())
@@ -77,7 +77,7 @@ public struct ArchiveEmptyState: View {
     public var body: some View {
         VStack(spacing: ArchiveSpacing.s) {
             Image(systemName: systemName)
-                .font(.system(size: 28, weight: .light))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.emptyIcon, weight: .light))
                 .foregroundStyle(ArchivePalette.inkMuted)
                 .accessibilityHidden(true)
 
@@ -204,7 +204,7 @@ public struct PaperSheetScaffold<Content: View>: View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.m) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.cardTitle, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)

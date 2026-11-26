@@ -35,13 +35,13 @@ private struct StreamBannerOverlay: View {
             Image(systemName: isError ? "exclamationmark.triangle" : "checkmark.circle")
                 .foregroundStyle(isError ? ArchivePalette.accentWarm : ArchivePalette.accentMoss)
             Text(text)
-                .font(ArchiveTypography.bodySans(size: 12))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.inkPrimary)
             Spacer()
             Button("关闭") {
                 onDismiss()
             }
-            .font(ArchiveTypography.bodySans(size: 11))
+            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
             .buttonStyle(.plain)
             .paperButtonFocusRing(cornerRadius: 3)
             .foregroundStyle(ArchivePalette.inkMuted)
@@ -410,13 +410,13 @@ public struct StreamView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             let rawName = appState.siteConfig.siteName.split(separator: "·").first?.trimmingCharacters(in: .whitespaces) ?? "散页"
                             Text(rawName.isEmpty ? "散页" : rawName)
-                                .font(ArchiveTypography.editorialSerif(size: 26, weight: .semibold))
+                                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.display, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
 
                             let sub = appState.siteConfig.siteSubtitle ?? ""
                             let subtitle = sub.isEmpty ? "日常 · 流水 · 心愿" : sub
                             Text(subtitle)
-                                .font(ArchiveTypography.monoScale(size: 12))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                                 .lineLimit(1)
                         }
@@ -437,7 +437,7 @@ public struct StreamView: View {
 
                     if !appState.profile.motto.isEmpty {
                         Text("“\(appState.profile.motto)”")
-                            .font(ArchiveTypography.editorialSerif(size: 13))
+                            .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .italic()
                     }
@@ -525,7 +525,7 @@ public struct StreamView: View {
                                 ProgressView()
                                     .controlSize(.small)
                                 Text("正在展开更多历史印记（已载入 \(effectiveLimit) / \(allRows.count)）…")
-                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                 Spacer()
                             }
@@ -583,13 +583,13 @@ public struct StreamView: View {
     private var emptyStreamPlaceholder: some View {
         VStack(spacing: 10) {
             Image(systemName: appState.navigation.streamPrivacyFilter == .privateOnly ? "lock.doc" : "book.closed")
-                .font(.system(size: 28, weight: .light))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.emptyIcon, weight: .light))
                 .foregroundStyle(ArchivePalette.inkMuted)
             Text(appState.navigation.streamPrivacyFilter == .privateOnly ? "暂无仅自己可见的私密散页" : "散页手记尚待落墨")
-                .font(ArchiveTypography.editorialSerif(size: 16, weight: .medium))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .medium))
                 .foregroundStyle(ArchivePalette.inkPrimary)
             Text(appState.navigation.streamPrivacyFilter == .privateOnly ? "在记一笔或右键卡片菜单中可将内容标记为仅自己可见" : "记录真实可感的当下")
-                .font(ArchiveTypography.bodySans(size: 12.5))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.mediumBody))
                 .foregroundStyle(ArchivePalette.inkMuted)
         }
         .frame(maxWidth: .infinity)
@@ -608,7 +608,7 @@ public struct StreamView: View {
                 HStack {
                     HStack(spacing: 8) {
                         Text("岁月回响")
-                            .font(ArchiveTypography.monoScale(size: 10, weight: .bold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .bold))
                             .foregroundStyle(ArchivePalette.archivePaper)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -616,14 +616,14 @@ public struct StreamView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 2))
 
                         Text("那年今日 · ON THIS DAY")
-                            .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote, weight: .semibold))
                             .foregroundStyle(ArchivePalette.accentWarm)
                     }
 
                     Spacer()
 
                     Text("往年今日 \(appState.onThisDayEntries.count) 篇在册印记")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
@@ -645,25 +645,25 @@ public struct StreamView: View {
                                     HStack(spacing: 4) {
                                         if entry.isPrivate {
                                             Image(systemName: "lock.fill")
-                                                .font(.system(size: 9))
+                                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.miniBadge))
                                                 .foregroundStyle(ArchivePalette.accentWarm)
                                         }
                                         Text(mainText)
-                                            .font(ArchiveTypography.editorialSerif(size: 13, weight: .medium))
+                                            .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.heading, weight: .medium))
                                             .foregroundStyle(ArchivePalette.inkPrimary)
                                             .lineLimit(1)
                                     }
 
                                     if entry.hasDistinctTitle && !entry.content.isEmpty {
                                         Text(entry.content)
-                                            .font(ArchiveTypography.bodySans(size: 11))
+                                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                                             .foregroundStyle(ArchivePalette.inkSecondary)
                                             .lineLimit(1)
                                     }
                                 }
                                 Spacer(minLength: 8)
                                 Text(entry.parsedDate.dotDate)
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                                     .foregroundStyle(ArchivePalette.accentWarm)
                             }
                             .padding(8)
@@ -693,15 +693,15 @@ public struct StreamView: View {
 
             VStack {
                 HStack {
-                    Text("⌜").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                    Text("⌜").font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
                     Spacer()
-                    Text("⌝").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                    Text("⌝").font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
                 }
                 Spacer()
                 HStack {
-                    Text("⌞").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                    Text("⌞").font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
                     Spacer()
-                    Text("⌟").font(ArchiveTypography.monoScale(size: 11)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
+                    Text("⌟").font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption)).foregroundStyle(ArchivePalette.accentWarm.opacity(0.6))
                 }
             }
             .padding(4)

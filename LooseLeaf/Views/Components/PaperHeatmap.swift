@@ -40,7 +40,7 @@ public struct TemporalGapDivider: View {
                     .fill(ArchivePalette.borderDivider)
                     .frame(height: 0.5)
                 Text("—— 年轮留白 · 历经 \(days) 天的沉默与沉淀 ——")
-                    .font(ArchiveTypography.editorialSerif(size: 11.5))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .fixedSize()
                 Rectangle()

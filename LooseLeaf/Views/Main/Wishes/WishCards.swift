@@ -22,7 +22,7 @@ struct WishCardView: View {
             HStack(alignment: .center, spacing: 6) {
                 HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: kindIcon)
-                        .font(.system(size: 10))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                     Text(kindTitle)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                 }
@@ -35,7 +35,7 @@ struct WishCardView: View {
                 if wish.isPrivate == true {
                     HStack(spacing: 3) {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.miniBadge))
                         Text("私密")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                     }
@@ -66,7 +66,7 @@ struct WishCardView: View {
 
             // 2. 标题
             Text(wish.title)
-                .font(ArchiveTypography.editorialSerif(size: 16.5, weight: .semibold))
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.cardTitle, weight: .semibold))
                 .foregroundStyle(ArchivePalette.inkPrimary)
                 .lineLimit(1)
 
@@ -74,7 +74,7 @@ struct WishCardView: View {
             if let spec = wish.spec, !spec.isEmpty {
                 HStack(spacing: ArchiveSpacing.xs) {
                     Image(systemName: "slider.horizontal.2")
-                        .font(.system(size: 10))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                     Text(spec)
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .medium))
                 }
@@ -120,7 +120,7 @@ struct WishCardView: View {
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
                             .foregroundStyle(ArchivePalette.inkMuted)
                         Text(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))
-                            .font(ArchiveTypography.monoScale(size: 12.5, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.mediumBody, weight: .semibold))
                             .foregroundStyle(wish.budget > 0 ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
                     }
                 }
@@ -132,9 +132,9 @@ struct WishCardView: View {
                         Button(action: onResolve) {
                             HStack(spacing: ArchiveSpacing.xs) {
                                 Image(systemName: "sparkles")
-                                    .font(.system(size: 10))
+                                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                                 Text("圆满心愿")
-                                    .font(ArchiveTypography.bodySans(size: 11.5, weight: .medium))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote, weight: .medium))
                             }
                             .foregroundStyle(ArchivePalette.accentMoss)
                             .padding(.horizontal, 9)
@@ -151,7 +151,7 @@ struct WishCardView: View {
                     } else {
                         HStack(spacing: 3) {
                             Image(systemName: "checkmark.seal.fill")
-                                .font(.system(size: 10))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                             Text("已归册")
                                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                         }
@@ -165,7 +165,7 @@ struct WishCardView: View {
                     HStack(spacing: 6) {
                         Button(action: onEdit) {
                             Image(systemName: "pencil")
-                                .font(.system(size: 11))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                                 .padding(6)
                                 .background(ArchivePalette.archivePaper)
@@ -184,7 +184,7 @@ struct WishCardView: View {
 
                         Button(action: onDelete) {
                             Image(systemName: ArchiveIcon.delete.systemName)
-                                .font(.system(size: 11))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.accentWarm)
                                 .padding(6)
                                 .background(ArchivePalette.archivePaper)

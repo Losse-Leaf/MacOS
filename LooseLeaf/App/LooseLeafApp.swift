@@ -80,13 +80,13 @@ private struct StandaloneEntryDetailWindow: View {
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 28, weight: .light))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.emptyIcon, weight: .light))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     Text("未选定散页")
-                        .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                     Text("从时间流中右键选择「在新窗口打开」，或用 looseleaf://entry/<id> 深链直达")
-                        .font(ArchiveTypography.bodySans(size: 12))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -401,7 +401,7 @@ public struct LooseLeafApp: App {
                 }
                 if !appState.outboxItems.isEmpty {
                     Text("\(appState.outboxItems.count)")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .semibold))
                 }
             }
         }

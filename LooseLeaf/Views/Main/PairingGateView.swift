@@ -37,7 +37,7 @@ public struct PairingGateView: View {
                     // 1. 散页标志性刊头
                     VStack(spacing: ArchiveSpacing.s) {
                         Image(systemName: "book.pages.fill")
-                            .font(.system(size: 36))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.heroIcon))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .accessibilityHidden(true)
 
@@ -111,7 +111,7 @@ public struct PairingGateView: View {
                     .foregroundStyle(ArchivePalette.inkSecondary)
 
                 Image(systemName: "gearshape")
-                    .font(.system(size: 10))
+                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .accessibilityHidden(true)
             }
@@ -144,7 +144,7 @@ public struct PairingGateView: View {
     private func connectionFailedView(error: String) -> some View {
         VStack(spacing: ArchiveSpacing.m) {
             Image(systemName: "wifi.slash")
-                .font(.system(size: 28))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.emptyIcon))
                 .foregroundStyle(ArchivePalette.accentWarm)
 
             Text("无法连接至服务器")
@@ -172,7 +172,7 @@ public struct PairingGateView: View {
     private var oidcDisabledView: some View {
         VStack(spacing: ArchiveSpacing.m) {
             Image(systemName: "person.crop.circle.badge.exclamationmark")
-                .font(.system(size: 28))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.emptyIcon))
                 .foregroundStyle(ArchivePalette.accentWarm)
                 .accessibilityHidden(true)
 
@@ -228,7 +228,7 @@ public struct PairingGateView: View {
                         ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: "person.badge.key.fill")
-                            .font(.system(size: 13))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.heading))
                             .accessibilityHidden(true)
                     }
                     Text(isBusy

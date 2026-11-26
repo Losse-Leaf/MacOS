@@ -46,7 +46,7 @@ public struct PaperPillButton: View {
                 }
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: isCompact ? 9.5 : 10.5, weight: isSelected ? .semibold : .medium))
+                        .font(ArchiveTypography.icon(size: isCompact ? ArchiveTypography.Scale.badge : ArchiveTypography.Scale.label, weight: isSelected ? .semibold : .medium))
                         .imageScale(.small)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(
@@ -104,7 +104,7 @@ public struct EntryCategoryPickerRow: View {
         HStack(spacing: ArchiveSpacing.s) {
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(ArchiveTypography.monoScale(size: 11.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 

@@ -136,10 +136,10 @@ struct TimelineEntryCardView: View {
             .padding(.trailing, 6)
 
             VStack(alignment: .leading, spacing: 9) {
-                // 顶栏（双击顶栏空白处打开详情，避免与下方正文双击选词手势冲突）
+                // 顶栏（精简为形态 / 私密 / 同步状态 / 时间 / 操作按钮，地点与分期徽标下沉到底部 metadata 行）
                 HStack(spacing: 7) {
                     Text(entryTypeBadgeName)
-                        .font(ArchiveTypography.monoScale(size: 10, weight: .medium))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .medium))
                         .foregroundStyle(typeAccentColor)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
@@ -149,9 +149,9 @@ struct TimelineEntryCardView: View {
                     if entry.isPrivate {
                         HStack(spacing: 2.5) {
                             Image(systemName: "lock.fill")
-                                .font(.system(size: 8.5))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.tinyIcon))
                             Text("私密")
-                                .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.badge, weight: .medium))
                         }
                         .foregroundStyle(ArchivePalette.accentWarm)
                         .padding(.horizontal, 5)
@@ -159,28 +159,6 @@ struct TimelineEntryCardView: View {
                         .background(ArchivePalette.accentWarm.opacity(0.10))
                         .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
                         .accessibilityLabel("仅自己可见")
-                    }
-
-                    if let loc = entry.location, !loc.isEmpty {
-                        HStack(spacing: 3) {
-                            Image(systemName: ArchiveIcon.location.systemName)
-                                .font(.system(size: 9.5))
-                            Text(loc)
-                                .font(ArchiveTypography.bodySans(size: 11))
-                        }
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-
-                    if let tx = transaction, let badge = tx.installmentBadgeText {
-                        Text(badge)
-                            .font(ArchiveTypography.monoScale(size: 9.5))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(ArchivePalette.accentWarm.opacity(0.6), lineWidth: 0.5)
-                            )
                     }
 
                     let syncState = entry.syncStatus ?? "synced"
@@ -204,7 +182,7 @@ struct TimelineEntryCardView: View {
                     } else if syncState == "failed" {
                         HStack(spacing: 3) {
                             Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
-                                .font(.system(size: 9.5))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge))
                             Text("同步失败")
                                 .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                         }
@@ -226,7 +204,7 @@ struct TimelineEntryCardView: View {
 
                     if !timeLabel.isEmpty {
                         Text(timeLabel)
-                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .monospacedDigit()
                     }
@@ -287,14 +265,14 @@ struct TimelineEntryCardView: View {
 
                 if entry.hasDistinctTitle {
                     Text(entry.title)
-                        .font(ArchiveTypography.editorialSerif(size: 17, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.cardTitle, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .padding(.bottom, 1)
                 }
 
                 // 单击选中在右侧检视器中全文阅读与划词；卡片本体保持轻盈无文本选区包装开销
                 Text(entry.content)
-                    .font(ArchiveTypography.bodySans(size: 13.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.prose))
                     .foregroundStyle(ArchivePalette.inkPrimary.opacity(0.9))
                     .lineSpacing(5)
 
@@ -323,6 +301,46 @@ struct TimelineEntryCardView: View {
                         }
                     }
                     .padding(.top, 4)
+                }
+
+                let trimmedLocation = entry.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let installmentBadge = transaction?.installmentBadgeText
+                let isRepayment = transaction?.isInstallmentRepayment == true
+                if !trimmedLocation.isEmpty || installmentBadge != nil || isRepayment {
+                    HStack(spacing: 8) {
+                        if !trimmedLocation.isEmpty {
+                            HStack(spacing: 3) {
+                                Image(systemName: ArchiveIcon.location.systemName)
+                                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge))
+                                Text(trimmedLocation)
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                            }
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                        }
+
+                        if let badge = installmentBadge {
+                            Text(badge)
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.badge))
+                                .foregroundStyle(ArchivePalette.accentWarm)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .stroke(ArchivePalette.accentWarm.opacity(0.6), lineWidth: 0.5)
+                                )
+                        }
+
+                        if isRepayment {
+                            Text("分期还款")
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.badge))
+                                .foregroundStyle(ArchivePalette.inkSecondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(ArchivePalette.archiveSubtle)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                    }
+                    .padding(.top, 2)
                 }
             }
         }
@@ -441,7 +459,7 @@ struct TimelineEntryCardView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                 .foregroundStyle(tint)
                 .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                 .background(ArchivePalette.archiveSubtle.opacity(0.85))

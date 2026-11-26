@@ -64,7 +64,7 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
         HStack(spacing: 6) {
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
@@ -88,7 +88,7 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                     Spacer(minLength: 4)
 
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 7.5, weight: .semibold))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.microIcon, weight: .semibold))
                         .foregroundStyle(isOpen ? ArchivePalette.inkPrimary : ArchivePalette.inkMuted)
                         .rotationEffect(.degrees(isOpen ? 180 : 0))
                         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isOpen)
@@ -114,7 +114,7 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                 VStack(alignment: .leading, spacing: ArchiveSpacing.xxs) {
                     if options.isEmpty {
                         Text("暂无可选项")
-                            .font(ArchiveTypography.editorialSerif(size: 11.5))
+                            .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.footnote))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, 10)
@@ -132,7 +132,7 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
                                         } label: {
                                             HStack(spacing: 6) {
                                                 Text(opt.label)
-                                                    .font(ArchiveTypography.bodySans(size: 11.5, weight: isSelected ? .medium : .regular))
+                                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote, weight: isSelected ? .medium : .regular))
                                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                                     .lineLimit(1)
 
@@ -157,7 +157,7 @@ public struct PaperSelect<T: Hashable & Sendable>: View {
 
                                                 if isSelected {
                                                     Image(systemName: "checkmark")
-                                                        .font(.system(size: 8.5, weight: .bold))
+                                                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.tinyIcon, weight: .bold))
                                                         .foregroundStyle(ArchivePalette.accentWarm)
                                                 }
                                             }

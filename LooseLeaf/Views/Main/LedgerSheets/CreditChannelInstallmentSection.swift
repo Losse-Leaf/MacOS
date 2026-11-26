@@ -33,7 +33,7 @@ struct CreditChannelInstallmentSection: View {
             if showToggle {
                 Toggle(toggleTitle, isOn: $isInstallment)
                     .toggleStyle(.paperCheckbox)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                     .disabled(isToggleDisabled || channels.isEmpty)
                     .help(channels.isEmpty ? "请前往 Web 管理端「资产 → 渠道管理」配置分期渠道" : "")
                     .onChange(of: isInstallment) { _, isOn in
@@ -48,11 +48,11 @@ struct CreditChannelInstallmentSection: View {
             if showEmptyHint && channels.isEmpty {
                 HStack(spacing: 8) {
                     Text("请前往 Web 管理端「资产 → 渠道管理」配置分期渠道与每月还款日。")
-                        .font(ArchiveTypography.bodySans(size: 11))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
                     if let hubURL = URL(string: hubURLString) {
                         Link("打开 Web 管理端 ↗", destination: hubURL)
-                            .font(ArchiveTypography.bodySans(size: 11, weight: .medium))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                             .foregroundStyle(ArchivePalette.accentWarm)
                     }
                 }
@@ -94,7 +94,7 @@ struct CreditChannelInstallmentSection: View {
             HStack(spacing: ArchiveSpacing.m) {
                 if let channel = selectedChannel {
                     Text("还款日跟随渠道：每月 \(channel.repaymentDay) 日")
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
@@ -106,7 +106,7 @@ struct CreditChannelInstallmentSection: View {
                             ? "每期 ¥\(FormatUtils.formattedYuan(cents: cents / Int64(safeMonths))) · 总额 ¥\(FormatUtils.formattedYuan(cents: cents))"
                             : "输入有效金额后自动核算每期应还"
                     )
-                    .font(ArchiveTypography.monoScale(size: 11, weight: validInstallment ? .semibold : .regular))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: validInstallment ? .semibold : .regular))
                     .foregroundStyle(validInstallment ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                     .lineLimit(1)
                 }

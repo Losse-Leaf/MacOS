@@ -42,7 +42,7 @@ public struct NewEntryModal: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("身边小事、随笔思考与定格光影")
-                        .font(ArchiveTypography.editorialSerif(size: 12))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .padding(.horizontal, 4)
 
@@ -91,10 +91,10 @@ public struct NewEntryModal: View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "leaf")
-                    .font(.system(size: 12))
+                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.accentWarm)
                 Text("记一笔 · 日常散页")
-                    .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
             }
 
@@ -121,7 +121,7 @@ public struct NewEntryModal: View {
             if let err = displayErrorMessage {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 11))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                     Text(err)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .fixedSize(horizontal: false, vertical: true)
@@ -158,7 +158,7 @@ public struct NewEntryModal: View {
                 Button("清空草稿") {
                     clearDraft()
                 }
-                .font(ArchiveTypography.bodySans(size: 11))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                 .buttonStyle(.plain)
                 .paperButtonFocusRing(cornerRadius: 3)
                 .foregroundStyle(ArchivePalette.inkMuted)
@@ -167,10 +167,10 @@ public struct NewEntryModal: View {
             Toggle(isOn: $draft.isPrivate) {
                 HStack(spacing: 4) {
                     Image(systemName: draft.isPrivate ? "lock.fill" : "lock.open")
-                        .font(.system(size: 10.5))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(draft.isPrivate ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
                     Text("仅自己可见")
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                 }
             }
@@ -193,7 +193,7 @@ public struct NewEntryModal: View {
                         ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro, weight: .semibold))
                     }
                     Text(isSubmitting ? "正在归册…" : "定格散页 (⌘↵)")
                 }

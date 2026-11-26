@@ -94,7 +94,7 @@ public struct ExpenseSpectrumBar: View {
                                 .lineLimit(1)
                             Spacer(minLength: 2)
                             Text(FormatUtils.formattedYuan(cents: item.cents))
-                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                         }
                         .accessibilityElement(children: .combine)

@@ -2,10 +2,10 @@ import SwiftUI
 import AppKit
 
 /// 工作台左侧导航栏 (Workbench Sidebar)
-/// 严格遵循 macOS HIG 与 macos-native-ui 规范：
-/// 1. 适配原生 `NavigationSplitView` 列宽调解与 `⌃⌘S` 侧栏折叠，去除硬编码 42pt 顶部空白
-/// 2. 「偏好与设置」唤起 macOS 标准独立 `Settings` 窗口 (`⌘,`)，不再霸占主画布
-/// 3. 完整适配「减少透明度」与「不靠颜色区分」系统级辅助偏好，底栏双行防挤压换行
+/// 遵循 macOS HIG 规范：
+/// 1. 导航列表采用原生 `List(selection:)` + `.listStyle(.sidebar)`，交还系统键盘导航、焦点环与选中态语义
+/// 2. `.scrollContentBackground(.hidden)` 叠加 `WindowVibrancyView` 与暖纸薄层，在壳层原生与纸感之间保持克制平衡
+/// 3. 「偏好与设置…」与极速捕捉热键置于底栏工具区，确保导航选择态语义纯净
 struct WorkbenchSidebar: View {
     @Bindable var appState: AppState
     var onSelect: (WorkbenchSection) -> Void
@@ -13,26 +13,47 @@ struct WorkbenchSidebar: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var badgeState: HubConnectionBadgeState {
         appState.hubConnectionBadgeState
     }
 
+    private var sectionSelectionBinding: Binding<WorkbenchSection?> {
+        Binding(
+            get: {
+                WorkbenchSection.contentSections.contains(appState.activeSection)
+                    ? appState.activeSection
+                    : .stream
+            },
+            set: { newValue in
+                guard let newValue, newValue != appState.activeSection else { return }
+                onSelect(newValue)
+            }
+        )
+    }
+
+    private func pendingBadgeCount(for section: WorkbenchSection) -> Int {
+        switch section {
+        case .stream: return appState.entriesNeedingUpload
+        case .ledger: return appState.transactionsNeedingUpload
+        case .preferences, .hub, .about: return 0
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             // 刊头印记 (100% 动态读取后端配置与主理人档案)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     Image(systemName: "leaf.fill")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.heading, weight: .medium))
                         .imageScale(.medium)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(ArchivePalette.accentMoss)
                         .accessibilityHidden(true)
 
                     Text(appState.siteConfig.siteName.isEmpty ? "散页 · 时光手账" : appState.siteConfig.siteName)
-                        .font(ArchiveTypography.editorialSerif(size: 16, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
                 }
@@ -43,66 +64,66 @@ struct WorkbenchSidebar: View {
                             .filter { !$0.isEmpty }
                             .joined(separator: " · ")
                     )
-                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .lineLimit(1)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
+            .padding(.bottom, 12)
 
             Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
-            // 导航菜单项：散页与记账两大板块 + 原生独立设置窗口入口
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("生活卷宗")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .medium))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 2)
-                        .padding(.bottom, 3)
-
+            // 原生侧栏列表（散页 / 记账）
+            List(selection: sectionSelectionBinding) {
+                Section("生活卷宗") {
                     ForEach(WorkbenchSection.contentSections) { section in
-                        WorkbenchNavRow(
-                            section: section,
-                            selected: appState.activeSection == section,
-                            reduceMotion: reduceMotion
-                        ) {
-                            guard appState.activeSection != section else { return }
-                            onSelect(section)
-                        }
-                    }
-
-                    Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
-                        .padding(.vertical, 6)
-
-                    // 唤起原生 macOS 独立设置窗口 (⌘,)
-                    WorkbenchNavRow(
-                        section: .preferences,
-                        selected: false,
-                        customTitle: "偏好与设置…",
-                        customIcon: "gearshape",
-                        reduceMotion: reduceMotion
-                    ) {
-                        appState.navigation.settingsSelectedTab = .general
-                        openSettings()
-                        NSApp.activate(ignoringOtherApps: true)
+                        Label(section.title, systemImage: section.icon)
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
+                            .imageScale(.medium)
+                            .tag(section)
+                            .badge(pendingBadgeCount(for: section))
                     }
                 }
-                .padding(.horizontal, 10)
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
 
-            Spacer(minLength: 8)
-
-            // 底部系统状态与极速捕捉热键徽标（紧凑双层防窄栏挤压竖排）
+            // 底部工具与系统状态区（偏好与设置 + 中枢连接态 + 极速捕捉热键）
             VStack(alignment: .leading, spacing: 6) {
                 Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+
+                Button {
+                    appState.navigation.settingsSelectedTab = .general
+                    openSettings()
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: ArchiveIcon.preferences.systemName)
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body, weight: .medium))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                            .frame(width: 16)
+                            .accessibilityHidden(true)
+                        Text("偏好与设置…")
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
+                            .foregroundStyle(ArchivePalette.inkSecondary)
+                        Spacer(minLength: 4)
+                        Text("⌘,")
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
+                            .foregroundStyle(ArchivePalette.inkMuted)
+                    }
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
+                .help("打开活页集偏好设置 (⌘,)")
 
                 HStack(spacing: 5) {
                     if differentiateWithoutColor {
                         Image(systemName: badgeState.symbolName)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro, weight: .medium))
                             .foregroundStyle(badgeState.dotColor)
                             .accessibilityHidden(true)
                     } else {
@@ -142,7 +163,7 @@ struct WorkbenchSidebar: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 9))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.miniBadge))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .accessibilityHidden(true)
                         Text("极速闪念")
@@ -151,7 +172,7 @@ struct WorkbenchSidebar: View {
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Text(AppDelegate.hotKeyDisplayName)
-                            .font(ArchiveTypography.monoScale(size: 9.5, weight: .medium))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.badge, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .lineLimit(1)
                             .padding(.horizontal, 5)
@@ -183,74 +204,6 @@ struct WorkbenchSidebar: View {
                     ArchivePalette.archivePaper.opacity(0.78)
                 }
             }
-        }
-    }
-
-    /// 侧边导航行：符合 macOS HIG 规范，支持层级 SF Symbols、微胶囊背景与左侧朱砂指示线
-    struct WorkbenchNavRow: View {
-        let section: WorkbenchSection
-        let selected: Bool
-        var customTitle: String? = nil
-        var customIcon: String? = nil
-        var reduceMotion: Bool = false
-        let action: () -> Void
-
-        @State private var isHovering: Bool = false
-
-        private var effectiveTitle: String {
-            customTitle ?? section.title
-        }
-
-        var body: some View {
-            Button(action: action) {
-                HStack(spacing: 8) {
-                    Image(systemName: customIcon ?? section.icon)
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
-                        .imageScale(.medium)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(selected ? ArchivePalette.accentWarm : ArchivePalette.inkMuted)
-                        .frame(width: 18)
-
-                    Text(effectiveTitle)
-                        .font(ArchiveTypography.bodySans(size: 13, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? ArchivePalette.inkPrimary : ArchivePalette.inkSecondary)
-                        .lineLimit(1)
-
-                    Spacer()
-                }
-                .padding(.leading, 10)
-                .padding(.trailing, 10)
-                .padding(.vertical, 6.5)
-                .background(
-                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                        .fill(rowFill)
-                )
-                .overlay(alignment: .leading) {
-                    if selected {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(ArchivePalette.accentWarm)
-                            .frame(width: 2.5, height: 14)
-                            .padding(.leading, 2)
-                    }
-                }
-                .overlay(
-                    RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                        .stroke(selected ? ArchivePalette.borderDivider.opacity(0.6) : Color.clear, lineWidth: 0.5)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .paperButtonFocusRing(cornerRadius: ArchiveRadius.sm)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: selected)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: isHovering)
-            .onHover { isHovering = $0 }
-            .accessibilityLabel(effectiveTitle)
-            .accessibilityAddTraits(selected ? .isSelected : AccessibilityTraits())
-        }
-
-        private var rowFill: Color {
-            if selected { return ArchivePalette.archiveSubtle }
-            return isHovering ? ArchivePalette.archiveSubtle.opacity(0.55) : .clear
         }
     }
 }

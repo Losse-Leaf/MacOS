@@ -53,13 +53,13 @@ public struct GlobalSearchModalView: View {
             // 顶栏输入框
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 14))
+                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.subheadline))
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 TextField("搜索生活档案与心愿清单…", text: $query)
                     .accessibilityLabel("全局搜索")
                     .textFieldStyle(.plain)
-                    .font(ArchiveTypography.editorialSerif(size: 15))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                     .focused($isFieldFocused)
                     .onChange(of: query) { _, newQ in
@@ -103,7 +103,7 @@ public struct GlobalSearchModalView: View {
                         presentation = .empty
                         isSearchingRemote = false
                     }
-                    .font(ArchiveTypography.monoScale(size: 11))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .buttonStyle(.plain)
                     .padding(.horizontal, 6)
@@ -137,10 +137,10 @@ public struct GlobalSearchModalView: View {
                         if trimmedRaw.isEmpty {
                             VStack(spacing: 6) {
                                 Text("输入关键词开始检索全库档案")
-                                    .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkSecondary)
                                 Text("支持跨年份检索生活记录与心愿清单")
-                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
                             .frame(maxWidth: .infinity)
@@ -150,7 +150,7 @@ public struct GlobalSearchModalView: View {
                                 ProgressView()
                                     .scaleEffect(0.8)
                                 Text("正在检索全量历史归档…")
-                                    .font(ArchiveTypography.monoScale(size: 11.5))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
                             .frame(maxWidth: .infinity)
@@ -158,10 +158,10 @@ public struct GlobalSearchModalView: View {
                         } else if !presentation.hasResults {
                             VStack(spacing: 6) {
                                 Text("没有找到匹配的生活碎片")
-                                    .font(ArchiveTypography.bodySans(size: 13, weight: .medium))
+                                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading, weight: .medium))
                                     .foregroundStyle(ArchivePalette.inkSecondary)
                                 Text("换个关键词试试，生活总有些未曾命名的瞬间")
-                                    .font(ArchiveTypography.monoScale(size: 11))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                             }
                             .frame(maxWidth: .infinity)
@@ -171,9 +171,9 @@ public struct GlobalSearchModalView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack(spacing: 6) {
                                         Image(systemName: section.icon)
-                                            .font(.system(size: 11))
+                                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                                         Text(section.title)
-                                            .font(ArchiveTypography.monoScale(size: 11))
+                                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                     }
                                     .foregroundStyle(section.tint)
                                     .padding(.horizontal, 4)
@@ -198,7 +198,7 @@ public struct GlobalSearchModalView: View {
 
                             if presentation.localTruncated {
                                 Text("本地仅展示前 \(SearchPresentation.localLimit) 条，共命中 \(presentation.localMatchCount) 条；请补充关键词以缩小范围。")
-                                    .font(ArchiveTypography.monoScale(size: 10.5))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                                     .foregroundStyle(ArchivePalette.inkMuted)
                                     .padding(.horizontal, 4)
                             }
@@ -219,7 +219,7 @@ public struct GlobalSearchModalView: View {
             // 底栏状态说明
             HStack {
                 Text("已收录 \(appState.entries.count) 条散页印记")
-                    .font(ArchiveTypography.monoScale(size: 11))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 Spacer()
@@ -229,12 +229,12 @@ public struct GlobalSearchModalView: View {
                         HStack(spacing: 4) {
                             ProgressView().scaleEffect(0.6)
                             Text("中枢查询中")
-                                .font(ArchiveTypography.monoScale(size: 10.5))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                                 .foregroundStyle(ArchivePalette.inkMuted)
                         }
                     }
                     Text("↑↓ 选择 · ↵ 打开 · ESC 关闭")
-                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
             }
@@ -317,17 +317,17 @@ public struct GlobalSearchModalView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text("[\(badgeText)]")
-                        .font(ArchiveTypography.monoScale(size: 10, weight: .semibold))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro, weight: .semibold))
                         .foregroundStyle(entry.displayAccentColor)
 
                     Text(headline)
-                        .font(ArchiveTypography.editorialSerif(size: 13.5, weight: .medium))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.prose, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
 
                     if entry.isPrivate {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 9.5))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .accessibilityLabel("私密散页")
                     }
@@ -335,13 +335,13 @@ public struct GlobalSearchModalView: View {
                     Spacer()
 
                     Text(FormatUtils.formatDate(entry.occurredAt))
-                        .font(ArchiveTypography.monoScale(size: 10.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
                 if !entry.content.isEmpty {
                     Text(entry.content)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .lineLimit(2)
                 }
@@ -350,9 +350,9 @@ public struct GlobalSearchModalView: View {
                 if !loc.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "location.fill")
-                            .font(.system(size: 9))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.miniBadge))
                         Text(loc)
-                            .font(ArchiveTypography.monoScale(size: 10))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
                     }
                     .foregroundStyle(ArchivePalette.inkMuted)
                 }
@@ -380,25 +380,25 @@ public struct GlobalSearchModalView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
                     Text(wish.title)
-                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.mediumBody, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
                     if wish.isPrivate == true {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.miniBadge))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .accessibilityLabel("私密心愿")
                     }
                     Spacer()
                     if wish.budget > 0 {
                         Text(FormatUtils.formattedYuan(cents: wish.budget, includeSymbol: true))
-                            .font(ArchiveTypography.monoScale(size: 11, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .semibold))
                             .foregroundStyle(ArchivePalette.accentWarm)
                     }
                 }
                 if let note = wish.note, !note.isEmpty {
                     Text(note)
-                        .font(ArchiveTypography.bodySans(size: 11))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .lineLimit(1)
                 }

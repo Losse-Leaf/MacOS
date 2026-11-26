@@ -59,7 +59,7 @@ extension View {
                     .fill(iconColor.opacity(0.12))
                     .frame(width: ArchiveHitTarget.minPointer, height: ArchiveHitTarget.minPointer)
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.heading, weight: .medium))
                     .imageScale(.medium)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(iconColor)
@@ -110,7 +110,7 @@ public func settingsFeedbackBanner(feedback: String?, error: String?) -> some Vi
 private func feedbackRow(text: String, icon: String, tint: Color) -> some View {
     HStack(spacing: ArchiveSpacing.s) {
         Image(systemName: icon)
-            .font(.system(size: 12))
+            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body))
             .accessibilityHidden(true)
         Text(text)
             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))

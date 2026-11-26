@@ -110,10 +110,10 @@ public struct EditorialLightboxView: View {
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "photo.badge.exclamationmark")
-                            .font(.system(size: 30, weight: .light))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.emptyIcon, weight: .light))
                             .foregroundStyle(ArchivePalette.inkMuted)
                         Text("无法解析该张相纸地址")
-                            .font(ArchiveTypography.editorialSerif(size: 15, weight: .medium))
+                            .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                     }
                     .padding(36)
@@ -137,7 +137,7 @@ public struct EditorialLightboxView: View {
                         .disabled(currentIndex == 0)
 
                         Text("\(currentIndex + 1) / \(allAttachments.count)")
-                            .font(ArchiveTypography.monoScale(size: 12, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkPrimary)
 
                         Button {
@@ -202,7 +202,7 @@ public struct EditorialLightboxView: View {
 
                 if let noticeText {
                     Text(noticeText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }

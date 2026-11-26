@@ -11,7 +11,7 @@ public struct EditorialProseTextView: View {
 
     public init(
         _ text: String,
-        font: Font = ArchiveTypography.bodySans(size: 14),
+        font: Font = ArchiveTypography.bodySans(size: ArchiveTypography.Scale.subheadline),
         color: Color = ArchivePalette.inkPrimary,
         lineSpacing: CGFloat = 5,
         lineLimit: Int? = nil
@@ -47,7 +47,7 @@ public struct EditorialProseTextView: View {
                                 .fill(ArchivePalette.accentWarm.opacity(0.65))
                                 .frame(width: 2.5)
                             renderedInlineText(content)
-                                .font(ArchiveTypography.monoScale(size: 12))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
                                 .foregroundStyle(ArchivePalette.inkSecondary)
                                 .lineSpacing(4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,16 +288,16 @@ struct StreamEntryDetailView: View {
 
                 HStack(spacing: 8) {
                     Text(current.parsedDate.dotDateTime)
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.inkMuted)
 
                     let trimmedLocation = current.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     if !trimmedLocation.isEmpty {
                         HStack(spacing: 3) {
                             Image(systemName: ArchiveIcon.location.systemName)
-                                .font(.system(size: 9.5))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge))
                             Text(trimmedLocation)
-                                .font(ArchiveTypography.monoScale(size: 11))
+                                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                                 .lineLimit(1)
                         }
                         .foregroundStyle(ArchivePalette.inkMuted)
@@ -314,7 +314,7 @@ struct StreamEntryDetailView: View {
                     } else {
                         if current.hasDistinctTitle {
                             Text(current.title)
-                                .font(ArchiveTypography.editorialSerif(size: 18, weight: .semibold))
+                                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.detailTitle, weight: .semibold))
                                 .foregroundStyle(ArchivePalette.inkPrimary)
                                 .textSelection(.enabled)
                         }
@@ -322,7 +322,7 @@ struct StreamEntryDetailView: View {
                         if !current.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             EditorialProseTextView(
                                 current.content,
-                                font: ArchiveTypography.bodySans(size: 13.5),
+                                font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.prose),
                                 color: ArchivePalette.inkPrimary,
                                 lineSpacing: 5
                             )
@@ -379,7 +379,7 @@ struct StreamEntryDetailView: View {
                 }
 
                 Text(current.parsedDate.dotDateTime)
-                    .font(ArchiveTypography.monoScale(size: 11.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkMuted)
                 Spacer()
                 if appState.isPaired && (current.id > 0 || (isTx && matchingTx != nil)) {
@@ -389,7 +389,7 @@ struct StreamEntryDetailView: View {
                                 if !standalone { handleClose() }
                                 onEditTransaction(tx)
                             }
-                            .font(ArchiveTypography.bodySans(size: 12))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .buttonStyle(.plain)
                             .paperButtonFocusRing(cornerRadius: 4)
@@ -409,7 +409,7 @@ struct StreamEntryDetailView: View {
                                     }
                                 }
                             }
-                            .font(ArchiveTypography.bodySans(size: 12))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .buttonStyle(.plain)
                             .paperButtonFocusRing(cornerRadius: 4)
@@ -420,7 +420,7 @@ struct StreamEntryDetailView: View {
                             if !standalone { handleClose() }
                             onEditEntry(target)
                         }
-                        .font(ArchiveTypography.bodySans(size: 12))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .buttonStyle(.plain)
                         .paperButtonFocusRing(cornerRadius: 4)
@@ -440,7 +440,7 @@ struct StreamEntryDetailView: View {
                                 }
                             }
                         }
-                        .font(ArchiveTypography.bodySans(size: 12))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                         .foregroundStyle(ArchivePalette.accentWarm)
                         .buttonStyle(.plain)
                         .paperButtonFocusRing(cornerRadius: 4)
@@ -461,16 +461,16 @@ struct StreamEntryDetailView: View {
                 if !trimmedLocation.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: ArchiveIcon.location.systemName)
-                            .font(.system(size: 10))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro))
                         Text(trimmedLocation)
-                            .font(ArchiveTypography.monoScale(size: 11))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                     }
                     .foregroundStyle(ArchivePalette.inkMuted)
                 }
 
                 if current.hasDistinctTitle {
                     Text(current.title)
-                        .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.statValue, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                 }
 
@@ -478,7 +478,7 @@ struct StreamEntryDetailView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         EditorialProseTextView(
                             current.content,
-                            font: ArchiveTypography.bodySans(size: 14),
+                            font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.subheadline),
                             color: ArchivePalette.inkPrimary,
                             lineSpacing: 5
                         )
@@ -532,7 +532,7 @@ struct StreamEntryDetailView: View {
                     .accessibilityHidden(true)
             }
             Text(Self.entryTypeBadge(current))
-                .font(ArchiveTypography.monoScale(size: 11, weight: .medium))
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption, weight: .medium))
         }
         .foregroundStyle(current.displayAccentColor)
         .padding(.horizontal, 6)
@@ -544,9 +544,9 @@ struct StreamEntryDetailView: View {
     private var privateTag: some View {
         HStack(spacing: 3) {
             Image(systemName: "lock.fill")
-                .font(.system(size: 9.5))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge))
             Text("仅自己可见")
-                .font(ArchiveTypography.monoScale(size: 10.5))
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
         }
         .foregroundStyle(ArchivePalette.accentWarm)
         .padding(.horizontal, 6)
@@ -560,17 +560,17 @@ struct StreamEntryDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(tx.title.isEmpty ? tx.category : tx.title)
-                    .font(ArchiveTypography.editorialSerif(size: 20, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.statValue, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Spacer()
                 Text("\(tx.type == "income" ? "+" : "-")\(FormatUtils.formattedYuan(cents: tx.amount, includeSymbol: true))")
-                    .font(ArchiveTypography.monoScale(size: 22, weight: .bold))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.sectionTitle, weight: .bold))
                     .foregroundStyle(tx.type == "income" ? ArchivePalette.accentMoss : ArchivePalette.inkPrimary)
             }
 
             HStack(spacing: 8) {
                 Text(tx.category)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -579,7 +579,7 @@ struct StreamEntryDetailView: View {
 
                 if let pay = tx.paymentMethod, !pay.isEmpty {
                     Text(pay)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.inkMuted)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -589,7 +589,7 @@ struct StreamEntryDetailView: View {
 
                 if let badgeText = tx.installmentBadgeText {
                     Text(badgeText)
-                        .font(ArchiveTypography.monoScale(size: 11))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.accentWarm)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -603,7 +603,7 @@ struct StreamEntryDetailView: View {
             if let note = tx.note, !note.isEmpty {
                 EditorialProseTextView(
                     note,
-                    font: ArchiveTypography.bodySans(size: 13.5),
+                    font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.prose),
                     color: ArchivePalette.inkPrimary.opacity(0.88)
                 )
                 .textSelection(.enabled)

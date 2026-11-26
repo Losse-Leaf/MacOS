@@ -26,7 +26,7 @@ struct EntryModalLifeForm: View {
             EntryPaperTextArea(
                 placeholder: "此刻在想什么…",
                 text: $draft.content,
-                font: ArchiveTypography.bodySans(size: 14),
+                font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.subheadline),
                 lineLimit: 6...16
             )
 
@@ -34,7 +34,7 @@ struct EntryModalLifeForm: View {
             let hasContent = !draft.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             HStack(spacing: 6) {
                 Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                    .font(.system(size: 9.5))
+                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge))
                     .foregroundStyle(ArchivePalette.inkMuted)
                     .accessibilityHidden(true)
                 Text(hasContent ? "标题将取正文首行：\(FormatUtils.derivedTitle(from: draft.content))" : "标题将自动取正文首行")
@@ -65,7 +65,7 @@ struct EntryModalLifeForm: View {
                 TextField("地点（可选）", text: locationBinding)
                     .accessibilityLabel("地点")
                     .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .padding(.horizontal, 10)
                     .frame(height: 28)
                     .background(ArchivePalette.archiveSubtle)

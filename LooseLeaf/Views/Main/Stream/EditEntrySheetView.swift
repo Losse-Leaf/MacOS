@@ -66,7 +66,7 @@ public struct EditEntrySheetView: View {
                 // 1. 手稿类型切换（日常散页 / 心愿印记）
                 HStack(spacing: 6) {
                     Text("类型：")
-                        .font(ArchiveTypography.monoScale(size: 11.5))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.inkMuted)
 
                     ForEach(EntryType.editableCases) { t in
@@ -99,7 +99,7 @@ public struct EditEntrySheetView: View {
                 TextField("标题（可留空由正文第一行派生）", text: $editTitle)
                     .accessibilityLabel("手稿标题")
                     .textFieldStyle(.plain)
-                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead, weight: .semibold))
                     .padding(8)
                     .background(ArchivePalette.archiveSubtle)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -111,7 +111,7 @@ public struct EditEntrySheetView: View {
                 TextField("手稿正文…", text: $editContent, axis: .vertical)
                     .accessibilityLabel("手稿正文")
                     .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: 13))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
                     .lineLimit(6...16)
                     .frame(minHeight: 116, alignment: .topLeading)
                     .focused($isContentFocused)
@@ -133,7 +133,7 @@ public struct EditEntrySheetView: View {
                 ))
                     .accessibilityLabel("具体地点")
                     .textFieldStyle(.plain)
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .padding(.horizontal, 10)
                     .frame(height: 28)
                     .background(ArchivePalette.archiveSubtle)
@@ -150,10 +150,10 @@ public struct EditEntrySheetView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("仅自己可见（私密）")
-                            .font(ArchiveTypography.bodySans(size: 12.5, weight: .medium))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.mediumBody, weight: .medium))
                             .foregroundStyle(ArchivePalette.inkPrimary)
                         Text("开启后仅自己可见，不对外公开或同步至 Vesper Space，亦不写入系统 Spotlight")
-                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                     Spacer()
@@ -167,9 +167,9 @@ public struct EditEntrySheetView: View {
                 if let activeError = saveError ?? media.errorMessage {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                         Text(activeError)
-                            .font(ArchiveTypography.bodySans(size: 11.5))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                             .lineLimit(3)
                         Spacer(minLength: 0)
                     }

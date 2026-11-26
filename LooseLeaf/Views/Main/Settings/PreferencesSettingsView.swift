@@ -259,14 +259,14 @@ struct PreferencesSettingsView: View {
                             .fill(isSelected ? ArchivePalette.accentWarm.opacity(0.15) : ArchivePalette.borderSubtle.opacity(0.5))
                             .frame(width: 24, height: 24)
                         Image(systemName: icon)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .medium))
                             .foregroundStyle(isSelected ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
                             .accessibilityHidden(true)
                     }
                     Spacer()
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 14))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.subheadline))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .accessibilityHidden(true)
                     } else {

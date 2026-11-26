@@ -102,7 +102,7 @@ public struct PaperDatePicker: View {
         HStack(spacing: 6) {
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
@@ -112,17 +112,17 @@ public struct PaperDatePicker: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: enableTime ? "clock" : "calendar")
-                        .font(.system(size: 11))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(isToday ? ArchivePalette.inkSecondary : ArchivePalette.accentWarm)
 
                     Text(dateLabelText)
-                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
                         .fixedSize()
 
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 7))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.microIcon))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 .padding(.horizontal, ArchiveSpacing.s)
@@ -178,7 +178,7 @@ public struct PaperDatePicker: View {
                     }
                 } label: {
                     Image(systemName: "chevron.left.2")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         .contentShape(Rectangle())
@@ -194,7 +194,7 @@ public struct PaperDatePicker: View {
                     }
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         .contentShape(Rectangle())
@@ -219,7 +219,7 @@ public struct PaperDatePicker: View {
                     }
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         .contentShape(Rectangle())
@@ -235,7 +235,7 @@ public struct PaperDatePicker: View {
                     }
                 } label: {
                     Image(systemName: "chevron.right.2")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                         .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                         .contentShape(Rectangle())
@@ -250,7 +250,7 @@ public struct PaperDatePicker: View {
             HStack(spacing: 0) {
                 ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { weekDay in
                     Text(weekDay)
-                        .font(ArchiveTypography.bodySans(size: 10.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkMuted)
                         .frame(maxWidth: .infinity)
                 }
@@ -304,7 +304,7 @@ public struct PaperDatePicker: View {
                     HStack {
                         HStack(spacing: 5) {
                             Image(systemName: "clock")
-                                .font(.system(size: 11))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                                 .foregroundStyle(ArchivePalette.accentWarm)
                             Text("时刻刻度")
                                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
@@ -331,7 +331,7 @@ public struct PaperDatePicker: View {
                                 .accessibilityLabel("提前一小时")
 
                                 Text(String(format: "%02d", currentHour))
-                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                     .accessibilityLabel("当前小时")
                                     .accessibilityValue(String(format: "%02d", currentHour))
@@ -367,7 +367,7 @@ public struct PaperDatePicker: View {
                                 .accessibilityLabel("提前五分钟")
 
                                 Text(String(format: "%02d", currentMin))
-                                    .font(ArchiveTypography.monoScale(size: 11.5, weight: .semibold))
+                                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote, weight: .semibold))
                                     .foregroundStyle(ArchivePalette.inkPrimary)
                                     .accessibilityLabel("当前分钟")
                                     .accessibilityValue(String(format: "%02d", currentMin))
@@ -419,7 +419,7 @@ public struct PaperDatePicker: View {
 
             HStack {
                 Text("所选：\(dateLabelText)")
-                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                     .foregroundStyle(ArchivePalette.accentWarm)
 
                 Spacer()
@@ -444,7 +444,7 @@ public struct PaperDatePicker: View {
             }
         } label: {
             Text(text)
-                .font(ArchiveTypography.bodySans(size: 10.5))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.label))
                 .foregroundStyle(ArchivePalette.inkSecondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -537,7 +537,7 @@ public struct PaperTimePicker: View {
         HStack(spacing: 5) {
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(ArchiveTypography.bodySans(size: 11.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                     .foregroundStyle(ArchivePalette.inkMuted)
             }
 
@@ -546,17 +546,17 @@ public struct PaperTimePicker: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "clock")
-                        .font(.system(size: 10.5))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkSecondary)
 
                     Text(timeString)
-                        .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                         .lineLimit(1)
                         .fixedSize()
 
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 7))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.microIcon))
                         .foregroundStyle(ArchivePalette.inkMuted)
                 }
                 .padding(.horizontal, ArchiveSpacing.s)
@@ -585,10 +585,10 @@ public struct PaperTimePicker: View {
             HStack {
                 HStack(spacing: 5) {
                     Image(systemName: "clock")
-                        .font(.system(size: 11))
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.accentWarm)
                     Text("时刻刻度")
-                        .font(ArchiveTypography.editorialSerif(size: 12.5, weight: .medium))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.mediumBody, weight: .medium))
                         .foregroundStyle(ArchivePalette.inkPrimary)
                 }
 
@@ -605,7 +605,7 @@ public struct PaperTimePicker: View {
                         selection = updated
                     }
                 }
-                .font(ArchiveTypography.bodySans(size: 10.5))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.label))
                 .buttonStyle(.plain)
                 .foregroundStyle(ArchivePalette.accentWarm)
                 .padding(.horizontal, 6)
@@ -655,7 +655,7 @@ public struct PaperTimePicker: View {
                 .overlay(RoundedRectangle(cornerRadius: ArchiveRadius.xs).stroke(ArchivePalette.borderSubtle, lineWidth: 0.6))
 
                 Text(":")
-                    .font(ArchiveTypography.monoScale(size: 14, weight: .bold))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.subheadline, weight: .bold))
                     .foregroundStyle(ArchivePalette.inkMuted)
 
                 // 分钟调节 (5分钟步进)
@@ -710,7 +710,7 @@ public struct PaperTimePicker: View {
 
             HStack {
                 Text("时刻：\(timeString)")
-                    .font(ArchiveTypography.monoScale(size: 10.5))
+                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                     .foregroundStyle(ArchivePalette.inkSecondary)
 
                 Spacer()

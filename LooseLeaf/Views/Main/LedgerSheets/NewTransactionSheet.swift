@@ -72,7 +72,7 @@ public struct NewTransactionSheet: View {
                             .foregroundStyle(ArchivePalette.inkMuted)
                         TextField("0.00", text: $formAmountYuan)
                             .textFieldStyle(.plain)
-                            .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.subheadline, weight: .semibold))
                             .focused($isAmountFocused)
                             .frame(minWidth: 80, idealWidth: 120, maxWidth: 160)
                             .accessibilityLabel("记账金额")
@@ -148,7 +148,7 @@ public struct NewTransactionSheet: View {
 
                 if let errorText {
                     Text(errorText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }

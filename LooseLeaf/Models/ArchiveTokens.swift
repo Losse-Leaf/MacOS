@@ -119,14 +119,36 @@ public enum ArchiveTypography {
         .system(size: size, weight: weight, design: .monospaced).monospacedDigit()
     }
 
+    /// 图标辅助字号（SF Symbols 统一通过语义阶梯控制）
+    public static func icon(size: CGFloat = Scale.body, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+
     /// 字号阶梯（统一语义，消除魔法字号）
     public enum Scale {
+        public static let heroIcon: CGFloat = 36      // 登录门禁主徽章图标
+        public static let emptyIcon: CGFloat = 28     // 空态与占位大图标
         public static let display: CGFloat = 26       // 刊头主标题
+        public static let hero: CGFloat = 24          // 独立展厅刊头标题
+        public static let sectionTitle: CGFloat = 22  // 板块标题 / 详情大额数字
+        public static let statValue: CGFloat = 20     // 大盘统计指标 / 详情主标题
+        public static let detailTitle: CGFloat = 18   // 检视器标题 / 嵌入手账标题
+        public static let cardTitle: CGFloat = 17     // 时间流卡片标题 / Sheet 标题
         public static let title: CGFloat = 16         // 弹窗与空态标题
-        public static let heading: CGFloat = 13       // 小节标题
+        public static let lead: CGFloat = 15          // 搜索主输入 / 月度光谱标题
+        public static let subheadline: CGFloat = 14   // 详情正文 / 表单高亮数字
+        public static let prose: CGFloat = 13.5       // 时间流卡片正文
+        public static let heading: CGFloat = 13       // 小节标题 / 侧栏条目
+        public static let mediumBody: CGFloat = 12.5  // 轻量说明正文
         public static let body: CGFloat = 12          // 标准界面正文
+        public static let footnote: CGFloat = 11.5    // 次级控件 / 标签文案
         public static let caption: CGFloat = 11       // 辅助说明
-        public static let micro: CGFloat = 10         // 元信息（macOS 最小可读字号下限）
+        public static let label: CGFloat = 10.5       // 紧凑元信息标签
+        public static let micro: CGFloat = 10         // 元信息（正文最小可读字号下限）
+        public static let badge: CGFloat = 9.5        // 极小状态徽标 / 图标
+        public static let miniBadge: CGFloat = 9      // 极小修饰图标
+        public static let tinyIcon: CGFloat = 8.5     // 微型锁/勾选图标
+        public static let microIcon: CGFloat = 7.5    // 紧凑下拉箭头/星标图标
     }
 }
 

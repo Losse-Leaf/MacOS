@@ -211,7 +211,7 @@ public struct LedgerAssetsView: View {
     private func errorBanner(text: String) -> some View {
         HStack(spacing: ArchiveSpacing.s) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: ArchiveTypography.Scale.body))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body))
                 .foregroundStyle(ArchivePalette.accentWarm)
                 .accessibilityHidden(true)
 
@@ -251,12 +251,12 @@ public struct LedgerAssetsView: View {
         return HStack(alignment: .center, spacing: ArchiveSpacing.m) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("记账")
-                    .font(ArchiveTypography.editorialSerif(size: 22, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.sectionTitle, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
                 Text(navigation.ledgerSubTab == .ledger
                      ? "日常收支流水与月度类目光谱 · 每一笔花销皆有归处"
                      : "好物 · 旅程 · 里程碑 · 心愿圆满时可联动入账并落墨散页")
-                    .font(ArchiveTypography.bodySans(size: 12))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
                     .foregroundStyle(ArchivePalette.inkSecondary)
                     .lineLimit(1)
             }
@@ -285,7 +285,7 @@ public struct LedgerAssetsView: View {
                         changeMonth(by: -1)
                     } label: {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archivePaper)
@@ -301,14 +301,14 @@ public struct LedgerAssetsView: View {
                     .help("查看上一月收支")
 
                     Text(verbatim: "\(sum.year) 年 \(sum.month) 月 · 收支光谱")
-                        .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
                     Button {
                         changeMonth(by: 1)
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .semibold))
                             .foregroundStyle(isCurrentMonthSelected ? ArchivePalette.inkMuted : ArchivePalette.inkSecondary)
                             .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
                             .background(ArchivePalette.archivePaper)
@@ -398,7 +398,7 @@ public struct LedgerAssetsView: View {
         VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
             HStack {
                 Text("流水账目明细 (\(transactionCount) 笔)")
-                    .font(ArchiveTypography.editorialSerif(size: 15, weight: .semibold))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead, weight: .semibold))
                     .foregroundStyle(ArchivePalette.inkPrimary)
 
                 Spacer()

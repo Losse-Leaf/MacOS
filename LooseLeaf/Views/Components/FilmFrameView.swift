@@ -88,14 +88,14 @@ public struct FilmFrameView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let caption, !caption.isEmpty {
                         Text(caption)
-                            .font(ArchiveTypography.editorialSerif(size: 12))
+                            .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
                     if let metaText, !metaText.isEmpty {
                         Text(metaText)
-                            .font(ArchiveTypography.monoScale(size: 10.5))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .lineLimit(1)
                     }
@@ -385,11 +385,11 @@ public struct CachedFilmImageView: View {
                 placeholderContainer {
                     VStack(spacing: 6) {
                         Image(systemName: "photo.artframe")
-                            .font(.system(size: 22))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.sectionTitle))
                             .foregroundStyle(ArchivePalette.inkMuted)
                             .accessibilityHidden(true)
                         Text("相纸载入暂缓")
-                            .font(ArchiveTypography.monoScale(size: 11))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                 }
@@ -401,7 +401,7 @@ public struct CachedFilmImageView: View {
                         ProgressView()
                             .controlSize(.small)
                         Text("相纸显影中…")
-                            .font(ArchiveTypography.monoScale(size: 11))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
                             .foregroundStyle(ArchivePalette.inkMuted)
                     }
                 }

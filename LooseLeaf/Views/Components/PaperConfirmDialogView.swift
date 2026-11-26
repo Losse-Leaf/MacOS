@@ -43,7 +43,7 @@ public struct PaperConfirmDialogView: View {
                 HStack(alignment: .center, spacing: 8) {
                     if request.danger {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.heading, weight: .semibold))
                             .foregroundStyle(ArchivePalette.accentWarm)
                             .accessibilityHidden(true)
                     }
@@ -71,7 +71,7 @@ public struct PaperConfirmDialogView: View {
                     .overlay(ArchivePalette.borderSubtle.opacity(0.8))
 
                 Text(request.message)
-                    .font(ArchiveTypography.editorialSerif(size: 13.5, weight: request.danger ? .medium : .regular))
+                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.prose, weight: request.danger ? .medium : .regular))
                     .foregroundStyle(request.danger ? ArchivePalette.accentWarm : ArchivePalette.inkSecondary)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)

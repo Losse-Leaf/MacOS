@@ -26,13 +26,13 @@ public struct PaperCheckboxToggleStyle: ToggleStyle {
 
                     if configuration.isOn {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 9.5, weight: .bold))
+                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.badge, weight: .bold))
                             .foregroundStyle(ArchivePalette.archivePaper)
                     }
                 }
 
                 configuration.label
-                    .font(ArchiveTypography.bodySans(size: 12.5))
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.mediumBody))
                     .foregroundStyle(ArchivePalette.inkPrimary)
             }
             .frame(minHeight: ArchiveHitTarget.minPointer)

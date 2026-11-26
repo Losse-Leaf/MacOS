@@ -21,7 +21,7 @@ struct LedgerComposerCard: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "plus.viewfinder")
-                .font(.system(size: 14))
+                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.subheadline))
                 .foregroundStyle(ArchivePalette.accentWarm)
                 .accessibilityHidden(true)
 
@@ -35,7 +35,7 @@ struct LedgerComposerCard: View {
                 }
 
             Text(quickParsed.map { "\($0.category) · \(FormatUtils.formattedYuan(cents: $0.amountCents, includeSymbol: true))" } ?? "输入金额与摘要自动识别")
-                .font(ArchiveTypography.monoScale(size: 11.5, weight: .medium))
+                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.footnote, weight: .medium))
                 .foregroundStyle(quickParsed != nil ? ArchivePalette.accentWarm : ArchivePalette.inkMuted.opacity(0.65))
                 .lineLimit(1)
                 .frame(width: 152, alignment: .trailing)
@@ -60,7 +60,7 @@ struct LedgerComposerCard: View {
                     Image(systemName: "slider.horizontal.below.rectangle")
                     Text("详细表单…")
                 }
-                .font(ArchiveTypography.bodySans(size: 11.5))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
             }
             .buttonStyle(PaperPrimaryButtonStyle(isProminent: false))
             .paperButtonFocusRing()

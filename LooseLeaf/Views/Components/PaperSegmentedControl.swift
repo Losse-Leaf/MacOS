@@ -49,10 +49,10 @@ public struct PaperSegmentedControl<T: Hashable>: View {
                     HStack(spacing: ArchiveSpacing.xs) {
                         if let icon = item.icon {
                             Image(systemName: icon)
-                                .font(.system(size: 10.5))
+                                .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.label))
                         }
                         Text(item.title)
-                            .font(ArchiveTypography.bodySans(size: 11.5, weight: isSelected ? .medium : .regular))
+                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote, weight: isSelected ? .medium : .regular))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)

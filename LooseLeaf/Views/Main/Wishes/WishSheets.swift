@@ -121,7 +121,7 @@ public struct WishEditorSheet: View {
 
                 if let errorText {
                     Text(errorText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }
@@ -218,7 +218,7 @@ public struct ResolveWishSheet: View {
                     EntryPaperField(
                         placeholder: "实际购入的物品名（例：同价位的中性笔）",
                         text: $alteredTitle,
-                        font: ArchiveTypography.bodySans(size: 12)
+                        font: ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body)
                     )
                 }
 
@@ -231,7 +231,7 @@ public struct ResolveWishSheet: View {
                             .accessibilityLabel("实付金额")
                             .textFieldStyle(.plain)
                             .focused($isCostFocused)
-                            .font(ArchiveTypography.monoScale(size: 14, weight: .semibold))
+                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.subheadline, weight: .semibold))
                             .padding(6)
                             .background(ArchivePalette.archiveSubtle)
                             .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
@@ -262,7 +262,7 @@ public struct ResolveWishSheet: View {
 
                 if let errorText {
                     Text(errorText)
-                        .font(ArchiveTypography.bodySans(size: 11.5))
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.footnote))
                         .foregroundStyle(ArchivePalette.accentWarm)
                 }
             }

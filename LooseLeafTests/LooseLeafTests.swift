@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import AppKit
 @testable import LooseLeaf
 
@@ -964,5 +965,184 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(groups[0].entries.map(\.id), [1, 2])
         XCTAssertEqual(groups[1].title, "2025年6月")
         XCTAssertEqual(groups[1].entries.map(\.id), [3])
+    }
+
+    private static func findTableView(in view: NSView) -> NSTableView? {
+        if let tv = view as? NSTableView { return tv }
+        for sub in view.subviews {
+            if let found = findTableView(in: sub) { return found }
+        }
+        return nil
+    }
+
+    private static func selectableRows(in tv: NSTableView) -> [Int] {
+        var rows: [Int] = []
+        for r in 0..<tv.numberOfRows {
+            if let ov = tv as? NSOutlineView, let item = ov.item(atRow: r) {
+                if ov.delegate?.outlineView?(ov, shouldSelectItem: item) ?? true {
+                    rows.append(r)
+                }
+                continue
+            }
+            if tv.delegate?.tableView?(tv, shouldSelectRow: r) ?? true {
+                rows.append(r)
+            }
+        }
+        return rows
+    }
+
+    @MainActor
+    func testWorkbenchSidebarRowsAreSelectableAndSwitchDestination() throws {
+        let appState = AppState.shared
+        let prevEntries = appState.entries
+        let prevOnThisDay = appState.onThisDayEntries
+        let prevDest = appState.navigation.sidebarDestination
+        defer {
+            appState.entries = prevEntries
+            appState.onThisDayEntries = prevOnThisDay
+            appState.navigation.selectDestination(prevDest)
+        }
+
+        appState.navigation.selectDestination(.allEntries)
+        let hosting = NSHostingView(
+            rootView: WorkbenchSidebar(appState: appState) { _ in }
+                .frame(width: 240, height: 640)
+        )
+        let window = NSWindow(
+            contentRect: CGRect(x: -20000, y: -20000, width: 240, height: 640),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.layoutIfNeeded()
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+
+        let tv = try XCTUnwrap(Self.findTableView(in: hosting))
+        let ov = try XCTUnwrap(tv as? NSOutlineView)
+        XCTAssertGreaterThanOrEqual(ov.selectedRow, 0)
+
+        let selectable = Self.selectableRows(in: ov)
+        XCTAssertGreaterThanOrEqual(selectable.count, 8)
+
+        let lastRow = try XCTUnwrap(selectable.last)
+        ov.selectRowIndexes(IndexSet(integer: lastRow), byExtendingSelection: false)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(appState.navigation.sidebarDestination, .wishlist)
+        XCTAssertEqual(appState.activeSection, .ledger)
+        window.close()
+    }
+
+    @MainActor
+    func testStreamEntryListRowsAreSelectableAndUpdateHighlight() throws {
+        let appState = AppState.shared
+        let prevEntries = appState.entries
+        let prevHighlighted = appState.highlightedEntry
+        let prevDest = appState.navigation.sidebarDestination
+        let prevQuery = appState.searchQuery
+        defer {
+            appState.entries = prevEntries
+            appState.highlightedEntry = prevHighlighted
+            appState.navigation.selectDestination(prevDest)
+            appState.searchQuery = prevQuery
+        }
+
+        appState.searchQuery = ""
+        appState.navigation.selectDestination(.allEntries)
+        let mockEntries = [
+            LifeEntry(id: 101, title: "第一篇", content: "正文一", occurredAt: "2026-11-26T10:00:00+08:00"),
+            LifeEntry(id: 102, title: "第二篇", content: "正文二", occurredAt: "2026-11-25T10:00:00+08:00"),
+            LifeEntry(id: 103, title: "第三篇", content: "正文三", occurredAt: "2026-11-24T10:00:00+08:00")
+        ]
+        appState.entries = mockEntries
+        appState.highlightedEntry = mockEntries[0]
+
+        let hosting = NSHostingView(
+            rootView: StreamEntryListView(appState: appState)
+                .frame(width: 320, height: 600)
+        )
+        let window = NSWindow(
+            contentRect: CGRect(x: -20000, y: -20000, width: 320, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.layoutIfNeeded()
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+
+        let tv = try XCTUnwrap(Self.findTableView(in: hosting))
+        let selectable = Self.selectableRows(in: tv)
+        XCTAssertGreaterThanOrEqual(selectable.count, 3)
+
+        let targetRow = try XCTUnwrap(selectable.last)
+        tv.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(appState.highlightedEntry?.id, 103)
+        window.close()
+    }
+
+    func testPruneInvalidOutboxItemsCleansServerIdAndKeepsValidTempCreate() {
+        let syncedServerEntry = LifeEntry(
+            id: 2,
+            title: "第一次acm（上）",
+            content: "打星",
+            occurredAt: "2025-06-07T13:10:12+08:00",
+            syncStatus: "synced"
+        )
+        let pendingLocalEntry = LifeEntry(
+            id: -999,
+            title: "离线手稿",
+            content: "等待同步",
+            occurredAt: "2026-11-26T18:00:00+08:00",
+            syncStatus: "pending_create"
+        )
+        let bogusOutbox = OutboxItem(
+            kind: .createEntry,
+            localTempId: 2,
+            entryRequest: CreateEntryRequest(
+                type: "life",
+                category: "",
+                title: "第一次acm（上）",
+                content: "打星",
+                occurredAt: "2025-06-07T13:10:12+08:00",
+                attachmentIds: [5, 6]
+            ),
+            retryCount: 5,
+            lastError: "保存记录失败: 附件已绑定到其他实体"
+        )
+        let validOutbox = OutboxItem(
+            kind: .createEntry,
+            localTempId: -999,
+            entryRequest: CreateEntryRequest(
+                type: "life",
+                category: "daily",
+                title: "离线手稿",
+                content: "等待同步",
+                occurredAt: "2026-11-26T18:00:00+08:00"
+            )
+        )
+
+        var snapshot = LocalArchiveSnapshot(
+            entries: [syncedServerEntry, pendingLocalEntry],
+            outbox: [bogusOutbox, validOutbox]
+        )
+
+        XCTAssertTrue(SyncManager.pruneInvalidOutboxItems(in: &snapshot))
+        XCTAssertEqual(snapshot.outbox.count, 1)
+        XCTAssertEqual(snapshot.outbox.first?.localTempId, -999)
+
+        let diskSnapshot = LocalArchiveSnapshot(
+            entries: [syncedServerEntry, pendingLocalEntry],
+            outbox: [bogusOutbox, validOutbox]
+        )
+        let hydrated = SyncManager.mergedHydratedSnapshot(current: LocalArchiveSnapshot(), loaded: diskSnapshot)
+        XCTAssertEqual(hydrated.outbox.map(\.localTempId), [-999])
     }
 }

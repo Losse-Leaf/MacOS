@@ -1,31 +1,38 @@
 import SwiftUI
 import AppKit
 
-/// 独立观察 `AppBanners` 的顶部提示浮层
+/// 独立观察 `AppBanners` 的顶部提示条（无提示时不占任何高度或遮挡内容）
 private struct StreamBannerOverlay: View {
     @Bindable var banners: AppBanners
 
+    private var hasBanner: Bool {
+        banners.error != nil || banners.localWarning != nil || banners.status != nil
+    }
+
     var body: some View {
-        VStack(spacing: 4) {
-            if let err = banners.error {
-                noticeStrip(text: err, isError: true) {
-                    banners.error = nil
+        if hasBanner {
+            VStack(spacing: 4) {
+                if let err = banners.error {
+                    noticeStrip(text: err, isError: true) {
+                        banners.error = nil
+                    }
+                }
+                if let warning = banners.localWarning {
+                    noticeStrip(text: warning, isError: true) {
+                        banners.localWarning = nil
+                    }
+                }
+                if let status = banners.status {
+                    noticeStrip(text: status, isError: false) {
+                        banners.status = nil
+                    }
                 }
             }
-            if let warning = banners.localWarning {
-                noticeStrip(text: warning, isError: true) {
-                    banners.localWarning = nil
-                }
-            }
-            if let status = banners.status {
-                noticeStrip(text: status, isError: false) {
-                    banners.status = nil
-                }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(ArchivePalette.archivePaper)
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .allowsHitTesting(true)
     }
 
     private func noticeStrip(text: String, isError: Bool, onDismiss: @escaping () -> Void) -> some View {
@@ -106,29 +113,31 @@ public struct StreamView: View {
                 WorkbenchSidebar(appState: appState) { _ in }
                     .navigationSplitViewColumnWidth(min: 195, ideal: 215, max: 255)
             } detail: {
-                ZStack {
-                    ArchivePalette.archivePaper
-                        .ignoresSafeArea()
+                VStack(spacing: 0) {
+                    StreamBannerOverlay(banners: appState.banners)
 
-                    switch appState.navigation.sidebarDestination {
-                    case .ledger:
-                        LedgerAssetsView(appState: appState)
-                    case .wishlist:
-                        WishlistView(appState: appState, embedded: false)
-                    case .allEntries, .daily, .privateEntries, .onThisDay, .category:
-                        HSplitView {
-                            StreamEntryListView(appState: appState)
-                                .frame(minWidth: 265, idealWidth: 315, maxWidth: 400)
+                    ZStack {
+                        ArchivePalette.archivePaper
+                            .ignoresSafeArea()
 
-                            StreamEntryReaderView(appState: appState)
-                                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+                        switch appState.navigation.sidebarDestination {
+                        case .ledger:
+                            LedgerAssetsView(appState: appState)
+                        case .wishlist:
+                            WishlistView(appState: appState, embedded: false)
+                        case .allEntries, .daily, .privateEntries, .onThisDay, .category:
+                            HSplitView {
+                                StreamEntryListView(appState: appState)
+                                    .frame(minWidth: 265, idealWidth: 315, maxWidth: 400)
+
+                                StreamEntryReaderView(appState: appState)
+                                    .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .top) {
-                    StreamBannerOverlay(banners: appState.banners)
-                }
+                .background(ArchivePalette.archivePaper.ignoresSafeArea())
                 .navigationTitle(currentWindowTitle)
                 .navigationSubtitle(currentWindowSubtitle)
             }

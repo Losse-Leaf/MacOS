@@ -257,10 +257,12 @@ public final class SyncManager {
                     return
                 }
 
+                var cleaned = loaded
+                let pruned = Self.pruneInvalidOutboxItems(in: &cleaned)
                 if self.snapshotRevision > 0 {
                     let merged = Self.mergedHydratedSnapshot(
                         current: self.snapshot,
-                        loaded: loaded,
+                        loaded: cleaned,
                         hasAuthoritativeSummary: self.hasAuthoritativeSummary
                     )
                     self.hasHydrated = true
@@ -268,11 +270,13 @@ public final class SyncManager {
                 } else {
                     self.hasHydrated = true
                     self.snapshotRevision += 1
-                    self.snapshot = loaded
-                    if self.isBatching {
-                        self.pendingBatchSnapshot = loaded
+                    self.snapshot = cleaned
+                    if pruned {
+                        self.saveSnapshot(cleaned, critical: true)
+                    } else if self.isBatching {
+                        self.pendingBatchSnapshot = cleaned
                     } else {
-                        self.onSnapshotUpdated?(loaded)
+                        self.onSnapshotUpdated?(cleaned)
                     }
                 }
                 self.resetLedgerCursorForPaginationFixIfNeeded()
@@ -718,6 +722,10 @@ public final class SyncManager {
         transactionRequest: CreateTransactionRequest? = nil,
         targetServerId: Int? = nil
     ) {
+        if (kind == .createEntry || kind == .createTransaction) && localTempId >= 0 {
+            Self.logger.warning("Refusing to enqueue create outbox item for positive server id \(localTempId)")
+            return
+        }
         var latest = snapshot
         latest.outbox.removeAll { $0.kind == kind && $0.localTempId == localTempId }
         let stampedEntryRequest = (kind == .createEntry) ? entryRequest.map(stableEntryRequest) : entryRequest
@@ -768,6 +776,21 @@ public final class SyncManager {
     }
 
     public func resyncEntry(id: Int, req: CreateEntryRequest, attachments: [Attachment]) {
+        if id >= 0 {
+            var latest = snapshot
+            let beforeOutboxCount = latest.outbox.count
+            latest.outbox.removeAll { $0.kind == .createEntry && $0.localTempId == id }
+            var touched = latest.outbox.count != beforeOutboxCount
+            for idx in latest.entries.indices where latest.entries[idx].id == id && (latest.entries[idx].syncStatus ?? "synced") != "synced" {
+                latest.entries[idx].syncStatus = "synced"
+                touched = true
+            }
+            if touched {
+                saveSnapshot(latest, critical: true)
+            }
+            Self.logger.info("Ignoring resyncEntry for synced server id \(id)")
+            return
+        }
         guard let existing = snapshot.entries.first(where: { $0.id == id }) else { return }
         var stableReq = req
         if stableReq.clientRequestId?.isEmpty != false {
@@ -784,6 +807,21 @@ public final class SyncManager {
     }
 
     public func resyncTransaction(id: Int, req: CreateTransactionRequest) {
+        if id >= 0 {
+            var latest = snapshot
+            let beforeOutboxCount = latest.outbox.count
+            latest.outbox.removeAll { $0.kind == .createTransaction && $0.localTempId == id }
+            var touched = latest.outbox.count != beforeOutboxCount
+            for idx in latest.transactions.indices where latest.transactions[idx].id == id && (latest.transactions[idx].syncStatus ?? "synced") != "synced" {
+                latest.transactions[idx].syncStatus = "synced"
+                touched = true
+            }
+            if touched {
+                saveSnapshot(latest, critical: true)
+            }
+            Self.logger.info("Ignoring resyncTransaction for synced server id \(id)")
+            return
+        }
         guard let existing = snapshot.transactions.first(where: { $0.id == id }) else { return }
         var stableReq = req
         if stableReq.clientRequestId?.isEmpty != false {
@@ -1000,9 +1038,55 @@ public final class SyncManager {
         Self.logger.info("Outbox delete \(item.id.uuidString) finished: server reports 404 Not Found")
     }
 
+    /// 清理无效的发件箱条目（如指向服务端正 ID 的冗余新建请求，或本地已被移除的临时新建任务），防止误触参数校验死循环
+    @discardableResult
+    nonisolated static func pruneInvalidOutboxItems(in snapshot: inout LocalArchiveSnapshot) -> Bool {
+        var changed = false
+
+        for idx in snapshot.entries.indices where snapshot.entries[idx].id > 0 {
+            if (snapshot.entries[idx].syncStatus ?? "synced") != "synced" {
+                snapshot.entries[idx].syncStatus = "synced"
+                changed = true
+            }
+        }
+        for idx in snapshot.transactions.indices where snapshot.transactions[idx].id > 0 {
+            if (snapshot.transactions[idx].syncStatus ?? "synced") != "synced" {
+                snapshot.transactions[idx].syncStatus = "synced"
+                changed = true
+            }
+        }
+
+        let pendingEntryTempIds = Set(
+            snapshot.entries
+                .filter { $0.id < 0 && ($0.syncStatus ?? "synced") != "synced" }
+                .map(\.id)
+        )
+        let pendingTxTempIds = Set(
+            snapshot.transactions
+                .filter { $0.id < 0 && ($0.syncStatus ?? "synced") != "synced" }
+                .map(\.id)
+        )
+
+        let beforeCount = snapshot.outbox.count
+        snapshot.outbox.removeAll { item in
+            switch item.kind {
+            case .createEntry:
+                return item.localTempId >= 0 || !pendingEntryTempIds.contains(item.localTempId)
+            case .createTransaction:
+                return item.localTempId >= 0 || !pendingTxTempIds.contains(item.localTempId)
+            case .deleteEntry, .deleteTransaction:
+                return false
+            }
+        }
+        if snapshot.outbox.count != beforeCount {
+            changed = true
+        }
+        return changed
+    }
+
     public func resetPausedOutboxItems() {
         var latest = snapshot
-        var changed = false
+        var changed = Self.pruneInvalidOutboxItems(in: &latest)
         for index in latest.outbox.indices where latest.outbox[index].retryCount >= Self.maxOutboxRetryCount {
             latest.outbox[index].retryCount = 0
             latest.outbox[index].lastError = nil
@@ -1016,7 +1100,12 @@ public final class SyncManager {
 
     /// 排空并同步本地 Outbox 待发送队列
     public func flushOutbox() async {
-        guard !isFlushingOutbox, !snapshot.outbox.isEmpty else { return }
+        guard !isFlushingOutbox else { return }
+        var preClean = snapshot
+        if Self.pruneInvalidOutboxItems(in: &preClean) {
+            saveSnapshot(preClean, critical: true)
+        }
+        guard !snapshot.outbox.isEmpty else { return }
         isFlushingOutbox = true
         defer {
             isFlushingOutbox = false
@@ -1271,6 +1360,7 @@ public final class SyncManager {
            loaded.transactionSummary.month == current.transactionSummary.month {
             merged.transactionSummary = loaded.transactionSummary
         }
+        _ = pruneInvalidOutboxItems(in: &merged)
         return merged
     }
 
@@ -1298,8 +1388,9 @@ public final class SyncManager {
 
     nonisolated static func mergedRecords<R: SyncableRecord>(current: [R], incoming: [R], isDelta: Bool) -> [R] {
         if !isDelta {
-            let pendingLocal = current.filter { ($0.syncStatus ?? "synced") != "synced" }
             let validRemote = incoming.filter { ($0.deletedAt ?? "").isEmpty }
+            let remoteIds = Set(validRemote.map(\.id))
+            let pendingLocal = current.filter { ($0.syncStatus ?? "synced") != "synced" && !remoteIds.contains($0.id) }
             return sortedRecords(pendingLocal + validRemote)
         }
         var map = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })

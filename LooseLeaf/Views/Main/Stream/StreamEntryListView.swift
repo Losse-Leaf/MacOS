@@ -53,12 +53,13 @@ struct StreamEntryListView: View {
                 }
             } else {
                 List(selection: selectedEntryIdBinding) {
+                    let selectedId = appState.highlightedEntry?.id
                     ForEach(monthGroups) { group in
                         Section(group.title) {
                             ForEach(group.entries) { entry in
-                                EntryListRowView(entry: entry, appState: appState)
-                                    .tag(entry.id as Int?)
+                                entryRow(for: entry, isSelected: selectedId == entry.id)
                                     .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
+                                    .tag(entry.id)
                             }
                         }
                     }
@@ -81,9 +82,9 @@ struct StreamEntryListView: View {
                     if !remoteHits.isEmpty {
                         Section("远端历史归档") {
                             ForEach(remoteHits) { entry in
-                                EntryListRowView(entry: entry, appState: appState)
-                                    .tag(entry.id as Int?)
+                                entryRow(for: entry, isSelected: selectedId == entry.id)
                                     .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
+                                    .tag(entry.id)
                             }
                         }
                     }
@@ -100,6 +101,31 @@ struct StreamEntryListView: View {
         .onChange(of: appState.searchQuery) { _, _ in
             visibleEntryLimit = 150
         }
+    }
+
+    private func entryRow(for entry: LifeEntry, isSelected: Bool) -> some View {
+        EntryListRowView(
+            entry: entry,
+            isSelected: isSelected,
+            onOpenWindow: { appState.detailWindowEntry = entry },
+            onEdit: {
+                appState.highlightedEntry = entry
+                appState.navigation.editCurrentEntryRequestToken &+= 1
+            },
+            onTogglePrivacy: { appState.toggleEntryPrivacy(entry) },
+            onReupload: { appState.reuploadEntry(id: entry.id) },
+            onDelete: {
+                appState.askConfirm(
+                    title: ArchiveSharedCopy.entryDeleteTitle,
+                    message: ArchiveSharedCopy.entryDeleteMessage,
+                    confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
+                    danger: true
+                ) {
+                    appState.deleteEntryAction(entry)
+                }
+            },
+            onCopyNotice: { msg in appState.showTemporaryBanner(msg) }
+        )
     }
 
     private var emptyListView: some View {
@@ -135,7 +161,13 @@ struct StreamEntryListView: View {
 
 private struct EntryListRowView: View {
     let entry: LifeEntry
-    @Bindable var appState: AppState
+    let isSelected: Bool
+    let onOpenWindow: () -> Void
+    let onEdit: () -> Void
+    let onTogglePrivacy: () -> Void
+    let onReupload: () -> Void
+    let onDelete: () -> Void
+    let onCopyNotice: (String) -> Void
 
     private var displayTitle: String {
         let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -176,13 +208,13 @@ private struct EntryListRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayTitle)
                     .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.prose, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 if !excerptText.isEmpty {
                     Text(excerptText)
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .lineSpacing(2)
                 }
@@ -191,20 +223,20 @@ private struct EntryListRowView: View {
                     if !compactDateText.isEmpty {
                         Text(compactDateText)
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
-                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .foregroundStyle(.secondary)
                     }
 
                     if let loc = entry.location?.trimmingCharacters(in: .whitespacesAndNewlines), !loc.isEmpty {
                         Text("· \(loc)")
                             .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.label))
-                            .foregroundStyle(ArchivePalette.inkMuted)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
 
                     if entry.isPrivate {
                         Image(systemName: "lock.fill")
                             .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.tinyIcon))
-                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(ArchivePalette.accentWarm))
                             .accessibilityLabel("仅自己可见")
                     }
 
@@ -212,14 +244,15 @@ private struct EntryListRowView: View {
                     if syncState == "failed" {
                         Text("同步失败")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.miniBadge, weight: .medium))
-                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(ArchivePalette.accentWarm))
                     } else if syncState != "synced" {
                         Text("待同步")
                             .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.miniBadge, weight: .medium))
-                            .foregroundStyle(ArchivePalette.accentWarm)
+                            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(ArchivePalette.accentWarm))
                     }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 4)
 
@@ -229,26 +262,22 @@ private struct EntryListRowView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            appState.detailWindowEntry = entry
-        }
         .contextMenu {
             Button {
-                appState.detailWindowEntry = entry
+                onOpenWindow()
             } label: {
                 Label("在新窗口打开", systemImage: "macwindow.badge.plus")
             }
 
             if entry.id > 0 {
                 Button {
-                    appState.highlightedEntry = entry
-                    appState.navigation.editCurrentEntryRequestToken &+= 1
+                    onEdit()
                 } label: {
                     Label("编辑手稿", systemImage: ArchiveIcon.edit.systemName)
                 }
 
                 Button {
-                    appState.toggleEntryPrivacy(entry)
+                    onTogglePrivacy()
                 } label: {
                     Label(
                         entry.isPrivate ? "设为公开可见" : "设为仅自己可见（私密）",
@@ -259,7 +288,7 @@ private struct EntryListRowView: View {
 
             if (entry.syncStatus ?? "synced") != "synced" {
                 Button {
-                    appState.reuploadEntry(id: entry.id)
+                    onReupload()
                 } label: {
                     Label("重新上传到中枢", systemImage: ArchiveIcon.sync.systemName)
                 }
@@ -269,14 +298,14 @@ private struct EntryListRowView: View {
 
             Button {
                 SecureClipboard.copy(entry.content)
-                appState.showTemporaryBanner("已拷贝手稿正文至剪贴板")
+                onCopyNotice("已拷贝手稿正文至剪贴板")
             } label: {
                 Label("拷贝正文", systemImage: "doc.on.doc")
             }
 
             Button {
                 SecureClipboard.copy(ArchiveExporter.makeMarkdown(entries: [entry]))
-                appState.showTemporaryBanner("已拷贝 Markdown 格式至剪贴板")
+                onCopyNotice("已拷贝 Markdown 格式至剪贴板")
             } label: {
                 Label("拷贝 Markdown", systemImage: "text.alignleft")
             }
@@ -284,14 +313,7 @@ private struct EntryListRowView: View {
             Divider()
 
             Button(role: .destructive) {
-                appState.askConfirm(
-                    title: ArchiveSharedCopy.entryDeleteTitle,
-                    message: ArchiveSharedCopy.entryDeleteMessage,
-                    confirmText: ArchiveSharedCopy.entryDeleteConfirmText,
-                    danger: true
-                ) {
-                    appState.deleteEntryAction(entry)
-                }
+                onDelete()
             } label: {
                 Label("删除手稿", systemImage: ArchiveIcon.delete.systemName)
             }

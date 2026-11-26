@@ -41,7 +41,7 @@ struct WorkbenchSidebar: View {
                         tint: ArchivePalette.accentWarm,
                         badge: appState.entries.count
                     )
-                    .tag(SidebarDestination.allEntries as SidebarDestination?)
+                    .tag(SidebarDestination.allEntries)
 
                     sidebarRow(
                         SidebarDestination.daily.title,
@@ -49,7 +49,7 @@ struct WorkbenchSidebar: View {
                         tint: ArchivePalette.accentMoss,
                         badge: appState.dailyEntriesCount
                     )
-                    .tag(SidebarDestination.daily as SidebarDestination?)
+                    .tag(SidebarDestination.daily)
 
                     sidebarRow(
                         SidebarDestination.privateEntries.title,
@@ -57,7 +57,7 @@ struct WorkbenchSidebar: View {
                         tint: ArchivePalette.accentWarm,
                         badge: appState.privateEntriesCount
                     )
-                    .tag(SidebarDestination.privateEntries as SidebarDestination?)
+                    .tag(SidebarDestination.privateEntries)
 
                     if !appState.onThisDayEntries.isEmpty {
                         sidebarRow(
@@ -66,7 +66,7 @@ struct WorkbenchSidebar: View {
                             tint: ArchivePalette.accentWarm,
                             badge: appState.onThisDayEntries.count
                         )
-                        .tag(SidebarDestination.onThisDay as SidebarDestination?)
+                        .tag(SidebarDestination.onThisDay)
                     }
                 }
 
@@ -79,7 +79,7 @@ struct WorkbenchSidebar: View {
                             tint: category.accentColor,
                             badge: appState.entryCount(for: category)
                         )
-                        .tag(dest as SidebarDestination?)
+                        .tag(dest)
                     }
                 }
 
@@ -90,7 +90,7 @@ struct WorkbenchSidebar: View {
                         tint: ArchivePalette.spectrumDining,
                         badge: appState.transactionsNeedingUpload
                     )
-                    .tag(SidebarDestination.ledger as SidebarDestination?)
+                    .tag(SidebarDestination.ledger)
 
                     sidebarRow(
                         SidebarDestination.wishlist.title,
@@ -98,7 +98,7 @@ struct WorkbenchSidebar: View {
                         tint: ArchivePalette.spectrumLeisure,
                         badge: appState.wantingWishesCount
                     )
-                    .tag(SidebarDestination.wishlist as SidebarDestination?)
+                    .tag(SidebarDestination.wishlist)
                 }
             }
             .listStyle(.sidebar)
@@ -122,7 +122,7 @@ struct WorkbenchSidebar: View {
         Label {
             Text(title)
                 .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
-                .foregroundStyle(ArchivePalette.inkPrimary)
+                .foregroundStyle(.primary)
         } icon: {
             Image(systemName: systemImage)
                 .foregroundStyle(tint)

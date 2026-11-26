@@ -20,99 +20,59 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
 /// 活页集原生设置窗口外壳 (SettingsView · `⌘,`)
 /// 遵循 macOS HIG 标准独立 `Settings` Scene 规范：
 /// 1. 双向绑定 `appState.navigation.settingsSelectedTab`，支持 `⌥⌘1–3` 与更新提示跨窗口精准切页
-/// 2. 本文件是唯一持有 `ScrollView` 与外层留白的容器，各子面板输出纯粹的 `VStack`
+/// 2. 采用原生 `TabView` 由系统渲染标准 macOS 设置页签栏
+/// 3. 本文件是唯一持有 `ScrollView` 与外层留白的容器，各子面板输出纯粹的 `VStack`
 @MainActor
 public struct SettingsView: View {
     @Bindable var appState: AppState
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     public init(appState: AppState) {
         self.appState = appState
     }
 
-    private var selectedTab: SettingsTab {
-        appState.navigation.settingsSelectedTab
-    }
-
     public var body: some View {
-        VStack(spacing: 0) {
-            pinnedSectionHeader
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
+        @Bindable var navigation = appState.navigation
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
-                    Group {
-                        switch selectedTab {
-                        case .general:
-                            PreferencesSettingsView(appState: appState)
-                        case .devices:
-                            HubDevicesSettingsView(appState: appState)
-                        case .about:
-                            AboutSettingsView(appState: appState)
-                        }
-                    }
-                    .id(selectedTab)
-                    .transition(.opacity)
-                }
-                .padding(.horizontal, SettingsLayout.horizontalGutter)
-                .padding(.vertical, ArchiveSpacing.xl)
-                .frame(maxWidth: ArchiveSheetWidth.form)
-                .frame(maxWidth: .infinity, alignment: .top)
+        TabView(selection: $navigation.settingsSelectedTab) {
+            settingsTabContainer {
+                PreferencesSettingsView(appState: appState)
             }
-            .background(ArchivePalette.archivePaper)
+            .tabItem {
+                Label(SettingsTab.general.rawValue, systemImage: SettingsTab.general.iconName)
+            }
+            .tag(SettingsTab.general)
+
+            settingsTabContainer {
+                HubDevicesSettingsView(appState: appState)
+            }
+            .tabItem {
+                Label(SettingsTab.devices.rawValue, systemImage: SettingsTab.devices.iconName)
+            }
+            .tag(SettingsTab.devices)
+
+            settingsTabContainer {
+                AboutSettingsView(appState: appState)
+            }
+            .tabItem {
+                Label(SettingsTab.about.rawValue, systemImage: SettingsTab.about.iconName)
+            }
+            .tag(SettingsTab.about)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ArchivePalette.archivePaper)
     }
 
-    // MARK: - 统一设置中心顶栏与分段切换器
-    private var pinnedSectionHeader: some View {
-        HStack(spacing: ArchiveSpacing.m) {
-            HStack(spacing: 4) {
-                ForEach(Array(SettingsTab.allCases.enumerated()), id: \.element.id) { index, tab in
-                    PaperPillButton(
-                        title: tab.rawValue,
-                        icon: tab.iconName,
-                        isSelected: selectedTab == tab
-                    ) {
-                        withAnimation(.easeInOut(duration: 0.12)) {
-                            appState.navigation.settingsSelectedTab = tab
-                        }
-                    }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command, .option])
-                }
+    private func settingsTabContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: ArchiveSpacing.l) {
+                content()
             }
-
-            Spacer()
-
-            let badge = appState.hubConnectionBadgeState
-            HStack(spacing: ArchiveSpacing.s) {
-                if differentiateWithoutColor {
-                    Image(systemName: badge.symbolName)
-                        .font(.system(size: 10))
-                        .foregroundStyle(badge.dotColor)
-                        .accessibilityHidden(true)
-                } else {
-                    Circle()
-                        .fill(badge.dotColor)
-                        .frame(width: 6, height: 6)
-                        .accessibilityHidden(true)
-                }
-                Text(badge.label)
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.caption))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .lineLimit(1)
-                Text("v\(UpdateChecker.shared.currentVersion)")
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                    .lineLimit(1)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(badge.label)，版本 v\(UpdateChecker.shared.currentVersion)")
-            .help(appState.isPaired ? "同步服务器: \(appState.hubURLString) (\(badge.label))" : "尚未登录")
+            .padding(.horizontal, SettingsLayout.horizontalGutter)
+            .padding(.vertical, ArchiveSpacing.xl)
+            .frame(maxWidth: ArchiveSheetWidth.form)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .padding(.horizontal, ArchiveSpacing.l)
-        .frame(height: 52)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ArchivePalette.archivePaper)
     }
 }

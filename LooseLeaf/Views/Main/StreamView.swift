@@ -128,21 +128,6 @@ public struct StreamView: View {
                 }
             }
 
-            if appState.showNewEntrySheet {
-                PaperModalOverlay(onDismiss: {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        appState.showNewEntrySheet = false
-                    }
-                }) {
-                    NewEntryModal(appState: appState) {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                            appState.showNewEntrySheet = false
-                        }
-                    }
-                }
-                .zIndex(110)
-            }
-
             // 全局聚光灯档案检索 (⌘K Spotlight) —— 命中散页或心愿后精准跳转
             if appState.showSearchModal {
                 PaperModalOverlay(onDismiss: {
@@ -171,16 +156,6 @@ public struct StreamView: View {
                 }
                 .zIndex(120)
             }
-
-            // 全局统一纸本确认 / 警示弹窗
-            if let req = appState.activeConfirmDialog {
-                PaperConfirmDialogView(request: req) {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        appState.activeConfirmDialog = nil
-                    }
-                }
-                .zIndex(130)
-            }
         }
         .background(
             HostingWindowCloseObserver {
@@ -189,6 +164,12 @@ public struct StreamView: View {
             }
         )
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        .sheet(isPresented: $appState.showNewEntrySheet) {
+            NewEntryModal(appState: appState) {
+                appState.showNewEntrySheet = false
+            }
+            .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        }
         .sheet(item: $appState.editingEntry) { entry in
             editEntrySheet(entry: entry)
                 .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
@@ -202,6 +183,26 @@ public struct StreamView: View {
         .sheet(item: $appState.highlightedEntry) { entry in
             entryDetailSheet(entry: entry)
                 .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        }
+        .alert(
+            appState.activeConfirmDialog?.title ?? "请确认",
+            isPresented: Binding(
+                get: { appState.activeConfirmDialog != nil },
+                set: { if !$0 { appState.activeConfirmDialog = nil } }
+            ),
+            presenting: appState.activeConfirmDialog
+        ) { req in
+            Button(req.confirmText, role: req.danger ? .destructive : nil) {
+                if appState.enablesHapticFeedback { ArchiveFeedback.light() }
+                let action = req.onConfirm
+                appState.activeConfirmDialog = nil
+                action()
+            }
+            Button(req.cancelText, role: .cancel) {
+                appState.dismissConfirm()
+            }
+        } message: { req in
+            Text(req.message)
         }
         .onAppear {
             localSearchText = appState.searchQuery
@@ -228,12 +229,8 @@ public struct StreamView: View {
             NSApp.activate(ignoringOtherApps: true)
         }
         .onExitCommand {
-            if appState.activeConfirmDialog != nil {
-                appState.dismissConfirm()
-            } else if appState.showSearchModal {
+            if appState.showSearchModal {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) { appState.showSearchModal = false }
-            } else if appState.showNewEntrySheet {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) { appState.showNewEntrySheet = false }
             } else if appState.lightboxAttachment != nil {
                 appState.lightboxAttachment = nil
             }

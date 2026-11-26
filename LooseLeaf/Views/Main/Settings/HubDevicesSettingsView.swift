@@ -8,6 +8,7 @@ struct HubDevicesSettingsView: View {
     @State private var isSyncingNow: Bool = false
     @State private var feedbackMessage: String?
     @State private var errorMessage: String?
+    @State private var showLogoutConfirm: Bool = false
 
     public init(appState: AppState) {
         self.appState = appState
@@ -82,20 +83,7 @@ struct HubDevicesSettingsView: View {
 
                     if appState.isPaired {
                         Button("退出登录") {
-                            let pending = appState.outboxItems.count
-                            let warning = pending > 0
-                                ? "\n\n注意：本机还有 \(pending) 条待同步记录，退出登录将连同清除且无法找回，建议先联网同步完成后再退出。"
-                                : ""
-                            appState.askConfirm(
-                                title: "确认退出登录？",
-                                message: "退出登录将清除本机登录状态、本地快照、图片缓存与 Spotlight 索引，下次通过 Vesper Auth 重新登录即可恢复同步。\(warning)",
-                                confirmText: "退出登录",
-                                danger: true
-                            ) {
-                                Task { @MainActor in
-                                    await appState.disconnectDevice()
-                                }
-                            }
+                            showLogoutConfirm = true
                         }
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
                         .foregroundStyle(ArchivePalette.accentWarm)
@@ -160,6 +148,20 @@ struct HubDevicesSettingsView: View {
             if appState.isPaired {
                 await appState.refreshAccountSession()
             }
+        }
+        .alert("确认退出登录？", isPresented: $showLogoutConfirm) {
+            Button("退出登录", role: .destructive) {
+                Task { @MainActor in
+                    await appState.disconnectDevice()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            let pending = appState.outboxItems.count
+            let warning = pending > 0
+                ? "\n\n注意：本机还有 \(pending) 条待同步记录，退出登录将连同清除且无法找回，建议先联网同步完成后再退出。"
+                : ""
+            Text("退出登录将清除本机登录状态、本地快照、图片缓存与 Spotlight 索引，下次通过 Vesper Auth 重新登录即可恢复同步。\(warning)")
         }
     }
 

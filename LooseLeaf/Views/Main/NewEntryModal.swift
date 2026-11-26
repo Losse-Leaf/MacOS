@@ -83,6 +83,7 @@ public struct NewEntryModal: View {
         .onPasteCommand(of: [.image, .fileURL]) { providers in
             media.paste(providers: providers)
         }
+        .interactiveDismissDisabled(media.isUploading || isSubmitting)
     }
 
     // MARK: - 顶栏
@@ -109,7 +110,6 @@ public struct NewEntryModal: View {
                 saveDraft()
                 onDismiss()
             }
-            .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

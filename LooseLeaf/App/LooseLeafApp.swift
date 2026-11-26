@@ -99,15 +99,29 @@ private struct StandaloneEntryDetailWindow: View {
                 }
                 .zIndex(100)
             }
-
-            if let req = localConfirm {
-                PaperConfirmDialogView(request: req) {
-                    localConfirm = nil
-                }
-                .zIndex(110)
-            }
         }
         .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+        .alert(
+            localConfirm?.title ?? "请确认",
+            isPresented: Binding(
+                get: { localConfirm != nil },
+                set: { if !$0 { localConfirm = nil } }
+            ),
+            presenting: localConfirm
+        ) { req in
+            Button(req.confirmText, role: req.danger ? .destructive : nil) {
+                let action = req.onConfirm
+                localConfirm = nil
+                action()
+            }
+            Button(req.cancelText, role: .cancel) {
+                let onCancel = req.onCancel
+                localConfirm = nil
+                onCancel?()
+            }
+        } message: { req in
+            Text(req.message)
+        }
         .sheet(item: $localEditingEntry) { target in
             EditEntrySheetView(entry: target) { updated in
                 _ = try await APIClient.shared.updateEntry(id: target.id, updated)
@@ -155,10 +169,10 @@ public struct LooseLeafApp: App {
                 appState.dismissConfirm()
             } else if appState.showSearchModal {
                 appState.showSearchModal = false
-            } else if appState.showNewEntrySheet {
-                appState.showNewEntrySheet = false
             } else if appState.lightboxAttachment != nil {
                 appState.lightboxAttachment = nil
+            } else if appState.showNewEntrySheet {
+                appState.showNewEntrySheet = false
             } else if appState.editingEntry != nil {
                 appState.editingEntry = nil
             } else if appState.editingTransaction != nil {

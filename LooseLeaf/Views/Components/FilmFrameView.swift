@@ -313,6 +313,10 @@ public struct CachedFilmImageView: View {
     public let maxPixelOverride: Int?
     /// 已知原始像素宽高（用于占位框等比锁定与小尺寸图片防放大模糊）
     public let intrinsicSize: CGSize?
+    /// 图像缩放模式（默认 .fit 保留原始比例；网格/缩略图裁剪可传 .fill）
+    public let contentMode: ContentMode
+    /// 是否铺满外层容器几何尺寸（用于正方形/固定比例网格裁切）
+    public let fillsFrame: Bool
 
     @State private var loadState: FilmImageLoadState
 
@@ -338,12 +342,16 @@ public struct CachedFilmImageView: View {
         url: URL,
         maxHeight: CGFloat,
         maxPixelOverride: Int? = nil,
-        intrinsicSize: CGSize? = nil
+        intrinsicSize: CGSize? = nil,
+        contentMode: ContentMode = .fit,
+        fillsFrame: Bool = false
     ) {
         self.url = url
         self.maxHeight = maxHeight
         self.maxPixelOverride = maxPixelOverride
         self.intrinsicSize = intrinsicSize
+        self.contentMode = contentMode
+        self.fillsFrame = fillsFrame
         // 只做缩略图内存命中（零 I/O）；磁盘降采样解码交给 .task 在后台完成
         _loadState = State(initialValue: FilmImageLoadState(
             url: url,
@@ -371,16 +379,28 @@ public struct CachedFilmImageView: View {
     public var body: some View {
         ZStack {
             if loadState.url == url, let image = loadState.image {
-                let displayMaxH = maxPixelOverride == nil
-                    ? min(effectiveMaxHeight, max(64, image.size.height / 2.0))
-                    : maxHeight
-                Image(nsImage: image)
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: displayMaxH)
-                    .clipped()
+                if fillsFrame {
+                    Color.clear
+                        .overlay {
+                            Image(nsImage: image)
+                                .interpolation(.high)
+                                .antialiased(true)
+                                .resizable()
+                                .aspectRatio(contentMode: contentMode)
+                        }
+                        .clipped()
+                } else {
+                    let displayMaxH = maxPixelOverride == nil
+                        ? min(effectiveMaxHeight, max(64, image.size.height / 2.0))
+                        : maxHeight
+                    Image(nsImage: image)
+                        .interpolation(.high)
+                        .antialiased(true)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: displayMaxH)
+                        .clipped()
+                }
             } else if loadState.url == url, loadState.hasFailed {
                 placeholderContainer {
                     VStack(spacing: 6) {

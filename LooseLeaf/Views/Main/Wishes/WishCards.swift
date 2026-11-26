@@ -206,15 +206,15 @@ struct WishCardView: View {
                 }
             }
         }
-        .padding(ArchiveCardMetrics.padding)
+        .padding(ArchiveSpacing.l)
         .frame(minHeight: 150)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .background(ArchivePalette.archiveSubtle.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: ArchiveRadius.md)
                 .stroke(
-                    isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle,
-                    lineWidth: isHighlighted ? 1.5 : 0.6
+                    isHighlighted ? ArchivePalette.accentWarm : ArchivePalette.borderSubtle.opacity(0.65),
+                    lineWidth: isHighlighted ? 1.5 : 0.5
                 )
         )
         .paperHover()

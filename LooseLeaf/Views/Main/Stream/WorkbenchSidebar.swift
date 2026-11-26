@@ -2,13 +2,12 @@ import SwiftUI
 import AppKit
 
 /// 工作台左侧导航栏 (Workbench Sidebar)
-/// 遵循 macOS HIG 规范：
-/// 1. 导航列表采用原生 `List(selection:)` + `.listStyle(.sidebar)`，交还系统键盘导航、焦点环与选中态语义
-/// 2. `.scrollContentBackground(.hidden)` 叠加 `WindowVibrancyView` 与暖纸薄层，在壳层原生与纸感之间保持克制平衡
-/// 3. 「偏好与设置…」与极速捕捉热键置于底栏工具区，确保导航选择态语义纯净
+/// 1. 使用原生 `List(selection:)` + 可选类型 `.tag(dest as SidebarDestination?)` 修复 macOS 选中与点击响应
+/// 2. 完整承载「散页 / 画廊分类 / 财务与心愿」三组导航树，让系统侧栏磨砂通透与内容区分明
+/// 3. 显式注入暖纸朱砂与矿物语义色图标，消除系统默认蓝；底栏收口为极简单行状态条与设置入口
 struct WorkbenchSidebar: View {
     @Bindable var appState: AppState
-    var onSelect: (WorkbenchSection) -> Void
+    var onSelect: (WorkbenchSection) -> Void = { _ in }
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -18,192 +17,189 @@ struct WorkbenchSidebar: View {
         appState.hubConnectionBadgeState
     }
 
-    private var sectionSelectionBinding: Binding<WorkbenchSection?> {
+    private var destinationSelectionBinding: Binding<SidebarDestination?> {
         Binding(
-            get: {
-                WorkbenchSection.contentSections.contains(appState.activeSection)
-                    ? appState.activeSection
-                    : .stream
-            },
+            get: { appState.navigation.sidebarDestination },
             set: { newValue in
-                guard let newValue, newValue != appState.activeSection else { return }
-                onSelect(newValue)
+                guard let dest = newValue else { return }
+                let prevSection = appState.activeSection
+                appState.navigation.selectDestination(dest)
+                if appState.activeSection != prevSection {
+                    onSelect(appState.activeSection)
+                }
             }
         )
     }
 
-    private func pendingBadgeCount(for section: WorkbenchSection) -> Int {
-        switch section {
-        case .stream: return appState.entriesNeedingUpload
-        case .ledger: return appState.transactionsNeedingUpload
-        case .preferences, .hub, .about: return 0
-        }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 刊头印记 (100% 动态读取后端配置与主理人档案)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Image(systemName: "leaf.fill")
-                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.heading, weight: .medium))
-                        .imageScale(.medium)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(ArchivePalette.accentMoss)
-                        .accessibilityHidden(true)
-
-                    Text(appState.siteConfig.siteName.isEmpty ? "散页 · 时光手账" : appState.siteConfig.siteName)
-                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                        .lineLimit(1)
-                }
-
-                if !appState.profile.name.isEmpty || !appState.profile.displayCity.isEmpty {
-                    Text(
-                        [appState.profile.name, appState.profile.displayCity]
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " · ")
+        VStack(spacing: 0) {
+            List(selection: destinationSelectionBinding) {
+                Section("散页") {
+                    sidebarRow(
+                        SidebarDestination.allEntries.title,
+                        systemImage: "book.pages",
+                        tint: ArchivePalette.accentWarm,
+                        badge: appState.entries.count
                     )
-                    .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
-                    .foregroundStyle(ArchivePalette.inkMuted)
-                    .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
+                    .tag(SidebarDestination.allEntries as SidebarDestination?)
 
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
+                    sidebarRow(
+                        SidebarDestination.daily.title,
+                        systemImage: "doc.text",
+                        tint: ArchivePalette.accentMoss,
+                        badge: appState.dailyEntriesCount
+                    )
+                    .tag(SidebarDestination.daily as SidebarDestination?)
 
-            // 原生侧栏列表（散页 / 记账）
-            List(selection: sectionSelectionBinding) {
-                Section("生活卷宗") {
-                    ForEach(WorkbenchSection.contentSections) { section in
-                        Label(section.title, systemImage: section.icon)
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
-                            .imageScale(.medium)
-                            .tag(section)
-                            .badge(pendingBadgeCount(for: section))
+                    sidebarRow(
+                        SidebarDestination.privateEntries.title,
+                        systemImage: "lock",
+                        tint: ArchivePalette.accentWarm,
+                        badge: appState.privateEntriesCount
+                    )
+                    .tag(SidebarDestination.privateEntries as SidebarDestination?)
+
+                    if !appState.onThisDayEntries.isEmpty {
+                        sidebarRow(
+                            SidebarDestination.onThisDay.title,
+                            systemImage: "clock.arrow.circlepath",
+                            tint: ArchivePalette.accentWarm,
+                            badge: appState.onThisDayEntries.count
+                        )
+                        .tag(SidebarDestination.onThisDay as SidebarDestination?)
                     }
+                }
+
+                Section("画廊") {
+                    ForEach(EntryCategory.galleryCases) { category in
+                        let dest = SidebarDestination.category(category)
+                        sidebarRow(
+                            category.label,
+                            systemImage: category.symbolName,
+                            tint: category.accentColor,
+                            badge: appState.entryCount(for: category)
+                        )
+                        .tag(dest as SidebarDestination?)
+                    }
+                }
+
+                Section("财务与心愿") {
+                    sidebarRow(
+                        SidebarDestination.ledger.title,
+                        systemImage: "creditcard",
+                        tint: ArchivePalette.spectrumDining,
+                        badge: appState.transactionsNeedingUpload
+                    )
+                    .tag(SidebarDestination.ledger as SidebarDestination?)
+
+                    sidebarRow(
+                        SidebarDestination.wishlist.title,
+                        systemImage: "sparkles",
+                        tint: ArchivePalette.spectrumLeisure,
+                        badge: appState.wantingWishesCount
+                    )
+                    .tag(SidebarDestination.wishlist as SidebarDestination?)
                 }
             }
             .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .tint(ArchivePalette.accentWarm)
 
-            // 底部工具与系统状态区（偏好与设置 + 中枢连接态 + 极速捕捉热键）
-            VStack(alignment: .leading, spacing: 6) {
-                Divider().overlay(ArchivePalette.borderSubtle.opacity(0.5))
+            bottomUtilityBar
+        }
+        .background {
+            if reduceTransparency {
+                ArchivePalette.archiveSubtle
+            }
+        }
+    }
+
+    private func sidebarRow(
+        _ title: String,
+        systemImage: String,
+        tint: Color,
+        badge: Int
+    ) -> some View {
+        Label {
+            Text(title)
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.heading))
+                .foregroundStyle(ArchivePalette.inkPrimary)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .imageScale(.medium)
+        }
+        .badge(badge)
+    }
+
+    private var bottomUtilityBar: some View {
+        VStack(spacing: 0) {
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
+
+            HStack(spacing: 6) {
+                if differentiateWithoutColor {
+                    Image(systemName: badgeState.symbolName)
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro, weight: .medium))
+                        .foregroundStyle(badgeState.dotColor)
+                        .accessibilityHidden(true)
+                } else {
+                    Circle()
+                        .fill(badgeState.dotColor)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+
+                Text(badgeState.label)
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption))
+                    .foregroundStyle(ArchivePalette.inkMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
+                    Button("重传") {
+                        appState.reuploadAllPending()
+                    }
+                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .semibold))
+                    .foregroundStyle(ArchivePalette.accentWarm)
+                    .buttonStyle(.plain)
+                    .paperButtonFocusRing(cornerRadius: 3)
+                    .help("重新上传全部待同步内容")
+                    .accessibilityLabel("重新上传全部待同步内容")
+                }
+
+                Spacer(minLength: 4)
+
+                Button {
+                    (NSApp.delegate as? AppDelegate)?.toggleQuickCapturePanel()
+                } label: {
+                    Image(systemName: "bolt.fill")
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption))
+                        .foregroundStyle(ArchivePalette.inkMuted)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
+                .help("极速闪念 (\(AppDelegate.hotKeyDisplayName))")
+                .accessibilityLabel("呼出极速闪念面板")
 
                 Button {
                     appState.navigation.settingsSelectedTab = .general
                     openSettings()
                     NSApp.activate(ignoringOtherApps: true)
                 } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: ArchiveIcon.preferences.systemName)
-                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .frame(width: 16)
-                            .accessibilityHidden(true)
-                        Text("偏好与设置…")
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                        Spacer(minLength: 4)
-                        Text("⌘,")
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.micro))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                    }
-                    .padding(.vertical, 3)
-                    .contentShape(Rectangle())
+                    Image(systemName: "gearshape")
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body))
+                        .foregroundStyle(ArchivePalette.inkSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
-                .help("打开活页集偏好设置 (⌘,)")
-
-                HStack(spacing: 5) {
-                    if differentiateWithoutColor {
-                        Image(systemName: badgeState.symbolName)
-                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.micro, weight: .medium))
-                            .foregroundStyle(badgeState.dotColor)
-                            .accessibilityHidden(true)
-                    } else {
-                        Circle()
-                            .fill(badgeState.dotColor)
-                            .frame(width: 6, height: 6)
-                            .accessibilityHidden(true)
-                    }
-
-                    Text(badgeState.label)
-                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    Spacer(minLength: 4)
-
-                    if appState.entriesNeedingUpload + appState.transactionsNeedingUpload > 0 {
-                        Button {
-                            appState.reuploadAllPending()
-                        } label: {
-                            Text("全部重传")
-                                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro, weight: .semibold))
-                                .foregroundStyle(ArchivePalette.accentWarm)
-                                .underline()
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        .paperButtonFocusRing(cornerRadius: 3)
-                        .help("把所有待同步 / 同步失败的内容重新上传到中枢")
-                        .accessibilityLabel("重新上传全部待同步内容")
-                    }
-                }
-
-                Button {
-                    (NSApp.delegate as? AppDelegate)?.toggleQuickCapturePanel()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bolt.fill")
-                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.miniBadge))
-                            .foregroundStyle(ArchivePalette.accentWarm)
-                            .accessibilityHidden(true)
-                        Text("极速闪念")
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.micro))
-                            .foregroundStyle(ArchivePalette.inkSecondary)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(AppDelegate.hotKeyDisplayName)
-                            .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.badge, weight: .medium))
-                            .foregroundStyle(ArchivePalette.inkMuted)
-                            .lineLimit(1)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(ArchivePalette.archivePaper.opacity(reduceTransparency ? 1.0 : 0.85))
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
-                    }
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .paperButtonFocusRing(cornerRadius: 3)
-                .help("呼出极速闪念与记账悬浮面板 (\(AppDelegate.hotKeyDisplayName))")
-                .accessibilityLabel("呼出极速闪念与记账悬浮面板，快捷键 \(AppDelegate.hotKeyDisplayName)")
+                .help("偏好与设置 (⌘,)")
+                .accessibilityLabel("打开偏好与设置")
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, 12)
-        }
-        .background {
-            if reduceTransparency {
-                ArchivePalette.archiveSubtle
-            } else {
-                ZStack {
-                    WindowVibrancyView(material: .sidebar, blendingMode: .behindWindow)
-                    ArchivePalette.archivePaper.opacity(0.78)
-                }
-            }
+            .padding(.vertical, 8)
         }
     }
 }

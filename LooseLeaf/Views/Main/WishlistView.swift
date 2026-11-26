@@ -92,9 +92,7 @@ public struct WishlistView: View {
 
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: ArchiveSpacing.xl) {
-                    headerSection
-
+                LazyVStack(alignment: .leading, spacing: ArchiveSpacing.l) {
                     statisticsCardsSection(stats: stats)
 
                     filterPillsSection(stats: stats)
@@ -115,13 +113,21 @@ public struct WishlistView: View {
                         wishesGridSection(wishes)
                     }
                 }
-                .padding(ArchiveSpacing.xl)
+                .padding(.horizontal, ArchiveSpacing.xl)
+                .padding(.vertical, ArchiveSpacing.l)
+                .frame(maxWidth: 1120)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
             .onAppear {
                 consumeHighlightedWishIfNeeded(proxy: proxy)
             }
             .onChange(of: appState.navigation.highlightedWishId) { _, _ in
                 consumeHighlightedWishIfNeeded(proxy: proxy)
+            }
+        }
+        .onChange(of: appState.navigation.newWishRequestToken) { _, _ in
+            if appState.navigation.sidebarDestination == .wishlist {
+                showNewWishSheet = true
             }
         }
         .sheet(isPresented: $showNewWishSheet) {
@@ -159,92 +165,76 @@ public struct WishlistView: View {
         }
     }
 
-    // MARK: - 1. 标头
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.s) {
-            HStack(alignment: .firstTextBaseline) {
-                HStack(spacing: ArchiveSpacing.s) {
-                    Text("心愿清单")
-                        .font(ArchiveTypography.editorialSerif(size: embedded ? 18 : 24, weight: .semibold))
-                        .foregroundStyle(ArchivePalette.inkPrimary)
-                    Text("好物 · 旅程 · 里程碑")
-                        .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.body))
-                        .foregroundStyle(ArchivePalette.inkMuted)
-                }
-
-                Spacer()
-
-                Button {
-                    showNewWishSheet = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus")
-                            .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .medium))
-                        Text("许下心愿")
-                            .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
-                    }
-                }
-                .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
-                .paperButtonFocusRing()
-            }
-
-            Text("生活的三维期冀：花钱可得的称手好物、需要闲暇与决心的山川行旅、心智进阶的人生里程碑。无截止死线，真实倒映生活向往。")
-                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
-                .foregroundStyle(ArchivePalette.inkSecondary)
-                .lineSpacing(3)
-        }
-    }
-
-    // MARK: - 2. 统计大盘三列纸卡
+    // MARK: - 1. 极简三栏统计指标条（无边框呼吸感排版）
     private func statisticsCardsSection(stats: WishStatistics) -> some View {
-        HStack(spacing: ArchiveCardMetrics.padding) {
-            statCard(
-                title: "在愿向往 (进行中)",
+        HStack(spacing: 0) {
+            statColumn(
+                title: "在愿向往",
                 count: "\(stats.wantingCount) 项",
                 subText: stats.wantingBudgetCents > 0 ? "预算 ¥\(FormatUtils.formattedYuan(cents: stats.wantingBudgetCents, includeSymbol: false))" : nil,
                 accentColor: ArchivePalette.inkPrimary
             )
 
-            statCard(
-                title: "圆满达成 (已归册)",
+            Divider().frame(height: 34).overlay(ArchivePalette.borderSubtle.opacity(0.6))
+
+            statColumn(
+                title: "圆满达成",
                 count: "\(stats.fulfilledCount) 项",
                 subText: stats.fulfilledSpentCents > 0 ? "投入 ¥\(FormatUtils.formattedYuan(cents: stats.fulfilledSpentCents, includeSymbol: false))" : nil,
                 accentColor: ArchivePalette.accentMoss
             )
 
-            statCard(
-                title: "理性拔草 (已释怀)",
+            Divider().frame(height: 34).overlay(ArchivePalette.borderSubtle.opacity(0.6))
+
+            statColumn(
+                title: "理性拔草",
                 count: "\(stats.relinquishedCount) 项",
                 subText: stats.relinquishedSavedCents > 0 ? "省下 ¥\(FormatUtils.formattedYuan(cents: stats.relinquishedSavedCents, includeSymbol: false))" : nil,
                 accentColor: ArchivePalette.accentWarm
             )
+
+            Spacer(minLength: 12)
+
+            Button {
+                showNewWishSheet = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus")
+                        .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .medium))
+                    Text("许下心愿")
+                        .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body, weight: .medium))
+                }
+            }
+            .buttonStyle(PaperPrimaryButtonStyle(isProminent: true))
+            .paperButtonFocusRing()
         }
+        .padding(.horizontal, ArchiveSpacing.m)
+        .padding(.vertical, ArchiveSpacing.s)
+        .background(ArchivePalette.archiveSubtle.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: ArchiveRadius.md)
+                .stroke(ArchivePalette.borderSubtle.opacity(0.6), lineWidth: 0.5)
+        )
     }
 
-    private func statCard(title: String, count: String, subText: String?, accentColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: ArchiveSpacing.xs) {
+    private func statColumn(title: String, count: String, subText: String?, accentColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
+                .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.label))
                 .foregroundStyle(ArchivePalette.inkMuted)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(count)
                     .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.statValue, weight: .semibold))
                     .foregroundStyle(count.hasPrefix("0") ? ArchivePalette.inkMuted : accentColor)
                 if let sub = subText {
-                    Text("(\(sub))")
+                    Text(sub)
                         .font(ArchiveTypography.monoScale(size: ArchiveTypography.Scale.label))
                         .foregroundStyle(ArchivePalette.inkSecondary)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(ArchiveCardMetrics.padding)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
-        .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
-        )
+        .padding(.horizontal, ArchiveSpacing.m)
     }
 
     // MARK: - 3. 双级筛选胶囊

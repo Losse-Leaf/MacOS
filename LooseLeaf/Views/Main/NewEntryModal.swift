@@ -41,17 +41,12 @@ public struct NewEntryModal: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("身边小事、随笔思考与定格光影")
-                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.body))
-                        .foregroundStyle(ArchivePalette.inkSecondary)
-                        .padding(.horizontal, 4)
-
                     EntryModalLifeForm(draft: draft, media: media)
                 }
                 .padding(24)
             }
 
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
+            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.6))
 
             footerActionBar
         }
@@ -89,14 +84,9 @@ public struct NewEntryModal: View {
     // MARK: - 顶栏
     private var headerBar: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "leaf")
-                    .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.accentWarm)
-                Text("记一笔 · 日常散页")
-                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-            }
+            Text("写散页")
+                .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
+                .foregroundStyle(ArchivePalette.inkPrimary)
 
             Spacer()
 
@@ -104,15 +94,15 @@ public struct NewEntryModal: View {
                 systemName: ArchiveIcon.close.systemName,
                 label: "关闭创作弹窗",
                 help: "关闭 (Esc)",
-                size: 11,
+                size: ArchiveTypography.Scale.caption,
                 tint: ArchivePalette.inkSecondary
             ) {
                 saveDraft()
                 onDismiss()
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
     }
 
     // MARK: - 底栏动作按钮

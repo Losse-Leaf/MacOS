@@ -139,14 +139,7 @@ public struct LedgerAssetsView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            headerSection
-                .padding(.horizontal, ArchiveSpacing.xl)
-                .padding(.top, ArchiveSpacing.m)
-                .padding(.bottom, ArchiveSpacing.m)
-
-            Divider().overlay(ArchivePalette.borderSubtle.opacity(0.8))
-
+        Group {
             if appState.navigation.ledgerSubTab == .ledger {
                 ledgerWorkspaceContent
             } else {
@@ -166,6 +159,11 @@ public struct LedgerAssetsView: View {
         .overlay(alignment: .top) {
             if let errorNotice {
                 errorBanner(text: errorNotice)
+            }
+        }
+        .onChange(of: appState.navigation.newTransactionRequestToken) { _, _ in
+            if appState.navigation.sidebarDestination == .ledger {
+                showNewTransactionSheet = true
             }
         }
     }
@@ -189,7 +187,7 @@ public struct LedgerAssetsView: View {
                 transactionsHeaderSection(categories: categories, transactionCount: transactions.count)
             }
             .padding(.horizontal, ArchiveSpacing.xl)
-            .padding(.top, ArchiveSpacing.m)
+            .padding(.top, ArchiveSpacing.l)
 
             if transactions.isEmpty {
                 transactionsEmptyState
@@ -244,37 +242,7 @@ public struct LedgerAssetsView: View {
         .padding(.top, ArchiveSpacing.s)
     }
 
-    // MARK: - 1. 页眉（含 流水 | 心愿单 分段切换器）
-
-    private var headerSection: some View {
-        @Bindable var navigation = appState.navigation
-        return HStack(alignment: .center, spacing: ArchiveSpacing.m) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("记账")
-                    .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.sectionTitle, weight: .semibold))
-                    .foregroundStyle(ArchivePalette.inkPrimary)
-                Text(navigation.ledgerSubTab == .ledger
-                     ? "日常收支流水与月度类目光谱 · 每一笔花销皆有归处"
-                     : "好物 · 旅程 · 里程碑 · 心愿圆满时可联动入账并落墨散页")
-                    .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.body))
-                    .foregroundStyle(ArchivePalette.inkSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: ArchiveSpacing.m)
-
-            PaperSegmentedControl(
-                selection: $navigation.ledgerSubTab,
-                items: [
-                    PaperSegmentItem(.ledger, title: LedgerSubTab.ledger.rawValue, icon: ArchiveIcon.ledger.systemName),
-                    PaperSegmentItem(.wishlist, title: LedgerSubTab.wishlist.rawValue, icon: ArchiveIcon.wishes.systemName)
-                ]
-            )
-            .frame(width: 192)
-        }
-    }
-
-    // MARK: - 2. 月度收支光谱卡片（可折叠省高度，汇总完全对齐后端 /transactions/summary）
+    // MARK: - 1. 极简月度收支光谱条（汇总完全对齐后端 /transactions/summary）
 
     private var monthlySpectrumCard: some View {
         let sum = activeSummary
@@ -288,20 +256,15 @@ public struct LedgerAssetsView: View {
                             .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .semibold))
                             .foregroundStyle(ArchivePalette.inkSecondary)
                             .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
                     .accessibilityLabel("上一月")
                     .help("查看上一月收支")
 
-                    Text(verbatim: "\(sum.year) 年 \(sum.month) 月 · 收支光谱")
-                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.lead, weight: .semibold))
+                    Text(verbatim: "\(sum.year) 年 \(sum.month) 月")
+                        .font(ArchiveTypography.editorialSerif(size: ArchiveTypography.Scale.title, weight: .semibold))
                         .foregroundStyle(ArchivePalette.inkPrimary)
 
                     Button {
@@ -311,12 +274,7 @@ public struct LedgerAssetsView: View {
                             .font(ArchiveTypography.icon(size: ArchiveTypography.Scale.caption, weight: .semibold))
                             .foregroundStyle(isCurrentMonthSelected ? ArchivePalette.inkMuted : ArchivePalette.inkSecondary)
                             .frame(minWidth: ArchiveHitTarget.minPointer, minHeight: ArchiveHitTarget.minPointer)
-                            .background(ArchivePalette.archivePaper)
-                            .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.xs))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ArchiveRadius.xs)
-                                    .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
-                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .paperButtonFocusRing(cornerRadius: ArchiveRadius.xs)
@@ -335,15 +293,11 @@ public struct LedgerAssetsView: View {
                         .font(ArchiveTypography.bodySans(size: ArchiveTypography.Scale.caption, weight: .medium))
                         .foregroundStyle(ArchivePalette.accentWarm)
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3.5)
-                        .background(ArchivePalette.accentWarm.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(ArchivePalette.accentWarm.opacity(0.35), lineWidth: 0.5)
-                        )
-                        .paperButtonFocusRing(cornerRadius: 3)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(ArchivePalette.accentWarm.opacity(0.10))
+                        .clipShape(Capsule())
+                        .paperButtonFocusRing(cornerRadius: ArchiveRadius.sm)
                     }
 
                     if isLoadingSummary {
@@ -368,7 +322,7 @@ public struct LedgerAssetsView: View {
                     PaperIconButton(
                         systemName: isSpectrumExpanded ? "chevron.up" : "chevron.down",
                         label: isSpectrumExpanded ? "收起类目光谱" : "展开类目光谱",
-                        size: 10.5,
+                        size: ArchiveTypography.Scale.label,
                         tint: ArchivePalette.inkMuted
                     ) {
                         withAnimation(ArchiveMotion.quick) {
@@ -382,13 +336,13 @@ public struct LedgerAssetsView: View {
                 ExpenseSpectrumBar(summary: sum, showLegend: true)
             }
         }
-        .padding(.horizontal, ArchiveSpacing.l)
-        .padding(.vertical, isSpectrumExpanded ? ArchiveSpacing.m : ArchiveSpacing.s)
-        .background(ArchivePalette.archiveSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+        .padding(.horizontal, ArchiveSpacing.m)
+        .padding(.vertical, ArchiveSpacing.s)
+        .background(ArchivePalette.archiveSubtle.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(ArchivePalette.borderSubtle, lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: ArchiveRadius.md)
+                .stroke(ArchivePalette.borderSubtle.opacity(0.6), lineWidth: 0.5)
         )
     }
 

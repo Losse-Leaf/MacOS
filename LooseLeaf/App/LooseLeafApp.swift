@@ -193,6 +193,25 @@ public struct LooseLeafApp: App {
         }
     }
 
+    private func triggerContextPrimaryCreate() {
+        switch appState.navigation.sidebarDestination {
+        case .ledger:
+            appState.navigation.newTransactionRequestToken &+= 1
+        case .wishlist:
+            appState.navigation.newWishRequestToken &+= 1
+        default:
+            appState.showNewEntrySheet = true
+        }
+    }
+
+    private var primaryCreateTooltip: String {
+        switch appState.navigation.sidebarDestination {
+        case .ledger: return "新建流水账目 (⌘N)"
+        case .wishlist: return "许下新心愿 (⌘N)"
+        default: return "写新散页 (⌘N)"
+        }
+    }
+
     public var body: some Scene {
         // 1. 桌面主工作台窗口（最小尺寸适配 13"/14" MacBook Split View 分屏）
         Window("Loose-Leaf · 活页集", id: "main") {
@@ -202,7 +221,7 @@ public struct LooseLeafApp: App {
                         .frame(minWidth: 680, minHeight: 500)
                 } else {
                     StreamView(appState: appState)
-                        .frame(minWidth: 800, minHeight: 520)
+                        .frame(minWidth: 880, minHeight: 540)
                 }
             }
             .onOpenURL { url in
@@ -212,16 +231,9 @@ public struct LooseLeafApp: App {
                 SpotlightIndexer.handleContinuationActivity(userActivity, appState: appState)
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+            .tint(ArchivePalette.accentWarm)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
-                    Button {
-                        appState.showSearchModal = true
-                    } label: {
-                        Label("全局档案检索", systemImage: ArchiveIcon.search.systemName)
-                    }
-                    .help("全局档案检索 (⌘K)")
-                    .disabled(!appState.isPaired || appState.hasOpenOverlay)
-
                     Button {
                         Task { @MainActor in
                             await appState.refreshAll(forceFull: true)
@@ -233,18 +245,18 @@ public struct LooseLeafApp: App {
                     .disabled(appState.hasOpenOverlay || !appState.isPaired || appState.isLoading || appState.isFlushingOutbox)
 
                     Button {
-                        appState.showNewEntrySheet = true
+                        triggerContextPrimaryCreate()
                     } label: {
-                        Label("记一笔", systemImage: ArchiveIcon.add.systemName)
+                        Label("新建", systemImage: ArchiveIcon.add.systemName)
                     }
-                    .help("记一笔 (⌘N)")
+                    .help(primaryCreateTooltip)
                     .disabled(!appState.isPaired || appState.hasOpenOverlay)
                 }
             }
         }
         .windowStyle(.automatic)
         .windowToolbarStyle(.unified(showsTitle: true))
-        .defaultSize(width: 1180, height: 780)
+        .defaultSize(width: 1220, height: 790)
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("检查新版本…") {
@@ -287,7 +299,7 @@ public struct LooseLeafApp: App {
                 .disabled(!appState.isPaired)
 
                 Button("记一笔…") {
-                    appState.showNewEntrySheet = true
+                    triggerContextPrimaryCreate()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
                 .disabled(!appState.isPaired)
@@ -305,17 +317,37 @@ public struct LooseLeafApp: App {
             }
 
             CommandMenu("活页工作台") {
-                let contentSections = Array(WorkbenchSection.contentSections.prefix(Self.contentShortcuts.count))
-                ForEach(Array(contentSections.enumerated()), id: \.element.id) { index, section in
-                    Button(section.title) {
-                        guard appState.activeSection != section else { return }
-                        withAnimation(.easeInOut(duration: 0.12)) {
-                            appState.activeSection = section
-                        }
+                Button("散页 · 全部印记") {
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.navigation.selectDestination(.allEntries)
                     }
-                    .keyboardShortcut(Self.contentShortcuts[index], modifiers: [.command])
-                    .disabled(!appState.isPaired)
                 }
+                .keyboardShortcut("1", modifiers: [.command])
+                .disabled(!appState.isPaired)
+
+                Button("收支流水") {
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.navigation.selectDestination(.ledger)
+                    }
+                }
+                .keyboardShortcut("2", modifiers: [.command])
+                .disabled(!appState.isPaired)
+
+                Button("心愿清单") {
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        appState.navigation.selectDestination(.wishlist)
+                    }
+                }
+                .keyboardShortcut("3", modifiers: [.command])
+                .disabled(!appState.isPaired)
+
+                Divider()
+
+                Button("编辑当前散页") {
+                    appState.navigation.editCurrentEntryRequestToken &+= 1
+                }
+                .keyboardShortcut("e", modifiers: [.command])
+                .disabled(!appState.isPaired || !appState.navigation.sidebarDestination.isStreamDestination || appState.highlightedEntry == nil)
 
                 Divider()
 
@@ -370,11 +402,13 @@ public struct LooseLeafApp: App {
             SettingsView(appState: appState)
                 .frame(minWidth: 680, idealWidth: 760, minHeight: 520, idealHeight: 640)
                 .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+                .tint(ArchivePalette.accentWarm)
         }
 
         // 3. 独立散页详情窗口组（支持多篇并排对照阅读及深链直达）
         WindowGroup("散页详情", id: "detail", for: Int.self) { $entryId in
             StandaloneEntryDetailWindow(entryId: entryId, appState: appState)
+                .tint(ArchivePalette.accentWarm)
         }
         .defaultSize(width: 640, height: 580)
         .windowResizability(.contentMinSize)
@@ -390,6 +424,7 @@ public struct LooseLeafApp: App {
                 }
             }
             .preferredColorScheme(appState.appearanceMode.preferredColorScheme)
+            .tint(ArchivePalette.accentWarm)
         } label: {
             HStack(spacing: 4) {
                 if #available(macOS 15.0, *) {

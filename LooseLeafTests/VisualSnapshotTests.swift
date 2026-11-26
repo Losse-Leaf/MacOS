@@ -19,15 +19,33 @@ final class VisualSnapshotTests: XCTestCase {
         try? FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
     }
 
-    /// 渲染视图并导出 PNG
+    /// 渲染视图并导出 PNG（挂载离屏窗口并推进一次 RunLoop，确保 List / Table 等 AppKit 容器完成行渲染）
     private func snapshot(_ name: String, size: CGSize, _ view: () -> some View) {
         let hosting = NSHostingView(rootView: view())
         hosting.frame = CGRect(origin: .zero, size: size)
         hosting.appearance = NSAppearance(named: .aqua)
+
+        let window = NSWindow(
+            contentRect: CGRect(x: -20000, y: -20000, width: size.width, height: size.height),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = hosting
+        window.layoutIfNeeded()
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.08))
+        window.layoutIfNeeded()
         hosting.layoutSubtreeIfNeeded()
 
-        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { return }
+        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            window.close()
+            return
+        }
         hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        window.close()
         guard let data = rep.representation(using: .png, properties: [:]) else { return }
 
         let url = outputDirectory.appendingPathComponent("\(name).png")

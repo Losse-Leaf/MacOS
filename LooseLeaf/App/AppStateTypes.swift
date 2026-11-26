@@ -76,6 +76,50 @@ public enum WorkbenchSection: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// 桌面端三栏主窗口侧栏导航树节点（Bear / Things 3 风格完整信息架构）
+public enum SidebarDestination: Hashable, Identifiable, Sendable {
+    case allEntries
+    case daily
+    case privateEntries
+    case onThisDay
+    case category(EntryCategory)
+    case ledger
+    case wishlist
+
+    public var id: String {
+        switch self {
+        case .allEntries: return "all"
+        case .daily: return "daily"
+        case .privateEntries: return "private"
+        case .onThisDay: return "on_this_day"
+        case .category(let cat): return "cat:\(cat.rawValue)"
+        case .ledger: return "ledger"
+        case .wishlist: return "wishlist"
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .allEntries: return "全部印记"
+        case .daily: return "日常"
+        case .privateEntries: return "私密"
+        case .onThisDay: return "那年今日"
+        case .category(let cat): return cat.label
+        case .ledger: return "收支流水"
+        case .wishlist: return "心愿清单"
+        }
+    }
+
+    public var isStreamDestination: Bool {
+        switch self {
+        case .ledger, .wishlist:
+            return false
+        case .allEntries, .daily, .privateEntries, .onThisDay, .category:
+            return true
+        }
+    }
+}
+
 /// 极速捕捉模式选项 (极速记录 / 快速记账)
 public enum QuickCaptureTab: String, CaseIterable, Sendable {
     case thought = "极速记录"

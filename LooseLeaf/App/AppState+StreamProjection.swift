@@ -40,6 +40,80 @@ extension AppState {
         return corpus
     }
 
+    /// 按月分组模型（供散页中栏目录渲染「2026年11月」分组标题）
+    public struct EntryMonthGroup: Identifiable, Sendable {
+        public let id: String
+        public let title: String
+        public let entries: [LifeEntry]
+    }
+
+    /// 当前侧栏导航节点对应的散页列表（支持「那年今日」独立视角与检索过滤）
+    public var displayedStreamEntries: [LifeEntry] {
+        if navigation.sidebarDestination == .onThisDay {
+            let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !q.isEmpty else { return onThisDayEntries }
+            return onThisDayEntries.filter { entry in
+                entry.title.lowercased().contains(q)
+                    || entry.content.lowercased().contains(q)
+                    || (entry.location?.lowercased().contains(q) ?? false)
+            }
+        }
+        return filteredStreamEntries
+    }
+
+    public var dailyEntriesCount: Int {
+        entries.reduce(0) { $0 + ($1.matches(category: .daily) ? 1 : 0) }
+    }
+
+    public var privateEntriesCount: Int {
+        entries.reduce(0) { $0 + ($1.isPrivate ? 1 : 0) }
+    }
+
+    public func entryCount(for category: EntryCategory) -> Int {
+        entries.reduce(0) { $0 + ($1.type == EntryType.life.rawValue && $1.resolvedCategory == category ? 1 : 0) }
+    }
+
+    public var wantingWishesCount: Int {
+        wishes.reduce(0) { count, wish in
+            let s = wish.status
+            let isWanting = (s == "wanting" || s.isEmpty || s == "pending" || s == "shelved")
+            return count + (isWanting ? 1 : 0)
+        }
+    }
+
+    /// 按北京时间自然月对散页分组，保留输入序（通常为降序）
+    public static func groupEntriesByMonth(_ list: [LifeEntry]) -> [EntryMonthGroup] {
+        var order: [String] = []
+        var titles: [String: String] = [:]
+        var buckets: [String: [LifeEntry]] = [:]
+
+        for entry in list {
+            let parsed = entry.parsedDate
+            let key: String
+            let title: String
+            if parsed.isValid, let monthNum = Int(parsed.month), !parsed.year.isEmpty {
+                key = "\(parsed.year)-\(parsed.month)"
+                title = "\(parsed.year)年\(monthNum)月"
+            } else {
+                key = "unknown"
+                title = "未定日期"
+            }
+            if buckets[key] == nil {
+                order.append(key)
+                titles[key] = title
+            }
+            buckets[key, default: []].append(entry)
+        }
+
+        return order.map { key in
+            EntryMonthGroup(
+                id: key,
+                title: titles[key] ?? key,
+                entries: buckets[key] ?? []
+            )
+        }
+    }
+
     /// 供主窗口展示的过滤后时间流列表（融合账目视角、分类过滤与模糊搜索）
     public var filteredStreamEntries: [LifeEntry] {
         let key = Self.filteredEntriesCacheKey(
@@ -262,7 +336,7 @@ extension AppState {
 
     /// 在筛选后的时间流中上下移动键盘焦点（首次按下正向选首条，反向选末条）
     public func moveSelection(by delta: Int) {
-        let list = filteredStreamEntries
+        let list = displayedStreamEntries
         guard !list.isEmpty else { return }
         let targetIndex: Int
         if let currentId = keyboardFocusedEntryId,
@@ -278,10 +352,10 @@ extension AppState {
         }
     }
 
-    /// 打开当前键盘聚焦的散页（若检视器尚未展开则展开右侧检视器；若已正在检视该散页则开独立窗口）
+    /// 打开当前键盘聚焦的散页（若尚未展开则选中至右栏阅读；若已正在阅读该散页则开独立窗口）
     public func openKeyboardFocusedEntry() {
         guard let id = keyboardFocusedEntryId,
-              let entry = filteredStreamEntries.first(where: { $0.id == id })
+              let entry = displayedStreamEntries.first(where: { $0.id == id })
                 ?? entries.first(where: { $0.id == id }) else { return }
         if highlightedEntry?.id == entry.id {
             detailWindowEntry = entry

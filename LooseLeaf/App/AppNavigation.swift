@@ -48,6 +48,8 @@ public enum StreamPrivacyFilter: String, CaseIterable, Identifiable, Sendable {
 @Observable
 @MainActor
 public final class AppNavigation {
+    /// 侧栏完整导航树当前选中的目标节点
+    public var sidebarDestination: SidebarDestination = .allEntries
     /// 当前侧栏板块
     public var activeSection: WorkbenchSection = .stream
     /// 记账板块内当前子页签（流水 | 心愿单）
@@ -62,6 +64,12 @@ public final class AppNavigation {
     public var streamScrollEntryId: Int? = nil
     /// ⌘F 请求聚焦工具栏搜索框（自增 token 驱动 onChange）
     public var searchFocusRequest: Int = 0
+    /// ⌘N / 工具栏「+」在收支流水下的新建请求令牌
+    public var newTransactionRequestToken: Int = 0
+    /// ⌘N / 工具栏「+」在心愿清单下的新建请求令牌
+    public var newWishRequestToken: Int = 0
+    /// ⌘E 请求切换右侧散页进入原地编辑态
+    public var editCurrentEntryRequestToken: Int = 0
     /// 独立设置窗口当前激活标签页（支持 ⌘, 与 ⌥⌘1–3 联动）
     public var settingsSelectedTab: SettingsTab = .general
     /// 编程式唤起独立设置窗口的自增请求计数
@@ -74,5 +82,53 @@ public final class AppNavigation {
     /// 请求聚焦工具栏搜索框（适用于当前所在板块）
     public func requestStreamSearchFocus() {
         searchFocusRequest += 1
+    }
+
+    /// 切换侧栏导航目标并同步派生状态
+    public func selectDestination(_ destination: SidebarDestination) {
+        sidebarDestination = destination
+        switch destination {
+        case .allEntries:
+            activeSection = .stream
+            selectedCategory = .all
+            streamPrivacyFilter = .all
+        case .daily:
+            activeSection = .stream
+            selectedCategory = .daily
+            streamPrivacyFilter = .all
+        case .privateEntries:
+            activeSection = .stream
+            selectedCategory = .all
+            streamPrivacyFilter = .privateOnly
+        case .onThisDay:
+            activeSection = .stream
+            selectedCategory = .all
+            streamPrivacyFilter = .all
+        case .category(let cat):
+            activeSection = .stream
+            selectedCategory = ArchiveCategory(rawValue: cat.rawValue) ?? .all
+            streamPrivacyFilter = .all
+        case .ledger:
+            activeSection = .ledger
+            ledgerSubTab = .ledger
+        case .wishlist:
+            activeSection = .ledger
+            ledgerSubTab = .wishlist
+        }
+    }
+
+    /// 从旧式 `activeSection` / `ledgerSubTab` 变更反向同步 `sidebarDestination`
+    public func syncDestinationFromLegacyState() {
+        switch activeSection {
+        case .ledger:
+            let target: SidebarDestination = (ledgerSubTab == .wishlist) ? .wishlist : .ledger
+            if sidebarDestination != target {
+                sidebarDestination = target
+            }
+        case .stream, .preferences, .hub, .about:
+            if !sidebarDestination.isStreamDestination {
+                sidebarDestination = .allEntries
+            }
+        }
     }
 }

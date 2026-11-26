@@ -330,30 +330,20 @@ struct StreamEntryDetailView: View {
                         }
 
                         if !current.attachments.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                ForEach(current.attachments) { att in
-                                    if let url = att.resolvedDisplayURL(preferThumbnail: true) {
-                                        FilmFrameView(
-                                            imageURL: url,
-                                            originalURL: att.resolvedDisplayURL(preferThumbnail: false),
-                                            preferredFilename: att.originalFilename,
-                                            intrinsicSize: att.intrinsicSize,
-                                            caption: current.title.isEmpty ? att.originalFilename : current.title,
-                                            metaText: current.parsedDate.dotDate,
-                                            maxHeight: 240
-                                        ) {
-                                            if let onOpenAttachment {
-                                                onOpenAttachment(att)
-                                            } else {
-                                                appState.lightboxAttachment = att
-                                            }
-                                        } onExportNotice: { message in
-                                            appState.showTemporaryBanner(message)
-                                        }
-                                        .frame(maxWidth: .infinity)
+                            EntryMediaGridView(
+                                attachments: current.attachments,
+                                titleHint: current.title.isEmpty ? nil : current.title,
+                                onOpenAttachment: { att in
+                                    if let onOpenAttachment {
+                                        onOpenAttachment(att)
+                                    } else {
+                                        appState.lightboxAttachment = att
                                     }
+                                },
+                                onNotice: { message in
+                                    appState.showTemporaryBanner(message)
                                 }
-                            }
+                            )
                             .padding(.top, 2)
                         }
                     }
@@ -485,33 +475,21 @@ struct StreamEntryDetailView: View {
                         .textSelection(.enabled)
 
                         if !current.attachments.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 10) {
-                                    ForEach(current.attachments) { att in
-                                        if let url = att.resolvedDisplayURL(preferThumbnail: true) {
-                                            FilmFrameView(
-                                                imageURL: url,
-                                                originalURL: att.resolvedDisplayURL(preferThumbnail: false),
-                                                preferredFilename: att.originalFilename,
-                                                intrinsicSize: att.intrinsicSize,
-                                                caption: current.title.isEmpty ? att.originalFilename : current.title,
-                                                metaText: current.parsedDate.dotDate,
-                                                maxHeight: 220
-                                            ) {
-                                                if let onOpenAttachment {
-                                                    onOpenAttachment(att)
-                                                } else {
-                                                    appState.lightboxAttachment = att
-                                                }
-                                            } onExportNotice: { message in
-                                                appState.showTemporaryBanner(message)
-                                            }
-                                            .frame(width: 240)
-                                        }
+                            EntryMediaGridView(
+                                attachments: current.attachments,
+                                titleHint: current.title.isEmpty ? nil : current.title,
+                                onOpenAttachment: { att in
+                                    if let onOpenAttachment {
+                                        onOpenAttachment(att)
+                                    } else {
+                                        appState.lightboxAttachment = att
                                     }
+                                },
+                                onNotice: { message in
+                                    appState.showTemporaryBanner(message)
                                 }
-                                .padding(.vertical, 4)
-                            }
+                            )
+                            .padding(.top, 4)
                         }
                     }
                 }

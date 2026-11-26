@@ -930,4 +930,39 @@ final class LooseLeafTests: XCTestCase {
         XCTAssertEqual(income.signedAmountForSort, 50_000)
         XCTAssertEqual(income.sortableTitle, "工资收入")
     }
+
+    @MainActor
+    func testSidebarDestinationSyncAndMonthlyGrouping() {
+        let nav = AppNavigation()
+        nav.selectDestination(.privateEntries)
+        XCTAssertEqual(nav.activeSection, .stream)
+        XCTAssertEqual(nav.streamPrivacyFilter, .privateOnly)
+        XCTAssertEqual(nav.selectedCategory, .all)
+
+        nav.selectDestination(.category(.photography))
+        XCTAssertEqual(nav.activeSection, .stream)
+        XCTAssertEqual(nav.selectedCategory, .photography)
+        XCTAssertEqual(nav.streamPrivacyFilter, .all)
+
+        nav.selectDestination(.wishlist)
+        XCTAssertEqual(nav.activeSection, .ledger)
+        XCTAssertEqual(nav.ledgerSubTab, .wishlist)
+
+        nav.activeSection = .ledger
+        nav.ledgerSubTab = .ledger
+        nav.syncDestinationFromLegacyState()
+        XCTAssertEqual(nav.sidebarDestination, .ledger)
+
+        let entries = [
+            LifeEntry(id: 1, title: "十一月记录A", content: "正文", occurredAt: "2026-11-26T10:00:00+08:00"),
+            LifeEntry(id: 2, title: "十一月记录B", content: "正文", occurredAt: "2026-11-02T10:00:00+08:00"),
+            LifeEntry(id: 3, title: "六月记录", content: "正文", occurredAt: "2025-06-08T10:00:00+08:00")
+        ]
+        let groups = AppState.groupEntriesByMonth(entries)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups[0].title, "2026年11月")
+        XCTAssertEqual(groups[0].entries.map(\.id), [1, 2])
+        XCTAssertEqual(groups[1].title, "2025年6月")
+        XCTAssertEqual(groups[1].entries.map(\.id), [3])
+    }
 }

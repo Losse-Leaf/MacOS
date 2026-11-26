@@ -67,11 +67,11 @@ struct LedgerComposerCard: View {
         }
         .padding(.horizontal, ArchiveCardMetrics.padding)
         .padding(.vertical, 10)
-        .background(ArchivePalette.archivePaper)
-        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.sm))
+        .background(ArchivePalette.archiveSubtle.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: ArchiveRadius.md))
         .overlay(
-            RoundedRectangle(cornerRadius: ArchiveRadius.sm)
-                .stroke(ArchivePalette.borderDivider, lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: ArchiveRadius.md)
+                .stroke(ArchivePalette.borderSubtle.opacity(0.65), lineWidth: 0.5)
         )
     }
 

@@ -1,0 +1,597 @@
+import { computed, reactive } from 'vue'
+import { api, ApiError, normalizeHubUrl, parsePairLink, resolveMediaUrl } from '../services/api'
+import {
+  clearCredentials,
+  DEFAULT_HUB_URL,
+  getDeviceHostname,
+  loadCredentials,
+  saveCredentials,
+  type StoredCredentials,
+} from '../services/credentials'
+import type {
+  Attachment,
+  CreditChannel,
+  CuratorProfile,
+  GlobalSearchResponse,
+  GlobalStats,
+  InstallmentPlanSummary,
+  LifeEntry,
+  SidebarDestination,
+  SiteConfig,
+  ThemeMode,
+  Transaction,
+  TransactionSummary,
+  TrustedDevice,
+  Wish,
+} from '../types/api'
+import { beijingDateParts, normalizeCategory } from '../utils/format'
+
+const THEME_STORAGE_KEY = 'looseleaf_desktop_theme_v1'
+const DEFAULT_EXPENSE_CATS = ['餐饮', '交通', '购物', '数码器材', '娱乐', '学习', '住房', '医疗', '旅行度假', '其他']
+const DEFAULT_INCOME_CATS = ['工资收入', '二手回血', '稿酬设计', '投资理财', '礼金红包', '退款报销', '其他收入']
+const DEFAULT_PAYMENTS = ['微信支付', '支付宝', '银行卡', '现金', '其他']
+
+export interface ConfirmDialogRequest {
+  title: string
+  message: string
+  confirmText: string
+  cancelText?: string
+  danger?: boolean
+  onConfirm: () => Promise<void> | void
+}
+
+const initialYm = beijingDateParts()
+
+export const appStore = reactive({
+  booting: true,
+  isPaired: false,
+  isConfirmingCode: false,
+  isLoading: false,
+  hubUrl: DEFAULT_HUB_URL,
+  deviceToken: '',
+  deviceId: '',
+  deviceName: '',
+  accountSub: '',
+  accountName: '',
+  accountEmail: '',
+
+  themeMode: 'system' as ThemeMode,
+  destination: { kind: 'all' } as SidebarDestination,
+  selectedEntryId: null as number | null,
+  hydratedRemoteEntry: null as LifeEntry | null,
+  searchQuery: '',
+  remoteSearchResult: null as GlobalSearchResponse | null,
+  isSearchingRemote: false,
+  editEntryToken: 0,
+
+  entries: [] as LifeEntry[],
+  onThisDayEntries: [] as LifeEntry[],
+  transactions: [] as Transaction[],
+  selectedLedgerYear: initialYm.year,
+  selectedLedgerMonth: initialYm.month,
+  transactionSummary: {
+    year: initialYm.year,
+    month: initialYm.month,
+    total_expense: 0,
+    total_income: 0,
+    balance: 0,
+    category_breakdown: {},
+    count: 0,
+  } as TransactionSummary,
+  creditChannels: [] as CreditChannel[],
+  installmentPlans: [] as InstallmentPlanSummary[],
+  wishes: [] as Wish[],
+  expenseCategories: [...DEFAULT_EXPENSE_CATS],
+  incomeCategories: [...DEFAULT_INCOME_CATS],
+  paymentMethods: [...DEFAULT_PAYMENTS],
+
+  siteConfig: {
+    site_name: '散页 · Loose-Leaf',
+    site_subtitle: '',
+    site_desc: '',
+    curator_name: '',
+    default_location: '',
+    initialized: false,
+  } as SiteConfig,
+  profile: {
+    name: '',
+    title: '',
+    bio: '',
+    location: '',
+    current_city: '',
+    avatar_url: '',
+    motto: '',
+    manifesto: '',
+  } as CuratorProfile,
+  stats: {
+    total_entries: 0,
+    total_photos: 0,
+    month_expense: 0,
+    current_year: initialYm.year,
+    current_month: initialYm.month,
+  } as GlobalStats,
+  trustedDevices: [] as TrustedDevice[],
+
+  errorBanner: '' as string,
+  toast: null as { message: string; isError: boolean } | null,
+
+  showNewEntryModal: false,
+  showGlobalSearch: false,
+  lightboxState: null as { attachments: Attachment[]; index: number } | null,
+  confirmRequest: null as ConfirmDialogRequest | null,
+  transactionModal: { open: false, editing: null as Transaction | null },
+  wishModal: { open: false, editing: null as Wish | null },
+  resolveWishTarget: null as Wish | null,
+})
+
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+const redeemedCodes = new Set<string>()
+
+export function showToast(message: string, isError = false) {
+  appStore.toast = { message, isError }
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    if (appStore.toast?.message === message) {
+      appStore.toast = null
+    }
+  }, 3200)
+}
+
+export function setThemeMode(mode: ThemeMode) {
+  appStore.themeMode = mode
+  localStorage.setItem(THEME_STORAGE_KEY, mode)
+  applyDocumentTheme(mode)
+}
+
+export function applyDocumentTheme(mode: ThemeMode) {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  if (mode === 'system') {
+    root.removeAttribute('data-theme')
+  } else {
+    root.setAttribute('data-theme', mode)
+  }
+}
+
+export function isStreamDestination(dest: SidebarDestination): boolean {
+  return (
+    dest.kind === 'all' ||
+    dest.kind === 'daily' ||
+    dest.kind === 'private' ||
+    dest.kind === 'on_this_day' ||
+    dest.kind === 'category'
+  )
+}
+
+export function destinationKey(dest: SidebarDestination): string {
+  return dest.kind === 'category' ? `category:${dest.category}` : dest.kind
+}
+
+export function destinationTitle(dest: SidebarDestination): string {
+  switch (dest.kind) {
+    case 'all':
+      return '全部印记'
+    case 'daily':
+      return '日常随笔'
+    case 'private':
+      return '私密档案馆'
+    case 'on_this_day':
+      return '那年今日'
+    case 'category': {
+      const map: Record<string, string> = {
+        daily: '日常',
+        photography: '摄影',
+        travel: '旅途',
+        still_life: '静物',
+        motion: '影像',
+      }
+      return map[dest.category] ?? dest.category
+    }
+    case 'ledger':
+      return '收支流水'
+    case 'installments':
+      return '分期计划'
+    case 'wishlist':
+      return '心愿清单'
+    case 'settings':
+      return '偏好与连接'
+  }
+}
+
+export const displayedStreamEntries = computed<LifeEntry[]>(() => {
+  const dest = appStore.destination
+  const q = appStore.searchQuery.trim().toLowerCase()
+  const base = dest.kind === 'on_this_day' ? appStore.onThisDayEntries : appStore.entries
+
+  return base.filter((entry) => {
+    if (dest.kind === 'daily') {
+      if (entry.type !== 'life' || normalizeCategory(entry.category) !== 'daily') return false
+    } else if (dest.kind === 'private') {
+      if (!entry.is_private) return false
+    } else if (dest.kind === 'category') {
+      if (entry.type !== 'life' || normalizeCategory(entry.category) !== dest.category) return false
+    }
+
+    if (!q) return true
+    const haystack = `${entry.title}\n${entry.content}\n${entry.location ?? ''}`.toLowerCase()
+    return haystack.includes(q)
+  })
+})
+
+export const remoteOnlySearchEntries = computed<LifeEntry[]>(() => {
+  const q = appStore.searchQuery.trim()
+  if (!q || !appStore.remoteSearchResult?.entries?.length) return []
+  const localIds = new Set(displayedStreamEntries.value.map((e) => e.id))
+  return appStore.remoteSearchResult.entries.filter((e) => !localIds.has(e.id))
+})
+
+export const activeStreamEntry = computed<LifeEntry | null>(() => {
+  const id = appStore.selectedEntryId
+  if (!id) return null
+  if (appStore.hydratedRemoteEntry?.id === id) {
+    return appStore.hydratedRemoteEntry
+  }
+  return (
+    appStore.entries.find((e) => e.id === id) ??
+    appStore.onThisDayEntries.find((e) => e.id === id) ??
+    appStore.remoteSearchResult?.entries.find((e) => e.id === id) ??
+    null
+  )
+})
+
+export const dailyEntriesCount = computed(
+  () => appStore.entries.filter((e) => e.type === 'life' && normalizeCategory(e.category) === 'daily').length,
+)
+
+export const privateEntriesCount = computed(() => appStore.entries.filter((e) => e.is_private).length)
+
+export const wantingWishesCount = computed(
+  () =>
+    appStore.wishes.filter((w) => {
+      const s = (w.status || '').toLowerCase()
+      return !s || s === 'wanting' || s === 'pending' || s === 'shelved'
+    }).length,
+)
+
+export const activeInstallmentsCount = computed(
+  () => appStore.installmentPlans.filter((p) => p.status === 'active').length,
+)
+
+export function categoryEntriesCount(cat: string): number {
+  return appStore.entries.filter((e) => e.type === 'life' && normalizeCategory(e.category) === cat).length
+}
+
+export function mediaUrl(raw?: string | null): string {
+  return resolveMediaUrl(raw, appStore.hubUrl)
+}
+
+export function selectDestination(dest: SidebarDestination) {
+  appStore.destination = dest
+  if (isStreamDestination(dest)) {
+    const list = displayedStreamEntries.value
+    if (!appStore.selectedEntryId || !list.some((e) => e.id === appStore.selectedEntryId)) {
+      appStore.selectedEntryId = list[0]?.id ?? null
+    }
+  }
+}
+
+export async function selectEntry(id: number) {
+  appStore.selectedEntryId = id
+  appStore.hydratedRemoteEntry = null
+  if (!appStore.entries.some((e) => e.id === id)) {
+    try {
+      const full = await api.fetchEntry(id)
+      if (appStore.selectedEntryId === id) {
+        appStore.hydratedRemoteEntry = full
+      }
+    } catch {
+      // ignore hydration failure for remote hit
+    }
+  }
+}
+
+export async function setHubUrl(nextUrl: string) {
+  const cleaned = normalizeHubUrl(nextUrl)
+  const changed = cleaned !== appStore.hubUrl
+  appStore.hubUrl = cleaned
+  api.setConfig(cleaned, appStore.deviceToken, handleUnauthorized)
+  await saveCredentials({
+    device_token: appStore.deviceToken || undefined,
+    device_id: appStore.deviceId || undefined,
+    device_name: appStore.deviceName || undefined,
+    account_sub: appStore.accountSub || undefined,
+    account_name: appStore.accountName || undefined,
+    account_email: appStore.accountEmail || undefined,
+    hub_url: cleaned,
+  })
+  if (changed && appStore.isPaired) {
+    await logoutLocalOnly('切换同步服务器已重置当前会话，请重新登录')
+  }
+}
+
+function handleUnauthorized() {
+  if (!appStore.isPaired) return
+  void logoutLocalOnly('登录凭据已失效或在其他设备被吊销，请重新登录')
+}
+
+async function logoutLocalOnly(banner?: string) {
+  appStore.deviceToken = ''
+  appStore.deviceId = ''
+  appStore.accountSub = ''
+  appStore.accountName = ''
+  appStore.accountEmail = ''
+  appStore.isPaired = false
+  appStore.entries = []
+  appStore.transactions = []
+  appStore.wishes = []
+  appStore.installmentPlans = []
+  appStore.trustedDevices = []
+  appStore.selectedEntryId = null
+  appStore.errorBanner = banner ?? ''
+  api.setConfig(appStore.hubUrl, '', handleUnauthorized)
+  await clearCredentials()
+}
+
+export async function logout() {
+  try {
+    await api.logout()
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status >= 400 && err.status < 500)) {
+      // 网络失败仍允许登出本机，提示用户
+    }
+  }
+  await logoutLocalOnly()
+  showToast('已退出登录并清除本机凭据')
+}
+
+export async function bootstrapApp() {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null
+  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+    appStore.themeMode = savedTheme
+  }
+  applyDocumentTheme(appStore.themeMode)
+
+  const creds = await loadCredentials()
+  appStore.hubUrl = normalizeHubUrl(creds.hub_url || DEFAULT_HUB_URL)
+  appStore.deviceToken = creds.device_token?.trim() ?? ''
+  appStore.deviceId = creds.device_id ?? ''
+  appStore.deviceName = creds.device_name ?? ''
+  appStore.accountSub = creds.account_sub ?? ''
+  appStore.accountName = creds.account_name ?? ''
+  appStore.accountEmail = creds.account_email ?? ''
+
+  api.setConfig(appStore.hubUrl, appStore.deviceToken, handleUnauthorized)
+
+  if (appStore.deviceToken) {
+    appStore.isPaired = true
+  }
+
+  await setupDeepLinkBridge()
+  appStore.booting = false
+
+  if (appStore.isPaired) {
+    await Promise.all([refreshSessionSilent(), refreshAll()])
+  }
+}
+
+async function setupDeepLinkBridge() {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return
+  try {
+    const { listen } = await import('@tauri-apps/api/event')
+    const { invoke } = await import('@tauri-apps/api/core')
+    await listen<string[]>('deep-link-url', (event) => {
+      for (const raw of event.payload ?? []) {
+        void handleIncomingDeepLink(raw)
+      }
+    })
+    const pending = await invoke<string[]>('get_pending_deep_links')
+    for (const raw of pending) {
+      void handleIncomingDeepLink(raw)
+    }
+  } catch {
+    // non-tauri preview mode
+  }
+}
+
+export async function handleIncomingDeepLink(rawUrl: string) {
+  const pair = parsePairLink(rawUrl)
+  if (pair) {
+    if (redeemedCodes.has(pair.code) || appStore.isConfirmingCode) return
+    await redeemAuthCode(pair.code, pair.hub || undefined)
+    return
+  }
+  try {
+    const u = new URL(rawUrl)
+    if (u.protocol === 'looseleaf:' && u.hostname === 'entry') {
+      const id = Number(u.pathname.replace(/\//g, ''))
+      if (Number.isInteger(id) && id > 0) {
+        selectDestination({ kind: 'all' })
+        await selectEntry(id)
+      }
+    }
+  } catch {
+    // ignore malformed url
+  }
+}
+
+export async function redeemAuthCode(rawCodeOrLink: string, hubOverride?: string) {
+  const parsed = parsePairLink(rawCodeOrLink)
+  const code = (parsed?.code ?? rawCodeOrLink).trim()
+  const hub = parsed?.hub || hubOverride || appStore.hubUrl
+  if (!code) {
+    throw new Error('请输入有效的授权码或回调链接')
+  }
+
+  appStore.isConfirmingCode = true
+  appStore.errorBanner = ''
+  try {
+    if (hub && normalizeHubUrl(hub) !== appStore.hubUrl) {
+      appStore.hubUrl = normalizeHubUrl(hub)
+    }
+    api.setConfig(appStore.hubUrl, '', handleUnauthorized)
+    const hostName = await getDeviceHostname()
+    const resp = await api.exchangeOIDCCode(code, `${hostName} · macOS`)
+    redeemedCodes.add(code)
+
+    const resolvedHub = normalizeHubUrl(resp.hub_url || appStore.hubUrl)
+    const token = (resp.access_token || resp.device_token || '').trim()
+    const sessionId = (resp.session_id || resp.device_id || '').trim()
+
+    appStore.hubUrl = resolvedHub
+    appStore.deviceToken = token
+    appStore.deviceId = sessionId
+    appStore.deviceName = resp.device_name
+    appStore.accountSub = resp.account?.sub ?? ''
+    appStore.accountName = resp.account?.name ?? ''
+    appStore.accountEmail = resp.account?.email ?? ''
+    appStore.isPaired = Boolean(token)
+
+    const payload: StoredCredentials = {
+      device_token: token,
+      device_id: sessionId,
+      device_name: resp.device_name,
+      account_sub: resp.account?.sub ?? undefined,
+      account_name: resp.account?.name ?? undefined,
+      account_email: resp.account?.email ?? undefined,
+      hub_url: resolvedHub,
+    }
+    await saveCredentials(payload)
+    api.setConfig(resolvedHub, token, handleUnauthorized)
+
+    const label = appStore.accountName || appStore.accountEmail || '主理人'
+    showToast(`欢迎回来，${label}`)
+    await refreshAll()
+  } finally {
+    appStore.isConfirmingCode = false
+  }
+}
+
+async function refreshSessionSilent() {
+  try {
+    const sess = await api.fetchSession()
+    if (sess.account) {
+      appStore.accountSub = sess.account.sub ?? appStore.accountSub
+      appStore.accountName = sess.account.name ?? appStore.accountName
+      appStore.accountEmail = sess.account.email ?? appStore.accountEmail
+    }
+    if (sess.session_id || sess.device_id) {
+      appStore.deviceId = sess.session_id || sess.device_id || appStore.deviceId
+    }
+  } catch {
+    // keep existing profile
+  }
+}
+
+export async function refreshAll(silent = false) {
+  if (!appStore.isPaired || appStore.isLoading) return
+  appStore.isLoading = true
+  try {
+    const [
+      cfgRes,
+      profRes,
+      statsRes,
+      catsRes,
+      entriesRes,
+      otdRes,
+      txRes,
+      summaryRes,
+      channelsRes,
+      plansRes,
+      wishesRes,
+    ] = await Promise.allSettled([
+      api.fetchSiteConfig(),
+      api.fetchCuratorProfile(),
+      api.fetchGlobalStats(),
+      api.fetchCategories(),
+      api.fetchAllEntries(),
+      api.fetchOnThisDayEntries(),
+      api.fetchAllTransactions(),
+      api.fetchTransactionSummary(appStore.selectedLedgerYear, appStore.selectedLedgerMonth),
+      api.fetchCreditChannels(),
+      api.fetchInstallmentPlans(),
+      api.fetchAllWishes(),
+    ])
+
+    if (cfgRes.status === 'fulfilled') appStore.siteConfig = cfgRes.value
+    if (profRes.status === 'fulfilled') appStore.profile = profRes.value
+    if (statsRes.status === 'fulfilled') appStore.stats = statsRes.value
+    if (catsRes.status === 'fulfilled' && catsRes.value.length > 0) {
+      const exp = catsRes.value.filter((c) => c.scope === 'expense').map((c) => c.name)
+      const inc = catsRes.value.filter((c) => c.scope === 'income').map((c) => c.name)
+      const pay = catsRes.value.filter((c) => c.scope === 'payment').map((c) => c.name)
+      if (exp.length) appStore.expenseCategories = exp
+      if (inc.length) appStore.incomeCategories = inc
+      if (pay.length) appStore.paymentMethods = pay
+    }
+    if (entriesRes.status === 'fulfilled') {
+      appStore.entries = entriesRes.value
+    }
+    if (otdRes.status === 'fulfilled') {
+      appStore.onThisDayEntries = otdRes.value.entries ?? []
+    }
+    if (txRes.status === 'fulfilled') {
+      appStore.transactions = txRes.value
+    }
+    if (summaryRes.status === 'fulfilled') {
+      appStore.transactionSummary = summaryRes.value
+    }
+    if (channelsRes.status === 'fulfilled') {
+      appStore.creditChannels = channelsRes.value
+    }
+    if (plansRes.status === 'fulfilled') {
+      appStore.installmentPlans = plansRes.value
+    }
+    if (wishesRes.status === 'fulfilled') {
+      appStore.wishes = wishesRes.value
+    }
+
+    if (isStreamDestination(appStore.destination)) {
+      const list = displayedStreamEntries.value
+      if (!appStore.selectedEntryId || !list.some((e) => e.id === appStore.selectedEntryId)) {
+        appStore.selectedEntryId = list[0]?.id ?? null
+      }
+    }
+
+    if (!silent) {
+      appStore.errorBanner = ''
+    }
+  } catch (err) {
+    if (!silent) {
+      showToast(err instanceof Error ? err.message : '同步失败', true)
+    }
+  } finally {
+    appStore.isLoading = false
+  }
+}
+
+export async function refreshMonthlySummary(year: number, month: number) {
+  appStore.selectedLedgerYear = year
+  appStore.selectedLedgerMonth = month
+  try {
+    appStore.transactionSummary = await api.fetchTransactionSummary(year, month)
+  } catch {
+    // keep prior summary
+  }
+}
+
+export async function refreshTrustedDevices() {
+  try {
+    appStore.trustedDevices = await api.fetchTrustedDevices()
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : '加载设备列表失败', true)
+  }
+}
+
+export function triggerPrimaryCreate() {
+  switch (appStore.destination.kind) {
+    case 'ledger':
+      appStore.transactionModal = { open: true, editing: null }
+      break
+    case 'wishlist':
+      appStore.wishModal = { open: true, editing: null }
+      break
+    default:
+      appStore.showNewEntryModal = true
+      break
+  }
+}

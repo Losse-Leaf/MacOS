@@ -1,0 +1,274 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+  --font-serif: "New York", "Songti SC", "STSong", "Noto Serif SC", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+  /* 暖棉纸 & 胶片暗房双模式语义色盘 (Exact Loose-Leaf Palette) */
+  --paper-light: #F9F8F5;
+  --paper-dark: #141312;
+  --paper-subtle-light: #F2F0EB;
+  --paper-subtle-dark: #1D1B19;
+  --paper-elevated-light: #FFFFFF;
+  --paper-elevated-dark: #22201D;
+
+  --ink-primary-light: #181716;
+  --ink-primary-dark: #EDE8E1;
+  --ink-secondary-light: #57544E;
+  --ink-secondary-dark: #A8A399;
+  --ink-muted-light: #6B6860;
+  --ink-muted-dark: #8D887E;
+
+  --border-subtle-light: rgba(24, 23, 22, 0.08);
+  --border-subtle-dark: rgba(237, 232, 225, 0.09);
+  --border-divider-light: rgba(24, 23, 22, 0.14);
+  --border-divider-dark: rgba(237, 232, 225, 0.15);
+
+  --accent-warm-light: #A24F2B;
+  --accent-warm-dark: #D96848;
+  --accent-warm-soft-light: rgba(162, 79, 43, 0.10);
+  --accent-warm-soft-dark: rgba(217, 104, 72, 0.16);
+  --accent-moss-light: #3F5A4A;
+  --accent-moss-dark: #66947B;
+
+  /* 画廊矿物色 */
+  --tag-photography-light: #2C7779;
+  --tag-photography-dark: #7CC2C4;
+  --tag-travel-light: #4E6B8A;
+  --tag-travel-dark: #9DB3CF;
+  --tag-still-life-light: #A45336;
+  --tag-still-life-dark: #E09A7C;
+  --tag-motion-light: #6F5296;
+  --tag-motion-dark: #B9A2DE;
+
+  /* 记账类目光谱 */
+  --spectrum-dining: light-dark(#A24F2B, #D96848);
+  --spectrum-transit: light-dark(#4A6B82, #638BA6);
+  --spectrum-shopping: light-dark(#80633E, #A8865B);
+  --spectrum-leisure: light-dark(#7A5980, #A47EAB);
+  --spectrum-housing: light-dark(#3F5A4A, #66947B);
+  --spectrum-study: light-dark(#5C6773, #7B8896);
+  --spectrum-medical: light-dark(#A64C4C, #CC7474);
+  --spectrum-other: light-dark(#6B6860, #A39E93);
+
+  --scrollbar-thumb-light: rgba(24, 23, 22, 0.22);
+  --scrollbar-thumb-dark: rgba(237, 232, 225, 0.24);
+
+  /* Fallback default (light) */
+  --paper: var(--paper-light);
+  --paper-subtle: var(--paper-subtle-light);
+  --paper-elevated: var(--paper-elevated-light);
+  --ink-primary: var(--ink-primary-light);
+  --ink-secondary: var(--ink-secondary-light);
+  --ink-muted: var(--ink-muted-light);
+  --border-subtle: var(--border-subtle-light);
+  --border-divider: var(--border-divider-light);
+  --accent-warm: var(--accent-warm-light);
+  --accent-warm-soft: var(--accent-warm-soft-light);
+  --accent-moss: var(--accent-moss-light);
+  --tag-photography: var(--tag-photography-light);
+  --tag-travel: var(--tag-travel-light);
+  --tag-still-life: var(--tag-still-life-light);
+  --tag-motion: var(--tag-motion-light);
+  --scrollbar-thumb: var(--scrollbar-thumb-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: var(--paper-dark);
+    --paper-subtle: var(--paper-subtle-dark);
+    --paper-elevated: var(--paper-elevated-dark);
+    --ink-primary: var(--ink-primary-dark);
+    --ink-secondary: var(--ink-secondary-dark);
+    --ink-muted: var(--ink-muted-dark);
+    --border-subtle: var(--border-subtle-dark);
+    --border-divider: var(--border-divider-dark);
+    --accent-warm: var(--accent-warm-dark);
+    --accent-warm-soft: var(--accent-warm-soft-dark);
+    --accent-moss: var(--accent-moss-dark);
+    --tag-photography: var(--tag-photography-dark);
+    --tag-travel: var(--tag-travel-dark);
+    --tag-still-life: var(--tag-still-life-dark);
+    --tag-motion: var(--tag-motion-dark);
+    --scrollbar-thumb: var(--scrollbar-thumb-dark);
+  }
+}
+
+@supports (color: light-dark(white, black)) {
+  :root {
+    --paper: light-dark(var(--paper-light), var(--paper-dark));
+    --paper-subtle: light-dark(var(--paper-subtle-light), var(--paper-subtle-dark));
+    --paper-elevated: light-dark(var(--paper-elevated-light), var(--paper-elevated-dark));
+    --ink-primary: light-dark(var(--ink-primary-light), var(--ink-primary-dark));
+    --ink-secondary: light-dark(var(--ink-secondary-light), var(--ink-secondary-dark));
+    --ink-muted: light-dark(var(--ink-muted-light), var(--ink-muted-dark));
+    --border-subtle: light-dark(var(--border-subtle-light), var(--border-subtle-dark));
+    --border-divider: light-dark(var(--border-divider-light), var(--border-divider-dark));
+    --accent-warm: light-dark(var(--accent-warm-light), var(--accent-warm-dark));
+    --accent-warm-soft: light-dark(var(--accent-warm-soft-light), var(--accent-warm-soft-dark));
+    --accent-moss: light-dark(var(--accent-moss-light), var(--accent-moss-dark));
+    --tag-photography: light-dark(var(--tag-photography-light), var(--tag-photography-dark));
+    --tag-travel: light-dark(var(--tag-travel-light), var(--tag-travel-dark));
+    --tag-still-life: light-dark(var(--tag-still-life-light), var(--tag-still-life-dark));
+    --tag-motion: light-dark(var(--tag-motion-light), var(--tag-motion-dark));
+    --scrollbar-thumb: light-dark(var(--scrollbar-thumb-light), var(--scrollbar-thumb-dark));
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --paper: var(--paper-light);
+  --paper-subtle: var(--paper-subtle-light);
+  --paper-elevated: var(--paper-elevated-light);
+  --ink-primary: var(--ink-primary-light);
+  --ink-secondary: var(--ink-secondary-light);
+  --ink-muted: var(--ink-muted-light);
+  --border-subtle: var(--border-subtle-light);
+  --border-divider: var(--border-divider-light);
+  --accent-warm: var(--accent-warm-light);
+  --accent-warm-soft: var(--accent-warm-soft-light);
+  --accent-moss: var(--accent-moss-light);
+  --tag-photography: var(--tag-photography-light);
+  --tag-travel: var(--tag-travel-light);
+  --tag-still-life: var(--tag-still-life-light);
+  --tag-motion: var(--tag-motion-light);
+  --scrollbar-thumb: var(--scrollbar-thumb-light);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: var(--paper-dark);
+  --paper-subtle: var(--paper-subtle-dark);
+  --paper-elevated: var(--paper-elevated-dark);
+  --ink-primary: var(--ink-primary-dark);
+  --ink-secondary: var(--ink-secondary-dark);
+  --ink-muted: var(--ink-muted-dark);
+  --border-subtle: var(--border-subtle-dark);
+  --border-divider: var(--border-divider-dark);
+  --accent-warm: var(--accent-warm-dark);
+  --accent-warm-soft: var(--accent-warm-soft-dark);
+  --accent-moss: var(--accent-moss-dark);
+  --tag-photography: var(--tag-photography-dark);
+  --tag-travel: var(--tag-travel-dark);
+  --tag-still-life: var(--tag-still-life-dark);
+  --tag-motion: var(--tag-motion-dark);
+  --scrollbar-thumb: var(--scrollbar-thumb-dark);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--paper);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  accent-color: var(--accent-warm);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* 正文阅读区域允许划词选择 */
+.selectable-text {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+@utility font-serif-editorial {
+  font-family: var(--font-serif);
+}
+
+@utility font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background-color: var(--accent-warm-soft);
+  color: var(--ink-primary);
+}
+
+/* 焦点环规范 */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-warm);
+  outline-offset: 2px;
+}
+
+/* 细滚动条 + Safari 旧版本兼容回退 (per customize-scrollbar-color-and-thickness) */
+.paper-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+@supports not (scrollbar-color: auto) {
+  .paper-scroll {
+    scrollbar-width: auto;
+  }
+  .paper-scroll::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  .paper-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .paper-scroll::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+}
+
+/* 原生 <dialog> 顶层弹窗基础规则 (per dialog / light-dismiss-a-dialog guides) */
+dialog {
+  color: var(--ink-primary);
+  background: transparent;
+  border: none;
+  padding: 0;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  margin: auto;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(20, 19, 18, 0.42);
+  backdrop-filter: blur(4px);
+}
+
+/* macOS 标题栏拖拽区域 */
+.tauri-drag {
+  -webkit-app-region: drag;
+}
+
+.tauri-no-drag,
+.tauri-drag button,
+.tauri-drag input,
+.tauri-drag a,
+.tauri-drag select {
+  -webkit-app-region: no-drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

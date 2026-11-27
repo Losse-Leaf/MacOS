@@ -3,8 +3,10 @@ import {
   compactListDate,
   deriveDisplayTitle,
   deriveExcerpt,
+  formatEditorialDateBadge,
   formatYuan,
   groupEntriesByMonth,
+  groupTransactionsByDay,
   hasDistinctTitle,
   parseQuickLedgerInput,
   parseYuanToCents,
@@ -94,5 +96,65 @@ describe('format utilities', () => {
     expect(groups[0].entries.map((e) => e.id)).toEqual([1, 2])
     expect(compactListDate('2026-11-26T10:00:00+08:00', new Date('2026-11-27T12:00:00+08:00'))).toBe('11月26日')
     expect(compactListDate('2025-06-08T10:00:00+08:00', new Date('2026-11-27T12:00:00+08:00'))).toBe('2025/6/8')
+  })
+
+  it('formats editorial calendar stamp and groups ledger transactions by Beijing day', () => {
+    expect(formatEditorialDateBadge('2026-11-26T22:15:00+08:00')).toEqual({
+      day: '26',
+      monthShort: 'NOV',
+      year: '2026',
+      weekday: '周四',
+    })
+    expect(formatEditorialDateBadge('')).toEqual({
+      day: '--',
+      monthShort: '---',
+      year: '----',
+      weekday: '',
+    })
+
+    const groups = groupTransactionsByDay(
+      [
+        {
+          id: 101,
+          amount: 4200,
+          type: 'expense',
+          category: '餐饮',
+          title: '手冲咖啡',
+          occurred_at: '2026-11-26T09:00:00+08:00',
+        },
+        {
+          id: 102,
+          amount: 120000,
+          type: 'income',
+          category: '兼职',
+          title: '设计稿费',
+          occurred_at: '2026-11-26T18:30:00+08:00',
+        },
+        {
+          id: 103,
+          amount: 8800,
+          type: 'expense',
+          category: '书籍',
+          title: '纸质画册',
+          occurred_at: '2025-06-08T11:00:00+08:00',
+        },
+      ],
+      new Date('2026-11-27T12:00:00+08:00'),
+    )
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0]).toMatchObject({
+      id: '2026-11-26',
+      title: '11月26日 · 周四',
+      expenseTotal: 4200,
+      incomeTotal: 120000,
+    })
+    expect(groups[0].transactions.map((t) => t.id)).toEqual([101, 102])
+    expect(groups[1]).toMatchObject({
+      id: '2025-06-08',
+      title: '2025年6月8日 · 周日',
+      expenseTotal: 8800,
+      incomeTotal: 0,
+    })
   })
 })

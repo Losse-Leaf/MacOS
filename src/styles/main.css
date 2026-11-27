@@ -7,34 +7,46 @@
   --font-serif: "New York", "Songti SC", "STSong", "Noto Serif SC", Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
-  /* 暖棉纸 & 胶片暗房双模式语义色盘 (Exact Loose-Leaf Palette) */
-  --paper-light: #F9F8F5;
-  --paper-dark: #141312;
-  --paper-subtle-light: #F2F0EB;
-  --paper-subtle-dark: #1D1B19;
+  /* Atelier / Monograph 暖石台面三层表面色盘 (Light / Darkroom) */
+  --canvas-light: #EFECE6;
+  --canvas-dark: #0D0C0B;
+
+  --paper-light: #FAF8F4;
+  --paper-dark: #161513;
+
+  --paper-subtle-light: #F2EFE9;
+  --paper-subtle-dark: #1E1C19;
+
   --paper-elevated-light: #FFFFFF;
-  --paper-elevated-dark: #22201D;
+  --paper-elevated-dark: #24221F;
 
-  --ink-primary-light: #181716;
+  --ink-primary-light: #191716;
   --ink-primary-dark: #EDE8E1;
-  --ink-secondary-light: #57544E;
-  --ink-secondary-dark: #A8A399;
-  --ink-muted-light: #6B6860;
-  --ink-muted-dark: #8D887E;
 
-  --border-subtle-light: rgba(24, 23, 22, 0.08);
-  --border-subtle-dark: rgba(237, 232, 225, 0.09);
-  --border-divider-light: rgba(24, 23, 22, 0.14);
-  --border-divider-dark: rgba(237, 232, 225, 0.15);
+  --ink-secondary-light: #5C5852;
+  --ink-secondary-dark: #ABA59B;
 
-  --accent-warm-light: #A24F2B;
-  --accent-warm-dark: #D96848;
-  --accent-warm-soft-light: rgba(162, 79, 43, 0.10);
-  --accent-warm-soft-dark: rgba(217, 104, 72, 0.16);
-  --accent-moss-light: #3F5A4A;
-  --accent-moss-dark: #66947B;
+  --ink-muted-light: #78736B;
+  --ink-muted-dark: #8A847B;
 
-  /* 画廊矿物色 */
+  --border-subtle-light: rgba(25, 23, 22, 0.075);
+  --border-subtle-dark: rgba(237, 232, 225, 0.085);
+
+  --border-divider-light: rgba(25, 23, 22, 0.14);
+  --border-divider-dark: rgba(237, 232, 225, 0.16);
+
+  /* 克制双强调色：陶土朱砂 + 松烟青绿 */
+  --accent-warm-light: #A84B28;
+  --accent-warm-dark: #DD6B4B;
+  --accent-warm-soft-light: rgba(168, 75, 40, 0.10);
+  --accent-warm-soft-dark: rgba(221, 107, 75, 0.16);
+
+  --accent-moss-light: #385745;
+  --accent-moss-dark: #64957A;
+  --accent-moss-soft-light: rgba(56, 87, 69, 0.10);
+  --accent-moss-soft-dark: rgba(100, 149, 122, 0.16);
+
+  /* 画廊矿物标签 */
   --tag-photography-light: #2C7779;
   --tag-photography-dark: #7CC2C4;
   --tag-travel-light: #4E6B8A;
@@ -44,20 +56,27 @@
   --tag-motion-light: #6F5296;
   --tag-motion-dark: #B9A2DE;
 
-  /* 记账类目光谱 */
-  --spectrum-dining: light-dark(#A24F2B, #D96848);
+  /* 记账光谱 */
+  --spectrum-dining: light-dark(#A84B28, #DD6B4B);
   --spectrum-transit: light-dark(#4A6B82, #638BA6);
   --spectrum-shopping: light-dark(#80633E, #A8865B);
   --spectrum-leisure: light-dark(#7A5980, #A47EAB);
-  --spectrum-housing: light-dark(#3F5A4A, #66947B);
+  --spectrum-housing: light-dark(#385745, #64957A);
   --spectrum-study: light-dark(#5C6773, #7B8896);
   --spectrum-medical: light-dark(#A64C4C, #CC7474);
-  --spectrum-other: light-dark(#6B6860, #A39E93);
+  --spectrum-other: light-dark(#78736B, #9A948B);
 
-  --scrollbar-thumb-light: rgba(24, 23, 22, 0.22);
+  --shadow-stage-light: 0 2px 16px -4px rgba(25, 23, 22, 0.06), 0 1px 3px rgba(25, 23, 22, 0.04);
+  --shadow-stage-dark: 0 6px 24px -6px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+
+  --shadow-card-light: 0 1px 3px rgba(25, 23, 22, 0.05), 0 4px 12px -4px rgba(25, 23, 22, 0.06);
+  --shadow-card-dark: 0 2px 8px rgba(0, 0, 0, 0.35);
+
+  --scrollbar-thumb-light: rgba(25, 23, 22, 0.22);
   --scrollbar-thumb-dark: rgba(237, 232, 225, 0.24);
 
   /* Fallback default (light) */
+  --canvas: var(--canvas-light);
   --paper: var(--paper-light);
   --paper-subtle: var(--paper-subtle-light);
   --paper-elevated: var(--paper-elevated-light);
@@ -69,15 +88,19 @@
   --accent-warm: var(--accent-warm-light);
   --accent-warm-soft: var(--accent-warm-soft-light);
   --accent-moss: var(--accent-moss-light);
+  --accent-moss-soft: var(--accent-moss-soft-light);
   --tag-photography: var(--tag-photography-light);
   --tag-travel: var(--tag-travel-light);
   --tag-still-life: var(--tag-still-life-light);
   --tag-motion: var(--tag-motion-light);
+  --shadow-stage: var(--shadow-stage-light);
+  --shadow-card: var(--shadow-card-light);
   --scrollbar-thumb: var(--scrollbar-thumb-light);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --canvas: var(--canvas-dark);
     --paper: var(--paper-dark);
     --paper-subtle: var(--paper-subtle-dark);
     --paper-elevated: var(--paper-elevated-dark);
@@ -89,16 +112,20 @@
     --accent-warm: var(--accent-warm-dark);
     --accent-warm-soft: var(--accent-warm-soft-dark);
     --accent-moss: var(--accent-moss-dark);
+    --accent-moss-soft: var(--accent-moss-soft-dark);
     --tag-photography: var(--tag-photography-dark);
     --tag-travel: var(--tag-travel-dark);
     --tag-still-life: var(--tag-still-life-dark);
     --tag-motion: var(--tag-motion-dark);
+    --shadow-stage: var(--shadow-stage-dark);
+    --shadow-card: var(--shadow-card-dark);
     --scrollbar-thumb: var(--scrollbar-thumb-dark);
   }
 }
 
 @supports (color: light-dark(white, black)) {
   :root {
+    --canvas: light-dark(var(--canvas-light), var(--canvas-dark));
     --paper: light-dark(var(--paper-light), var(--paper-dark));
     --paper-subtle: light-dark(var(--paper-subtle-light), var(--paper-subtle-dark));
     --paper-elevated: light-dark(var(--paper-elevated-light), var(--paper-elevated-dark));
@@ -110,6 +137,7 @@
     --accent-warm: light-dark(var(--accent-warm-light), var(--accent-warm-dark));
     --accent-warm-soft: light-dark(var(--accent-warm-soft-light), var(--accent-warm-soft-dark));
     --accent-moss: light-dark(var(--accent-moss-light), var(--accent-moss-dark));
+    --accent-moss-soft: light-dark(var(--accent-moss-soft-light), var(--accent-moss-soft-dark));
     --tag-photography: light-dark(var(--tag-photography-light), var(--tag-photography-dark));
     --tag-travel: light-dark(var(--tag-travel-light), var(--tag-travel-dark));
     --tag-still-life: light-dark(var(--tag-still-life-light), var(--tag-still-life-dark));
@@ -120,6 +148,7 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
+  --canvas: var(--canvas-light);
   --paper: var(--paper-light);
   --paper-subtle: var(--paper-subtle-light);
   --paper-elevated: var(--paper-elevated-light);
@@ -131,15 +160,19 @@
   --accent-warm: var(--accent-warm-light);
   --accent-warm-soft: var(--accent-warm-soft-light);
   --accent-moss: var(--accent-moss-light);
+  --accent-moss-soft: var(--accent-moss-soft-light);
   --tag-photography: var(--tag-photography-light);
   --tag-travel: var(--tag-travel-light);
   --tag-still-life: var(--tag-still-life-light);
   --tag-motion: var(--tag-motion-light);
+  --shadow-stage: var(--shadow-stage-light);
+  --shadow-card: var(--shadow-card-light);
   --scrollbar-thumb: var(--scrollbar-thumb-light);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --canvas: var(--canvas-dark);
   --paper: var(--paper-dark);
   --paper-subtle: var(--paper-subtle-dark);
   --paper-elevated: var(--paper-elevated-dark);
@@ -151,10 +184,13 @@
   --accent-warm: var(--accent-warm-dark);
   --accent-warm-soft: var(--accent-warm-soft-dark);
   --accent-moss: var(--accent-moss-dark);
+  --accent-moss-soft: var(--accent-moss-soft-dark);
   --tag-photography: var(--tag-photography-dark);
   --tag-travel: var(--tag-travel-dark);
   --tag-still-life: var(--tag-still-life-dark);
   --tag-motion: var(--tag-motion-dark);
+  --shadow-stage: var(--shadow-stage-dark);
+  --shadow-card: var(--shadow-card-dark);
   --scrollbar-thumb: var(--scrollbar-thumb-dark);
 }
 
@@ -164,7 +200,7 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: var(--paper);
+  background-color: var(--canvas);
   color: var(--ink-primary);
   font-family: var(--font-sans);
   accent-color: var(--accent-warm);
@@ -173,7 +209,6 @@ body,
   user-select: none;
 }
 
-/* 正文阅读区域允许划词选择 */
 .selectable-text {
   user-select: text;
   -webkit-user-select: text;
@@ -193,7 +228,6 @@ body,
   color: var(--ink-primary);
 }
 
-/* 焦点环规范 */
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -204,7 +238,7 @@ select:focus-visible,
   outline-offset: 2px;
 }
 
-/* 细滚动条 + Safari 旧版本兼容回退 (per customize-scrollbar-color-and-thickness) */
+/* 细滚动条 + Safari 回退 (per customize-scrollbar-color-and-thickness) */
 .paper-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -227,7 +261,7 @@ select:focus-visible,
   }
 }
 
-/* 原生 <dialog> 顶层弹窗基础规则 (per dialog / light-dismiss-a-dialog guides) */
+/* 顶层原生 <dialog> 入场/退场过渡动画 (per animate-to-from-top-layer + dialog guides) */
 dialog {
   color: var(--ink-primary);
   background: transparent;
@@ -236,6 +270,17 @@ dialog {
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
   margin: auto;
+  opacity: 0;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.2s;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-behavior: allow-discrete;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog {
+    transform: translateY(8px) scale(0.985);
+  }
 }
 
 dialog:modal {
@@ -245,8 +290,57 @@ dialog:modal {
 dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
-  background: rgba(20, 19, 18, 0.42);
-  backdrop-filter: blur(4px);
+  background-color: rgba(16, 15, 14, 0);
+  backdrop-filter: blur(0px);
+  transition-property: background-color, backdrop-filter, display, overlay;
+  transition-duration: 0.2s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+:is(dialog[open]):where(:not([data-closing])) {
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    transform: translateY(0) scale(1);
+
+    @starting-style {
+      transform: translateY(8px) scale(0.985);
+    }
+  }
+
+  &::backdrop {
+    background-color: rgba(16, 15, 14, 0.44);
+    backdrop-filter: blur(5px);
+
+    @starting-style {
+      background-color: rgba(16, 15, 14, 0);
+      backdrop-filter: blur(0px);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog,
+  dialog::backdrop {
+    transition-duration: 0.1s;
+  }
+}
+
+/* 舞台切换柔和渐现 */
+.stage-fade-enter-active,
+.stage-fade-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.stage-fade-enter-from,
+.stage-fade-leave-to {
+  opacity: 0;
+  transform: translateY(3px);
 }
 
 /* macOS 标题栏拖拽区域 */

@@ -5,6 +5,7 @@ import { api } from '../services/api'
 import { appStore, refreshAll, showToast } from '../stores/appStore'
 import {
   attachDialogLightDismiss,
+  closeDialogAnimated,
   datetimeLocalToBeijingISO,
   parseYuanToCents,
   toDatetimeLocalValue,
@@ -41,7 +42,7 @@ watch(
       cleanupLightDismiss?.()
       cleanupLightDismiss = attachDialogLightDismiss(dlg, closeModal)
     } else if (dlg.open) {
-      dlg.close()
+      void closeDialogAnimated(dlg)
     }
   },
 )
@@ -49,7 +50,19 @@ watch(
 onBeforeUnmount(() => cleanupLightDismiss?.())
 
 function closeModal() {
-  appStore.resolveWishTarget = null
+  const dlg = dialogRef.value
+  if (dlg?.open) {
+    void closeDialogAnimated(dlg).then(() => {
+      appStore.resolveWishTarget = null
+    })
+  } else {
+    appStore.resolveWishTarget = null
+  }
+}
+
+function handleCancel(e: Event) {
+  e.preventDefault()
+  closeModal()
 }
 
 async function submit() {
@@ -85,7 +98,8 @@ async function submit() {
     closedby="any"
     aria-labelledby="resolve-wish-title"
     class="w-[500px] rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-subtle)] shadow-xl overflow-hidden"
-    @close="closeModal"
+    @cancel="handleCancel"
+    @close="appStore.resolveWishTarget = null"
   >
     <form class="flex flex-col" @submit.prevent="submit">
       <div class="px-6 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between">

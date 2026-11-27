@@ -12,11 +12,11 @@ import type {
   Attachment,
   CreditChannel,
   CuratorProfile,
+  EntryCategory,
   GlobalSearchResponse,
   GlobalStats,
   InstallmentPlanSummary,
   LifeEntry,
-  SidebarDestination,
   SiteConfig,
   ThemeMode,
   Transaction,
@@ -25,6 +25,12 @@ import type {
   Wish,
 } from '../types/api'
 import { beijingDateParts, normalizeCategory } from '../utils/format'
+
+export type AppSpace = 'journal' | 'gallery' | 'ledger' | 'wishlist' | 'settings'
+export type JournalFilter = 'all' | 'daily' | 'private' | 'on_this_day'
+export type GalleryFilter = 'all' | EntryCategory
+export type LedgerTab = 'transactions' | 'installments'
+export type LedgerDisplayMode = 'grouped' | 'table'
 
 const THEME_STORAGE_KEY = 'looseleaf_desktop_theme_v1'
 const DEFAULT_EXPENSE_CATS = ['餐饮', '交通', '购物', '数码器材', '娱乐', '学习', '住房', '医疗', '旅行度假', '其他']
@@ -56,7 +62,13 @@ export const appStore = reactive({
   accountEmail: '',
 
   themeMode: 'system' as ThemeMode,
-  destination: { kind: 'all' } as SidebarDestination,
+  activeSpace: 'journal' as AppSpace,
+  sidebarCollapsed: false,
+  journalFilter: 'all' as JournalFilter,
+  galleryCategory: 'all' as GalleryFilter,
+  ledgerTab: 'transactions' as LedgerTab,
+  ledgerDisplayMode: 'grouped' as LedgerDisplayMode,
+
   selectedEntryId: null as number | null,
   hydratedRemoteEntry: null as LifeEntry | null,
   searchQuery: '',
@@ -153,65 +165,39 @@ export function applyDocumentTheme(mode: ThemeMode) {
   }
 }
 
-export function isStreamDestination(dest: SidebarDestination): boolean {
-  return (
-    dest.kind === 'all' ||
-    dest.kind === 'daily' ||
-    dest.kind === 'private' ||
-    dest.kind === 'on_this_day' ||
-    dest.kind === 'category'
-  )
-}
-
-export function destinationKey(dest: SidebarDestination): string {
-  return dest.kind === 'category' ? `category:${dest.category}` : dest.kind
-}
-
-export function destinationTitle(dest: SidebarDestination): string {
-  switch (dest.kind) {
-    case 'all':
-      return '全部印记'
-    case 'daily':
-      return '日常随笔'
-    case 'private':
-      return '私密档案馆'
-    case 'on_this_day':
-      return '那年今日'
-    case 'category': {
-      const map: Record<string, string> = {
-        daily: '日常',
-        photography: '摄影',
-        travel: '旅途',
-        still_life: '静物',
-        motion: '影像',
-      }
-      return map[dest.category] ?? dest.category
-    }
-    case 'ledger':
-      return '收支流水'
-    case 'installments':
-      return '分期计划'
-    case 'wishlist':
-      return '心愿清单'
-    case 'settings':
-      return '偏好与连接'
-  }
+export function toggleSidebar() {
+  appStore.sidebarCollapsed = !appStore.sidebarCollapsed
 }
 
 export const displayedStreamEntries = computed<LifeEntry[]>(() => {
-  const dest = appStore.destination
+  const filter = appStore.journalFilter
   const q = appStore.searchQuery.trim().toLowerCase()
-  const base = dest.kind === 'on_this_day' ? appStore.onThisDayEntries : appStore.entries
+  const base = filter === 'on_this_day' ? appStore.onThisDayEntries : appStore.entries
 
   return base.filter((entry) => {
-    if (dest.kind === 'daily') {
+    if (filter === 'daily') {
       if (entry.type !== 'life' || normalizeCategory(entry.category) !== 'daily') return false
-    } else if (dest.kind === 'private') {
+    } else if (filter === 'private') {
       if (!entry.is_private) return false
-    } else if (dest.kind === 'category') {
-      if (entry.type !== 'life' || normalizeCategory(entry.category) !== dest.category) return false
     }
 
+    if (!q) return true
+    const haystack = `${entry.title}\n${entry.content}\n${entry.location ?? ''}`.toLowerCase()
+    return haystack.includes(q)
+  })
+})
+
+export const galleryEntries = computed<LifeEntry[]>(() => {
+  const cat = appStore.galleryCategory
+  const q = appStore.searchQuery.trim().toLowerCase()
+  return appStore.entries.filter((entry) => {
+    const normCat = normalizeCategory(entry.category)
+    const hasPhotos = entry.attachments.length > 0
+    if (cat === 'all') {
+      if (!hasPhotos && normCat === 'daily') return false
+    } else {
+      if (entry.type !== 'life' || normCat !== cat) return false
+    }
     if (!q) return true
     const haystack = `${entry.title}\n${entry.content}\n${entry.location ?? ''}`.toLowerCase()
     return haystack.includes(q)
@@ -245,6 +231,12 @@ export const dailyEntriesCount = computed(
 
 export const privateEntriesCount = computed(() => appStore.entries.filter((e) => e.is_private).length)
 
+export const totalGalleryCount = computed(
+  () =>
+    appStore.entries.filter((e) => e.attachments.length > 0 || normalizeCategory(e.category) !== 'daily')
+      .length,
+)
+
 export const wantingWishesCount = computed(
   () =>
     appStore.wishes.filter((w) => {
@@ -257,7 +249,7 @@ export const activeInstallmentsCount = computed(
   () => appStore.installmentPlans.filter((p) => p.status === 'active').length,
 )
 
-export function categoryEntriesCount(cat: string): number {
+export function categoryEntriesCount(cat: EntryCategory): number {
   return appStore.entries.filter((e) => e.type === 'life' && normalizeCategory(e.category) === cat).length
 }
 
@@ -265,17 +257,37 @@ export function mediaUrl(raw?: string | null): string {
   return resolveMediaUrl(raw, appStore.hubUrl)
 }
 
-export function selectDestination(dest: SidebarDestination) {
-  appStore.destination = dest
-  if (isStreamDestination(dest)) {
-    const list = displayedStreamEntries.value
-    if (!appStore.selectedEntryId || !list.some((e) => e.id === appStore.selectedEntryId)) {
-      appStore.selectedEntryId = list[0]?.id ?? null
-    }
+export function selectSpace(
+  space: AppSpace,
+  options?: { journalFilter?: JournalFilter; galleryCategory?: GalleryFilter; ledgerTab?: LedgerTab },
+) {
+  appStore.activeSpace = space
+  if (options?.journalFilter) {
+    appStore.journalFilter = options.journalFilter
+  }
+  if (options?.galleryCategory) {
+    appStore.galleryCategory = options.galleryCategory
+  }
+  if (options?.ledgerTab) {
+    appStore.ledgerTab = options.ledgerTab
+  }
+  if (space === 'journal') {
+    ensureJournalSelection()
   }
 }
 
-export async function selectEntry(id: number) {
+export function ensureJournalSelection() {
+  const list = displayedStreamEntries.value
+  if (!appStore.selectedEntryId || !list.some((e) => e.id === appStore.selectedEntryId)) {
+    appStore.selectedEntryId = list[0]?.id ?? null
+  }
+}
+
+export async function selectEntry(id: number, switchToJournal = false) {
+  if (switchToJournal) {
+    appStore.activeSpace = 'journal'
+    appStore.journalFilter = 'all'
+  }
   appStore.selectedEntryId = id
   appStore.hydratedRemoteEntry = null
   if (!appStore.entries.some((e) => e.id === id)) {
@@ -337,7 +349,7 @@ export async function logout() {
     await api.logout()
   } catch (err) {
     if (!(err instanceof ApiError && err.status >= 400 && err.status < 500)) {
-      // 网络失败仍允许登出本机，提示用户
+      // allow local logout
     }
   }
   await logoutLocalOnly()
@@ -389,7 +401,7 @@ async function setupDeepLinkBridge() {
       void handleIncomingDeepLink(raw)
     }
   } catch {
-    // non-tauri preview mode
+    // browser preview
   }
 }
 
@@ -405,8 +417,7 @@ export async function handleIncomingDeepLink(rawUrl: string) {
     if (u.protocol === 'looseleaf:' && u.hostname === 'entry') {
       const id = Number(u.pathname.replace(/\//g, ''))
       if (Number.isInteger(id) && id > 0) {
-        selectDestination({ kind: 'all' })
-        await selectEntry(id)
+        await selectEntry(id, true)
       }
     }
   } catch {
@@ -478,7 +489,7 @@ async function refreshSessionSilent() {
       appStore.deviceId = sess.session_id || sess.device_id || appStore.deviceId
     }
   } catch {
-    // keep existing profile
+    // keep prior profile
   }
 }
 
@@ -545,11 +556,8 @@ export async function refreshAll(silent = false) {
       appStore.wishes = wishesRes.value
     }
 
-    if (isStreamDestination(appStore.destination)) {
-      const list = displayedStreamEntries.value
-      if (!appStore.selectedEntryId || !list.some((e) => e.id === appStore.selectedEntryId)) {
-        appStore.selectedEntryId = list[0]?.id ?? null
-      }
+    if (appStore.activeSpace === 'journal') {
+      ensureJournalSelection()
     }
 
     if (!silent) {
@@ -583,15 +591,11 @@ export async function refreshTrustedDevices() {
 }
 
 export function triggerPrimaryCreate() {
-  switch (appStore.destination.kind) {
-    case 'ledger':
-      appStore.transactionModal = { open: true, editing: null }
-      break
-    case 'wishlist':
-      appStore.wishModal = { open: true, editing: null }
-      break
-    default:
-      appStore.showNewEntryModal = true
-      break
+  if (appStore.activeSpace === 'ledger') {
+    appStore.transactionModal = { open: true, editing: null }
+  } else if (appStore.activeSpace === 'wishlist') {
+    appStore.wishModal = { open: true, editing: null }
+  } else {
+    appStore.showNewEntryModal = true
   }
 }

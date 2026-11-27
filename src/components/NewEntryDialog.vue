@@ -2,11 +2,12 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { Check, ImagePlus, Lock, MapPin, X } from 'lucide-vue-next'
 import { api } from '../services/api'
-import { appStore, mediaUrl, refreshAll, selectDestination, showToast } from '../stores/appStore'
+import { appStore, mediaUrl, refreshAll, selectSpace, showToast } from '../stores/appStore'
 import type { Attachment, EntryCategory } from '../types/api'
 import {
   ALL_ENTRY_CATEGORIES,
   attachDialogLightDismiss,
+  closeDialogAnimated,
   datetimeLocalToBeijingISO,
   toDatetimeLocalValue,
 } from '../utils/format'
@@ -36,17 +37,19 @@ watch(
       titleInput.value = ''
       contentInput.value = ''
       category.value =
-        appStore.destination.kind === 'category' ? appStore.destination.category : 'daily'
+        appStore.activeSpace === 'gallery' && appStore.galleryCategory !== 'all'
+          ? appStore.galleryCategory
+          : 'daily'
       locationInput.value = appStore.profile.current_city || appStore.profile.location || ''
       occurredLocal.value = toDatetimeLocalValue()
-      isPrivate.value = appStore.destination.kind === 'private'
+      isPrivate.value = appStore.activeSpace === 'journal' && appStore.journalFilter === 'private'
       attachments.value = []
       errorMsg.value = ''
       if (!dlg.open) dlg.showModal()
       cleanupLightDismiss?.()
       cleanupLightDismiss = attachDialogLightDismiss(dlg, closeModal)
     } else if (dlg.open) {
-      dlg.close()
+      void closeDialogAnimated(dlg)
     }
   },
 )
@@ -56,7 +59,19 @@ onBeforeUnmount(() => {
 })
 
 function closeModal() {
-  appStore.showNewEntryModal = false
+  const dlg = dialogRef.value
+  if (dlg?.open) {
+    void closeDialogAnimated(dlg).then(() => {
+      appStore.showNewEntryModal = false
+    })
+  } else {
+    appStore.showNewEntryModal = false
+  }
+}
+
+function handleCancel(e: Event) {
+  e.preventDefault()
+  closeModal()
 }
 
 async function handleFiles(files: FileList | File[]) {
@@ -116,7 +131,7 @@ async function submit() {
     })
 
     appStore.entries = [created, ...appStore.entries]
-    selectDestination({ kind: 'all' })
+    selectSpace('journal', { journalFilter: 'all' })
     appStore.selectedEntryId = created.id
     closeModal()
     showToast('已归入散页时间流')
@@ -135,6 +150,7 @@ async function submit() {
     closedby="any"
     aria-labelledby="new-entry-dialog-title"
     class="w-[680px] rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-subtle)] shadow-xl overflow-hidden"
+    @cancel="handleCancel"
     @close="appStore.showNewEntryModal = false"
   >
     <div

@@ -74,30 +74,30 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative min-h-dvh w-full flex flex-col items-center justify-center bg-[var(--paper)] px-6 py-12">
-    <div class="tauri-drag fixed inset-x-0 top-0 h-10" />
+  <div class="relative min-h-dvh w-full flex flex-col items-center justify-center bg-[var(--canvas)] px-6 py-12">
+    <div data-tauri-drag-region class="tauri-drag fixed inset-x-0 top-0 h-10" />
 
     <div class="w-full max-w-[440px] flex flex-col items-center gap-6">
       <div class="flex flex-col items-center text-center gap-2">
         <div
-          class="w-14 h-14 rounded-2xl bg-[var(--accent-warm-soft)] text-[var(--accent-warm)] flex items-center justify-center mb-1"
+          class="w-14 h-14 rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-subtle)] text-[var(--accent-warm)] flex items-center justify-center mb-1"
+          style="box-shadow: var(--shadow-card);"
         >
           <BookOpen class="w-7 h-7" />
         </div>
-        <h1 class="font-serif-editorial text-[28px] font-semibold tracking-tight text-[var(--ink-primary)]">
+        <h1 class="font-serif-editorial text-[30px] font-semibold tracking-tight text-[var(--ink-primary)]">
           散页 · Loose-Leaf
         </h1>
         <p class="text-[13px] text-[var(--ink-secondary)]">
-          暖棉纸质感个人生活档案馆 · 散页、账本与心愿
+          Atelier 桌面编辑室 · 散页、画廊、账本与心愿
         </p>
       </div>
 
-      <!-- Hub 地址胶囊 -->
       <div class="w-full flex flex-col items-center gap-2">
         <button
           v-if="!editingHub"
           type="button"
-          class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12px] text-[var(--ink-secondary)] hover:border-[var(--border-divider)] transition-colors cursor-pointer"
+          class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[var(--paper)] border border-[var(--border-subtle)] text-[12px] text-[var(--ink-secondary)] hover:border-[var(--border-divider)] transition-colors cursor-pointer"
           @click="
             draftHubUrl = appStore.hubUrl;
             hubError = '';
@@ -120,7 +120,7 @@ onMounted(() => {
 
         <form
           v-else
-          class="w-full flex flex-col gap-2 p-3 rounded-xl bg-[var(--paper-subtle)] border border-[var(--border-subtle)]"
+          class="w-full flex flex-col gap-2 p-3 rounded-xl bg-[var(--paper)] border border-[var(--border-subtle)]"
           @submit.prevent="saveHubConfig"
         >
           <div class="flex items-center gap-2">
@@ -129,7 +129,7 @@ onMounted(() => {
               v-model="draftHubUrl"
               type="url"
               placeholder="https://leaf.starryheavens.uk"
-              class="flex-1 bg-[var(--paper-elevated)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1.5 text-[12px] font-mono-tabular text-[var(--ink-primary)]"
+              class="flex-1 bg-[var(--paper-subtle)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1.5 text-[12px] font-mono-tabular text-[var(--ink-primary)]"
               autofocus
             />
             <button
@@ -140,7 +140,7 @@ onMounted(() => {
             </button>
             <button
               type="button"
-              class="px-2.5 py-1.5 rounded-lg text-[12px] text-[var(--ink-secondary)] hover:bg-[var(--paper)] cursor-pointer"
+              class="px-2.5 py-1.5 rounded-lg text-[12px] text-[var(--ink-secondary)] hover:bg-[var(--paper-subtle)] cursor-pointer"
               @click="editingHub = false"
             >
               取消
@@ -150,9 +150,9 @@ onMounted(() => {
         </form>
       </div>
 
-      <!-- 主登录卡片 -->
       <div
-        class="w-full rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-subtle)] p-7 shadow-sm flex flex-col gap-4"
+        class="w-full rounded-2xl bg-[var(--paper)] border border-[var(--border-subtle)] p-7 flex flex-col gap-4"
+        style="box-shadow: var(--shadow-stage);"
       >
         <div v-if="isProbing" class="py-8 flex flex-col items-center gap-3 text-[var(--ink-secondary)]">
           <RefreshCw class="w-5 h-5 animate-spin text-[var(--accent-warm)]" />
@@ -167,7 +167,7 @@ onMounted(() => {
           </p>
           <button
             type="button"
-            class="mt-1 px-4 py-2 rounded-lg bg-[var(--accent-warm)] text-white text-[13px] font-medium hover:opacity-90 cursor-pointer"
+            class="mt-1 px-4 py-2 rounded-xl bg-[var(--accent-warm)] text-white text-[13px] font-medium hover:opacity-90 cursor-pointer"
             @click="probeHub"
           >
             重新连接
@@ -176,7 +176,7 @@ onMounted(() => {
 
         <template v-else>
           <div class="text-center flex flex-col gap-1.5">
-            <h2 class="font-serif-editorial text-[19px] font-semibold text-[var(--ink-primary)]">
+            <h2 class="font-serif-editorial text-[20px] font-semibold text-[var(--ink-primary)]">
               账号登录
             </h2>
             <p class="text-[12.5px] leading-relaxed text-[var(--ink-secondary)]">
@@ -211,7 +211,7 @@ onMounted(() => {
             v-if="hasOpenedBrowser && !appStore.isConfirmingCode"
             class="text-[12px] text-[var(--ink-muted)] bg-[var(--paper-subtle)] px-3 py-2.5 rounded-lg text-center leading-relaxed"
           >
-            已在默认浏览器打开登录页。若浏览器未自动唤起应用，可复制回调链接或一次性授权码粘贴到下方：
+            已在默认浏览器打开登录页。若未自动唤起应用，可粘贴回调链接或授权码：
           </p>
 
           <div class="pt-1 flex flex-col gap-2">

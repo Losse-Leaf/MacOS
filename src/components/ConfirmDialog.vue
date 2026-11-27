@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { appStore } from '../stores/appStore'
+import { closeDialogAnimated } from '../utils/format'
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const isRunning = ref(false)
@@ -13,14 +14,26 @@ watch(
     if (req) {
       if (!dlg.open) dlg.showModal()
     } else if (dlg.open) {
-      dlg.close()
+      void closeDialogAnimated(dlg)
     }
   },
 )
 
 function cancel() {
   if (isRunning.value) return
-  appStore.confirmRequest = null
+  const dlg = dialogRef.value
+  if (dlg?.open) {
+    void closeDialogAnimated(dlg).then(() => {
+      appStore.confirmRequest = null
+    })
+  } else {
+    appStore.confirmRequest = null
+  }
+}
+
+function handleCancel(e: Event) {
+  e.preventDefault()
+  cancel()
 }
 
 async function confirmAction() {
@@ -29,7 +42,7 @@ async function confirmAction() {
   isRunning.value = true
   try {
     await req.onConfirm()
-    appStore.confirmRequest = null
+    cancel()
   } finally {
     isRunning.value = false
   }
@@ -41,7 +54,8 @@ async function confirmAction() {
     ref="dialogRef"
     aria-labelledby="confirm-dialog-title"
     class="w-[380px] rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-subtle)] shadow-2xl overflow-hidden"
-    @close="cancel"
+    @cancel="handleCancel"
+    @close="appStore.confirmRequest = null"
   >
     <form v-if="appStore.confirmRequest" method="dialog" class="p-5 flex flex-col gap-3" @submit.prevent="confirmAction">
       <h2 id="confirm-dialog-title" class="font-serif-editorial text-[16px] font-semibold text-[var(--ink-primary)]">

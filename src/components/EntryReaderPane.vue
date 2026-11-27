@@ -9,6 +9,7 @@ import {
   Lock,
   LockOpen,
   MapPin,
+  Plus,
   Trash2,
   X,
 } from 'lucide-vue-next'
@@ -27,6 +28,7 @@ import {
   deriveDisplayTitle,
   entryAccentVar,
   entryBadgeLabel,
+  formatEditorialDateBadge,
   hasDistinctTitle,
   normalizeCategory,
   parseOccurredDate,
@@ -217,6 +219,15 @@ function askDelete() {
     },
   }
 }
+
+function tileSpanClass(total: number, index: number): string {
+  if (total === 1) return 'max-h-[520px] flex justify-start bg-transparent border-0'
+  if (total === 3) {
+    return index === 0 ? 'col-span-2 row-span-2 aspect-[4/3]' : 'aspect-[4/3]'
+  }
+  if (total <= 4) return 'aspect-[4/3]'
+  return 'aspect-square'
+}
 </script>
 
 <template>
@@ -228,26 +239,36 @@ function askDelete() {
   >
     <div
       v-if="!entry"
-      class="flex-1 flex flex-col items-center justify-center text-center px-8 gap-3 text-[var(--ink-muted)]"
+      data-tauri-drag-region
+      class="tauri-drag flex-1 flex flex-col items-center justify-center text-center px-8 gap-3 text-[var(--ink-muted)]"
     >
-      <BookOpen class="w-9 h-9 opacity-60" />
-      <div class="font-serif-editorial text-[17px] text-[var(--ink-secondary)]">
-        从左侧列表选择一篇散页开始阅读
+      <BookOpen class="w-9 h-9 opacity-50" />
+      <div class="font-serif-editorial text-[18px] text-[var(--ink-secondary)]">
+        从左侧挑选一篇散页
       </div>
-      <p class="text-[12px]">支持 ↑ / ↓ 快速切换，⌘E 原地编辑，⌘N 写下新想法</p>
+      <p class="text-[12.5px]">支持 ↑ / ↓ 翻阅，⌘E 原地编辑，⌘N 写新散页</p>
+      <button
+        type="button"
+        class="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--accent-warm)] text-white text-[13px] font-medium cursor-pointer hover:opacity-92"
+        @click="appStore.showNewEntryModal = true"
+      >
+        <Plus class="w-4 h-4" />
+        <span>写新散页</span>
+      </button>
     </div>
 
     <!-- 原地编辑态 -->
     <template v-else-if="isEditing">
       <div
-        class="h-11 shrink-0 px-7 border-b border-[var(--border-subtle)] flex items-center justify-between gap-3"
+        data-tauri-drag-region
+        class="tauri-drag h-12 shrink-0 px-7 border-b border-[var(--border-subtle)] flex items-center justify-between gap-3"
       >
-        <span class="text-[12.5px] font-medium text-[var(--ink-secondary)]">正在原地编辑散页</span>
+        <span class="text-[12.5px] font-medium text-[var(--ink-secondary)]">正在原地编辑手稿</span>
 
         <div class="flex items-center gap-2">
           <button
             type="button"
-            class="px-3 py-1 rounded-lg border border-[var(--border-subtle)] text-[12px] text-[var(--ink-secondary)] hover:bg-[var(--paper-subtle)] cursor-pointer"
+            class="px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] text-[12px] text-[var(--ink-secondary)] hover:bg-[var(--paper-subtle)] cursor-pointer"
             @click="isEditing = false"
           >
             取消
@@ -255,7 +276,7 @@ function askDelete() {
           <button
             type="button"
             :disabled="isSaving || isUploading"
-            class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-lg bg-[var(--accent-warm)] text-white text-[12px] font-medium hover:opacity-92 disabled:opacity-50 cursor-pointer"
+            class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[var(--accent-warm)] text-white text-[12px] font-medium hover:opacity-92 disabled:opacity-50 cursor-pointer"
             @click="saveEdit"
           >
             <Check class="w-3.5 h-3.5" />
@@ -265,12 +286,11 @@ function askDelete() {
       </div>
 
       <div
-        class="flex-1 overflow-y-auto paper-scroll px-8 py-6"
+        class="flex-1 overflow-y-auto paper-scroll px-10 py-7"
         :class="{ 'ring-2 ring-inset ring-[var(--accent-warm)]/60 bg-[var(--accent-warm-soft)]/25': isDragOver }"
         @paste="handlePaste"
       >
-        <div class="max-w-[740px] mx-auto flex flex-col gap-5">
-          <!-- 分类 + 私密 -->
+        <div class="max-w-[680px] mx-auto flex flex-col gap-5">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-1.5">
               <button
@@ -296,7 +316,6 @@ function askDelete() {
             </label>
           </div>
 
-          <!-- 时间 + 地点 -->
           <div class="flex flex-wrap items-center gap-3">
             <input
               v-model="editOccurredLocal"
@@ -321,7 +340,7 @@ function askDelete() {
             type="text"
             placeholder="标题（可留空，自动取正文首行）"
             aria-label="标题"
-            class="w-full bg-transparent font-serif-editorial text-[24px] font-semibold text-[var(--ink-primary)] placeholder:text-[var(--ink-muted)]/60 border-b border-[var(--border-subtle)] pb-2"
+            class="w-full bg-transparent font-serif-editorial text-[28px] font-semibold text-[var(--ink-primary)] placeholder:text-[var(--ink-muted)]/60 border-b border-[var(--border-subtle)] pb-2"
           />
 
           <textarea
@@ -330,16 +349,15 @@ function askDelete() {
             rows="10"
             placeholder="写下此刻的想法… 支持直接 ⌘V 粘贴或拖拽图片"
             aria-label="正文"
-            class="w-full bg-transparent text-[15px] leading-[1.85] text-[var(--ink-primary)] placeholder:text-[var(--ink-muted)]/60 resize-y min-h-[220px]"
+            class="w-full bg-transparent text-[15.5px] leading-[1.9] text-[var(--ink-primary)] placeholder:text-[var(--ink-muted)]/60 resize-y min-h-[220px]"
           />
 
-          <!-- 图片管理区 -->
-          <div class="p-3.5 rounded-xl bg-[var(--paper-subtle)]/70 border border-[var(--border-subtle)] flex flex-col gap-3">
+          <div class="p-3.5 rounded-2xl bg-[var(--paper-subtle)]/70 border border-[var(--border-subtle)] flex flex-col gap-3">
             <div class="flex items-center justify-between">
               <span class="text-[12px] font-medium text-[var(--ink-secondary)]">
                 相纸与配图（{{ editAttachments.length }}）
               </span>
-              <div class="flex items-center gap-2">
+              <div>
                 <input
                   ref="fileInputRef"
                   type="file"
@@ -369,7 +387,7 @@ function askDelete() {
               <div
                 v-for="(att, idx) in editAttachments"
                 :key="att.id"
-                class="relative aspect-square rounded-lg overflow-hidden bg-[var(--paper)] border border-[var(--border-subtle)] group"
+                class="relative aspect-square rounded-xl overflow-hidden bg-[var(--paper)] border border-[var(--border-subtle)] group"
               >
                 <img
                   :src="mediaUrl(att.thumbnail_url || att.url)"
@@ -395,21 +413,21 @@ function askDelete() {
       </div>
     </template>
 
-    <!-- 纯净阅读态 -->
+    <!-- Monograph 杂志纯净阅读画布 -->
     <template v-else>
       <div
-        class="h-11 shrink-0 px-7 border-b border-[var(--border-subtle)] flex items-center justify-between gap-3"
+        data-tauri-drag-region
+        class="tauri-drag h-12 shrink-0 px-7 flex items-center justify-between gap-3"
       >
         <div class="flex items-center gap-2">
           <span
             class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-medium"
             :style="{
               color: entryAccentVar(entry),
-              backgroundColor: 'color-mix(in srgb, ' + entryAccentVar(entry) + ' 12%, transparent)',
+              backgroundColor: 'color-mix(in srgb, ' + entryAccentVar(entry) + ' 11%, transparent)',
             }"
           >
-            <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: entryAccentVar(entry) }" />
-            <span>{{ entryBadgeLabel(entry) }}</span>
+            {{ entryBadgeLabel(entry) }}
           </span>
 
           <span
@@ -463,31 +481,48 @@ function askDelete() {
           >
             <Trash2 class="w-4 h-4" />
           </button>
+
+          <span class="w-px h-4 bg-[var(--border-subtle)] mx-1.5" />
+
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[var(--accent-warm)] text-white text-[12px] font-medium hover:opacity-92 active:scale-[0.98] transition-all cursor-pointer"
+            title="写新散页 (⌘N)"
+            @click="appStore.showNewEntryModal = true"
+          >
+            <Plus class="w-3.5 h-3.5" />
+            <span>写散页</span>
+          </button>
         </div>
       </div>
 
-      <article class="flex-1 overflow-y-auto paper-scroll px-9 py-7">
-        <div class="max-w-[740px] mx-auto flex flex-col gap-5">
-          <div class="flex items-center gap-2 text-[12px] font-mono-tabular text-[var(--ink-muted)]">
-            <time :datetime="entry.occurred_at">{{ parseOccurredDate(entry.occurred_at).dotDateTime }}</time>
+      <article class="flex-1 overflow-y-auto paper-scroll px-10 py-6">
+        <div class="max-w-[680px] mx-auto flex flex-col gap-5 pb-10">
+          <!-- 日期与地点 Kicker -->
+          <div class="flex flex-wrap items-center gap-2 text-[11.5px] font-mono-tabular tracking-wide text-[var(--ink-muted)]">
+            <time :datetime="entry.occurred_at">
+              {{ parseOccurredDate(entry.occurred_at).dotDateTime }}
+            </time>
+            <span>·</span>
+            <span>{{ formatEditorialDateBadge(entry.occurred_at).weekday }}</span>
             <span v-if="entry.location?.trim()" class="font-sans">· {{ entry.location.trim() }}</span>
           </div>
 
           <h2
             v-if="hasDistinctTitle(entry)"
-            class="selectable-text font-serif-editorial text-[26px] font-semibold tracking-tight text-[var(--ink-primary)] leading-snug"
+            class="selectable-text font-serif-editorial text-[30px] font-semibold tracking-tight text-[var(--ink-primary)] leading-[1.25]"
           >
             {{ entry.title }}
           </h2>
 
           <div
             v-if="entry.content.trim()"
-            class="selectable-text text-[15px] leading-[1.85] text-[var(--ink-primary)] whitespace-pre-wrap break-words"
+            class="selectable-text text-[15.5px] leading-[1.9] text-[var(--ink-primary)] whitespace-pre-wrap break-words"
           >
             {{ entry.content }}
           </div>
 
-          <!-- 无边框自适应相册网格 -->
+          <!-- 非对称杂志级相册排版 -->
           <div
             v-if="entry.attachments.length > 0"
             class="grid gap-2.5 pt-2"
@@ -497,16 +532,8 @@ function askDelete() {
               v-for="(att, idx) in entry.attachments"
               :key="att.id"
               type="button"
-              class="group relative overflow-hidden rounded-xl bg-[var(--paper-subtle)] border border-[var(--border-subtle)] hover:border-[var(--accent-warm)]/45 transition-all cursor-zoom-in"
-              :class="
-                entry.attachments.length === 1
-                  ? 'max-h-[480px] flex justify-start bg-transparent border-0'
-                  : entry.attachments.length === 3 && idx === 0
-                    ? 'col-span-3 aspect-[16/9]'
-                    : entry.attachments.length <= 4
-                      ? 'aspect-[4/3]'
-                      : 'aspect-square'
-              "
+              class="group relative overflow-hidden rounded-2xl bg-[var(--paper-subtle)] border border-[var(--border-subtle)] hover:border-[var(--accent-warm)]/45 transition-all cursor-zoom-in"
+              :class="tileSpanClass(entry.attachments.length, idx)"
               @click="appStore.lightboxState = { attachments: entry.attachments, index: idx }"
             >
               <img
@@ -515,8 +542,8 @@ function askDelete() {
                 loading="lazy"
                 :class="
                   entry.attachments.length === 1
-                    ? 'max-h-[460px] w-auto max-w-full rounded-xl border border-[var(--border-subtle)] object-contain'
-                    : 'w-full h-full object-cover group-hover:scale-[1.015] transition-transform duration-200'
+                    ? 'max-h-[520px] w-auto max-w-full rounded-2xl border border-[var(--border-subtle)] object-contain'
+                    : 'w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300'
                 "
               />
             </button>

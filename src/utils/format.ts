@@ -1,4 +1,4 @@
-import type { EntryCategory, LifeEntry } from '../types/api'
+import type { EntryCategory, LifeEntry, Transaction } from '../types/api'
 
 export interface ParsedBeijingDate {
   valid: boolean
@@ -156,8 +156,27 @@ const beijingPartsFormatter = new Intl.DateTimeFormat('en-CA', {
   hour: '2-digit',
   minute: '2-digit',
   second: '2-digit',
+  weekday: 'short',
   hourCycle: 'h23',
 })
+
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+const WEEKDAY_CN: Record<string, string> = {
+  Sun: '周日',
+  Mon: '周一',
+  Tue: '周二',
+  Wed: '周三',
+  Thu: '周四',
+  Fri: '周五',
+  Sat: '周六',
+  '周日': '周日',
+  '周一': '周一',
+  '周二': '周二',
+  '周三': '周三',
+  '周四': '周四',
+  '周五': '周五',
+  '周六': '周六',
+}
 
 export function beijingDateParts(date: Date = new Date()): {
   year: number
@@ -169,6 +188,7 @@ export function beijingDateParts(date: Date = new Date()): {
   yearStr: string
   monthStr: string
   dayStr: string
+  weekday: string
 } {
   const parts = beijingPartsFormatter.formatToParts(date)
   const map: Record<string, string> = {}
@@ -178,6 +198,7 @@ export function beijingDateParts(date: Date = new Date()): {
   const yearStr = map.year ?? '1970'
   const monthStr = map.month ?? '01'
   const dayStr = map.day ?? '01'
+  const rawWd = map.weekday ?? ''
   return {
     year: Number(yearStr),
     month: Number(monthStr),
@@ -188,6 +209,7 @@ export function beijingDateParts(date: Date = new Date()): {
     yearStr,
     monthStr,
     dayStr,
+    weekday: WEEKDAY_CN[rawWd] ?? rawWd,
   }
 }
 
@@ -270,6 +292,27 @@ export function parseOccurredDate(raw?: string | null): ParsedBeijingDate {
   }
 }
 
+export function formatEditorialDateBadge(occurredAt?: string | null): {
+  day: string
+  monthShort: string
+  year: string
+  weekday: string
+} {
+  const parsed = parseOccurredDate(occurredAt)
+  if (!parsed.valid) {
+    return { day: '--', monthShort: '---', year: '----', weekday: '' }
+  }
+  const d = new Date(parsed.timestamp)
+  const p = beijingDateParts(d)
+  const monthIdx = Math.max(0, Math.min(11, p.month - 1))
+  return {
+    day: p.dayStr,
+    monthShort: MONTH_ABBR[monthIdx] ?? '---',
+    year: p.yearStr,
+    weekday: p.weekday,
+  }
+}
+
 export function compactListDate(occurredAt?: string | null, now: Date = new Date()): string {
   const parsed = parseOccurredDate(occurredAt)
   if (!parsed.valid) return ''
@@ -316,6 +359,59 @@ export function groupEntriesByMonth(list: LifeEntry[]): EntryMonthGroup[] {
   }))
 }
 
+export interface TransactionDayGroup {
+  id: string
+  title: string
+  expenseTotal: number
+  incomeTotal: number
+  transactions: Transaction[]
+}
+
+export function groupTransactionsByDay(
+  list: Transaction[],
+  now: Date = new Date(),
+): TransactionDayGroup[] {
+  const curYear = beijingDateParts(now).yearStr
+  const order: string[] = []
+  const meta = new Map<string, { title: string; expense: number; income: number; items: Transaction[] }>()
+
+  for (const tx of list) {
+    const parsed = parseOccurredDate(tx.occurred_at)
+    const key = parsed.valid ? parsed.dateKey : 'unknown'
+    if (!meta.has(key)) {
+      order.push(key)
+      let title = '未定日期'
+      if (parsed.valid) {
+        const badge = formatEditorialDateBadge(tx.occurred_at)
+        const datePart =
+          parsed.year === curYear
+            ? `${Number(parsed.month)}月${Number(parsed.day)}日`
+            : `${parsed.year}年${Number(parsed.month)}月${Number(parsed.day)}日`
+        title = badge.weekday ? `${datePart} · ${badge.weekday}` : datePart
+      }
+      meta.set(key, { title, expense: 0, income: 0, items: [] })
+    }
+    const bucket = meta.get(key)!
+    bucket.items.push(tx)
+    if (tx.type === 'income') {
+      bucket.income += tx.amount
+    } else {
+      bucket.expense += tx.amount
+    }
+  }
+
+  return order.map((key) => {
+    const b = meta.get(key)!
+    return {
+      id: key,
+      title: b.title,
+      expenseTotal: b.expense,
+      incomeTotal: b.income,
+      transactions: b.items,
+    }
+  })
+}
+
 export function categoryColorVar(category: string): string {
   switch (category) {
     case '餐饮':
@@ -338,9 +434,57 @@ export function categoryColorVar(category: string): string {
   }
 }
 
+let cachedSupportsDisplayTransition: boolean | undefined
+
+function canTransitionDisplay(): boolean {
+  if (cachedSupportsDisplayTransition !== undefined) return cachedSupportsDisplayTransition
+  if (
+    typeof window === 'undefined' ||
+    !window.CSS?.supports?.('transition-behavior', 'allow-discrete') ||
+    !document.body
+  ) {
+    cachedSupportsDisplayTransition = false
+    return false
+  }
+  const probe = document.createElement('div')
+  probe.style.cssText = 'transition: display 1s allow-discrete !important; display: block;'
+  document.body.appendChild(probe)
+  getComputedStyle(probe).display
+  probe.style.display = 'none'
+  cachedSupportsDisplayTransition = getComputedStyle(probe).display === 'block'
+  probe.remove()
+  return cachedSupportsDisplayTransition
+}
+
+function supportsTopLayerExit(): boolean {
+  if (typeof window === 'undefined') return false
+  return Boolean(window.CSS?.supports?.('overlay', 'auto')) && canTransitionDisplay()
+}
+
+/**
+ * Animated top-layer dialog close with Safari/WebKit fallback (per `animate-to-from-top-layer`).
+ */
+export async function closeDialogAnimated(dialog: HTMLDialogElement): Promise<void> {
+  if (!dialog.open) return
+  if (!supportsTopLayerExit() && typeof dialog.getAnimations === 'function') {
+    dialog.setAttribute('data-closing', '')
+    const animations = dialog.getAnimations({ subtree: true })
+    if (animations.length > 0) {
+      await Promise.race([
+        Promise.allSettled(animations.map((a) => a.finished)),
+        new Promise<void>((r) => setTimeout(r, 350)),
+      ])
+    }
+    if (!dialog.hasAttribute('data-closing')) return
+    dialog.removeAttribute('data-closing')
+  }
+  if (dialog.open) {
+    dialog.close()
+  }
+}
+
 /**
  * Light-dismiss fallback for WebKit/Safari where <dialog closedby="any"> is not supported.
- * Follows `light-dismiss-a-dialog`: checks pointerdown + pointerup coordinates outside dialog rect.
  */
 export function attachDialogLightDismiss(
   dialog: HTMLDialogElement,

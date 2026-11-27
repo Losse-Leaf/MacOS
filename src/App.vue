@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-vue-next'
+import { onBeforeUnmount, onMounted } from 'vue'
+import { AlertTriangle, CheckCircle2, PanelLeftOpen, RefreshCw } from 'lucide-vue-next'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import GalleryWorkspace from './components/GalleryWorkspace.vue'
 import GlobalSearchDialog from './components/GlobalSearchDialog.vue'
-import InstallmentsWorkspace from './components/InstallmentsWorkspace.vue'
 import LedgerWorkspace from './components/LedgerWorkspace.vue'
 import LightboxDialog from './components/LightboxDialog.vue'
 import NewEntryDialog from './components/NewEntryDialog.vue'
@@ -12,7 +12,6 @@ import ResolveWishDialog from './components/ResolveWishDialog.vue'
 import SettingsView from './components/SettingsView.vue'
 import SidebarNav from './components/SidebarNav.vue'
 import StreamWorkspace from './components/StreamWorkspace.vue'
-import TopBar from './components/TopBar.vue'
 import TransactionDialog from './components/TransactionDialog.vue'
 import WishDialog from './components/WishDialog.vue'
 import WishlistWorkspace from './components/WishlistWorkspace.vue'
@@ -20,14 +19,12 @@ import {
   appStore,
   bootstrapApp,
   displayedStreamEntries,
-  isStreamDestination,
   refreshAll,
-  selectDestination,
   selectEntry,
+  selectSpace,
+  toggleSidebar,
   triggerPrimaryCreate,
 } from './stores/appStore'
-
-const topBarRef = ref<InstanceType<typeof TopBar> | null>(null)
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -40,6 +37,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   const meta = e.metaKey || e.ctrlKey
   const key = e.key.toLowerCase()
 
+  if (meta && e.key === '\\') {
+    e.preventDefault()
+    toggleSidebar()
+    return
+  }
   if (meta && key === 'k') {
     e.preventDefault()
     appStore.showGlobalSearch = true
@@ -57,41 +59,41 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
   if (meta && key === 'f') {
     e.preventDefault()
-    topBarRef.value?.focusSearch()
+    window.dispatchEvent(new CustomEvent('looseleaf-focus-filter'))
     return
   }
   if (meta && key === ',') {
     e.preventDefault()
-    selectDestination({ kind: 'settings' })
+    selectSpace('settings')
     return
   }
-  if (meta && key === 'e' && isStreamDestination(appStore.destination) && appStore.selectedEntryId) {
+  if (meta && key === 'e' && appStore.activeSpace === 'journal' && appStore.selectedEntryId) {
     e.preventDefault()
     appStore.editEntryToken += 1
     return
   }
   if (meta && key === '1') {
     e.preventDefault()
-    selectDestination({ kind: 'all' })
+    selectSpace('journal')
     return
   }
   if (meta && key === '2') {
     e.preventDefault()
-    selectDestination({ kind: 'ledger' })
+    selectSpace('gallery')
     return
   }
   if (meta && key === '3') {
     e.preventDefault()
-    selectDestination({ kind: 'installments' })
+    selectSpace('ledger')
     return
   }
   if (meta && key === '4') {
     e.preventDefault()
-    selectDestination({ kind: 'wishlist' })
+    selectSpace('wishlist')
     return
   }
 
-  if (!meta && !isTypingTarget(e.target) && isStreamDestination(appStore.destination)) {
+  if (!meta && !isTypingTarget(e.target) && appStore.activeSpace === 'journal') {
     const list = displayedStreamEntries.value
     if (!list.length) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -119,26 +121,46 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="appStore.booting" class="h-full w-full flex items-center justify-center bg-[var(--paper)]">
+  <div v-if="appStore.booting" class="h-full w-full flex items-center justify-center bg-[var(--canvas)]">
     <RefreshCw class="w-5 h-5 animate-spin text-[var(--accent-warm)]" />
   </div>
 
   <PairingGate v-else-if="!appStore.isPaired" />
 
-  <div v-else class="h-full w-full flex bg-[var(--paper)] text-[var(--ink-primary)] overflow-hidden">
+  <div
+    v-else
+    class="h-full w-full flex bg-[var(--canvas)] text-[var(--ink-primary)] overflow-hidden p-2 transition-[padding] duration-200"
+    :class="appStore.sidebarCollapsed ? 'pl-2' : 'pl-0'"
+  >
     <SidebarNav />
 
-    <main class="flex-1 min-w-0 h-full flex flex-col">
-      <TopBar ref="topBarRef" />
+    <!-- 浮动纸张主舞台 -->
+    <main
+      class="relative flex-1 min-w-0 h-full rounded-2xl bg-[var(--paper)] border border-[var(--border-subtle)] overflow-hidden flex flex-col"
+      style="box-shadow: var(--shadow-stage);"
+    >
+      <!-- 侧栏折叠时的呼出按钮（避开交通灯区域） -->
+      <button
+        v-if="appStore.sidebarCollapsed"
+        type="button"
+        class="tauri-no-drag absolute top-3 left-20 z-30 p-1.5 rounded-lg bg-[var(--paper-subtle)]/90 border border-[var(--border-subtle)] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] shadow-xs cursor-pointer"
+        title="展开侧栏 (⌘\)"
+        aria-label="展开侧栏"
+        @click="toggleSidebar"
+      >
+        <PanelLeftOpen class="w-4 h-4" />
+      </button>
 
-      <StreamWorkspace v-if="isStreamDestination(appStore.destination)" />
-      <LedgerWorkspace v-else-if="appStore.destination.kind === 'ledger'" />
-      <InstallmentsWorkspace v-else-if="appStore.destination.kind === 'installments'" />
-      <WishlistWorkspace v-else-if="appStore.destination.kind === 'wishlist'" />
-      <SettingsView v-else />
+      <Transition name="stage-fade" mode="out-in">
+        <StreamWorkspace v-if="appStore.activeSpace === 'journal'" key="journal" />
+        <GalleryWorkspace v-else-if="appStore.activeSpace === 'gallery'" key="gallery" />
+        <LedgerWorkspace v-else-if="appStore.activeSpace === 'ledger'" key="ledger" />
+        <WishlistWorkspace v-else-if="appStore.activeSpace === 'wishlist'" key="wishlist" />
+        <SettingsView v-else key="settings" />
+      </Transition>
     </main>
 
-    <!-- 全局弹窗 -->
+    <!-- 全局弹窗（均接入原生 top-layer 入离场动效） -->
     <NewEntryDialog />
     <TransactionDialog />
     <WishDialog />

@@ -3,13 +3,13 @@ import { ref } from 'vue'
 import EntryListPane from './EntryListPane.vue'
 import EntryReaderPane from './EntryReaderPane.vue'
 
-const listWidth = ref(316)
+const listWidth = ref(340)
 
 function startResize(startEvent: PointerEvent) {
   const startX = startEvent.clientX
   const startWidth = listWidth.value
   const onMove = (e: PointerEvent) => {
-    const next = Math.min(440, Math.max(250, startWidth + (e.clientX - startX)))
+    const next = Math.min(460, Math.max(270, startWidth + (e.clientX - startX)))
     listWidth.value = next
   }
   const onUp = () => {
@@ -28,7 +28,7 @@ function startResize(startEvent: PointerEvent) {
     </div>
 
     <div
-      class="w-1 shrink-0 h-full cursor-col-resize hover:bg-[var(--accent-warm)]/35 transition-colors"
+      class="w-1 shrink-0 h-full cursor-col-resize hover:bg-[var(--accent-warm)]/30 transition-colors"
       title="拖动调整列表宽度"
       @pointerdown="startResize"
     />

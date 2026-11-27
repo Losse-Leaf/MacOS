@@ -75,7 +75,7 @@ async function unpayItem(planId: number, itemId: number) {
   }
 }
 
-async function settlePlan(plan: InstallmentPlanSummary) {
+function settlePlan(plan: InstallmentPlanSummary) {
   appStore.confirmRequest = {
     title: '提前结清全部分期？',
     message: `将把「${plan.title}」剩余所有期次标记为已还并生成还款流水。`,
@@ -139,36 +139,34 @@ async function submitNewPlan() {
 </script>
 
 <template>
-  <div class="flex-1 min-h-0 overflow-y-auto paper-scroll px-7 py-6 bg-[var(--paper)]">
-    <div class="max-w-[1040px] mx-auto flex flex-col gap-5">
-      <div class="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[var(--paper-subtle)]/70 border border-[var(--border-subtle)]">
-        <div class="flex items-center gap-6">
-          <div>
-            <div class="text-[11.5px] text-[var(--ink-muted)]">进行中计划</div>
-            <div class="font-mono-tabular text-[20px] font-semibold text-[var(--ink-primary)]">
-              {{ appStore.installmentPlans.filter((p) => p.status === 'active').length }} 笔
-            </div>
-          </div>
-          <div class="w-px h-8 bg-[var(--border-subtle)]" />
+  <div class="flex-1 min-h-0 overflow-y-auto paper-scroll px-8 py-6 bg-[var(--paper)]">
+    <div class="max-w-[980px] mx-auto flex flex-col gap-5 pb-10">
+      <div class="flex flex-wrap items-end justify-between gap-4 pb-5 border-b border-[var(--border-subtle)]">
+        <div class="flex items-end gap-8">
           <div>
             <div class="text-[11.5px] text-[var(--ink-muted)]">剩余待还总额（含手续费）</div>
-            <div class="font-mono-tabular text-[20px] font-semibold text-[var(--accent-warm)]">
+            <div class="font-mono-tabular text-[30px] font-semibold text-[var(--accent-warm)] leading-none mt-1">
               {{ formatYuan(totalRemainingCents) }}
+            </div>
+          </div>
+          <div>
+            <div class="text-[11.5px] text-[var(--ink-muted)]">进行中计划</div>
+            <div class="font-mono-tabular text-[18px] font-semibold text-[var(--ink-primary)] mt-0.5">
+              {{ appStore.installmentPlans.filter((p) => p.status === 'active').length }} 笔
             </div>
           </div>
         </div>
 
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[var(--accent-warm)] text-white text-[12.5px] font-medium cursor-pointer hover:opacity-92"
+          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[var(--accent-warm)] text-white text-[12.5px] font-medium cursor-pointer hover:opacity-92"
           @click="showCreateForm = !showCreateForm"
         >
           <Plus class="w-3.5 h-3.5" />
-          <span>{{ showCreateForm ? '收起新建表单' : '新建分期计划' }}</span>
+          <span>{{ showCreateForm ? '收起表单' : '新建分期' }}</span>
         </button>
       </div>
 
-      <!-- 内联新建表单 -->
       <form
         v-if="showCreateForm"
         class="p-4 rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-divider)] grid grid-cols-6 gap-3 items-end"
@@ -203,7 +201,7 @@ async function submitNewPlan() {
           />
         </label>
         <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
-          <span>手续费模式</span>
+          <span>手续费</span>
           <select
             v-model="newFeeMode"
             class="px-2 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12px]"
@@ -233,9 +231,9 @@ async function submitNewPlan() {
 
       <div
         v-if="filteredPlans.length === 0"
-        class="py-16 flex flex-col items-center justify-center gap-2 text-[var(--ink-muted)] rounded-2xl border border-[var(--border-subtle)] bg-[var(--paper-elevated)]"
+        class="py-16 flex flex-col items-center justify-center gap-2 text-[var(--ink-muted)]"
       >
-        <CalendarClock class="w-8 h-8 opacity-60" />
+        <CalendarClock class="w-8 h-8 opacity-45" />
         <div class="font-serif-editorial text-[16px] text-[var(--ink-primary)]">暂无分期计划</div>
         <p class="text-[12px]">在记账时勾选分期或在此新建分期计划后，各期还款进度将在此展示。</p>
       </div>
@@ -261,7 +259,7 @@ async function submitNewPlan() {
                     class="px-2 py-0.5 rounded-full text-[11px] font-medium"
                     :class="
                       plan.status === 'settled'
-                        ? 'bg-[var(--accent-moss)]/12 text-[var(--accent-moss)]'
+                        ? 'bg-[var(--accent-moss-soft)] text-[var(--accent-moss)]'
                         : plan.is_overdue
                           ? 'bg-[var(--accent-warm-soft)] text-[var(--accent-warm)]'
                           : 'bg-[var(--paper-subtle)] text-[var(--ink-secondary)]'
@@ -305,7 +303,7 @@ async function submitNewPlan() {
 
           <div
             v-if="expandedPlanId === plan.id"
-            class="border-t border-[var(--border-subtle)] bg-[var(--paper-subtle)]/40 px-4 py-3"
+            class="border-t border-[var(--border-subtle)] bg-[var(--paper-subtle)]/40 px-5 py-3"
           >
             <div v-if="loadingDetailId === plan.id" class="py-4 text-center text-[12px] text-[var(--ink-muted)]">
               加载期次明细…
@@ -320,7 +318,7 @@ async function submitNewPlan() {
                   <th class="py-1.5 text-left font-medium">到期日</th>
                   <th class="py-1.5 text-right font-medium">应还本金</th>
                   <th class="py-1.5 text-right font-medium">手续费</th>
-                  <th class="py-1.5 text-right font-medium">状态 / 操作</th>
+                  <th class="py-1.5 text-right font-medium">状态</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[var(--border-subtle)]">

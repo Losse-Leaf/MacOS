@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { BookOpen, Search, Sparkles, X } from 'lucide-vue-next'
 import { api } from '../services/api'
-import { appStore, selectDestination, selectEntry } from '../stores/appStore'
+import { appStore, selectEntry, selectSpace } from '../stores/appStore'
 import type { LifeEntry, Wish } from '../types/api'
-import { attachDialogLightDismiss, compactListDate, deriveDisplayTitle } from '../utils/format'
+import { attachDialogLightDismiss, closeDialogAnimated, compactListDate, deriveDisplayTitle } from '../utils/format'
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const query = ref('')
@@ -28,7 +28,7 @@ watch(
       cleanupLightDismiss?.()
       cleanupLightDismiss = attachDialogLightDismiss(dlg, closeModal)
     } else if (dlg.open) {
-      dlg.close()
+      void closeDialogAnimated(dlg)
     }
   },
 )
@@ -79,17 +79,28 @@ const mergedWishes = computed(() => {
 onBeforeUnmount(() => cleanupLightDismiss?.())
 
 function closeModal() {
-  appStore.showGlobalSearch = false
+  const dlg = dialogRef.value
+  if (dlg?.open) {
+    void closeDialogAnimated(dlg).then(() => {
+      appStore.showGlobalSearch = false
+    })
+  } else {
+    appStore.showGlobalSearch = false
+  }
+}
+
+function handleCancel(e: Event) {
+  e.preventDefault()
+  closeModal()
 }
 
 async function openEntry(entry: LifeEntry) {
-  selectDestination({ kind: 'all' })
-  await selectEntry(entry.id)
+  await selectEntry(entry.id, true)
   closeModal()
 }
 
 function openWishlist() {
-  selectDestination({ kind: 'wishlist' })
+  selectSpace('wishlist')
   closeModal()
 }
 </script>
@@ -100,7 +111,8 @@ function openWishlist() {
     closedby="any"
     aria-labelledby="global-search-title"
     class="w-[620px] rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-subtle)] shadow-2xl overflow-hidden"
-    @close="closeModal"
+    @cancel="handleCancel"
+    @close="appStore.showGlobalSearch = false"
   >
     <div class="flex flex-col max-h-[75vh]">
       <div class="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center gap-3">

@@ -26,6 +26,7 @@ import {
   toggleSidebar,
   triggerPrimaryCreate,
 } from './stores/appStore'
+import { checkForAppUpdate, initUpdater } from './services/updater'
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -124,6 +125,7 @@ function handleWindowFocus() {
 
 onMounted(() => {
   void bootstrapApp()
+  void initUpdater().then(() => checkForAppUpdate(false))
   window.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityRefresh)

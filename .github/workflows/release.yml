@@ -43,18 +43,19 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             src-tauri/target/release/bundle/macos/LooseLeaf.app \
             "dist/LooseLeaf-${{ github.ref_name }}-arm64.zip"
+          (cd dist && shasum -a 256 "LooseLeaf-${{ github.ref_name }}-arm64.zip" > "LooseLeaf-${{ github.ref_name }}-arm64.zip.sha256")
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LooseLeaf-unsigned-app
-          path: dist/LooseLeaf-*.zip
+          path: dist/LooseLeaf-*.zip*
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/LooseLeaf-*.zip
+          files: dist/LooseLeaf-*.zip*
           body: |
             未签名构建产物（macOS arm64，免 Developer ID 下载即用；Gatekeeper 首次打开请右键 →「打开」）。
 

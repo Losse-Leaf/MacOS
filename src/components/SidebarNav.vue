@@ -29,6 +29,7 @@ import {
   wantingWishesCount,
 } from '../stores/appStore'
 import type { EntryCategory, ThemeMode } from '../types/api'
+import { updaterState } from '../services/updater'
 import { beijingDateParts, formatEditorialDateBadge } from '../utils/format'
 
 const todayStamp = computed(() => {
@@ -224,17 +225,21 @@ function themeLabel(mode: ThemeMode): string {
 
       <button
         type="button"
-        class="p-1.5 rounded-lg transition-colors cursor-pointer"
+        class="relative p-1.5 rounded-lg transition-colors cursor-pointer"
         :class="
           appStore.activeSpace === 'settings'
             ? 'bg-[var(--paper-elevated)] text-[var(--accent-warm)] shadow-xs'
             : 'text-[var(--ink-secondary)] hover:bg-[var(--paper-elevated)] hover:text-[var(--ink-primary)]'
         "
-        title="偏好与设备设置 (⌘,)"
+        :title="updaterState.availableUpdate ? `发现新版本 ${updaterState.availableUpdate.tagName}（点击查看）` : `偏好与版本设置 v${updaterState.currentVersion} (⌘,)`"
         aria-label="打开偏好与设备设置"
         @click="selectSpace('settings')"
       >
         <Settings class="w-3.5 h-3.5" />
+        <span
+          v-if="updaterState.availableUpdate"
+          class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--accent-warm)]"
+        />
       </button>
     </div>
   </aside>

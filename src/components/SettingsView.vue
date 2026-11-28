@@ -1,7 +1,28 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { Check, Laptop, LogOut, Monitor, Moon, RefreshCw, Sun, Trash2, User } from 'lucide-vue-next'
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  Laptop,
+  LogOut,
+  Monitor,
+  Moon,
+  RefreshCw,
+  Sparkles,
+  Sun,
+  Trash2,
+  User,
+} from 'lucide-vue-next'
 import { api, isValidHubUrl } from '../services/api'
+import {
+  checkForAppUpdate,
+  copyInstallCommand,
+  openReleasePage,
+  startInAppUpdate,
+  updaterState,
+} from '../services/updater'
 import {
   appStore,
   logout,
@@ -272,6 +293,122 @@ function confirmLogout() {
               <LogOut class="w-3.5 h-3.5" />
               <span>退出账号登录</span>
             </button>
+          </div>
+        </section>
+
+        <!-- 版本与内置更新 -->
+        <section class="settings-card">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <h2 class="settings-title flex items-center gap-2">
+                <Sparkles class="w-4 h-4 text-[var(--accent-warm)]" />
+                <span>版本与更新</span>
+              </h2>
+              <span class="px-2 py-0.5 rounded-full text-[11px] font-mono-tabular bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[var(--ink-secondary)]">
+                v{{ updaterState.currentVersion }}
+              </span>
+            </div>
+            <button
+              type="button"
+              :disabled="updaterState.checking || updaterState.updating"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--paper-subtle)] text-[12px] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] hover:border-[var(--border-divider)] disabled:opacity-50 cursor-pointer"
+              @click="checkForAppUpdate(true)"
+            >
+              <RefreshCw class="w-3.5 h-3.5" :class="updaterState.checking ? 'animate-spin' : ''" />
+              <span>{{ updaterState.checking ? '正在检查…' : '检查更新' }}</span>
+            </button>
+          </div>
+
+          <div
+            v-if="updaterState.availableUpdate"
+            class="p-4 rounded-xl bg-[var(--accent-warm-soft)]/50 border border-[var(--accent-warm)]/35 flex flex-col gap-3"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-[13.5px] font-medium text-[var(--ink-primary)]">
+                发现新版本 {{ updaterState.availableUpdate.tagName }}
+              </div>
+              <span class="text-[11px] font-mono-tabular text-[var(--ink-muted)]">
+                {{ updaterState.availableUpdate.assetName }}
+              </span>
+            </div>
+
+            <pre
+              v-if="updaterState.availableUpdate.body"
+              class="text-[12px] text-[var(--ink-secondary)] whitespace-pre-wrap font-sans leading-relaxed max-h-28 overflow-y-auto paper-scroll"
+            >{{ updaterState.availableUpdate.body }}</pre>
+
+            <div v-if="updaterState.updating" class="flex flex-col gap-1.5">
+              <div class="h-1.5 rounded-full bg-[var(--paper)] overflow-hidden">
+                <div
+                  class="h-full bg-[var(--accent-warm)] transition-all duration-300"
+                  :style="{ width: `${Math.round(updaterState.progress * 100)}%` }"
+                />
+              </div>
+              <div class="flex items-center justify-between text-[11px] font-mono-tabular text-[var(--ink-secondary)]">
+                <span>{{ updaterState.progressMessage || '正在更新…' }}</span>
+                <span>{{ Math.round(updaterState.progress * 100) }}%</span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                :disabled="updaterState.updating"
+                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[var(--accent-warm)] text-white text-[12.5px] font-medium hover:opacity-92 disabled:opacity-50 cursor-pointer"
+                @click="startInAppUpdate"
+              >
+                <Download class="w-3.5 h-3.5" />
+                <span>{{ updaterState.updating ? '更新中…' : '应用内一键更新' }}</span>
+              </button>
+              <button
+                type="button"
+                :disabled="updaterState.updating"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--paper)] text-[12px] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] disabled:opacity-50 cursor-pointer"
+                @click="copyInstallCommand"
+              >
+                <Copy class="w-3.5 h-3.5" />
+                <span>复制终端命令</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--paper)] text-[12px] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] cursor-pointer"
+                @click="openReleasePage"
+              >
+                <ExternalLink class="w-3.5 h-3.5" />
+                <span>GitHub 下载</span>
+              </button>
+            </div>
+          </div>
+
+          <div v-else class="flex flex-wrap items-center justify-between gap-2 text-[12px] text-[var(--ink-muted)]">
+            <span v-if="updaterState.error" class="text-[var(--accent-warm)]">
+              {{ updaterState.error }}
+            </span>
+            <span v-else-if="updaterState.checked">
+              当前已是最新版本（支持开机 24 小时静默检测与应用内 SHA-256 校验自动更新）
+            </span>
+            <span v-else>
+              点击右上角检查 GitHub Releases 最新桌面端版本
+            </span>
+
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 text-[11.5px] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] cursor-pointer"
+                @click="copyInstallCommand"
+              >
+                <Copy class="w-3 h-3" />
+                <span>终端安装命令</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 text-[11.5px] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] cursor-pointer"
+                @click="openReleasePage"
+              >
+                <ExternalLink class="w-3 h-3" />
+                <span>发布页</span>
+              </button>
+            </div>
           </div>
         </section>
       </div>

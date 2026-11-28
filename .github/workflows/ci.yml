@@ -8,70 +8,47 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (macOS 26)
-    runs-on: macos-26
+    name: Build & Test (Tauri v2 · macOS)
+    runs-on: macos-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Check Swift & Xcode Version
-        run: |
-          swift --version
-          xcodebuild -version
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-      - name: Verify Zero Hardcoded Hex Colors in Swift Code
-        run: |
-          if grep -rnE '#[0-9A-Fa-f]{6}\b' LooseLeaf/; then
-            echo "Found hardcoded hex color literal in Swift code! Use Assets.xcassets semantic colors instead."
-            exit 1
-          fi
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Debug Target
-        run: swift build -Xswiftc -warnings-as-errors
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
-      - name: Swift 6 Strict Concurrency Check
-        run: |
-          # Swift 6 语言模式下的并发违规会以 error 级别暴露。
-          # 当前工程仍锁定 Swift 5 语言模式，因此用独立检查项确保技术债不继续累积。
-          swift build -Xswiftc -strict-concurrency=complete \
-            -Xswiftc -warnings-as-errors || {
-            echo "Swift 6 strict concurrency violations detected. Please fix the reported issues."
-            exit 1
-          }
-
-      - name: Validate Info.plist Required Keys
-        run: |
-          python3 scripts/check_info_plist.py LooseLeaf/Info.plist
-
-      - name: Verify Color Contrast (WCAG AA)
-        run: |
-          python3 scripts/check_color_contrast.py LooseLeaf/Resources/Assets.xcassets
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Run Unit Tests
-        run: swift test --verbose
+        run: npm test
 
-      - name: Verify Snapshot Baselines Are Committed
-        run: |
-          # 快照基准图必须入库：缺失说明有人改了视觉却没更新基准
-          if [ ! -d LooseLeafTests/__Snapshots__ ]; then
-            echo "Missing LooseLeafTests/__Snapshots__ directory"
-            exit 1
-          fi
-          COUNT=$(ls -1 LooseLeafTests/__Snapshots__/*.png 2>/dev/null | wc -l | tr -d ' ')
-          if [ "$COUNT" -lt 1 ]; then
-            echo "No snapshot baselines found"
-            exit 1
-          fi
-          if [ ! -f LooseLeafTests/__Snapshots__/manifest.json ]; then
-            echo "Missing snapshot environment manifest"
-            exit 1
-          fi
-          echo "Snapshot baselines present: $COUNT (+ manifest)"
+      - name: Typecheck & Build Frontend
+        run: npm run build
 
-      # 与 release.yml 共用同一条打包路径（中间产物用完即删，不留残留）
-      - name: Build Release App Bundle (unsigned)
+      - name: Check Rust Crate
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Tauri macOS App Bundle
+        run: npm run tauri build -- --bundles app
+
+      - name: Package App Archive
         run: |
-          scripts/package_release.sh --output-dir "$GITHUB_WORKSPACE/dist"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            src-tauri/target/release/bundle/macos/LooseLeaf.app \
+            dist/LooseLeaf-macOS-arm64.zip
 
       - name: Upload App Artifact
         uses: actions/upload-artifact@v4

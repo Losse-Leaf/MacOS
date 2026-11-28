@@ -8,26 +8,41 @@ on:
 jobs:
   build-release:
     name: Build Release App Bundle (unsigned)
-    runs-on: macos-26
+    runs-on: macos-latest
     permissions:
       contents: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Check Swift & Xcode Version
-        run: |
-          swift --version
-          xcodebuild -version
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-      # 统一走 scripts/package_release.sh：中间产物进临时目录、用完即删，
-      # 只把最终 zip 留在 dist/。这样本机手动跑同一条命令也不会残留一堆
-      # LooseLeaf.app 与旧 zip（那正是 Spotlight 里搜出七八个副本的由来）。
-      - name: Build & Package App Bundle (unsigned)
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Dependencies & Run Tests
         run: |
-          scripts/package_release.sh \
-            --tag "${{ github.ref_name }}" \
-            --output-dir "$GITHUB_WORKSPACE/dist"
+          npm ci
+          npm test
+
+      - name: Build Tauri macOS App Bundle
+        run: npm run tauri build -- --bundles app
+
+      - name: Package Release Archive
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            src-tauri/target/release/bundle/macos/LooseLeaf.app \
+            "dist/LooseLeaf-${{ github.ref_name }}-arm64.zip"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

@@ -89,17 +89,20 @@ if [ -z "$EXTRACTED_APP" ] || [ ! -d "$EXTRACTED_APP" ]; then
     exit 1
 fi
 
-# 4. 若旧应用正在运行，先请求其优雅退出（确保防抖窗口内的最后一次改动完成落盘）
-if pgrep -x "${APP_NAME}" >/dev/null 2>&1; then
+# 4. 若旧应用正在运行，先请求其优雅退出（兼容旧版 LooseLeaf 与 Tauri v4 进程 looseleaf-desktop）
+if pgrep -x "${APP_NAME}" >/dev/null 2>&1 || pgrep -x "looseleaf-desktop" >/dev/null 2>&1; then
     echo "🔄 正在关闭运行中的旧版本..."
     osascript -e "tell application \"${APP_NAME}\" to quit" >/dev/null 2>&1 || true
     for _ in $(seq 1 30); do
-        pgrep -x "${APP_NAME}" >/dev/null 2>&1 || break
+        if ! pgrep -x "${APP_NAME}" >/dev/null 2>&1 && ! pgrep -x "looseleaf-desktop" >/dev/null 2>&1; then
+            break
+        fi
         sleep 0.2
     done
-    if pgrep -x "${APP_NAME}" >/dev/null 2>&1; then
+    if pgrep -x "${APP_NAME}" >/dev/null 2>&1 || pgrep -x "looseleaf-desktop" >/dev/null 2>&1; then
         echo "⚠️  旧版本未在 6 秒内退出，将强制结束（未落盘的改动可能丢失）"
         pkill -x "${APP_NAME}" || true
+        pkill -x "looseleaf-desktop" || true
         sleep 1
     fi
 fi

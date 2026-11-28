@@ -8,6 +8,7 @@ import {
   groupEntriesByMonth,
   groupTransactionsByDay,
   hasDistinctTitle,
+  inferQuickLedgerCategory,
   normalizeCategory,
   parseQuickLedgerInput,
   parseYuanToCents,
@@ -186,5 +187,36 @@ describe('format utilities', () => {
     ])
     expect(groups).toHaveLength(1)
     expect(groups[0].expenseTotal).toBe(500)
+  })
+
+  it('infers quick ledger categories with disambiguation, custom keywords, and fallback chains', () => {
+    const fullExpenses = [
+      '餐饮', '交通', '购物', '居家', '订阅', '娱乐', '医疗', '学习', '其他',
+    ]
+    const fullIncomes = ['工资', '副业', '理财', '退款', '其他']
+
+    expect(inferQuickLedgerCategory('星巴克拿铁', 'expense', fullExpenses)).toBe('餐饮')
+    expect(inferQuickLedgerCategory('午餐手冲咖啡', 'expense', fullExpenses)).toBe('餐饮')
+    expect(inferQuickLedgerCategory('美团买药布洛芬', 'expense', fullExpenses)).toBe('医疗')
+    expect(inferQuickLedgerCategory('国家电网电费', 'expense', fullExpenses)).toBe('居家')
+    expect(inferQuickLedgerCategory('Apple iCloud', 'expense', fullExpenses)).toBe('订阅')
+    expect(inferQuickLedgerCategory('阿强造型工作室', 'expense', fullExpenses)).toBe('购物')
+    expect(inferQuickLedgerCategory('未知商户', 'expense', fullExpenses)).toBe('其他')
+
+    // 自定义关键词优先覆盖内置规则
+    expect(
+      inferQuickLedgerCategory('楼下烘焙坊', 'expense', fullExpenses, [
+        { id: 1, scope: 'expense', name: '购物', keywords: '楼下烘焙坊,伴手礼', sort_order: 30, is_builtin: true },
+      ]),
+    ).toBe('购物')
+
+    // 精简/兼容字典降级链
+    expect(
+      inferQuickLedgerCategory('国家电网电费', 'expense', ['餐饮', '交通', '住房', '其他']),
+    ).toBe('住房')
+
+    // 收入规则
+    expect(inferQuickLedgerCategory('约稿设计费', 'income', fullIncomes)).toBe('副业')
+    expect(inferQuickLedgerCategory('年终奖金', 'income', fullIncomes)).toBe('工资')
   })
 })

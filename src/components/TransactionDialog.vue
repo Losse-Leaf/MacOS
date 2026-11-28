@@ -34,6 +34,10 @@ const isInstallmentRepay = computed(() => appStore.transactionModal.editing?.sou
 const categoriesForType = computed(() =>
   txType.value === 'income' ? appStore.incomeCategories : appStore.expenseCategories,
 )
+const hasMissingSelectedCategory = computed(() => {
+  const cat = category.value.trim()
+  return Boolean(cat) && !categoriesForType.value.includes(cat)
+})
 
 function onChannelChange() {
   const matched = appStore.creditChannels.find((c) => c.code === channelCode.value)
@@ -252,7 +256,7 @@ async function submit() {
             "
             @click="
               txType = 'income';
-              if (!categoriesForType.includes(category)) category = categoriesForType[0] || '其他收入';
+              if (!categoriesForType.includes(category)) category = categoriesForType[0] || '工资';
             "
           >
             收入
@@ -306,6 +310,13 @@ async function submit() {
               @click="category = cat"
             >
               {{ cat }}
+            </button>
+            <button
+              v-if="hasMissingSelectedCategory"
+              type="button"
+              class="px-2.5 py-1 rounded-full text-[12px] border bg-[var(--accent-warm-soft)] border-[var(--accent-warm)]/40 text-[var(--accent-warm)] font-medium cursor-pointer"
+            >
+              {{ category }}
             </button>
           </div>
         </div>

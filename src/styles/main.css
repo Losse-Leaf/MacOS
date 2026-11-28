@@ -58,12 +58,27 @@
 
   /* 记账光谱 */
   --spectrum-dining: light-dark(#A84B28, #DD6B4B);
+  --spectrum-coffee: light-dark(#B56E45, #D98E62);
+  --spectrum-groceries: light-dark(#5E7D58, #80A679);
+  --spectrum-snacks: light-dark(#C98842, #E0A463);
   --spectrum-transit: light-dark(#4A6B82, #638BA6);
+  --spectrum-travel: light-dark(#B57C3C, #D49C5C);
+  --spectrum-household: light-dark(#8C6D46, #AE8F66);
   --spectrum-shopping: light-dark(#80633E, #A8865B);
+  --spectrum-fashion: light-dark(#B56576, #D48596);
+  --spectrum-digital: light-dark(#3A5A6B, #5C8396);
   --spectrum-leisure: light-dark(#7A5980, #A47EAB);
   --spectrum-housing: light-dark(#385745, #64957A);
+  --spectrum-utilities: light-dark(#4F7A65, #72A18A);
+  --spectrum-telecom: light-dark(#586F7C, #7A94A3);
+  --spectrum-subscription: light-dark(#6D597A, #937DA3);
+  --spectrum-fitness: light-dark(#6B7B5C, #8E9E7E);
   --spectrum-study: light-dark(#5C6773, #7B8896);
   --spectrum-medical: light-dark(#A64C4C, #CC7474);
+  --spectrum-pet: light-dark(#8F6B56, #B38D76);
+  --spectrum-social: light-dark(#9C6644, #BF8763);
+  --spectrum-wishlist: light-dark(#7F5539, #A67758);
+  --spectrum-fees: light-dark(#6B4E4E, #916E6E);
   --spectrum-other: light-dark(#78736B, #9A948B);
 
   --shadow-stage-light: 0 2px 16px -4px rgba(25, 23, 22, 0.06), 0 1px 3px rgba(25, 23, 22, 0.04);

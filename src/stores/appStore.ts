@@ -10,6 +10,7 @@ import {
 } from '../services/credentials'
 import type {
   Attachment,
+  CategoryOption,
   CreditChannel,
   CuratorProfile,
   EntryCategory,
@@ -33,9 +34,10 @@ export type LedgerTab = 'transactions' | 'installments'
 export type LedgerDisplayMode = 'grouped' | 'table'
 
 const THEME_STORAGE_KEY = 'looseleaf_desktop_theme_v1'
-const DEFAULT_EXPENSE_CATS = ['餐饮', '交通', '购物', '数码器材', '娱乐', '学习', '住房', '医疗', '旅行度假', '其他']
-const DEFAULT_INCOME_CATS = ['工资收入', '二手回血', '稿酬设计', '投资理财', '礼金红包', '退款报销', '其他收入']
-const DEFAULT_PAYMENTS = ['微信支付', '支付宝', '银行卡', '现金', '其他']
+const DEFAULT_EXPENSE_CATS = ['餐饮', '交通', '购物', '居家', '订阅', '娱乐', '医疗', '学习', '其他']
+const DEFAULT_INCOME_CATS = ['工资', '副业', '理财', '退款', '其他']
+const DEFAULT_PAYMENTS = ['微信支付', '支付宝', '银行卡', '信用卡', '现金', '其他']
+const HIDDEN_EXPENSE_CATS = new Set(['好物购置', '利息手续费'])
 
 export interface ConfirmDialogRequest {
   title: string
@@ -93,6 +95,7 @@ export const appStore = reactive({
   creditChannels: [] as CreditChannel[],
   installmentPlans: [] as InstallmentPlanSummary[],
   wishes: [] as Wish[],
+  categoryItems: [] as CategoryOption[],
   expenseCategories: [...DEFAULT_EXPENSE_CATS],
   incomeCategories: [...DEFAULT_INCOME_CATS],
   paymentMethods: [...DEFAULT_PAYMENTS],
@@ -539,8 +542,12 @@ export async function refreshAll(silent = false) {
     if (profRes.status === 'fulfilled') appStore.profile = profRes.value
     if (statsRes.status === 'fulfilled') appStore.stats = statsRes.value
     if (catsRes.status === 'fulfilled') {
-      const { byScope } = catsRes.value
-      if (byScope.expense.length) appStore.expenseCategories = byScope.expense
+      const { items, byScope } = catsRes.value
+      appStore.categoryItems = items.filter(
+        (it) => !(it.scope === 'expense' && HIDDEN_EXPENSE_CATS.has(it.name)),
+      )
+      const cleanExpense = byScope.expense.filter((name) => !HIDDEN_EXPENSE_CATS.has(name))
+      if (cleanExpense.length) appStore.expenseCategories = cleanExpense
       if (byScope.income.length) appStore.incomeCategories = byScope.income
       if (byScope.payment.length) appStore.paymentMethods = byScope.payment
     }

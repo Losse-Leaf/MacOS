@@ -1,4 +1,4 @@
-import type { EntryCategory, LifeEntry, Transaction } from '../types/api'
+import type { CategoryOption, EntryCategory, LifeEntry, Transaction } from '../types/api'
 
 export interface ParsedBeijingDate {
   valid: boolean
@@ -462,23 +462,215 @@ export function groupTransactionsByDay(
 export function categoryColorVar(category: string): string {
   switch (category) {
     case '餐饮':
+    case '咖啡饮品':
+    case '买菜生鲜':
+    case '零食水果':
       return 'var(--spectrum-dining)'
     case '交通':
       return 'var(--spectrum-transit)'
     case '购物':
+    case '日用百货':
+    case '服饰美妆':
     case '数码器材':
+    case '好物购置':
       return 'var(--spectrum-shopping)'
-    case '娱乐':
-      return 'var(--spectrum-leisure)'
+    case '居家':
     case '住房':
+    case '水电燃气':
+    case '通讯网费':
       return 'var(--spectrum-housing)'
+    case '订阅':
+    case '订阅会员':
+      return 'var(--spectrum-subscription)'
+    case '娱乐':
+    case '旅行度假':
+    case '运动健康':
+    case '宠物':
+      return 'var(--spectrum-leisure)'
+    case '医疗':
+    case '利息手续费':
+      return 'var(--spectrum-medical)'
     case '学习':
       return 'var(--spectrum-study)'
-    case '医疗':
-      return 'var(--spectrum-medical)'
     default:
       return 'var(--spectrum-other)'
   }
+}
+
+const QUICK_EXPENSE_FALLBACK_CHAINS: Record<string, string[]> = {
+  餐饮: ['餐饮', '美食', '日常饮食'],
+  交通: ['交通', '出行'],
+  购物: ['购物', '日用百货'],
+  居家: ['居家', '住房'],
+  订阅: ['订阅', '订阅会员', '娱乐', '学习'],
+  娱乐: ['娱乐', '休闲'],
+  医疗: ['医疗', '健康'],
+  学习: ['学习', '办公', '教育'],
+}
+
+const QUICK_INCOME_FALLBACK_CHAINS: Record<string, string[]> = {
+  工资: ['工资', '工资收入', '薪资', '月薪', '奖金'],
+  副业: ['副业', '兼职副业', '稿酬设计', '工资'],
+  理财: ['理财', '投资理财', '投资收益'],
+  退款: ['退款', '退款报销', '二手回血'],
+}
+
+const QUICK_EXPENSE_TIER_A: [string, string[]][] = [
+  ['医疗', ['美团买药', '饿了么买药', '京东大药房', '叮当快药', '阿里健康']],
+  ['交通', ['美团打车', '高德打车', '滴滴出行', '曹操出行', 't3出行', '12306', '铁路12306']],
+  ['娱乐', ['美团酒店', '美团民宿', '携程', '飞猪', '去哪儿', '同程', 'airbnb', '爱彼迎', '亚朵', '全季', '汉庭', '健身房', '乐刻', '超级猩猩', '迪卡侬', '羽毛球馆', '游泳馆', '瑜伽馆', '普拉提', '宠物医院', '猫粮', '狗粮', '猫砂']],
+  ['餐饮', ['美团优选', '美团买菜', '小象超市', '叮咚买菜', '朴朴超市', '盒马鲜生', '多多买菜']],
+  ['居家', ['国家电网', '南方电网', '电费', '水费', '燃气费', '煤气费', '天然气费', '暖气费', '供暖费', '中国移动', '中国联通', '中国电信', '话费', '宽带', '流量包', '通讯费']],
+  ['订阅', ['icloud', 'app store', 'chatgpt', 'openai', 'claude', 'github', 'cursor', 'notion', 'spotify', 'netflix', 'youtube', '百度网盘', '夸克网盘', 'wps会员', '腾讯视频', '爱奇艺', '优酷', '网易云音乐', 'qq音乐', '连续包月', '自动续费']],
+  ['购物', ['apple store', '苹果专卖', '华为商城', '小米之家', '大疆', 'dji', '索尼', '罗技', '机械键盘', '显卡', '固态硬盘', '顺丰', '菜鸟裹裹', '菜鸟驿站', '丰巢', '快递费', '寄件', '丝芙兰', '优衣库', 'uniqlo', 'zara', '耐克', 'nike', '阿迪达斯', '理发', '美发', '洗剪吹', '剪发']],
+]
+
+const QUICK_EXPENSE_MEALS = ['早餐', '早点', '早茶', '午餐', '午饭', '中餐', '晚餐', '晚饭', '夜宵', '宵夜', '正餐', '食堂', '工作餐']
+
+const QUICK_EXPENSE_TIER_B: [string, string[]][] = [
+  ['餐饮', [
+    '星巴克', 'starbucks', '瑞幸', 'luckin', '库迪', 'manner', '喜茶', '奈雪', '霸王茶姬', '茶百道', '古茗', '蜜雪冰城', '一点点', 'coco', '茶颜悦色', '手冲咖啡', '拿铁', '美式', '咖啡', '奶茶', '果茶', '柠檬茶',
+    '麦当劳', '肯德基', 'kfc', '汉堡王', '必胜客', '萨莉亚', '海底捞', '太二', '西贝', '老乡鸡', '沙县', '兰州拉面', '黄焖鸡', '螺蛳粉', '饿了么', '美团外卖', '外卖', '快餐', '火锅', '烧烤', '烤肉', '日料', '寿司', '拉面', '米线', '麻辣烫', '吃饭', '聚餐',
+    '买菜', '菜市场', '农贸市场', '生鲜', '盒马', '叮咚', '朴朴', '钱大妈', '永辉', '菜场',
+    '百果园', '鲜丰水果', '水果', '果切', '三只松鼠', '良品铺子', '好利来', '鲍师傅', '面包', '蛋糕', '甜品', '冰淇淋', '零食', '坚果', '巧克力',
+  ]],
+  ['交通', ['地铁', '公交', '打车', '网约车', '出租车', '顺风车', '滴滴', '高德', '火车', '高铁', '动车', '机票', '航空', '加油', '中石油', '中石化', '充电桩', '停车费', '高速费', 'etc', '单车', '骑行']],
+  ['购物', [
+    '罗森', '全家', '711', '7-eleven', '便利蜂', '沃尔玛', '山姆', 'costco', '名创优品', '屈臣氏', '超市', '便利店', '百货', '纸巾', '洗衣液', '牙膏', '洗发水', '日用品', '快递',
+    '衣服', '裤子', '外套', '球鞋', '运动鞋', '包包', '口红', '面霜', '防晒', '护肤', '化妆品', '美甲', '烫发', '染发',
+    '手机', 'iphone', 'ipad', 'macbook', 'airpods', '相机', '镜头', '电脑', '笔记本', '显示器', '耳机', '键盘', '鼠标', '路由器', '充电宝', '数据线', '数码', '鲜花', '花店', '礼物',
+  ]],
+  ['居家', ['房租', '租金', '月租', '房贷', '按揭', '物业费', '物业', '宜家', 'ikea', '家具', '家电', '装修', '保洁', '家政']],
+  ['订阅', ['会员费', '会员续费', '月卡', '季卡', '年卡', '云盘', '网盘', '订阅']],
+  ['医疗', ['医院', '门诊', '挂号', '诊所', '体检', '拔牙', '洗牙', '牙科', '口腔', '配镜', '药房', '药店', '买药', '药品']],
+  ['学习', ['学费', '培训', '网课', '课程', '考研', '考公', '雅思', '托福', '驾校', '考试费', '书店', '买书', '购书', '图书', '书籍', '文具', '打印']],
+  ['娱乐', [
+    '电影', '万达影城', '淘票票', '猫眼', '剧本杀', '密室', '桌游', 'ktv', '酒吧', '演唱会', '话剧', '展览', '游戏', 'steam', 'switch', '盲盒',
+    '酒店', '民宿', '客栈', '旅馆', '景点', '门票', '景区', '迪士尼', '环球影城', '旅游', '度假', '露营', '签证',
+    '健身', '私教', '游泳', '瑜伽', '跑步', '羽毛球', '篮球', '网球', '滑雪', '按摩', '推拿', '足疗',
+    '宠物', '猫咖', '狗咖', '驱虫', '疫苗',
+  ]],
+]
+
+const QUICK_EXPENSE_SUFFIX_RULES: [string, RegExp][] = [
+  ['购物', /(?:理发|美发|造型|美容|美甲|美睫|服饰|服装)(?:店|室|馆|工作室)?$/],
+  ['餐饮', /(?:咖啡|茶饮|奶茶|茶室|茶馆|面馆|饭店|餐馆|餐厅|烧烤|火锅|烤肉|小吃|快餐|食堂|水果|果业|烘焙|面包|蛋糕|甜品|生鲜|菜场|菜市|农贸)$/],
+  ['购物', /(?:超市|便利店|百货|驿站)$/],
+  ['医疗', /(?:药房|药店|医院|诊所|口腔|牙科)$/],
+  ['娱乐', /(?:酒店|宾馆|民宿|客栈)$/],
+]
+
+const QUICK_INCOME_RULES: [string, string[], number][] = [
+  ['工资', ['代发工资', '工资', '薪资', '发薪', '薪水', '底薪', '月薪', '年终奖', '奖金', '绩效', '提成', '津贴', '补贴', '房补', '餐补', '加班费'], 100],
+  ['副业', ['兼职', '副业', '外包', '劳务费', '咨询费', '讲课费', '稿费', '稿酬', '设计费', '约稿', '版权', '版税', '创作激励', '打赏'], 95],
+  ['理财', ['理财', '基金', '股票', '股息', '分红', '利息', '结息', '收益', '余额宝', '国债'], 95],
+  ['退款', ['退款', '退货', '退费', '报销', '返现', '退税', '理赔', '二手', '闲鱼', '转转', '爱回收', '回血', '出售', '出闲置'], 95],
+  ['其他', ['红包', '礼金', '压岁钱', '份子钱', '转账收款', '收到转账', '亲友转账'], 55],
+]
+
+/**
+ * 为 macOS 快速记账条提供零 AI、多级确定性分类推荐。
+ */
+export function inferQuickLedgerCategory(
+  title: string,
+  type: 'expense' | 'income',
+  knownCategories: string[],
+  categoryItems: CategoryOption[] = [],
+): string {
+  const validKnown = Array.from(new Set(knownCategories.map((c) => c.trim()).filter(Boolean)))
+  const cleaned = title.trim()
+  const lower = cleaned.toLowerCase()
+
+  const resolveFallback = (): string => {
+    if (validKnown.length === 0) return '其他'
+    const order = type === 'income' ? ['其他', '其他收入', '工资', '工资收入'] : ['其他', '餐饮', '购物']
+    const hit = order.find((c) => validKnown.includes(c))
+    return hit || validKnown[0]
+  }
+
+  const resolveBucket = (bucket: string): string | null => {
+    if (validKnown.length === 0 || validKnown.includes(bucket)) return bucket
+    const chain = (type === 'income' ? QUICK_INCOME_FALLBACK_CHAINS : QUICK_EXPENSE_FALLBACK_CHAINS)[bucket]
+    return chain?.find((c) => validKnown.includes(c)) || null
+  }
+
+  if (!cleaned) return resolveFallback()
+
+  // Stage 1: 用户在云端配置的分类关键词
+  let bestCustomCat: string | null = null
+  let bestCustomScore = 0
+  for (const item of categoryItems) {
+    if (item.scope !== type || !item.keywords) continue
+    if (validKnown.length > 0 && !validKnown.includes(item.name)) continue
+    const kws = item.keywords
+      .split(/[,，、;\n]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+    for (const kw of kws) {
+      if (lower.includes(kw)) {
+        const sc = 100 + Math.min(kw.length, 20)
+        if (sc > bestCustomScore) {
+          bestCustomScore = sc
+          bestCustomCat = item.name
+        }
+      }
+    }
+  }
+  if (bestCustomCat) return bestCustomCat
+
+  // Stage 2: 动态分类名直接命中（不含「其他」）
+  if (validKnown.length > 0) {
+    const exactMatch = validKnown
+      .filter((c) => c !== '其他' && c !== '其他收入')
+      .sort((a, b) => b.length - a.length)
+      .find((c) => lower.includes(c.toLowerCase()))
+    if (exactMatch) return exactMatch
+  }
+
+  // Stage 3: 四档加权内置知识库
+  const scores = new Map<string, number>()
+  const addScore = (bucket: string, val: number) => {
+    const resolved = resolveBucket(bucket)
+    if (!resolved) return
+    scores.set(resolved, (scores.get(resolved) || 0) + val)
+  }
+
+  if (type === 'income') {
+    for (const [bucket, kws, sc] of QUICK_INCOME_RULES) {
+      if (kws.some((kw) => lower.includes(kw))) {
+        addScore(bucket, sc)
+      }
+    }
+  } else {
+    for (const [bucket, kws] of QUICK_EXPENSE_TIER_A) {
+      if (kws.some((kw) => lower.includes(kw))) addScore(bucket, 120)
+    }
+    if (QUICK_EXPENSE_MEALS.some((kw) => lower.includes(kw))) {
+      addScore('餐饮', 96)
+    }
+    for (const [bucket, kws] of QUICK_EXPENSE_TIER_B) {
+      if (kws.some((kw) => lower.includes(kw))) addScore(bucket, 90)
+    }
+    if (scores.size === 0 && cleaned.length >= 2 && cleaned.length <= 20) {
+      for (const [bucket, regex] of QUICK_EXPENSE_SUFFIX_RULES) {
+        if (regex.test(cleaned)) addScore(bucket, 75)
+      }
+    }
+    if (lower.includes('美团')) addScore('餐饮', 30)
+    if (['淘宝', '天猫', '京东', '拼多多', '闲鱼'].some((kw) => lower.includes(kw))) {
+      addScore('购物', 30)
+    }
+  }
+
+  let topCat: string | null = null
+  let topScore = 0
+  for (const [cat, sc] of scores.entries()) {
+    if (sc > topScore) {
+      topScore = sc
+      topCat = cat
+    }
+  }
+  return topCat || resolveFallback()
 }
 
 let cachedSupportsDisplayTransition: boolean | undefined

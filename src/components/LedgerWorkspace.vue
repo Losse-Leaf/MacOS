@@ -33,6 +33,7 @@ import {
   formatBeijingISO,
   formatYuan,
   groupTransactionsByDay,
+  inferQuickLedgerCategory,
   parseOccurredDate,
   parseQuickLedgerInput,
 } from '../utils/format'
@@ -137,6 +138,11 @@ async function shiftMonth(delta: number) {
 }
 
 const parsedQuick = computed(() => parseQuickLedgerInput(quickInput.value))
+const inferredQuickCategory = computed(() => {
+  const { title, type } = parsedQuick.value
+  const known = type === 'income' ? appStore.incomeCategories : appStore.expenseCategories
+  return inferQuickLedgerCategory(title, type, known, appStore.categoryItems)
+})
 
 async function submitQuick() {
   if (isSubmittingQuick.value) return
@@ -147,15 +153,12 @@ async function submitQuick() {
   }
   isSubmittingQuick.value = true
   try {
-    const defaultCat =
-      type === 'income'
-        ? appStore.incomeCategories[0] || '工资收入'
-        : appStore.expenseCategories[0] || '餐饮'
+    const resolvedCategory = inferredQuickCategory.value
     const created = await api.createTransaction({
       amount: amountCents,
       type,
-      category: defaultCat,
-      title: title || defaultCat,
+      category: resolvedCategory,
+      title: title || resolvedCategory,
       payment_method: appStore.paymentMethods[0] || '微信支付',
       occurred_at: formatBeijingISO(),
       client_request_id: crypto.randomUUID(),
@@ -389,7 +392,7 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
             v-if="parsedQuick.amountCents"
             class="text-[11.5px] font-mono-tabular px-2.5 py-0.5 rounded-lg bg-[var(--paper-elevated)] text-[var(--ink-secondary)]"
           >
-            {{ parsedQuick.type === 'income' ? '收入' : '支出' }} {{ formatYuan(parsedQuick.amountCents) }}
+            {{ parsedQuick.type === 'income' ? '收入' : '支出' }} · {{ inferredQuickCategory }} · {{ formatYuan(parsedQuick.amountCents) }}
           </span>
           <button
             type="submit"

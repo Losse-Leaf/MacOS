@@ -309,8 +309,11 @@ export interface CategoryOption {
   id: number
   scope: 'expense' | 'income' | 'payment' | string
   name: string
+  group_name?: string
+  keywords?: string
   sort_order: number
   is_builtin: boolean
+  usage_count?: number
 }
 
 export interface WishesListResponse {

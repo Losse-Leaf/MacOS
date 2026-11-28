@@ -1,6 +1,6 @@
 [package]
 name = "looseleaf-desktop"
-version = "4.0.0"
+version = "4.1.0"
 description = "散页 Loose-Leaf macOS 极简桌面工作台"
 authors = ["YN1753"]
 edition = "2021"

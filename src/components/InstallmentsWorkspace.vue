@@ -17,7 +17,27 @@ const newFeeMode = ref<'none' | 'fixed_per_period' | 'total_fee'>('none')
 const newFeeText = ref('0')
 const newChannelCode = ref('')
 const newRepayDay = ref(10)
+const newCategoryName = ref('')
 const isCreating = ref(false)
+
+function openCreateForm() {
+  showCreateForm.value = !showCreateForm.value
+  if (showCreateForm.value) {
+    const ch = appStore.creditChannels[0]
+    newChannelCode.value = ch?.code ?? ''
+    newRepayDay.value = ch?.repayment_day ?? 10
+    newCategoryName.value = appStore.expenseCategories.includes('购物')
+      ? '购物'
+      : (appStore.expenseCategories[0] || '购物')
+  }
+}
+
+function onChannelSelectChange() {
+  const matched = appStore.creditChannels.find((c) => c.code === newChannelCode.value)
+  if (matched && matched.repayment_day > 0) {
+    newRepayDay.value = matched.repayment_day
+  }
+}
 
 const filteredPlans = computed(() => {
   const q = appStore.searchQuery.trim().toLowerCase()
@@ -78,11 +98,14 @@ async function unpayItem(planId: number, itemId: number) {
 function settlePlan(plan: InstallmentPlanSummary) {
   appStore.confirmRequest = {
     title: '提前结清全部分期？',
-    message: `将把「${plan.title}」剩余所有期次标记为已还并生成还款流水。`,
+    message: `将按剩余本金 ${formatYuan(plan.remaining_principal)} 把「${plan.title}」剩余所有期次标记为已还并生成结清流水。`,
     confirmText: '确认结清',
     danger: false,
     onConfirm: async () => {
-      await api.settleInstallmentPlan(plan.id)
+      await api.settleInstallmentPlan(plan.id, {
+        paid_amount: plan.remaining_principal,
+        pay_account: appStore.paymentMethods[0] || '银行卡',
+      })
       showToast('分期计划已全部结清')
       await Promise.all([loadDetail(plan.id), refreshAll(true)])
     },
@@ -111,7 +134,15 @@ async function submitNewPlan() {
     showToast('请填写名称和有效本金', true)
     return
   }
-  const feeValue = newFeeMode.value === 'none' ? 0 : (parseYuanToCents(newFeeText.value) ?? 0)
+  if (!Number.isInteger(newPeriods.value) || newPeriods.value < 1 || newPeriods.value > 120) {
+    showToast('分期期数须为 1 至 120 期', true)
+    return
+  }
+  const feeValue = newFeeMode.value === 'none' ? 0 : parseYuanToCents(newFeeText.value)
+  if (feeValue === null || feeValue < 0) {
+    showToast('手续费金额无效', true)
+    return
+  }
   isCreating.value = true
   try {
     await api.createInstallmentPlan({
@@ -122,11 +153,12 @@ async function submitNewPlan() {
       periods: newPeriods.value,
       fee_mode: newFeeMode.value,
       fee_value: feeValue,
-      repay_day: newRepayDay.value,
-      category_name: appStore.expenseCategories[0] || '购物',
+      repay_day: Math.min(31, Math.max(1, newRepayDay.value || 10)),
+      category_name: newCategoryName.value || appStore.expenseCategories[0] || '购物',
     })
     newTitle.value = ''
     newPrincipal.value = ''
+    newFeeText.value = '0'
     showCreateForm.value = false
     showToast('已创建分期还款计划')
     await refreshAll(true)
@@ -160,7 +192,7 @@ async function submitNewPlan() {
         <button
           type="button"
           class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[var(--accent-warm)] text-white text-[12.5px] font-medium cursor-pointer hover:opacity-92"
-          @click="showCreateForm = !showCreateForm"
+          @click="openCreateForm"
         >
           <Plus class="w-3.5 h-3.5" />
           <span>{{ showCreateForm ? '收起表单' : '新建分期' }}</span>
@@ -169,63 +201,102 @@ async function submitNewPlan() {
 
       <form
         v-if="showCreateForm"
-        class="p-4 rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-divider)] grid grid-cols-6 gap-3 items-end"
+        class="p-4 rounded-2xl bg-[var(--paper-elevated)] border border-[var(--border-divider)] flex flex-col gap-3"
         @submit.prevent="submitNewPlan"
       >
-        <label class="col-span-2 flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
-          <span>计划名称</span>
-          <input
-            v-model="newTitle"
-            type="text"
-            placeholder="例如：MacBook Pro"
-            class="px-3 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12.5px]"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
-          <span>本金（元）</span>
-          <input
-            v-model="newPrincipal"
-            type="text"
-            placeholder="6000"
-            class="px-3 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12.5px]"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
-          <span>期数</span>
-          <input
-            v-model.number="newPeriods"
-            type="number"
-            min="1"
-            max="120"
-            class="px-3 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12.5px]"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
-          <span>手续费</span>
-          <select
-            v-model="newFeeMode"
-            class="px-2 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12px]"
-          >
-            <option value="none">免息分期</option>
-            <option value="fixed_per_period">每期固定(元)</option>
-            <option value="total_fee">总手续费(元)</option>
-          </select>
-        </label>
-        <div class="flex items-center gap-2">
-          <input
-            v-if="newFeeMode !== 'none'"
-            v-model="newFeeText"
-            type="text"
-            placeholder="手续费"
-            class="w-20 px-2 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12px]"
-          />
-          <button
-            type="submit"
-            :disabled="isCreating"
-            class="flex-1 py-1.5 px-3 rounded-lg bg-[var(--ink-primary)] text-[var(--paper)] text-[12.5px] font-medium cursor-pointer"
-          >
-            {{ isCreating ? '创建中…' : '创建' }}
-          </button>
+        <div class="grid grid-cols-4 gap-3">
+          <label class="col-span-2 flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>计划名称</span>
+            <input
+              v-model="newTitle"
+              type="text"
+              placeholder="例如：MacBook Pro"
+              class="px-3 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12.5px]"
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>本金（元）</span>
+            <input
+              v-model="newPrincipal"
+              type="text"
+              placeholder="6000"
+              class="px-3 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12.5px]"
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>期数</span>
+            <input
+              v-model.number="newPeriods"
+              type="number"
+              min="1"
+              max="120"
+              class="px-3 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12.5px]"
+            />
+          </label>
+        </div>
+
+        <div class="grid grid-cols-5 gap-3 items-end">
+          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>信贷渠道</span>
+            <select
+              v-model="newChannelCode"
+              class="px-2 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12px]"
+              @change="onChannelSelectChange"
+            >
+              <option v-if="appStore.creditChannels.length === 0" value="">默认渠道</option>
+              <option v-for="ch in appStore.creditChannels" :key="ch.code" :value="ch.code">
+                {{ ch.name }}
+              </option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>每月还款日</span>
+            <input
+              v-model.number="newRepayDay"
+              type="number"
+              min="1"
+              max="31"
+              class="px-2.5 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12.5px]"
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>消费类目</span>
+            <select
+              v-model="newCategoryName"
+              class="px-2 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12px]"
+            >
+              <option v-for="cat in appStore.expenseCategories" :key="cat" :value="cat">
+                {{ cat }}
+              </option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+            <span>手续费模式</span>
+            <select
+              v-model="newFeeMode"
+              class="px-2 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[12px]"
+            >
+              <option value="none">免息分期</option>
+              <option value="fixed_per_period">每期固定(元)</option>
+              <option value="total_fee">总手续费(元)</option>
+            </select>
+          </label>
+          <div class="flex items-center gap-2">
+            <input
+              v-if="newFeeMode !== 'none'"
+              v-model="newFeeText"
+              type="text"
+              placeholder="手续费(元)"
+              class="w-24 px-2.5 py-1.5 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12px]"
+            />
+            <button
+              type="submit"
+              :disabled="isCreating"
+              class="flex-1 py-1.5 px-3 rounded-lg bg-[var(--ink-primary)] text-[var(--paper)] text-[12.5px] font-medium cursor-pointer"
+            >
+              {{ isCreating ? '创建中…' : '创建' }}
+            </button>
+          </div>
         </div>
       </form>
 

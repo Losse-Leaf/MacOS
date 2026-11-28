@@ -137,6 +137,9 @@ export const appStore = reactive({
 })
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
+let pendingRefresh = false
+let pendingRefreshSilent = true
+let lastSyncedAt = 0
 const redeemedCodes = new Set<string>()
 
 export function showToast(message: string, isError = false) {
@@ -261,6 +264,10 @@ export function selectSpace(
   space: AppSpace,
   options?: { journalFilter?: JournalFilter; galleryCategory?: GalleryFilter; ledgerTab?: LedgerTab },
 ) {
+  if (space !== appStore.activeSpace) {
+    appStore.searchQuery = ''
+    appStore.remoteSearchResult = null
+  }
   appStore.activeSpace = space
   if (options?.journalFilter) {
     appStore.journalFilter = options.journalFilter
@@ -494,7 +501,12 @@ async function refreshSessionSilent() {
 }
 
 export async function refreshAll(silent = false) {
-  if (!appStore.isPaired || appStore.isLoading) return
+  if (!appStore.isPaired) return
+  if (appStore.isLoading) {
+    pendingRefresh = true
+    pendingRefreshSilent = pendingRefreshSilent && silent
+    return
+  }
   appStore.isLoading = true
   try {
     const [
@@ -513,7 +525,7 @@ export async function refreshAll(silent = false) {
       api.fetchSiteConfig(),
       api.fetchCuratorProfile(),
       api.fetchGlobalStats(),
-      api.fetchCategories(),
+      api.fetchCategoryDictionaries(),
       api.fetchAllEntries(),
       api.fetchOnThisDayEntries(),
       api.fetchAllTransactions(),
@@ -526,13 +538,11 @@ export async function refreshAll(silent = false) {
     if (cfgRes.status === 'fulfilled') appStore.siteConfig = cfgRes.value
     if (profRes.status === 'fulfilled') appStore.profile = profRes.value
     if (statsRes.status === 'fulfilled') appStore.stats = statsRes.value
-    if (catsRes.status === 'fulfilled' && catsRes.value.length > 0) {
-      const exp = catsRes.value.filter((c) => c.scope === 'expense').map((c) => c.name)
-      const inc = catsRes.value.filter((c) => c.scope === 'income').map((c) => c.name)
-      const pay = catsRes.value.filter((c) => c.scope === 'payment').map((c) => c.name)
-      if (exp.length) appStore.expenseCategories = exp
-      if (inc.length) appStore.incomeCategories = inc
-      if (pay.length) appStore.paymentMethods = pay
+    if (catsRes.status === 'fulfilled') {
+      const { byScope } = catsRes.value
+      if (byScope.expense.length) appStore.expenseCategories = byScope.expense
+      if (byScope.income.length) appStore.incomeCategories = byScope.income
+      if (byScope.payment.length) appStore.paymentMethods = byScope.payment
     }
     if (entriesRes.status === 'fulfilled') {
       appStore.entries = entriesRes.value
@@ -560,15 +570,46 @@ export async function refreshAll(silent = false) {
       ensureJournalSelection()
     }
 
-    if (!silent) {
+    const coreResults = [entriesRes, txRes, wishesRes]
+    const firstFailure = coreResults.find(
+      (r): r is PromiseRejectedResult =>
+        r.status === 'rejected' && !(r.reason instanceof ApiError && r.reason.isUnauthorized),
+    )
+
+    if (firstFailure) {
+      const reason = firstFailure.reason
+      const msg = reason instanceof Error ? reason.message : '部分数据同步失败，请检查网络连接'
+      appStore.errorBanner = msg
+      if (!silent) {
+        showToast(msg, true)
+      }
+    } else {
       appStore.errorBanner = ''
+      lastSyncedAt = Date.now()
     }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : '同步失败'
+    appStore.errorBanner = msg
     if (!silent) {
-      showToast(err instanceof Error ? err.message : '同步失败', true)
+      showToast(msg, true)
     }
   } finally {
     appStore.isLoading = false
+    if (pendingRefresh) {
+      const nextSilent = pendingRefreshSilent
+      pendingRefresh = false
+      pendingRefreshSilent = true
+      if (appStore.isPaired) {
+        void refreshAll(nextSilent)
+      }
+    }
+  }
+}
+
+export function refreshIfStale(maxAgeMs = 20 * 60 * 1000) {
+  if (!appStore.isPaired || appStore.isLoading) return
+  if (Date.now() - lastSyncedAt > maxAgeMs) {
+    void refreshAll(true)
   }
 }
 

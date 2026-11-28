@@ -351,15 +351,17 @@ dialog::backdrop {
 .tauri-no-drag,
 .tauri-drag button,
 .tauri-drag input,
+.tauri-drag textarea,
 .tauri-drag a,
-.tauri-drag select {
+.tauri-drag select,
+.tauri-drag [role="button"] {
   -webkit-app-region: no-drag;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not(dialog),
+  *:not(dialog)::before,
+  *:not(dialog)::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

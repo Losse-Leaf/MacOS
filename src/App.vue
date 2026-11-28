@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
-import { AlertTriangle, CheckCircle2, PanelLeftOpen, RefreshCw } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, PanelLeftOpen, RefreshCw, X } from 'lucide-vue-next'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import GalleryWorkspace from './components/GalleryWorkspace.vue'
 import GlobalSearchDialog from './components/GlobalSearchDialog.vue'
@@ -20,6 +20,7 @@ import {
   bootstrapApp,
   displayedStreamEntries,
   refreshAll,
+  refreshIfStale,
   selectEntry,
   selectSpace,
   toggleSidebar,
@@ -34,6 +35,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if (!appStore.isPaired) return
+  if (document.querySelector('dialog[open]')) return
   const meta = e.metaKey || e.ctrlKey
   const key = e.key.toLowerCase()
 
@@ -110,13 +112,27 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
+function handleVisibilityRefresh() {
+  if (document.visibilityState === 'visible') {
+    refreshIfStale()
+  }
+}
+
+function handleWindowFocus() {
+  refreshIfStale()
+}
+
 onMounted(() => {
   void bootstrapApp()
   window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('focus', handleWindowFocus)
+  document.addEventListener('visibilitychange', handleVisibilityRefresh)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('focus', handleWindowFocus)
+  document.removeEventListener('visibilitychange', handleVisibilityRefresh)
 })
 </script>
 
@@ -143,13 +159,43 @@ onBeforeUnmount(() => {
       <button
         v-if="appStore.sidebarCollapsed"
         type="button"
-        class="tauri-no-drag absolute top-3 left-20 z-30 p-1.5 rounded-lg bg-[var(--paper-subtle)]/90 border border-[var(--border-subtle)] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] shadow-xs cursor-pointer"
+        class="tauri-no-drag absolute top-2.5 left-[72px] z-30 p-1.5 rounded-lg bg-[var(--paper-subtle)]/90 border border-[var(--border-subtle)] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] shadow-xs cursor-pointer"
         title="展开侧栏 (⌘\)"
         aria-label="展开侧栏"
         @click="toggleSidebar"
       >
         <PanelLeftOpen class="w-4 h-4" />
       </button>
+
+      <!-- 同步异常提醒条 -->
+      <div
+        v-if="appStore.errorBanner"
+        role="alert"
+        class="shrink-0 px-4 py-2 bg-[var(--accent-warm-soft)] border-b border-[var(--accent-warm)]/25 flex items-center justify-between gap-3 text-[12px] text-[var(--ink-primary)]"
+        :class="appStore.sidebarCollapsed ? 'pl-[112px]' : ''"
+      >
+        <div class="flex items-center gap-2 min-w-0">
+          <AlertTriangle class="w-3.5 h-3.5 text-[var(--accent-warm)] shrink-0" />
+          <span class="truncate">{{ appStore.errorBanner }}</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            class="px-2.5 py-0.5 rounded-md bg-[var(--accent-warm)] text-white text-[11.5px] font-medium hover:opacity-90 cursor-pointer"
+            @click="refreshAll(false)"
+          >
+            重试同步
+          </button>
+          <button
+            type="button"
+            class="p-1 rounded-md text-[var(--ink-muted)] hover:text-[var(--ink-primary)] cursor-pointer"
+            aria-label="忽略提示"
+            @click="appStore.errorBanner = ''"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
 
       <Transition name="stage-fade" mode="out-in">
         <StreamWorkspace v-if="appStore.activeSpace === 'journal'" key="journal" />

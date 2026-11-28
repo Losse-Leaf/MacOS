@@ -204,7 +204,7 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
     <header
       data-tauri-drag-region
       class="tauri-drag shrink-0 px-8 pt-5 pb-4 border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-4"
-      :class="appStore.sidebarCollapsed ? 'pl-[124px]' : ''"
+      :class="appStore.sidebarCollapsed ? 'pl-[112px]' : ''"
     >
       <div class="flex items-center gap-5">
         <h1 class="font-serif-editorial text-[24px] font-semibold tracking-tight text-[var(--ink-primary)]">
@@ -237,7 +237,7 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
             <span>分期计划</span>
             <span
               v-if="activeInstallmentsCount > 0"
-              class="font-mono-tabular text-[10.5px] px-1.5 py-0.2 rounded-full bg-[var(--accent-warm-soft)] text-[var(--accent-warm)]"
+              class="font-mono-tabular text-[10.5px] px-1.5 py-0.5 rounded-full bg-[var(--accent-warm-soft)] text-[var(--accent-warm)]"
             >
               {{ activeInstallmentsCount }}
             </span>
@@ -513,6 +513,12 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
                         class="px-1.5 py-0.5 rounded bg-[var(--accent-warm-soft)] text-[var(--accent-warm)] font-mono-tabular text-[10px]"
                       >
                         {{ tx.installment_remain_months ?? tx.installment_months }}/{{ tx.installment_months }} 期
+                      </span>
+                      <span
+                        v-if="tx.source === 'installment_repay'"
+                        class="px-1.5 py-0.5 rounded bg-[var(--paper-subtle)] text-[var(--ink-secondary)] text-[10px]"
+                      >
+                        分期还款<template v-if="tx.fee_amount && tx.fee_amount > 0"> · 含息费 {{ formatYuan(tx.fee_amount, false) }}</template>
                       </span>
                     </div>
                     <p v-if="tx.note" class="text-[11.5px] text-[var(--ink-muted)] truncate max-w-[440px] mt-0.5">

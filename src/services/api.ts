@@ -2,6 +2,7 @@ import type {
   APIEnvelope,
   Attachment,
   AuthSessionResponse,
+  BatchSignItem,
   CategoryOption,
   ConfirmPairingResponse,
   CreateEntryPayload,
@@ -271,6 +272,51 @@ export class ApiClient {
     return Array.isArray(raw) ? raw : (raw.items ?? [])
   }
 
+  async fetchCategoryDictionaries(): Promise<{
+    items: CategoryOption[]
+    byScope: { expense: string[]; income: string[]; payment: string[] }
+  }> {
+    const raw = await this.request<
+      | {
+          items?: CategoryOption[]
+          by_scope?: { expense?: string[]; income?: string[]; payment?: string[] }
+        }
+      | CategoryOption[]
+    >('/api/v1/categories')
+    if (Array.isArray(raw)) {
+      return {
+        items: raw,
+        byScope: {
+          expense: raw.filter((c) => c.scope === 'expense').map((c) => c.name),
+          income: raw.filter((c) => c.scope === 'income').map((c) => c.name),
+          payment: raw.filter((c) => c.scope === 'payment').map((c) => c.name),
+        },
+      }
+    }
+    const items = raw.items ?? []
+    const byScope = {
+      expense: raw.by_scope?.expense?.length
+        ? raw.by_scope.expense
+        : items.filter((c) => c.scope === 'expense').map((c) => c.name),
+      income: raw.by_scope?.income?.length
+        ? raw.by_scope.income
+        : items.filter((c) => c.scope === 'income').map((c) => c.name),
+      payment: raw.by_scope?.payment?.length
+        ? raw.by_scope.payment
+        : items.filter((c) => c.scope === 'payment').map((c) => c.name),
+    }
+    return { items, byScope }
+  }
+
+  async signFilesBatch(keys: string[]): Promise<BatchSignItem[]> {
+    if (!keys.length) return []
+    const res = await this.request<{ items?: BatchSignItem[] }>('/api/v1/files/sign-batch', {
+      method: 'POST',
+      body: { keys },
+    })
+    return res.items ?? []
+  }
+
   fetchOnThisDayEntries(): Promise<{ month: number; day: number; entries: LifeEntry[] }> {
     return this.request('/api/v1/entries/on-this-day')
   }
@@ -385,8 +431,14 @@ export class ApiClient {
     return this.request(`/api/v1/installment-items/${itemId}/unpay`, { method: 'POST', body: {} })
   }
 
-  async settleInstallmentPlan(planId: number): Promise<void> {
-    await this.request(`/api/v1/installment-plans/${planId}/settle`, { method: 'POST', body: {} })
+  async settleInstallmentPlan(
+    planId: number,
+    payload: { paid_amount: number; pay_account?: string; paid_at?: string },
+  ): Promise<void> {
+    await this.request(`/api/v1/installment-plans/${planId}/settle`, {
+      method: 'POST',
+      body: payload,
+    })
   }
 
   async deleteInstallmentPlan(planId: number): Promise<void> {
@@ -461,7 +513,10 @@ export class ApiClient {
           height: dims.height,
         },
       })
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && err.isUnauthorized) {
+        throw err
+      }
       const form = new FormData()
       form.append('folder', 'entries')
       form.append('file', file, file.name || 'image.png')
@@ -472,12 +527,36 @@ export class ApiClient {
         headers['X-Device-Token'] = this.token
       }
 
-      const resp = await fetch(buildApiUrl(this.hubUrl, '/api/v1/files/upload'), {
-        method: 'POST',
-        headers,
-        body: form,
-      })
-      const env = (await resp.json()) as APIEnvelope<UnifiedUploadResponse>
+      let resp: Response
+      try {
+        resp = await fetch(buildApiUrl(this.hubUrl, '/api/v1/files/upload'), {
+          method: 'POST',
+          headers,
+          body: form,
+        })
+      } catch (netErr) {
+        throw new ApiError(netErr instanceof Error ? netErr.message : '网络连接异常')
+      }
+
+      if (resp.status === 401) {
+        let msg = '设备凭据未授权或已失效，请重新登录'
+        try {
+          const env = (await resp.json()) as APIEnvelope<unknown>
+          if (env?.message) msg = env.message
+        } catch {
+          // ignore parse failure
+        }
+        this.onUnauthorized?.()
+        throw new ApiError(msg, 401, 401)
+      }
+
+      let env: APIEnvelope<UnifiedUploadResponse>
+      try {
+        env = (await resp.json()) as APIEnvelope<UnifiedUploadResponse>
+      } catch {
+        throw new ApiError(`上传失败 (HTTP ${resp.status})`, resp.status, resp.status)
+      }
+
       if (!resp.ok || env.code >= 400 || !env.data) {
         throw new ApiError(env?.message || `上传失败 (${resp.status})`, resp.status, env?.code ?? resp.status)
       }

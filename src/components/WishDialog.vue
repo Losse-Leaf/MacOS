@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, X } from 'lucide-vue-next'
 import { api } from '../services/api'
 import { appStore, refreshAll, showToast } from '../stores/appStore'
-import { attachDialogLightDismiss, closeDialogAnimated, parseYuanToCents } from '../utils/format'
+import { attachDialogLightDismiss, closeDialogAnimated, parseYuanToCents, toDateInputValue } from '../utils/format'
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const titleInput = ref('')
@@ -32,7 +32,7 @@ watch(
         specInput.value = target.spec ?? ''
         noteInput.value = target.note ?? ''
         budgetText.value = target.budget > 0 ? (target.budget / 100).toFixed(2) : ''
-        targetDate.value = target.target_date ?? ''
+        targetDate.value = toDateInputValue(target.target_date)
         isPrivate.value = Boolean(target.is_private)
       } else {
         titleInput.value = ''
@@ -77,25 +77,36 @@ async function submit() {
     errorMsg.value = '心愿标题不能为空'
     return
   }
-  const budget = budgetText.value.trim() ? (parseYuanToCents(budgetText.value) ?? 0) : 0
+  let budget = 0
+  if (budgetText.value.trim()) {
+    const parsed = parseYuanToCents(budgetText.value)
+    if (parsed === null || parsed < 0) {
+      errorMsg.value = '请输入有效的非负预算金额'
+      return
+    }
+    budget = parsed
+  }
   isSaving.value = true
   errorMsg.value = ''
   try {
     const editing = appStore.wishModal.editing
-    const payload = {
+    const basePayload = {
       title: titleInput.value.trim(),
       kind: kind.value,
-      spec: specInput.value.trim() || null,
-      note: noteInput.value.trim() || null,
+      spec: specInput.value.trim(),
+      note: noteInput.value.trim(),
       budget,
-      target_date: targetDate.value.trim() || null,
+      target_date: targetDate.value.trim(),
       is_private: isPrivate.value,
     }
     if (editing) {
-      await api.updateWish(editing.id, payload)
+      await api.updateWish(editing.id, basePayload)
       showToast('已更新心愿')
     } else {
-      await api.createWish(payload)
+      await api.createWish({
+        ...basePayload,
+        client_request_id: crypto.randomUUID(),
+      })
       showToast('已种下新心愿')
     }
     closeModal()

@@ -115,30 +115,32 @@ function next() {
         </div>
       </div>
 
-      <div class="relative flex-1 min-h-0 flex items-center justify-center p-6 overflow-auto">
+      <div class="relative flex-1 min-h-0 overflow-hidden">
         <button
           v-if="attachments.length > 1"
           type="button"
-          class="fixed left-8 z-10 p-2.5 rounded-full bg-black/55 hover:bg-black/80 text-white cursor-pointer"
+          class="absolute left-4 top-1/2 -translate-y-1/2 z-10 p-2.5 rounded-full bg-black/55 hover:bg-black/80 text-white cursor-pointer"
           aria-label="上一张"
           @click="prev"
         >
           <ChevronLeft class="w-5 h-5" />
         </button>
 
-        <img
-          v-if="currentAttachment"
-          :src="mediaUrl(currentAttachment.url)"
-          :alt="currentAttachment.original_filename"
-          class="rounded-lg select-none transition-transform duration-200 cursor-zoom-in"
-          :class="zoomed ? 'scale-[1.75] cursor-zoom-out' : 'max-w-full max-h-full object-contain'"
-          @click="zoomed = !zoomed"
-        />
+        <div class="h-full w-full overflow-auto paper-scroll p-6 flex">
+          <img
+            v-if="currentAttachment"
+            :src="mediaUrl(currentAttachment.url)"
+            :alt="currentAttachment.original_filename"
+            class="m-auto rounded-lg select-none transition-[width] duration-200"
+            :class="zoomed ? 'w-[175%] max-w-none h-auto cursor-zoom-out' : 'max-w-full max-h-full object-contain cursor-zoom-in'"
+            @click="zoomed = !zoomed"
+          />
+        </div>
 
         <button
           v-if="attachments.length > 1"
           type="button"
-          class="fixed right-8 z-10 p-2.5 rounded-full bg-black/55 hover:bg-black/80 text-white cursor-pointer"
+          class="absolute right-4 top-1/2 -translate-y-1/2 z-10 p-2.5 rounded-full bg-black/55 hover:bg-black/80 text-white cursor-pointer"
           aria-label="下一张"
           @click="next"
         >
@@ -149,25 +151,27 @@ function next() {
       <!-- 胶片缩略图选片条 -->
       <div
         v-if="attachments.length > 1"
-        class="h-18 shrink-0 px-4 border-t border-white/10 flex items-center justify-center gap-2 overflow-x-auto"
+        class="h-18 shrink-0 px-4 py-2 border-t border-white/10 overflow-x-auto paper-scroll"
       >
-        <button
-          v-for="(att, idx) in attachments"
-          :key="att.id"
-          type="button"
-          class="w-12 h-12 shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer"
-          :class="idx === currentIndex ? 'border-[var(--accent-warm-dark)] opacity-100 scale-105' : 'border-transparent opacity-50 hover:opacity-85'"
-          @click="
-            zoomed = false;
-            currentIndex = idx
-          "
-        >
-          <img
-            :src="mediaUrl(att.thumbnail_url || att.url)"
-            :alt="att.original_filename"
-            class="w-full h-full object-cover"
-          />
-        </button>
+        <div class="h-full flex items-center gap-2 mx-auto w-max">
+          <button
+            v-for="(att, idx) in attachments"
+            :key="att.id"
+            type="button"
+            class="w-12 h-12 shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer"
+            :class="idx === currentIndex ? 'border-[var(--accent-warm-dark)] opacity-100 scale-105' : 'border-transparent opacity-50 hover:opacity-85'"
+            @click="
+              zoomed = false;
+              currentIndex = idx
+            "
+          >
+            <img
+              :src="mediaUrl(att.thumbnail_url || att.url)"
+              :alt="att.original_filename"
+              class="w-full h-full object-cover"
+            />
+          </button>
+        </div>
       </div>
     </div>
   </dialog>

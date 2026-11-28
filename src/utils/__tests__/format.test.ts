@@ -8,8 +8,11 @@ import {
   groupEntriesByMonth,
   groupTransactionsByDay,
   hasDistinctTitle,
+  normalizeCategory,
   parseQuickLedgerInput,
   parseYuanToCents,
+  toBackendCategory,
+  toDateInputValue,
 } from '../format'
 
 describe('format utilities', () => {
@@ -156,5 +159,32 @@ describe('format utilities', () => {
       expenseTotal: 8800,
       incomeTotal: 0,
     })
+  })
+
+  it('normalizes backend entry categories and counts installment_repay fees only', () => {
+    expect(normalizeCategory('Still Life')).toBe('still_life')
+    expect(normalizeCategory('still-life')).toBe('still_life')
+    expect(normalizeCategory('Photography')).toBe('photography')
+    expect(normalizeCategory('静物')).toBe('still_life')
+    expect(toBackendCategory('still_life')).toBe('Still Life')
+    expect(toBackendCategory('daily')).toBe('')
+
+    expect(toDateInputValue('2026-12-31T00:00:00+08:00')).toBe('2026-12-31')
+    expect(toDateInputValue('')).toBe('')
+
+    const groups = groupTransactionsByDay([
+      {
+        id: 201,
+        amount: 50500,
+        type: 'expense',
+        category: '利息手续费',
+        title: 'MacBook 分期 · 第 1/12 期',
+        source: 'installment_repay',
+        fee_amount: 500,
+        occurred_at: '2026-11-28T10:00:00+08:00',
+      },
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].expenseTotal).toBe(500)
   })
 })

@@ -40,10 +40,12 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
     <header
       data-tauri-drag-region
       class="tauri-drag shrink-0 px-8 pt-5 pb-4 border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-4"
-      :class="appStore.sidebarCollapsed ? 'pl-[124px]' : ''"
     >
       <div class="flex flex-col gap-2">
-        <div class="flex items-baseline gap-3">
+        <div
+          class="flex items-baseline gap-3 transition-[padding] duration-200"
+          :class="appStore.sidebarCollapsed ? 'pl-[84px]' : ''"
+        >
           <h1 class="font-serif-editorial text-[24px] font-semibold tracking-tight text-[var(--ink-primary)]">
             影像画廊
           </h1>

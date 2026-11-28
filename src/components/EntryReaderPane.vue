@@ -19,6 +19,7 @@ import {
   appStore,
   mediaUrl,
   refreshAll,
+  selectSpace,
   showToast,
 } from '../stores/appStore'
 import type { Attachment, EntryCategory } from '../types/api'
@@ -32,6 +33,7 @@ import {
   hasDistinctTitle,
   normalizeCategory,
   parseOccurredDate,
+  toBackendCategory,
   toDatetimeLocalValue,
 } from '../utils/format'
 
@@ -147,12 +149,12 @@ async function saveEdit() {
   try {
     const ids = editAttachments.value.map((a) => a.id)
     const updated = await api.updateEntry(entry.value.id, {
-      type: entry.value.type === 'wish' || entry.value.type === 'transaction' ? entry.value.type : 'life',
-      category: editCategory.value === 'daily' ? '' : editCategory.value,
+      type: entry.value.type === 'wish' ? 'wish' : 'life',
+      category: toBackendCategory(editCategory.value),
       title: cleanTitle,
       content: cleanContent,
       occurred_at: datetimeLocalToBeijingISO(editOccurredLocal.value),
-      location: editLocation.value.trim() || null,
+      location: editLocation.value.trim(),
       is_private: editIsPrivate.value,
       attachment_ids: ids,
       clear_attachments: ids.length === 0,
@@ -289,6 +291,10 @@ function tileSpanClass(total: number, index: number): string {
         class="flex-1 overflow-y-auto paper-scroll px-10 py-7"
         :class="{ 'ring-2 ring-inset ring-[var(--accent-warm)]/60 bg-[var(--accent-warm-soft)]/25': isDragOver }"
         @paste="handlePaste"
+        @keydown.meta.s.prevent="saveEdit"
+        @keydown.ctrl.s.prevent="saveEdit"
+        @keydown.meta.enter.prevent="saveEdit"
+        @keydown.esc.stop="isEditing = false"
       >
         <div class="max-w-[680px] mx-auto flex flex-col gap-5">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -366,8 +372,9 @@ function tileSpanClass(total: number, index: number): string {
                   class="hidden"
                   @change="
                     (e) => {
-                      const files = (e.target as HTMLInputElement).files;
-                      if (files) void handleFiles(files);
+                      const input = e.target as HTMLInputElement;
+                      if (input.files) void handleFiles(input.files);
+                      input.value = '';
                     }
                   "
                 />
@@ -508,6 +515,18 @@ function tileSpanClass(total: number, index: number): string {
             <span v-if="entry.location?.trim()" class="font-sans">· {{ entry.location.trim() }}</span>
           </div>
 
+          <button
+            v-if="entry.wish"
+            type="button"
+            class="self-start inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--paper-subtle)] border border-[var(--border-subtle)] text-[11.5px] text-[var(--ink-secondary)] hover:border-[var(--border-divider)] hover:text-[var(--ink-primary)] transition-colors cursor-pointer"
+            @click="
+              selectSpace('wishlist');
+              appStore.searchQuery = entry.wish.title;
+            "
+          >
+            <span>关联心愿 · {{ entry.wish.actual_title || entry.wish.title }}</span>
+          </button>
+
           <h2
             v-if="hasDistinctTitle(entry)"
             class="selectable-text font-serif-editorial text-[30px] font-semibold tracking-tight text-[var(--ink-primary)] leading-[1.25]"
@@ -532,8 +551,13 @@ function tileSpanClass(total: number, index: number): string {
               v-for="(att, idx) in entry.attachments"
               :key="att.id"
               type="button"
-              class="group relative overflow-hidden rounded-2xl bg-[var(--paper-subtle)] border border-[var(--border-subtle)] hover:border-[var(--accent-warm)]/45 transition-all cursor-zoom-in"
-              :class="tileSpanClass(entry.attachments.length, idx)"
+              class="group relative overflow-hidden rounded-2xl transition-all cursor-zoom-in"
+              :class="[
+                tileSpanClass(entry.attachments.length, idx),
+                entry.attachments.length > 1
+                  ? 'bg-[var(--paper-subtle)] border border-[var(--border-subtle)] hover:border-[var(--accent-warm)]/45'
+                  : '',
+              ]"
               @click="appStore.lightboxState = { attachments: entry.attachments, index: idx }"
             >
               <img

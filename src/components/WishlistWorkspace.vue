@@ -17,15 +17,16 @@ const totalBudgetCents = computed(() =>
 )
 
 const fulfilledCount = computed(
-  () => appStore.wishes.filter((w) => w.status === 'fulfilled').length,
+  () => appStore.wishes.filter((w) => w.status === 'fulfilled' || w.status === 'relinquished').length,
 )
 
 const filteredWishes = computed(() => {
   const q = appStore.searchQuery.trim().toLowerCase()
   return appStore.wishes.filter((w) => {
     if (kindFilter.value !== 'all' && w.kind !== kindFilter.value) return false
-    if (statusFilter.value === 'wanting' && w.status === 'fulfilled') return false
-    if (statusFilter.value === 'fulfilled' && w.status !== 'fulfilled') return false
+    const isArchived = w.status === 'fulfilled' || w.status === 'relinquished'
+    if (statusFilter.value === 'wanting' && isArchived) return false
+    if (statusFilter.value === 'fulfilled' && !isArchived) return false
     if (q) {
       const hay = `${w.title} ${w.note ?? ''} ${w.spec ?? ''}`.toLowerCase()
       if (!hay.includes(q)) return false
@@ -77,15 +78,17 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
     <header
       data-tauri-drag-region
       class="tauri-drag shrink-0 px-8 pt-5 pb-4 border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-4"
-      :class="appStore.sidebarCollapsed ? 'pl-[124px]' : ''"
     >
       <div class="flex flex-col gap-1.5">
-        <div class="flex items-baseline gap-3">
+        <div
+          class="flex items-baseline gap-3 transition-[padding] duration-200"
+          :class="appStore.sidebarCollapsed ? 'pl-[84px]' : ''"
+        >
           <h1 class="font-serif-editorial text-[24px] font-semibold tracking-tight text-[var(--ink-primary)]">
             心愿图鉴
           </h1>
           <span class="font-mono-tabular text-[12px] text-[var(--ink-muted)]">
-            {{ wantingWishesCount }} 待实现 · {{ fulfilledCount }} 已圆满 · 预算 {{ formatYuan(totalBudgetCents) }}
+            {{ wantingWishesCount }} 待实现 · {{ fulfilledCount }} 已归档 · 预算 {{ formatYuan(totalBudgetCents) }}
           </span>
         </div>
 
@@ -111,7 +114,7 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
             :class="statusFilter === s ? 'chip-active' : 'chip-idle'"
             @click="statusFilter = s"
           >
-            {{ s === 'all' ? '全部状态' : s === 'wanting' ? '心愿中' : '已圆满' }}
+            {{ s === 'all' ? '全部状态' : s === 'wanting' ? '心愿中' : '已归档' }}
           </button>
         </div>
       </div>
@@ -200,7 +203,9 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
                   :class="
                     wish.status === 'fulfilled'
                       ? 'bg-[var(--accent-moss-soft)] text-[var(--accent-moss)]'
-                      : 'bg-[var(--accent-warm-soft)] text-[var(--accent-warm)]'
+                      : wish.status === 'relinquished'
+                        ? 'bg-[var(--paper-subtle)] text-[var(--ink-muted)]'
+                        : 'bg-[var(--accent-warm-soft)] text-[var(--accent-warm)]'
                   "
                 >
                   {{ statusLabel(wish.status) }}
@@ -247,7 +252,7 @@ onBeforeUnmount(() => window.removeEventListener('looseleaf-focus-filter', handl
               </div>
 
               <button
-                v-if="wish.status !== 'fulfilled'"
+                v-if="wish.status !== 'fulfilled' && wish.status !== 'relinquished'"
                 type="button"
                 class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--accent-warm-soft)] text-[var(--accent-warm)] text-[11.5px] font-medium hover:opacity-90 cursor-pointer"
                 @click="appStore.resolveWishTarget = wish"

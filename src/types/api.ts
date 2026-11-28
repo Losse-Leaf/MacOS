@@ -4,17 +4,6 @@ export type EntryCategory = 'daily' | 'photography' | 'travel' | 'still_life' | 
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
-export type SidebarDestination =
-  | { kind: 'all' }
-  | { kind: 'daily' }
-  | { kind: 'private' }
-  | { kind: 'on_this_day' }
-  | { kind: 'category'; category: EntryCategory }
-  | { kind: 'ledger' }
-  | { kind: 'installments' }
-  | { kind: 'wishlist' }
-  | { kind: 'settings' }
-
 export interface APIEnvelope<T> {
   code: number
   message: string
@@ -342,6 +331,14 @@ export interface CreateWishPayload {
   attachment_ids?: number[] | null
   clear_attachments?: boolean | null
   is_private?: boolean | null
+  client_request_id?: string
+}
+
+export interface BatchSignItem {
+  object_key: string
+  url: string
+  thumbnail_url: string
+  expires_in: number
 }
 
 export interface ResolveWishPayload {

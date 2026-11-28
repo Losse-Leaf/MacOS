@@ -37,10 +37,43 @@ export const ALL_ENTRY_CATEGORIES: {
 
 export function normalizeCategory(raw?: string | null): EntryCategory {
   const val = (raw ?? '').trim().toLowerCase()
-  if (val === 'photography' || val === 'travel' || val === 'still_life' || val === 'motion') {
-    return val
+  switch (val) {
+    case 'photography':
+    case '摄影':
+      return 'photography'
+    case 'travel':
+    case '旅途':
+    case '旅行':
+      return 'travel'
+    case 'still life':
+    case 'still_life':
+    case 'still-life':
+    case 'stilllife':
+    case '静物':
+    case '器物':
+      return 'still_life'
+    case 'motion':
+    case 'video':
+    case '影像':
+      return 'motion'
+    default:
+      return 'daily'
   }
-  return 'daily'
+}
+
+export function toBackendCategory(cat: EntryCategory): string {
+  switch (cat) {
+    case 'photography':
+      return 'Photography'
+    case 'travel':
+      return 'Travel'
+    case 'still_life':
+      return 'Still Life'
+    case 'motion':
+      return 'Motion'
+    default:
+      return ''
+  }
 }
 
 export function categoryMeta(cat?: string | null): { id: EntryCategory; label: string; colorVar: string } {
@@ -55,7 +88,15 @@ export function entryAccentVar(entry: LifeEntry): string {
 }
 
 export function entryBadgeLabel(entry: LifeEntry): string {
-  if (entry.type === 'wish') return '心愿达成'
+  if (entry.type === 'wish') {
+    if (entry.wish?.status === 'relinquished' || entry.title.startsWith('理性拔草')) {
+      return '理性拔草'
+    }
+    if (entry.wish?.status === 'fulfilled' || entry.title.startsWith('圆满达成')) {
+      return '心愿达成'
+    }
+    return '心愿印记'
+  }
   if (entry.type === 'transaction') return '账目流水'
   const meta = categoryMeta(entry.category)
   return meta.id === 'daily' ? '日常随笔' : meta.label
@@ -240,6 +281,11 @@ export function datetimeLocalToBeijingISO(localVal: string): string {
   return Number.isNaN(d.getTime()) ? formatBeijingISO() : formatBeijingISO(d)
 }
 
+export function toDateInputValue(isoOrText?: string | null): string {
+  const parsed = parseOccurredDate(isoOrText)
+  return parsed.valid ? parsed.dateKey : ''
+}
+
 export function parseOccurredDate(raw?: string | null): ParsedBeijingDate {
   const text = (raw ?? '').trim()
   if (!text) {
@@ -396,7 +442,8 @@ export function groupTransactionsByDay(
     if (tx.type === 'income') {
       bucket.income += tx.amount
     } else {
-      bucket.expense += tx.amount
+      const expensePart = tx.source === 'installment_repay' ? (tx.fee_amount ?? 0) : tx.amount
+      bucket.expense += expensePart
     }
   }
 

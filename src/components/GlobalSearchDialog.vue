@@ -11,6 +11,7 @@ const query = ref('')
 const remoteEntries = ref<LifeEntry[]>([])
 const remoteWishes = ref<Wish[]>([])
 const isSearching = ref(false)
+const activeIndex = ref(0)
 
 let cleanupLightDismiss: (() => void) | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -22,6 +23,7 @@ watch(
     if (!dlg) return
     if (open) {
       query.value = ''
+      activeIndex.value = 0
       remoteEntries.value = []
       remoteWishes.value = []
       if (!dlg.open) dlg.showModal()
@@ -34,6 +36,7 @@ watch(
 )
 
 watch(query, (val) => {
+  activeIndex.value = 0
   if (timer) clearTimeout(timer)
   const trimmed = val.trim()
   if (!trimmed) {
@@ -99,9 +102,35 @@ async function openEntry(entry: LifeEntry) {
   closeModal()
 }
 
-function openWishlist() {
+function openWishlist(wish: Wish) {
   selectSpace('wishlist')
+  appStore.searchQuery = wish.title
   closeModal()
+}
+
+type FlatResult =
+  | { kind: 'entry'; item: LifeEntry }
+  | { kind: 'wish'; item: Wish }
+
+const flatResults = computed<FlatResult[]>(() => [
+  ...mergedEntries.value.map((item) => ({ kind: 'entry' as const, item })),
+  ...mergedWishes.value.map((item) => ({ kind: 'wish' as const, item })),
+])
+
+function moveSelection(delta: number) {
+  const len = flatResults.value.length
+  if (len === 0) return
+  activeIndex.value = (activeIndex.value + delta + len) % len
+}
+
+function confirmSelection() {
+  const hit = flatResults.value[activeIndex.value]
+  if (!hit) return
+  if (hit.kind === 'entry') {
+    void openEntry(hit.item)
+  } else {
+    openWishlist(hit.item)
+  }
 }
 </script>
 
@@ -121,9 +150,12 @@ function openWishlist() {
           v-model="query"
           type="search"
           autofocus
-          placeholder="全局检索散页手稿与心愿档案… (⌘K)"
+          placeholder="全局检索散页手稿与心愿档案… (⌘K · ↑↓选择 · ↵打开)"
           aria-labelledby="global-search-title"
           class="flex-1 bg-transparent text-[14px] text-[var(--ink-primary)] placeholder:text-[var(--ink-muted)]"
+          @keydown.down.prevent="moveSelection(1)"
+          @keydown.up.prevent="moveSelection(-1)"
+          @keydown.enter.prevent="confirmSelection"
         />
         <span id="global-search-title" class="sr-only">全局档案搜索</span>
         <button
@@ -142,10 +174,12 @@ function openWishlist() {
             散页档案（{{ mergedEntries.length }}）
           </div>
           <button
-            v-for="entry in mergedEntries"
+            v-for="(entry, idx) in mergedEntries"
             :key="entry.id"
             type="button"
             class="w-full px-3 py-2 rounded-xl flex items-center justify-between gap-3 text-left hover:bg-[var(--paper-subtle)] transition-colors cursor-pointer"
+            :class="activeIndex === idx ? 'bg-[var(--paper-subtle)] ring-1 ring-[var(--accent-warm)]/45' : ''"
+            @mouseenter="activeIndex = idx"
             @click="openEntry(entry)"
           >
             <div class="flex items-center gap-2.5 min-w-0">
@@ -170,11 +204,13 @@ function openWishlist() {
             心愿清单（{{ mergedWishes.length }}）
           </div>
           <button
-            v-for="wish in mergedWishes"
+            v-for="(wish, wIdx) in mergedWishes"
             :key="wish.id"
             type="button"
             class="w-full px-3 py-2 rounded-xl flex items-center justify-between gap-3 text-left hover:bg-[var(--paper-subtle)] transition-colors cursor-pointer"
-            @click="openWishlist"
+            :class="activeIndex === mergedEntries.length + wIdx ? 'bg-[var(--paper-subtle)] ring-1 ring-[var(--accent-warm)]/45' : ''"
+            @mouseenter="activeIndex = mergedEntries.length + wIdx"
+            @click="openWishlist(wish)"
           >
             <div class="flex items-center gap-2.5 min-w-0">
               <Sparkles class="w-4 h-4 text-[var(--spectrum-leisure)] shrink-0" />

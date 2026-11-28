@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Check, Laptop, LogOut, Monitor, Moon, RefreshCw, Sun, Trash2, User } from 'lucide-vue-next'
 import { api, isValidHubUrl } from '../services/api'
 import {
@@ -12,13 +12,34 @@ import {
   showToast,
 } from '../stores/appStore'
 import type { ThemeMode } from '../types/api'
+import { parseOccurredDate } from '../utils/format'
 
 const draftHubUrl = ref(appStore.hubUrl)
 const profileName = ref(appStore.profile.name)
 const profileCity = ref(appStore.profile.current_city || appStore.profile.location)
 const profileMotto = ref(appStore.profile.motto)
 const profileBio = ref(appStore.profile.bio)
+const profileDirty = ref(false)
 const savingProfile = ref(false)
+
+watch(
+  () => appStore.hubUrl,
+  (url) => {
+    draftHubUrl.value = url
+  },
+)
+
+watch(
+  () => appStore.profile,
+  (prof) => {
+    if (profileDirty.value) return
+    profileName.value = prof.name ?? ''
+    profileCity.value = prof.current_city || prof.location || ''
+    profileMotto.value = prof.motto ?? ''
+    profileBio.value = prof.bio ?? ''
+  },
+  { deep: true },
+)
 
 onMounted(() => {
   void refreshTrustedDevices()
@@ -41,6 +62,7 @@ async function saveProfile() {
       motto: profileMotto.value.trim(),
       bio: profileBio.value.trim(),
     })
+    profileDirty.value = false
     showToast('主理人档案已更新')
   } catch (err) {
     showToast(err instanceof Error ? err.message : '保存档案失败', true)
@@ -81,7 +103,7 @@ function confirmLogout() {
     <header
       data-tauri-drag-region
       class="tauri-drag shrink-0 px-8 pt-5 pb-4 border-b border-[var(--border-subtle)] flex items-baseline gap-3"
-      :class="appStore.sidebarCollapsed ? 'pl-[124px]' : ''"
+      :class="appStore.sidebarCollapsed ? 'pl-[112px]' : ''"
     >
       <h1 class="font-serif-editorial text-[24px] font-semibold tracking-tight text-[var(--ink-primary)]">
         偏好与连接
@@ -132,22 +154,22 @@ function confirmLogout() {
           <div class="grid grid-cols-2 gap-3">
             <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
               <span>称呼</span>
-              <input v-model="profileName" type="text" class="settings-input" />
+              <input v-model="profileName" type="text" class="settings-input" @input="profileDirty = true" />
             </label>
             <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
               <span>当前常驻城市</span>
-              <input v-model="profileCity" type="text" class="settings-input" />
+              <input v-model="profileCity" type="text" class="settings-input" @input="profileDirty = true" />
             </label>
           </div>
 
           <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
             <span>一句话座右铭</span>
-            <input v-model="profileMotto" type="text" class="settings-input" />
+            <input v-model="profileMotto" type="text" class="settings-input" @input="profileDirty = true" />
           </label>
 
           <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
             <span>个人简介</span>
-            <textarea v-model="profileBio" rows="3" class="settings-input" />
+            <textarea v-model="profileBio" rows="3" class="settings-input" @input="profileDirty = true" />
           </label>
 
           <div class="flex justify-end">
@@ -219,7 +241,7 @@ function confirmLogout() {
                   </span>
                 </div>
                 <div class="text-[11.5px] font-mono-tabular text-[var(--ink-muted)]">
-                  {{ dev.platform }} · 最近活跃 {{ dev.last_active_at }}
+                  {{ dev.platform }} · 最近活跃 {{ parseOccurredDate(dev.last_active_at).dotDateTime || dev.last_active_at }}
                 </div>
               </div>
 

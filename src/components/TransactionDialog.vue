@@ -30,9 +30,17 @@ const errorMsg = ref('')
 let cleanupLightDismiss: (() => void) | null = null
 
 const isEditing = computed(() => Boolean(appStore.transactionModal.editing))
+const isInstallmentRepay = computed(() => appStore.transactionModal.editing?.source === 'installment_repay')
 const categoriesForType = computed(() =>
   txType.value === 'income' ? appStore.incomeCategories : appStore.expenseCategories,
 )
+
+function onChannelChange() {
+  const matched = appStore.creditChannels.find((c) => c.code === channelCode.value)
+  if (matched && matched.repayment_day > 0) {
+    repaymentDay.value = matched.repayment_day
+  }
+}
 
 watch(
   () => appStore.transactionModal.open,
@@ -118,8 +126,8 @@ async function submit() {
         type: txType.value,
         category: effCat,
         title: effTitle,
-        note: noteInput.value.trim() || null,
-        payment_method: paymentMethod.value || null,
+        note: noteInput.value.trim(),
+        payment_method: paymentMethod.value,
         occurred_at: occurredAt,
         is_installment: txType.value === 'expense' && wantsInstallment.value ? true : undefined,
         installment_channel_code:
@@ -147,12 +155,12 @@ async function submit() {
         (!isExpense && wasInstallment) || (isExpense && installmentTouched.value && !wantsInstallment.value && wasInstallment)
 
       const updated = await api.updateTransaction(editing.id, {
-        amount: cents,
-        type: txType.value,
+        amount: isInstallmentRepay.value ? editing.amount : cents,
+        type: isInstallmentRepay.value ? 'expense' : txType.value,
         category: effCat,
         title: effTitle,
-        note: noteInput.value.trim() || null,
-        payment_method: paymentMethod.value || null,
+        note: noteInput.value.trim(),
+        payment_method: paymentMethod.value,
         occurred_at: occurredAt,
         is_installment: applyInstallment ? true : cancelInstallment ? false : undefined,
         clear_installment: cancelInstallment || undefined,
@@ -219,7 +227,8 @@ async function submit() {
         <div class="flex items-center gap-2">
           <button
             type="button"
-            class="flex-1 py-1.5 rounded-lg text-[13px] font-medium border transition-colors cursor-pointer"
+            :disabled="isInstallmentRepay"
+            class="flex-1 py-1.5 rounded-lg text-[13px] font-medium border transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed"
             :class="
               txType === 'expense'
                 ? 'bg-[var(--accent-warm-soft)] border-[var(--accent-warm)]/40 text-[var(--accent-warm)]'
@@ -234,7 +243,8 @@ async function submit() {
           </button>
           <button
             type="button"
-            class="flex-1 py-1.5 rounded-lg text-[13px] font-medium border transition-colors cursor-pointer"
+            :disabled="isInstallmentRepay"
+            class="flex-1 py-1.5 rounded-lg text-[13px] font-medium border transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed"
             :class="
               txType === 'income'
                 ? 'bg-[var(--accent-moss)]/12 border-[var(--accent-moss)]/40 text-[var(--accent-moss)]'
@@ -249,6 +259,13 @@ async function submit() {
           </button>
         </div>
 
+        <p
+          v-if="isInstallmentRepay"
+          class="text-[11.5px] text-[var(--ink-muted)] bg-[var(--paper-subtle)] px-3 py-2 rounded-lg"
+        >
+          分期还款流水的金额与类型由分期计划管理，如需修改请在分期计划中撤销还款。
+        </p>
+
         <div class="grid grid-cols-2 gap-3">
           <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
             <span>金额（元）</span>
@@ -256,9 +273,10 @@ async function submit() {
               v-model="amountText"
               type="text"
               inputmode="decimal"
+              :disabled="isInstallmentRepay"
               autofocus
               placeholder="0.00"
-              class="px-3 py-2 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[15px] text-[var(--ink-primary)]"
+              class="px-3 py-2 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[15px] text-[var(--ink-primary)] disabled:opacity-60"
             />
           </label>
           <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
@@ -323,7 +341,7 @@ async function submit() {
         </label>
 
         <div
-          v-if="txType === 'expense'"
+          v-if="txType === 'expense' && !isInstallmentRepay"
           class="p-3 rounded-xl bg-[var(--paper-subtle)]/70 border border-[var(--border-subtle)] flex flex-col gap-3"
         >
           <label class="inline-flex items-center justify-between cursor-pointer text-[12.5px]">
@@ -341,6 +359,7 @@ async function submit() {
               <select
                 v-model="channelCode"
                 class="px-2 py-1.5 rounded-lg bg-[var(--paper-elevated)] border border-[var(--border-subtle)] text-[12px]"
+                @change="onChannelChange"
               >
                 <option value="">默认渠道</option>
                 <option v-for="ch in appStore.creditChannels" :key="ch.code" :value="ch.code">
@@ -354,7 +373,7 @@ async function submit() {
                 v-model.number="months"
                 type="number"
                 min="2"
-                max="120"
+                max="60"
                 class="px-2 py-1.5 rounded-lg bg-[var(--paper-elevated)] border border-[var(--border-subtle)] font-mono-tabular text-[12px]"
               />
             </label>

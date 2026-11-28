@@ -68,13 +68,29 @@ function handleCancel(e: Event) {
 async function submit() {
   const target = appStore.resolveWishTarget
   if (!target || isSaving.value) return
-  const cost = actualCostText.value.trim() ? (parseYuanToCents(actualCostText.value) ?? 0) : 0
+
+  let cost = 0
+  if (resolutionType.value !== 'relinquished' && actualCostText.value.trim()) {
+    const parsed = parseYuanToCents(actualCostText.value)
+    if (parsed === null || parsed < 0) {
+      errorMsg.value = '请输入有效的非负实际花费'
+      return
+    }
+    cost = parsed
+  }
+
+  const fulfilledIso = datetimeLocalToBeijingISO(fulfilledLocal.value)
+  if (new Date(fulfilledIso).getTime() > Date.now() + 60_000) {
+    errorMsg.value = '达成时间不能晚于当前时间'
+    return
+  }
+
   isSaving.value = true
   errorMsg.value = ''
   try {
     await api.resolveWish(target.id, {
-      fulfilled_at: datetimeLocalToBeijingISO(fulfilledLocal.value),
-      actual_cost: cost,
+      fulfilled_at: fulfilledIso,
+      actual_cost: resolutionType.value === 'relinquished' ? 0 : cost,
       resolution_type: resolutionType.value,
       actual_title: actualTitle.value.trim() || null,
       create_transaction: resolutionType.value !== 'relinquished' && createTransaction.value && cost > 0,
@@ -82,7 +98,7 @@ async function submit() {
       entry_content: createLifeEntry.value ? entryContent.value.trim() : null,
     })
     closeModal()
-    showToast(`心愿「${target.title}」已圆满归档`)
+    showToast(resolutionType.value === 'relinquished' ? `已释怀归档「${target.title}」` : `心愿「${target.title}」已圆满归档`)
     await refreshAll(true)
   } catch (err) {
     errorMsg.value = err instanceof Error ? err.message : '操作失败'
@@ -104,7 +120,7 @@ async function submit() {
     <form class="flex flex-col" @submit.prevent="submit">
       <div class="px-6 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between">
         <h2 id="resolve-wish-title" class="font-serif-editorial text-[17px] font-semibold">
-          圆满实现心愿
+          {{ resolutionType === 'relinquished' ? '主动释怀心愿' : '圆满实现心愿' }}
         </h2>
         <button
           type="button"
@@ -147,8 +163,11 @@ async function submit() {
           />
         </label>
 
-        <div class="grid grid-cols-2 gap-3">
-          <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
+        <div class="grid gap-3" :class="resolutionType === 'relinquished' ? 'grid-cols-1' : 'grid-cols-2'">
+          <label
+            v-if="resolutionType !== 'relinquished'"
+            class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]"
+          >
             <span>实际花费（元）</span>
             <input
               v-model="actualCostText"
@@ -159,10 +178,11 @@ async function submit() {
             />
           </label>
           <label class="flex flex-col gap-1 text-[12px] text-[var(--ink-secondary)]">
-            <span>达成时间</span>
+            <span>{{ resolutionType === 'relinquished' ? '释怀时间' : '达成时间' }}</span>
             <input
               v-model="fulfilledLocal"
               type="datetime-local"
+              :max="toDatetimeLocalValue()"
               class="px-2.5 py-2 rounded-lg bg-[var(--paper-subtle)] border border-[var(--border-subtle)] font-mono-tabular text-[12px]"
             />
           </label>
@@ -206,7 +226,13 @@ async function submit() {
           class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[var(--accent-warm)] text-white text-[12.5px] font-medium cursor-pointer disabled:opacity-50"
         >
           <Check class="w-3.5 h-3.5" />
-          <span>{{ isSaving ? '归档中…' : '确认圆满' }}</span>
+          <span>{{
+            isSaving
+              ? '归档中…'
+              : resolutionType === 'relinquished'
+                ? '确认释怀'
+                : '确认圆满'
+          }}</span>
         </button>
       </div>
     </form>

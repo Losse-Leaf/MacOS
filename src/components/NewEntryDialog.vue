@@ -9,6 +9,7 @@ import {
   attachDialogLightDismiss,
   closeDialogAnimated,
   datetimeLocalToBeijingISO,
+  toBackendCategory,
   toDatetimeLocalValue,
 } from '../utils/format'
 
@@ -120,11 +121,11 @@ async function submit() {
   try {
     const created = await api.createEntry({
       type: 'life',
-      category: category.value === 'daily' ? '' : category.value,
+      category: toBackendCategory(category.value),
       title: cleanTitle,
       content: cleanContent,
       occurred_at: datetimeLocalToBeijingISO(occurredLocal.value),
-      location: locationInput.value.trim() || null,
+      location: locationInput.value.trim(),
       is_private: isPrivate.value,
       attachment_ids: attachments.value.map((a) => a.id),
       client_request_id: crypto.randomUUID(),
@@ -250,8 +251,9 @@ async function submit() {
                 class="hidden"
                 @change="
                   (e) => {
-                    const files = (e.target as HTMLInputElement).files;
-                    if (files) void handleFiles(files);
+                    const input = e.target as HTMLInputElement;
+                    if (input.files) void handleFiles(input.files);
+                    input.value = '';
                   }
                 "
               />

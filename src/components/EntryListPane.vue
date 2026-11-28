@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { BookOpen, Lock, RefreshCw, Search, X } from 'lucide-vue-next'
 import { api } from '../services/api'
 import {
@@ -18,14 +18,31 @@ import {
   deriveExcerpt,
   formatEditorialDateBadge,
   groupEntriesByMonth,
+  parseOccurredDate,
 } from '../utils/format'
 
 const visibleLimit = ref(200)
 const filterInputRef = ref<HTMLInputElement | null>(null)
+const listContainerRef = ref<HTMLElement | null>(null)
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 const limitedEntries = computed(() => displayedStreamEntries.value.slice(0, visibleLimit.value))
-const monthGroups = computed(() => groupEntriesByMonth(limitedEntries.value))
+const monthGroups = computed(() =>
+  groupEntriesByMonth(limitedEntries.value).map((group) => ({
+    id: group.id,
+    title: group.title,
+    items: group.entries.map((entry) => {
+      const badge = formatEditorialDateBadge(entry.occurred_at)
+      const parsed = parseOccurredDate(entry.occurred_at)
+      return {
+        entry,
+        day: badge.day,
+        weekday: badge.weekday,
+        timeOrDate: parsed.time || compactListDate(entry.occurred_at),
+      }
+    }),
+  })),
+)
 const remoteHits = computed(() => remoteOnlySearchEntries.value)
 const hasMore = computed(() => displayedStreamEntries.value.length > limitedEntries.value.length)
 
@@ -67,6 +84,18 @@ function handleFocusEvent() {
   filterInputRef.value?.select()
 }
 
+watch(
+  () => appStore.selectedEntryId,
+  async (id) => {
+    if (!id) return
+    await nextTick()
+    const el = listContainerRef.value?.querySelector(`[data-entry-id="${id}"]`)
+    if (el instanceof HTMLElement) {
+      el.scrollIntoView({ block: 'nearest' })
+    }
+  },
+)
+
 onMounted(() => {
   window.addEventListener('looseleaf-focus-filter', handleFocusEvent)
 })
@@ -83,9 +112,11 @@ onBeforeUnmount(() => {
     <div
       data-tauri-drag-region
       class="tauri-drag shrink-0 px-4 pt-3.5 pb-3 border-b border-[var(--border-subtle)] flex flex-col gap-3"
-      :class="appStore.sidebarCollapsed ? 'pl-[124px]' : ''"
     >
-      <div class="flex items-center justify-between gap-2">
+      <div
+        class="flex items-center justify-between gap-2 transition-[padding] duration-200"
+        :class="appStore.sidebarCollapsed ? 'pl-[104px]' : ''"
+      >
         <div class="flex items-baseline gap-2">
           <h1 class="font-serif-editorial text-[19px] font-semibold text-[var(--ink-primary)] tracking-tight">
             散页
@@ -188,7 +219,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 按月分组杂志目录流 -->
-    <div v-else class="flex-1 overflow-y-auto paper-scroll px-2.5 py-2.5 flex flex-col gap-4">
+    <div ref="listContainerRef" class="flex-1 overflow-y-auto paper-scroll px-2.5 py-2.5 flex flex-col gap-4">
       <section v-for="group in monthGroups" :key="group.id" class="flex flex-col gap-1.5">
         <h3
           class="sticky top-0 z-10 px-2 py-1 text-[10.5px] font-mono-tabular tracking-[0.08em] uppercase text-[var(--ink-muted)] bg-[var(--paper)]/92 backdrop-blur-xs"
@@ -197,62 +228,63 @@ onBeforeUnmount(() => {
         </h3>
 
         <button
-          v-for="entry in group.entries"
-          :key="entry.id"
+          v-for="item in group.items"
+          :key="item.entry.id"
+          :data-entry-id="item.entry.id"
           type="button"
           class="journal-item"
-          :class="appStore.selectedEntryId === entry.id ? 'journal-item-active' : 'journal-item-idle'"
-          @click="selectEntry(entry.id)"
+          :class="appStore.selectedEntryId === item.entry.id ? 'journal-item-active' : 'journal-item-idle'"
+          @click="selectEntry(item.entry.id)"
         >
           <!-- 左侧竖排日历日章 -->
           <div class="w-8 shrink-0 flex flex-col items-center pt-0.5 text-center">
             <span
               class="font-serif-editorial text-[17px] font-semibold leading-none"
-              :class="appStore.selectedEntryId === entry.id ? 'text-[var(--accent-warm)]' : 'text-[var(--ink-primary)]'"
+              :class="appStore.selectedEntryId === item.entry.id ? 'text-[var(--accent-warm)]' : 'text-[var(--ink-primary)]'"
             >
-              {{ formatEditorialDateBadge(entry.occurred_at).day }}
+              {{ item.day }}
             </span>
             <span class="text-[10px] text-[var(--ink-muted)] mt-1">
-              {{ formatEditorialDateBadge(entry.occurred_at).weekday }}
+              {{ item.weekday }}
             </span>
           </div>
 
           <div class="flex-1 min-w-0 flex flex-col gap-1 text-left">
             <div class="flex items-center gap-1.5">
               <span class="text-[13.5px] font-semibold text-[var(--ink-primary)] truncate leading-snug">
-                {{ deriveDisplayTitle(entry) }}
+                {{ deriveDisplayTitle(item.entry) }}
               </span>
-              <Lock v-if="entry.is_private" class="w-3 h-3 text-[var(--accent-warm)] shrink-0" />
+              <Lock v-if="item.entry.is_private" class="w-3 h-3 text-[var(--accent-warm)] shrink-0" />
             </div>
 
             <p
-              v-if="deriveExcerpt(entry)"
+              v-if="deriveExcerpt(item.entry)"
               class="text-[12px] text-[var(--ink-secondary)] line-clamp-2 leading-relaxed"
             >
-              {{ deriveExcerpt(entry) }}
+              {{ deriveExcerpt(item.entry) }}
             </p>
 
             <div class="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)] pt-0.5">
-              <span class="font-mono-tabular">{{ compactListDate(entry.occurred_at) }}</span>
-              <span v-if="entry.location?.trim()" class="truncate">· {{ entry.location.trim() }}</span>
+              <span class="font-mono-tabular">{{ item.timeOrDate }}</span>
+              <span v-if="item.entry.location?.trim()" class="truncate">· {{ item.entry.location.trim() }}</span>
             </div>
           </div>
 
           <div
-            v-if="entry.attachments.length > 0"
+            v-if="item.entry.attachments.length > 0"
             class="relative w-[68px] h-[52px] shrink-0 rounded-lg overflow-hidden bg-[var(--paper-subtle)] border border-[var(--border-subtle)]"
           >
             <img
-              :src="mediaUrl(entry.attachments[0].thumbnail_url || entry.attachments[0].url)"
-              :alt="entry.attachments[0].original_filename || '散页配图'"
+              :src="mediaUrl(item.entry.attachments[0].thumbnail_url || item.entry.attachments[0].url)"
+              :alt="item.entry.attachments[0].original_filename || '散页配图'"
               loading="lazy"
               class="w-full h-full object-cover"
             />
             <span
-              v-if="entry.attachments.length > 1"
+              v-if="item.entry.attachments.length > 1"
               class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white font-mono-tabular text-[9.5px] font-semibold leading-none"
             >
-              +{{ entry.attachments.length - 1 }}
+              +{{ item.entry.attachments.length - 1 }}
             </span>
           </div>
         </button>
